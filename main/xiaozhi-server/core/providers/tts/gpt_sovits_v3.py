@@ -11,8 +11,8 @@ class TTSProvider(TTSProviderBase):
     def __init__(self, config, delete_audio_file):
         super().__init__(config, delete_audio_file)
         self.url = config.get("url")
-        self.refer_wav_path = config.get("refer_wav_path")
-        self.prompt_text = config.get("prompt_text")
+        self.refer_wav_path = config.get('ref_audio')if config.get('ref_audio') else config.get("refer_wav_path")
+        self.prompt_text = config.get('ref_text')if config.get('ref_text') else config.get("prompt_text")
         self.prompt_language = config.get("prompt_language")
         self.text_language = config.get("text_language", "audo")
 
@@ -33,14 +33,6 @@ class TTSProvider(TTSProviderBase):
         self.inp_refs = parse_string_to_list(config.get("inp_refs"))
         self.if_sr = str(config.get("if_sr", False)).lower() in ("true", "1", "yes")
         self.audio_file_type = config.get("format", "wav")
-
-        self.get_voice_data(config)
-
-    def get_voice_data(self, config: dict):
-        if not config.get('private_voice', '') and not config.get('voice_remark', ''):
-            return
-        self.refer_wav_path = config.get('private_voice')
-        self.prompt_text = config.get('voice_remark')
 
     async def text_to_speak(self, text, output_file):
         request_params = {

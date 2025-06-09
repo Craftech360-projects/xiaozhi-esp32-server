@@ -12,8 +12,8 @@ class TTSProvider(TTSProviderBase):
         super().__init__(config, delete_audio_file)
         self.url = config.get("url")
         self.text_lang = config.get("text_lang", "zh")
-        self.ref_audio_path = config.get("ref_audio_path")
-        self.prompt_text = config.get("prompt_text")
+        self.ref_audio_path = config.get('ref_audio') if config.get('ref_audio') else config.get("ref_audio_path")
+        self.prompt_text = config.get('ref_text') if config.get('ref_text') else config.get("prompt_text")
         self.prompt_lang = config.get("prompt_lang", "zh")
 
         # 处理空字符串的情况
@@ -66,14 +66,6 @@ class TTSProvider(TTSProviderBase):
             config.get("aux_ref_audio_paths")
         )
         self.audio_file_type = config.get("format", "wav")
-
-        self.get_voice_data(config)
-
-    def get_voice_data(self, config: dict):
-        if not config.get('private_voice', '') and not config.get('voice_remark', ''):
-            return
-        self.ref_audio_path = config.get('private_voice')
-        self.prompt_text = config.get('voice_remark')
 
     async def text_to_speak(self, text, output_file):
         request_json = {
