@@ -34,6 +34,14 @@ class TTSProvider(TTSProviderBase):
         self.if_sr = str(config.get("if_sr", False)).lower() in ("true", "1", "yes")
         self.audio_file_type = config.get("format", "wav")
 
+        self.get_voice_data(config)
+
+    def get_voice_data(self, config: dict):
+        if not config.get('private_voice', '') and not config.get('voice_remark', ''):
+            return
+        self.refer_wav_path = config.get('private_voice')
+        self.prompt_text = config.get('voice_remark')
+
     async def text_to_speak(self, text, output_file):
         request_params = {
             "refer_wav_path": self.refer_wav_path,

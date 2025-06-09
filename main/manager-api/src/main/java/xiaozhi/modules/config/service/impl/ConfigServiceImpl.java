@@ -66,6 +66,7 @@ public class ConfigServiceImpl implements ConfigService {
                 null,
                 null,
                 null,
+                null,
                 agent.getVadModelId(),
                 agent.getAsrModelId(),
                 null,
@@ -102,9 +103,11 @@ public class ConfigServiceImpl implements ConfigService {
         }
         // 获取音色信息
         String voice = null;
+        String voiceRemark = null;
         TimbreDetailsVO timbre = timbreService.get(agent.getTtsVoiceId());
         if (timbre != null) {
             voice = timbre.getTtsVoice();
+            voiceRemark = timbre.getRemark();
         }
         // 构建返回数据
         Map<String, Object> result = new HashMap<>();
@@ -138,6 +141,7 @@ public class ConfigServiceImpl implements ConfigService {
                 agent.getSystemPrompt(),
                 agent.getSummaryMemory(),
                 voice,
+                voiceRemark,
                 agent.getVadModelId(),
                 agent.getAsrModelId(),
                 agent.getLlmModelId(),
@@ -154,7 +158,7 @@ public class ConfigServiceImpl implements ConfigService {
     /**
      * 构建配置信息
      * 
-     * @param paramsList 系统参数列表
+     * @param config 系统参数列表
      * @return 配置信息
      */
     private Object buildConfig(Map<String, Object> config) {
@@ -227,6 +231,7 @@ public class ConfigServiceImpl implements ConfigService {
      * 
      * @param prompt        提示词
      * @param voice         音色
+     * @param voiceRemark   備註
      * @param vadModelId    VAD模型ID
      * @param asrModelId    ASR模型ID
      * @param llmModelId    LLM模型ID
@@ -240,6 +245,7 @@ public class ConfigServiceImpl implements ConfigService {
             String prompt,
             String summaryMemory,
             String voice,
+            String voiceRemark,
             String vadModelId,
             String asrModelId,
             String llmModelId,
@@ -265,8 +271,9 @@ public class ConfigServiceImpl implements ConfigService {
             if (model.getConfigJson() != null) {
                 typeConfig.put(model.getId(), model.getConfigJson());
                 // 如果是TTS类型，添加private_voice属性
-                if ("TTS".equals(modelTypes[i]) && voice != null) {
-                    ((Map<String, Object>) model.getConfigJson()).put("private_voice", voice);
+                if ("TTS".equals(modelTypes[i])){
+                    if (voice != null) ((Map<String, Object>) model.getConfigJson()).put("private_voice", voice);
+                    if (voiceRemark != null) ((Map<String, Object>) model.getConfigJson()).put("voice_remark", voiceRemark);
                 }
                 // 如果是Intent类型，且type=intent_llm，则给他添加附加模型
                 if ("Intent".equals(modelTypes[i])) {

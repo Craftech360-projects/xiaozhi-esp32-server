@@ -67,6 +67,14 @@ class TTSProvider(TTSProviderBase):
         )
         self.audio_file_type = config.get("format", "wav")
 
+        self.get_voice_data(config)
+
+    def get_voice_data(self, config: dict):
+        if not config.get('private_voice', '') and not config.get('voice_remark', ''):
+            return
+        self.ref_audio_path = config.get('private_voice')
+        self.prompt_text = config.get('voice_remark')
+
     async def text_to_speak(self, text, output_file):
         request_json = {
             "text": text,

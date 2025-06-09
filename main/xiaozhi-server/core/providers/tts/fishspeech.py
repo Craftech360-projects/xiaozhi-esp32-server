@@ -129,6 +129,13 @@ class TTSProvider(TTSProviderBase):
         self.use_memory_cache = config.get("use_memory_cache", "on")
         self.seed = int(config.get("seed")) if config.get("seed") else None
         self.api_url = config.get("api_url", "http://127.0.0.1:8080/v1/tts")
+        self.get_voice_data(config)
+
+    def get_voice_data(self, config: dict):
+        if not config.get('private_voice', '') and not config.get('voice_remark', ''):
+            return
+        self.reference_audio = config.get('private_voice')
+        self.reference_text = config.get('voice_remark')
 
     async def text_to_speak(self, text, output_file):
         # Prepare reference data
