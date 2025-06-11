@@ -11,8 +11,8 @@ class TTSProvider(TTSProviderBase):
             self.voice = config.get("private_voice")
         else:
             self.voice = config.get("voice")
-        self.response_format = config.get("response_format", "mp3")
-        self.audio_file_type = config.get("response_format", "mp3")
+        self.response_format = config.get("response_format", "wav")
+        self.audio_file_type = config.get("response_format", "wav")
         self.host = "api.coze.cn"
         self.api_url = f"https://{self.host}/v1/audio/speech"
 

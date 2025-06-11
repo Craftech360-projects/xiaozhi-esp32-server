@@ -1,4 +1,5 @@
 import os
+import re
 import queue
 import uuid
 import asyncio
@@ -169,15 +170,18 @@ class TTSProviderBase(ABC):
                 content_type=ContentType.ACTION,
             )
         )
-        self.tts_text_queue.put(
-            TTSMessageDTO(
-                sentence_id=sentence_id,
-                sentence_type=SentenceType.MIDDLE,
-                content_type=content_type,
-                content_detail=content_detail,
-                content_file=content_file,
+        # 对于单句的文本，进行分段处理
+        segments = re.split(r'([。！？!?；;\n])', content_detail)
+        for seg in segments:
+            self.tts_text_queue.put(
+                TTSMessageDTO(
+                    sentence_id=sentence_id,
+                    sentence_type=SentenceType.MIDDLE,
+                    content_type=content_type,
+                    content_detail=seg,
+                    content_file=content_file,
+                )
             )
-        )
         self.tts_text_queue.put(
             TTSMessageDTO(
                 sentence_id=sentence_id,

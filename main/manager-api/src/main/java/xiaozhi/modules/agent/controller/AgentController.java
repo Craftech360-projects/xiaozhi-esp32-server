@@ -106,6 +106,7 @@ public class AgentController {
             entity.setAsrModelId(template.getAsrModelId());
             entity.setVadModelId(template.getVadModelId());
             entity.setLlmModelId(template.getLlmModelId());
+            entity.setVllmModelId(template.getVllmModelId());
             entity.setTtsModelId(template.getTtsModelId());
             entity.setTtsVoiceId(template.getTtsVoiceId());
             entity.setMemModelId(template.getMemModelId());
