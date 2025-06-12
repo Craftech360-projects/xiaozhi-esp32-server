@@ -151,6 +151,13 @@ class IntentProvider(IntentProviderBase):
 
         if self.promot == "":
             functions = conn.func_handler.get_functions()
+            if hasattr(conn, "mcp_client"):
+                mcp_tools = conn.mcp_client.get_available_tools()
+                if mcp_tools is not None and len(mcp_tools) > 0:
+                    if functions is None:
+                        functions = []
+                    functions.extend(mcp_tools)
+
             self.promot = self.get_intent_system_prompt(functions)
 
         music_config = initialize_music_handler(conn)

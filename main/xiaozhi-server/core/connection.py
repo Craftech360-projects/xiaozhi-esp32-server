@@ -424,6 +424,14 @@ class ConnectionHandler:
         init_vad = check_vad_update(self.common_config, private_config)
         init_asr = check_asr_update(self.common_config, private_config)
 
+        if init_vad:
+            self.config["selected_module"]["VAD"] = private_config["selected_module"][
+                "VAD"
+            ]
+        if init_asr:
+            self.config["selected_module"]["ASR"] = private_config["selected_module"][
+                "ASR"
+            ]
         if private_config.get("TTS", None) is not None:
             init_tts = True
             self.config["TTS"] = private_config["TTS"]
@@ -612,7 +620,7 @@ class ConnectionHandler:
             uuid_str = str(uuid.uuid4()).replace("-", "")
             self.sentence_id = uuid_str
 
-            if functions is not None:
+            if self.intent_type == "function_call" and functions is not None:
                 # 使用支持functions的streaming接口
                 llm_responses = self.llm.response_with_functions(
                     self.session_id,
@@ -639,7 +647,7 @@ class ConnectionHandler:
         for response in llm_responses:
             if self.client_abort:
                 break
-            if functions is not None:
+            if self.intent_type == "function_call" and functions is not None:
                 content, tools_call = response
                 if "content" in response:
                     content = response["content"]

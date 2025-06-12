@@ -114,6 +114,7 @@ def update_module_string(selected_module_str):
     current_module = logger._core.extra["selected_module"]
 
     if current_module == selected_module_str:
+        logger.debug(f"组件未更改无需更新")
         return
 
     try:
