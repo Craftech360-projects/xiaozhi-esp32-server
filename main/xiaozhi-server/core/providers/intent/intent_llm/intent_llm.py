@@ -172,7 +172,11 @@ class IntentProvider(IntentProviderBase):
         music_file_names = music_config["music_file_names"]
         prompt_music = f"{self.promot}\n<musicNames>{music_file_names}\n</musicNames>"
 
-        devices = conn.config["plugins"]["home_assistant"].get("devices", [])
+        home_assistant_cfg = conn.config["plugins"].get("home_assistant")
+        if home_assistant_cfg:
+            devices = home_assistant_cfg.get("devices", [])
+        else:
+            devices = []
         if len(devices) > 0:
             hass_prompt = "\n下面是我家智能设备列表（位置，设备名，entity_id），可以通过homeassistant控制\n"
             for device in devices:
