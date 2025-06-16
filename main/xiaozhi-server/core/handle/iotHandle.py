@@ -338,8 +338,7 @@ async def handleIotDescriptors(conn, descriptors):
 
     # 如果注册了新函数，更新function描述列表
     if functions_changed and hasattr(conn, "func_handler"):
-
-        conn.func_handler.functions_desc = conn.func_handler.function_registry.get_all_function_desc()
+        conn.func_handler.upload_functions_desc()
 
         func_names = conn.func_handler.current_support_functions()
         conn.logger.bind(tag=TAG).info(f"设备类型: {type_id}")
