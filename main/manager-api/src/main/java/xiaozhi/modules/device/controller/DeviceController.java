@@ -2,11 +2,9 @@ package xiaozhi.modules.device.controller;
 
 import java.util.List;
 
-import jakarta.validation.Valid;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.springframework.beans.BeanUtils;
-import org.springframework.context.annotation.Bean;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -17,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.AllArgsConstructor;
 import xiaozhi.common.exception.ErrorCode;
 import xiaozhi.common.redis.RedisKeys;
@@ -90,6 +89,10 @@ public class DeviceController {
     public Result<Void> updateDeviceInfo(@PathVariable String id, @Valid @RequestBody DeviceUpdateDTO deviceUpdateDTO) {
         DeviceEntity entity = deviceService.selectById(id);
         if (entity == null) {
+            return new Result<Void>().error("设备不存在");
+        }
+        UserDetail user = SecurityUser.getUser();
+        if (!entity.getUserId().equals(user.getId())) {
             return new Result<Void>().error("设备不存在");
         }
         BeanUtils.copyProperties(deviceUpdateDTO, entity);
