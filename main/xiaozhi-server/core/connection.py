@@ -752,18 +752,25 @@ class ConnectionHandler:
                         ).result()
                         self.logger.bind(tag=TAG).debug(f"MCP工具调用结果: {result}")
 
+                        resultJson = None
                         if isinstance(result, str):
                             try:
-                                result = json.loads(result)
+                                resultJson = json.loads(result)
                             except Exception as e:
-                                self.logger.bind(tag=TAG).error(f"解析MCP工具返回结果失败: {e}")
+                                self.logger.bind(tag=TAG).error(
+                                    f"解析MCP工具返回结果失败: {e}"
+                                )
 
                         # 视觉大模型不经过二次LLM处理
-                        if isinstance(result, dict) and "action" in result:
+                        if (
+                            resultJson is not None
+                            and isinstance(resultJson, dict)
+                            and "action" in resultJson
+                        ):
                             result = ActionResponse(
-                                action=Action[result["action"]],
+                                action=Action[resultJson["action"]],
                                 result=None,
-                                response=result.get("response", "")
+                                response=resultJson.get("response", ""),
                             )
                         else:
                             result = ActionResponse(
