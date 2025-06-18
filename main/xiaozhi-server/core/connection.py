@@ -751,9 +751,24 @@ class ConnectionHandler:
                             self.loop,
                         ).result()
                         self.logger.bind(tag=TAG).debug(f"MCP工具调用结果: {result}")
-                        result = ActionResponse(
-                            action=Action.REQLLM, result=result, response=""
-                        )
+
+                        if isinstance(result, str):
+                            try:
+                                result = json.loads(result)
+                            except Exception as e:
+                                self.logger.bind(tag=TAG).error(f"解析MCP工具返回结果失败: {e}")
+
+                        # 视觉大模型不经过二次LLM处理
+                        if isinstance(result, dict) and "action" in result:
+                            result = ActionResponse(
+                                action=Action[result["action"]],
+                                result=None,
+                                response=result.get("response", "")
+                            )
+                        else:
+                            result = ActionResponse(
+                                action=Action.REQLLM, result=result, response=""
+                            )
                     except Exception as e:
                         self.logger.bind(tag=TAG).error(f"MCP工具调用失败: {e}")
                         result = ActionResponse(
