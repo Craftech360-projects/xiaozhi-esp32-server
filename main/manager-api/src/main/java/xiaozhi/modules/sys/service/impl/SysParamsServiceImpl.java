@@ -20,6 +20,7 @@ import xiaozhi.common.exception.RenException;
 import xiaozhi.common.page.PageData;
 import xiaozhi.common.service.impl.BaseServiceImpl;
 import xiaozhi.common.utils.ConvertUtils;
+import xiaozhi.common.utils.HttpSendUtils;
 import xiaozhi.common.utils.JsonUtils;
 import xiaozhi.modules.sys.dao.SysParamsDao;
 import xiaozhi.modules.sys.dto.SysParamsDTO;
@@ -34,6 +35,7 @@ import xiaozhi.modules.sys.service.SysParamsService;
 @Service
 public class SysParamsServiceImpl extends BaseServiceImpl<SysParamsDao, SysParamsEntity> implements SysParamsService {
     private final SysParamsRedis sysParamsRedis;
+    private final HttpSendUtils httpSendUtils;
 
     @Override
     public PageData<SysParamsDTO> page(Map<String, Object> params) {
@@ -86,6 +88,7 @@ public class SysParamsServiceImpl extends BaseServiceImpl<SysParamsDao, SysParam
     public void update(SysParamsDTO dto) {
         validateParamValue(dto);
         detectingSMSParameters(dto.getParamCode(), dto.getParamValue());
+        validateMcpParams(dto.getParamCode(), dto.getParamValue());
         SysParamsEntity entity = ConvertUtils.sourceToTarget(dto, SysParamsEntity.class);
         updateById(entity);
 
@@ -243,5 +246,16 @@ public class SysParamsServiceImpl extends BaseServiceImpl<SysParamsDao, SysParam
             throw new RenException(promptStr.formatted(substring));
         }
         return true;
+    }
+
+    private void  validateMcpParams(String paramCode, String paramValue){
+        if(!Constant.SERVER_MCP_ENDPOINT.equals(paramCode)){
+            return;
+        }
+        String body  = httpSendUtils.fetchGetBodyAsString(paramValue);
+        if(body.contains("success")){
+            return;
+        };
+        throw new RenException(Constant.SERVER_MCP_ENDPOINT+"的value值不符合要求");
     }
 }

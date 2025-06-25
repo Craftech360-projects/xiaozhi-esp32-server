@@ -112,6 +112,11 @@ public interface Constant {
     String FILE_EXTENSION_SEG = ".";
 
     /**
+     * mcp接入点路径
+     */
+    String SERVER_MCP_ENDPOINT = "server.mcp_endpoint";
+
+    /**
      * 无记忆
      */
     String MEMORY_NO_MEM = "Memory_nomem";
