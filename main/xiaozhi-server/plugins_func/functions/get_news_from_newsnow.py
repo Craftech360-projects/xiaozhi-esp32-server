@@ -8,38 +8,61 @@ from markitdown import MarkItDown
 TAG = __name__
 logger = setup_logging()
 
-# 新闻来源字典，包含名称和对应的API ID
-NEWS_SOURCES = {
+# 默认新闻来源字典，当配置中没有指定时使用
+DEFAULT_NEWS_SOURCES = {
     "thepaper": "澎湃新闻",
     "baidu": "百度热搜",
     "cls-depth": "财联社",
 }
 
 
-# 动态生成新闻源描述
-def generate_news_sources_description():
-    sources_desc = []
-    for source_id, source_name in NEWS_SOURCES.items():
-        sources_desc.append(f"{source_name}({source_id})")
-    return "、".join(sources_desc)
+def get_news_sources_from_config(conn):
+    """从配置中获取新闻源字典"""
+    try:
+        # 尝试从插件配置中获取新闻源
+        if (conn.config.get("plugins") and 
+            conn.config["plugins"].get("get_news_from_newsnow") and 
+            conn.config["plugins"]["get_news_from_newsnow"].get("news_sources")):
+            
+            # 如果配置中是字符串，尝试解析JSON
+            news_sources_config = conn.config["plugins"]["get_news_from_newsnow"]["news_sources"]
+            if isinstance(news_sources_config, str):
+                try:
+                    return json.loads(news_sources_config)
+                except json.JSONDecodeError:
+                    logger.bind(tag=TAG).warning("新闻源配置JSON格式错误，使用默认配置")
+                    return DEFAULT_NEWS_SOURCES
+            elif isinstance(news_sources_config, dict):
+                return news_sources_config
+            else:
+                logger.bind(tag=TAG).warning("新闻源配置格式错误，使用默认配置")
+                return DEFAULT_NEWS_SOURCES
+        else:
+            logger.bind(tag=TAG).debug("未找到新闻源配置，使用默认配置")
+            return DEFAULT_NEWS_SOURCES
+    except Exception as e:
+        logger.bind(tag=TAG).error(f"获取新闻源配置失败: {e}，使用默认配置")
+        return DEFAULT_NEWS_SOURCES
 
 
+# 静态函数描述，使用默认新闻源生成描述
 GET_NEWS_FROM_NEWSNOW_FUNCTION_DESC = {
     "type": "function",
     "function": {
         "name": "get_news_from_newsnow",
         "description": (
             "获取最新新闻，随机选择一条新闻进行播报。"
-            f"用户可以选择不同的新闻源，如{generate_news_sources_description()}等。"
+            "用户可以选择不同的新闻源，如澎湃新闻(thepaper)、百度热搜(baidu)、财联社(cls-depth)等。"
             "如果没有指定，默认从澎湃新闻获取。"
             "用户可以要求获取详细内容，此时会获取新闻的详细内容。"
+            "注意：实际可用的新闻源取决于系统配置。"
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "source": {
                     "type": "string",
-                    "description": f"新闻源，例如{generate_news_sources_description()}等。可选参数，如果不提供则使用默认新闻源",
+                    "description": "新闻源，例如thepaper、baidu、cls-depth等。可选参数，如果不提供则使用默认新闻源",
                 },
                 "detail": {
                     "type": "boolean",
@@ -115,6 +138,9 @@ def get_news_from_newsnow(
 ):
     """获取新闻并随机选择一条进行播报，或获取上一条新闻的详细内容"""
     try:
+        # 获取当前配置的新闻源
+        news_sources = get_news_sources_from_config(conn)
+        
         # 如果detail为True，获取上一条新闻的详细内容
         detail = str(detail).lower() == "true"
         if detail:
@@ -132,7 +158,7 @@ def get_news_from_newsnow(
             url = conn.last_newsnow_link.get("url")
             title = conn.last_newsnow_link.get("title", "未知标题")
             source_id = conn.last_newsnow_link.get("source_id", "thepaper")
-            source_name = NEWS_SOURCES.get(source_id, "未知来源")
+            source_name = news_sources.get(source_id, "未知来源")
 
             if not url or url == "#":
                 return ActionResponse(
@@ -167,11 +193,11 @@ def get_news_from_newsnow(
 
         # 否则，获取新闻列表并随机选择一条
         # 验证新闻源是否有效，如果无效则使用默认源
-        if source not in NEWS_SOURCES:
+        if source not in news_sources:
             logger.bind(tag=TAG).warning(f"无效的新闻源: {source}，使用默认源thepaper")
             source = "thepaper"
 
-        source_name = NEWS_SOURCES.get(source, "澎湃新闻")
+        source_name = news_sources.get(source, "澎湃新闻")
         logger.bind(tag=TAG).info(f"获取新闻: 新闻源={source}({source_name})")
 
         # 获取新闻列表

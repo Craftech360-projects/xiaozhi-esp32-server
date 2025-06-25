@@ -120,7 +120,12 @@ plugins:
     society_rss_url: "https://www.chinanews.com.cn/rss/society.xml"
     world_rss_url: "https://www.chinanews.com.cn/rss/world.xml"
     finance_rss_url: "https://www.chinanews.com.cn/rss/finance.xml"
-  get_news_from_newsnow: {"url": "https://newsnow.busiyi.world/api/s?id="}
+  get_news_from_newsnow:
+    url: "https://newsnow.busiyi.world/api/s?id="
+    news_sources:
+      thepaper: "澎湃新闻"
+      baidu: "百度热搜"
+      cls-depth: "财联社"
   home_assistant:
     devices:
       - 客厅,玩具灯,switch.cuco_cn_460494544_cp1_on_p_2_1
