@@ -28,22 +28,19 @@ public class AgentMcpAccessPointServiceImpl implements AgentMcpAccessPointServic
         if (StringUtils.isBlank(url)) {
             return null;
         }
-        try {
-            URI uri = new URI(url);
-            // 获取智能体mcp的url前缀
-            String agentMcpUrl = getAgentMcpUrl(uri);
-            // 获取密钥
-            String key = getSecretKey(uri);
-            // 获取加密的token
-            String encryptToken = encryptToken(id, key);
-            // 返回智能体Mcp路径的格式
-            String AgentMcpUrl = "%s/mcp?token=%s";
-            return AgentMcpUrl.formatted(agentMcpUrl,encryptToken);
-        } catch (URISyntaxException e) {
-            log.error("路径格式不正确路径：{}，\n错误信息:{}",url,e.getMessage());
-            throw new RuntimeException("mcp的地址存在错误，请进入参数管理修改mcp接入点地址");
-        }
+        URI uri = getURI(url);
+        // 获取智能体mcp的url前缀
+        String agentMcpUrl = getAgentMcpUrl(uri);
+        // 获取密钥
+        String key = getSecretKey(uri);
+        // 获取加密的token
+        String encryptToken = encryptToken(id, key);
+        // 返回智能体Mcp路径的格式
+        String AgentMcpUrl = "%s/mcp?token=%s";
+        return AgentMcpUrl.formatted(agentMcpUrl, encryptToken);
+
     }
+
     @Override
     public List<String> getAgentMcpToolsList(String id) {
         List<String> list = List.of();
@@ -51,12 +48,38 @@ public class AgentMcpAccessPointServiceImpl implements AgentMcpAccessPointServic
         if (StringUtils.isBlank(url)) {
             return list;
         }
+        URI uri = getURI(url);
+        // 获取智能体mcp的url前缀
+        String agentMcpUrl = getAgentMcpUrl(uri);
+        // 获取密钥
+        String key = getSecretKey(uri);
+        // 获取加密的token
+        String encryptToken = encryptToken(id, key);
+        // 返回智能体Mcp路径的格式
+        String AgentMcpUrl = "%s/call?token=%s";
+        String formatted = AgentMcpUrl.formatted(agentMcpUrl, encryptToken);
+
 
         return list;
     }
 
     /**
+     * 获取URI对象
+     * @param url 路径
+     * @return URI对象
+     */
+    private static URI getURI(String url) {
+        try {
+            return new URI(url);
+        } catch (URISyntaxException e) {
+            log.error("路径格式不正确路径：{}，\n错误信息:{}", url, e.getMessage());
+            throw new RuntimeException("mcp的地址存在错误，请进入参数管理修改mcp接入点地址");
+        }
+    }
+
+    /**
      * 获取密钥
+     *
      * @param uri mcp地址
      * @return 密钥
      */
@@ -70,26 +93,26 @@ public class AgentMcpAccessPointServiceImpl implements AgentMcpAccessPointServic
 
     /**
      * 获取智能体mcp接入点url
+     *
      * @param uri mcp地址
      * @return 智能体mcp接入点url
      */
     private String getAgentMcpUrl(URI uri) {
         // 获取协议
-        String wsScheme = (uri.getScheme().equals("https")) ? "wss" : "ws" ;
+        String wsScheme = (uri.getScheme().equals("https")) ? "wss" : "ws";
         // 获取主机，端口，路径
         String path = uri.getSchemeSpecificPart();
         // 获取到最后一个/前的path
-        path = path.substring(0,path.lastIndexOf("/"));
-        return wsScheme+":"+path;
+        path = path.substring(0, path.lastIndexOf("/"));
+        return wsScheme + ":" + path;
     }
-
-
 
 
     /**
      * 获取对智能体id加密的token
+     *
      * @param agentId 智能体id
-     * @param key 加密密钥
+     * @param key     加密密钥
      * @return 加密后token
      */
     private static String encryptToken(String agentId, String key) {
