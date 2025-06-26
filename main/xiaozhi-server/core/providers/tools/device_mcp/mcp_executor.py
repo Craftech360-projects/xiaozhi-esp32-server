@@ -37,6 +37,24 @@ class DeviceMCPExecutor(ToolExecutor):
             # 调用设备端MCP工具
             result = await call_mcp_tool(conn, conn.mcp_client, tool_name, args_str)
 
+            resultJson = None
+            if isinstance(result, str):
+                try:
+                    resultJson = json.loads(result)
+                except Exception as e:
+                    pass
+
+            # 视觉大模型不经过二次LLM处理
+            if (
+                resultJson is not None
+                and isinstance(resultJson, dict)
+                and "action" in resultJson
+            ):
+                return ActionResponse(
+                    action=Action[resultJson["action"]],
+                    response=resultJson.get("response", ""),
+                )
+
             return ActionResponse(action=Action.REQLLM, result=str(result))
 
         except ValueError as e:
