@@ -77,7 +77,7 @@ async def handleTextMessage(conn, message):
             if "states" in msg_json:
                 asyncio.create_task(handleIotStatus(conn, msg_json["states"]))
         elif msg_json["type"] == "mcp":
-            conn.logger.bind(tag=TAG).info(f"收到mcp消息：{message}")
+            conn.logger.bind(tag=TAG).info(f"收到mcp消息：{message[:100]}")
             if "payload" in msg_json:
                 asyncio.create_task(
                     handle_mcp_message(conn, conn.mcp_client, msg_json["payload"])

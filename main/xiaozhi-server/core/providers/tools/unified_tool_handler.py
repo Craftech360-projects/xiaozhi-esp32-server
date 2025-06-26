@@ -1,4 +1,4 @@
-"""统一工具处理器，替换原有的FunctionHandler"""
+"""统一工具处理器"""
 
 import json
 from typing import Dict, List, Any, Optional
@@ -12,6 +12,7 @@ from .server_plugins import ServerPluginExecutor
 from .server_mcp import ServerMCPExecutor
 from .device_iot import DeviceIoTExecutor
 from .device_mcp import DeviceMCPExecutor
+from .mcp_endpoint import MCPEndpointExecutor
 
 
 class UnifiedToolHandler:
@@ -30,6 +31,7 @@ class UnifiedToolHandler:
         self.server_mcp_executor = ServerMCPExecutor(conn)
         self.device_iot_executor = DeviceIoTExecutor(conn)
         self.device_mcp_executor = DeviceMCPExecutor(conn)
+        self.mcp_endpoint_executor = MCPEndpointExecutor(conn)
 
         # 注册执行器
         self.tool_manager.register_executor(
@@ -44,6 +46,9 @@ class UnifiedToolHandler:
         self.tool_manager.register_executor(
             ToolType.DEVICE_MCP, self.device_mcp_executor
         )
+        self.tool_manager.register_executor(
+            ToolType.MCP_ENDPOINT, self.mcp_endpoint_executor
+        )
 
         # 初始化标志
         self.finish_init = False
@@ -57,6 +62,9 @@ class UnifiedToolHandler:
             # 初始化服务端MCP
             await self.server_mcp_executor.initialize()
 
+            # 初始化MCP接入点
+            await self._initialize_mcp_endpoint()
+
             # 初始化Home Assistant（如果需要）
             self._initialize_home_assistant()
 
@@ -65,6 +73,28 @@ class UnifiedToolHandler:
 
         except Exception as e:
             self.logger.error(f"统一工具处理器初始化失败: {e}")
+
+    async def _initialize_mcp_endpoint(self):
+        """初始化MCP接入点"""
+        try:
+            from .mcp_endpoint import connect_mcp_endpoint
+
+            # 从配置中获取MCP接入点URL
+            mcp_endpoint_url = self.config.get("mcp_endpoint", "")
+
+            if mcp_endpoint_url and "你的" not in mcp_endpoint_url:
+                self.logger.info(f"正在初始化MCP接入点: {mcp_endpoint_url}")
+                mcp_endpoint_client = await connect_mcp_endpoint(mcp_endpoint_url)
+
+                if mcp_endpoint_client:
+                    # 将MCP接入点客户端保存到连接对象中
+                    self.conn.mcp_endpoint_client = mcp_endpoint_client
+                    self.logger.info("MCP接入点初始化成功")
+                else:
+                    self.logger.warning("MCP接入点初始化失败")
+
+        except Exception as e:
+            self.logger.error(f"初始化MCP接入点失败: {e}")
 
     def _initialize_home_assistant(self):
         """初始化Home Assistant提示词"""
@@ -183,6 +213,14 @@ class UnifiedToolHandler:
         """清理资源"""
         try:
             await self.server_mcp_executor.cleanup()
+
+            # 清理MCP接入点连接
+            if (
+                hasattr(self.conn, "mcp_endpoint_client")
+                and self.conn.mcp_endpoint_client
+            ):
+                await self.conn.mcp_endpoint_client.close()
+
             self.logger.info("工具处理器清理完成")
         except Exception as e:
             self.logger.error(f"工具处理器清理失败: {e}")

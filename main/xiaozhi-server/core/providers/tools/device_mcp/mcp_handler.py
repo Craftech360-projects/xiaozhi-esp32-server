@@ -113,7 +113,7 @@ async def send_mcp_message(conn, payload: dict):
 
 async def handle_mcp_message(conn, mcp_client: MCPClient, payload: dict):
     """处理MCP消息,包括初始化、工具列表和工具调用响应等"""
-    logger.bind(tag=TAG).info(f"处理MCP消息: {payload}")
+    logger.bind(tag=TAG).info(f"处理MCP消息: {str(payload)[:100]}")
 
     if not isinstance(payload, dict):
         logger.bind(tag=TAG).error("MCP消息缺少payload字段或格式错误")
