@@ -1,19 +1,19 @@
 package xiaozhi.modules.agent.service.impl;
 
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.List;
+
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.stereotype.Service;
+
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
-import org.jetbrains.annotations.NotNull;
-import org.springframework.stereotype.Service;
 import xiaozhi.common.constant.Constant;
 import xiaozhi.common.utils.AESUtils;
 import xiaozhi.common.utils.HashEncryptionUtil;
 import xiaozhi.modules.agent.service.AgentMcpAccessPointService;
 import xiaozhi.modules.sys.service.SysParamsService;
-
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.util.List;
 
 @AllArgsConstructor
 @Service
@@ -25,7 +25,7 @@ public class AgentMcpAccessPointServiceImpl implements AgentMcpAccessPointServic
     public String getAgentMcpAccessAddress(String id) {
         // 获取到mcp的地址
         String url = sysParamsService.getValue(Constant.SERVER_MCP_ENDPOINT, true);
-        if (StringUtils.isBlank(url)) {
+        if (StringUtils.isBlank(url) || "null".equals(url)) {
             return null;
         }
         URI uri = getURI(url);
@@ -36,35 +36,22 @@ public class AgentMcpAccessPointServiceImpl implements AgentMcpAccessPointServic
         // 获取加密的token
         String encryptToken = encryptToken(id, key);
         // 返回智能体Mcp路径的格式
-        String AgentMcpUrl = "%s/mcp?token=%s";
-        return AgentMcpUrl.formatted(agentMcpUrl, encryptToken);
-
+        agentMcpUrl = "%s/mcp?token=%s".formatted(agentMcpUrl, encryptToken);
+        return agentMcpUrl;
     }
 
     @Override
     public List<String> getAgentMcpToolsList(String id) {
-        List<String> list = List.of();
-        String url = sysParamsService.getValue(Constant.SERVER_MCP_ENDPOINT, true);
-        if (StringUtils.isBlank(url)) {
-            return list;
+        String wsUrl = getAgentMcpAccessAddress(id);
+        if (StringUtils.isBlank(wsUrl)) {
+            return List.of();
         }
-        URI uri = getURI(url);
-        // 获取智能体mcp的url前缀
-        String agentMcpUrl = getAgentMcpUrl(uri);
-        // 获取密钥
-        String key = getSecretKey(uri);
-        // 获取加密的token
-        String encryptToken = encryptToken(id, key);
-        // 返回智能体Mcp路径的格式
-        String AgentMcpUrl = "%s/call?token=%s";
-        String formatted = AgentMcpUrl.formatted(agentMcpUrl, encryptToken);
-
-
-        return list;
+        return List.of();
     }
 
     /**
      * 获取URI对象
+     * 
      * @param url 路径
      * @return URI对象
      */
@@ -107,7 +94,6 @@ public class AgentMcpAccessPointServiceImpl implements AgentMcpAccessPointServic
         return wsScheme + ":" + path;
     }
 
-
     /**
      * 获取对智能体id加密的token
      *
@@ -119,7 +105,7 @@ public class AgentMcpAccessPointServiceImpl implements AgentMcpAccessPointServic
         // 使用md5对智能体id进行加密
         String md5 = HashEncryptionUtil.Md5hexDigest(agentId);
         // aes需要加密文本
-        String json = "{\"agentId\": %s}".formatted(md5);
+        String json = "{\"agentId\": \"%s\"}".formatted(md5);
         // 加密后成token值
         return AESUtils.encrypt(key, json);
     }

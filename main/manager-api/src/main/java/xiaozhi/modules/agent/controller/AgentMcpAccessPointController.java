@@ -1,9 +1,16 @@
 package xiaozhi.modules.agent.controller;
 
+import java.util.List;
+
+import org.apache.shiro.authz.annotation.RequiresPermissions;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.*;
 import xiaozhi.common.utils.Result;
 import xiaozhi.modules.agent.service.AgentMcpAccessPointService;
 
@@ -16,16 +23,26 @@ public class AgentMcpAccessPointController {
 
     /**
      * 获取智能体的Mcp接入点地址
+     * 
      * @param audioId 智能体id
      * @return 返回错误提醒或者Mcp接入点地址
      */
     @Operation(summary = "获取智能体的Mcp接入点地址")
-    @GetMapping("/address/{audioId}")
-    public Result<String> getAgentMcpAccessAddress(@PathVariable("audioId") String audioId) {
-        String agentMcpAccessAddress = agentMcpAccessPointService.getAgentMcpAccessAddress(audioId);
+    @GetMapping("/address/{agentId}")
+    @RequiresPermissions("sys:role:normal")
+    public Result<String> getAgentMcpAccessAddress(@PathVariable("agentId") String agentId) {
+        String agentMcpAccessAddress = agentMcpAccessPointService.getAgentMcpAccessAddress(agentId);
         if (agentMcpAccessAddress == null) {
-           return new Result<String>().error("请进入参数管理配置mcp接入点地址");
+            return new Result<String>().ok("请进入参数管理配置mcp接入点地址");
         }
         return new Result<String>().ok(agentMcpAccessAddress);
+    }
+
+    @Operation(summary = "获取智能体的Mcp工具列表")
+    @GetMapping("/tools/{agentId}")
+    @RequiresPermissions("sys:role:normal")
+    public Result<List<String>> getAgentMcpToolsList(@PathVariable("agentId") String agentId) {
+        List<String> agentMcpToolsList = agentMcpAccessPointService.getAgentMcpToolsList(agentId);
+        return new Result<List<String>>().ok(agentMcpToolsList);
     }
 }
