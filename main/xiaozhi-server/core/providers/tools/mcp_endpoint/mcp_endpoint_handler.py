@@ -15,8 +15,7 @@ logger = setup_logging()
 
 async def connect_mcp_endpoint(mcp_endpoint_url: str) -> MCPEndpointClient:
     """连接到MCP接入点"""
-    if not mcp_endpoint_url:
-        logger.bind(tag=TAG).warning("MCP接入点URL为空，跳过连接")
+    if not mcp_endpoint_url or "你的" in mcp_endpoint_url or mcp_endpoint_url == "null":
         return None
 
     try:

@@ -82,7 +82,11 @@ class UnifiedToolHandler:
             # 从配置中获取MCP接入点URL
             mcp_endpoint_url = self.config.get("mcp_endpoint", "")
 
-            if mcp_endpoint_url and "你的" not in mcp_endpoint_url:
+            if (
+                mcp_endpoint_url
+                and "你的" not in mcp_endpoint_url
+                and mcp_endpoint_url != "null"
+            ):
                 self.logger.info(f"正在初始化MCP接入点: {mcp_endpoint_url}")
                 mcp_endpoint_client = await connect_mcp_endpoint(mcp_endpoint_url)
 
