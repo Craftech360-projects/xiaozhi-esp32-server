@@ -415,7 +415,9 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
     @Override
     public void manualAddDevice(Long userId, DeviceManualAddDTO dto) {
         // 检查mac是否已存在
-        DeviceEntity exist = this.lambdaQuery().eq(DeviceEntity::getMacAddress, dto.getMacAddress()).one();
+        QueryWrapper<DeviceEntity> wrapper = new QueryWrapper<>();
+        wrapper.eq("mac_address", dto.getMacAddress());
+        DeviceEntity exist = baseDao.selectOne(wrapper);
         if (exist != null) {
             throw new RenException("该Mac地址已存在");
         }
@@ -428,6 +430,6 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         entity.setCreateDate(new Date());
         entity.setAutoUpdate(1);
         entity.setLastConnectedAt(null); // 最近对话时间为空
-        this.save(entity);
+        baseDao.insert(entity);
     }
 }
