@@ -107,9 +107,9 @@ class DeviceIoTExecutor(ToolExecutor):
     async def _get_iot_status(self, device_name: str, property_name: str):
         """获取IoT设备状态"""
         for key, value in self.conn.iot_descriptors.items():
-            if key == device_name:
+            if key.lower() == device_name.lower():
                 for property_item in value.properties:
-                    if property_item["name"] == property_name:
+                    if property_item["name"].lower() == property_name.lower():
                         return property_item["value"]
         return None
 
