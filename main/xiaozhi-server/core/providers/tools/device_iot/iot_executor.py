@@ -118,12 +118,12 @@ class DeviceIoTExecutor(ToolExecutor):
     ):
         """发送IoT控制命令"""
         for key, value in self.conn.iot_descriptors.items():
-            if key == device_name:
+            if key.lower() == device_name.lower():
                 for method in value.methods:
-                    if method["name"] == method_name:
+                    if method["name"].lower() == method_name.lower():
                         command = {
-                            "name": device_name,
-                            "method": method_name,
+                            "name": key,
+                            "method": method["name"],
                         }
 
                         if parameters:

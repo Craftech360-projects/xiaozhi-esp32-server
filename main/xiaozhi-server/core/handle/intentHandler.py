@@ -6,7 +6,7 @@ from core.handle.helloHandle import checkWakeupWords
 from core.utils.util import remove_punctuation_and_length
 from core.providers.tts.dto.dto import ContentType
 from core.utils.dialogue import Message
-from core.tools.device_mcp import call_mcp_tool
+from core.providers.tools.device_mcp import call_mcp_tool
 from plugins_func.register import Action, ActionResponse
 from loguru import logger
 
@@ -109,10 +109,12 @@ async def process_intent_result(conn, intent_result, original_text):
                 # 使用统一工具处理器处理所有工具调用
                 try:
                     tool_result = asyncio.run_coroutine_threadsafe(
-                        conn.func_handler.handle_llm_function_call(conn, function_call_data),
+                        conn.func_handler.handle_llm_function_call(
+                            conn, function_call_data
+                        ),
                         conn.loop,
                     ).result()
-                    
+
                     # 转换ToolResult为ActionResponse
                     result = conn._convert_tool_result_to_action_response(tool_result)
                 except Exception as e:

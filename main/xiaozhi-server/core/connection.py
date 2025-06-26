@@ -17,7 +17,7 @@ from core.utils.util import (
     filter_sensitive_info,
 )
 from typing import Dict, Any
-from core.tools.base import ToolAction
+from core.providers.tools.base import ToolAction
 from core.utils.modules_initialize import (
     initialize_modules,
     initialize_tts,
@@ -29,7 +29,7 @@ from concurrent.futures import ThreadPoolExecutor
 from core.utils.dialogue import Message, Dialogue
 from core.providers.asr.dto.dto import InterfaceType
 from core.handle.textHandle import handleTextMessage
-from core.tools.unified_tool_handler import UnifiedToolHandler
+from core.providers.tools.unified_tool_handler import UnifiedToolHandler
 from plugins_func.loadplugins import auto_import_modules
 from plugins_func.register import Action, ActionResponse
 from core.auth import AuthMiddleware, AuthenticationError
