@@ -44,6 +44,7 @@ import xiaozhi.modules.device.vo.UserShowDeviceListVO;
 import xiaozhi.modules.security.user.SecurityUser;
 import xiaozhi.modules.sys.service.SysParamsService;
 import xiaozhi.modules.sys.service.SysUserUtilService;
+import xiaozhi.modules.device.dto.DeviceManualAddDTO;
 
 @Slf4j
 @Service
@@ -409,5 +410,24 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
             }
         }
         return 0;
+    }
+
+    @Override
+    public void manualAddDevice(Long userId, DeviceManualAddDTO dto) {
+        // 检查mac是否已存在
+        DeviceEntity exist = this.lambdaQuery().eq(DeviceEntity::getMacAddress, dto.getMacAddress()).one();
+        if (exist != null) {
+            throw new RenException("该Mac地址已存在");
+        }
+        DeviceEntity entity = new DeviceEntity();
+        entity.setUserId(userId);
+        entity.setAgentId(dto.getAgentId());
+        entity.setBoard(dto.getBoard());
+        entity.setAppVersion(dto.getAppVersion());
+        entity.setMacAddress(dto.getMacAddress());
+        entity.setCreateDate(new Date());
+        entity.setAutoUpdate(1);
+        entity.setLastConnectedAt(null); // 最近对话时间为空
+        this.save(entity);
     }
 }
