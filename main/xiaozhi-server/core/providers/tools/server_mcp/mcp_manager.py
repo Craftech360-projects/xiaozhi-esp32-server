@@ -6,6 +6,7 @@ import json
 from typing import Dict, Any, List
 from config.config_loader import get_project_dir
 from config.logger import setup_logging
+from .mcp_client import ServerMCPClient
 
 TAG = __name__
 logger = setup_logging()
@@ -23,7 +24,7 @@ class ServerMCPManager:
             logger.bind(tag=TAG).warning(
                 f"请检查mcp服务配置文件：data/.mcp_server_settings.json"
             )
-        self.clients: Dict[str, Any] = {}
+        self.clients: Dict[str, ServerMCPClient] = {}
         self.tools = []
 
     def load_config(self) -> Dict[str, Any]:
@@ -52,14 +53,13 @@ class ServerMCPManager:
                 continue
 
             try:
-                # 这里可以添加真正的MCP客户端初始化逻辑
-                # 暂时使用简化版本
+                # 初始化服务端MCP客户端
                 logger.bind(tag=TAG).info(f"初始化服务端MCP客户端: {name}")
-                # client = MCPClient(srv_config)
-                # await client.initialize()
-                # self.clients[name] = client
-                # client_tools = client.get_available_tools()
-                # self.tools.extend(client_tools)
+                client = ServerMCPClient(srv_config)
+                await client.initialize()
+                self.clients[name] = client
+                client_tools = client.get_available_tools()
+                self.tools.extend(client_tools)
 
             except Exception as e:
                 logger.bind(tag=TAG).error(
@@ -81,12 +81,66 @@ class ServerMCPManager:
         return False
 
     async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
-        """执行工具调用"""
+        """执行工具调用，失败时会尝试重新连接"""
         logger.bind(tag=TAG).info(f"执行服务端MCP工具 {tool_name}，参数: {arguments}")
 
-        # 这里可以添加真正的工具执行逻辑
-        # 暂时返回模拟结果
-        return f"服务端MCP工具 {tool_name} 执行结果"
+        max_retries = 3  # 最大重试次数
+        retry_interval = 2  # 重试间隔(秒)
+
+        # 找到对应的客户端
+        client_name = None
+        target_client = None
+        for name, client in self.clients.items():
+            if client.has_tool(tool_name):
+                client_name = name
+                target_client = client
+                break
+
+        if not target_client:
+            raise ValueError(f"工具 {tool_name} 在任意MCP服务中未找到")
+
+        # 带重试机制的工具调用
+        for attempt in range(max_retries):
+            try:
+                return await target_client.call_tool(tool_name, arguments)
+            except Exception as e:
+                # 最后一次尝试失败时直接抛出异常
+                if attempt == max_retries - 1:
+                    raise
+
+                logger.bind(tag=TAG).warning(
+                    f"执行工具 {tool_name} 失败 (尝试 {attempt+1}/{max_retries}): {e}"
+                )
+
+                # 尝试重新连接
+                logger.bind(tag=TAG).info(
+                    f"重试前尝试重新连接 MCP 客户端 {client_name}"
+                )
+                try:
+                    # 关闭旧的连接
+                    await target_client.cleanup()
+
+                    # 重新初始化客户端
+                    config = self.load_config()
+                    if client_name in config:
+                        client = ServerMCPClient(config[client_name])
+                        await client.initialize()
+                        self.clients[client_name] = client
+                        target_client = client
+                        logger.bind(tag=TAG).info(
+                            f"成功重新连接 MCP 客户端: {client_name}"
+                        )
+                    else:
+                        logger.bind(tag=TAG).error(
+                            f"Cannot reconnect MCP client {client_name}: config not found"
+                        )
+                except Exception as reconnect_error:
+                    logger.bind(tag=TAG).error(
+                        f"Failed to reconnect MCP client {client_name}: {reconnect_error}"
+                    )
+
+                # 等待一段时间再重试
+                await asyncio.sleep(retry_interval)
 
     async def cleanup_all(self) -> None:
         """关闭所有 MCP客户端"""

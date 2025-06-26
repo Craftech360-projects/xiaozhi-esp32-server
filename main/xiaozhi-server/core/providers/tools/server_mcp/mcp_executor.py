@@ -62,8 +62,9 @@ class ServerMCPExecutor(ToolExecutor):
 
         for tool in mcp_tools:
             func_def = tool.get("function", {})
-            tool_name = f"mcp_{func_def.get('name', '')}"
-
+            tool_name = func_def.get("name", "")
+            if tool_name == "":
+                continue
             tools[tool_name] = ToolDefinition(
                 name=tool_name, description=tool, tool_type=ToolType.SERVER_MCP
             )
