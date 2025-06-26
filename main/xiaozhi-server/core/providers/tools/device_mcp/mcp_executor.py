@@ -1,7 +1,8 @@
 """设备端MCP工具执行器"""
 
 from typing import Dict, Any
-from ..base import ToolType, ToolDefinition, ToolResult, ToolExecutor, ToolAction
+from ..base import ToolType, ToolDefinition, ToolExecutor
+from plugins_func.register import Action, ActionResponse
 from .mcp_handler import call_mcp_tool
 
 
@@ -13,20 +14,18 @@ class DeviceMCPExecutor(ToolExecutor):
 
     async def execute(
         self, conn, tool_name: str, arguments: Dict[str, Any]
-    ) -> ToolResult:
+    ) -> ActionResponse:
         """执行设备端MCP工具"""
         if not hasattr(conn, "mcp_client") or not conn.mcp_client:
-            return ToolResult(
-                action=ToolAction.ERROR,
-                content="设备端MCP客户端未初始化",
-                error="设备端MCP客户端未初始化",
+            return ActionResponse(
+                action=Action.ERROR,
+                response="设备端MCP客户端未初始化",
             )
 
         if not await conn.mcp_client.is_ready():
-            return ToolResult(
-                action=ToolAction.ERROR,
-                content="设备端MCP客户端未准备就绪",
-                error="设备端MCP客户端未准备就绪",
+            return ActionResponse(
+                action=Action.ERROR,
+                response="设备端MCP客户端未准备就绪",
             )
 
         try:
@@ -38,12 +37,12 @@ class DeviceMCPExecutor(ToolExecutor):
             # 调用设备端MCP工具
             result = await call_mcp_tool(conn, conn.mcp_client, tool_name, args_str)
 
-            return ToolResult(action=ToolAction.RESPONSE, content=str(result))
+            return ActionResponse(action=Action.REQLLM, result=str(result))
 
         except ValueError as e:
-            return ToolResult(action=ToolAction.NOT_FOUND, content=str(e), error=str(e))
+            return ActionResponse(action=Action.NOTFOUND, response=str(e))
         except Exception as e:
-            return ToolResult(action=ToolAction.ERROR, content=str(e), error=str(e))
+            return ActionResponse(action=Action.ERROR, response=str(e))
 
     def get_tools(self) -> Dict[str, ToolDefinition]:
         """获取所有设备端MCP工具"""

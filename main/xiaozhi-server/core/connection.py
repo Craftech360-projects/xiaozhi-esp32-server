@@ -17,7 +17,6 @@ from core.utils.util import (
     filter_sensitive_info,
 )
 from typing import Dict, Any
-from core.providers.tools.base import ToolAction
 from core.utils.modules_initialize import (
     initialize_modules,
     initialize_tts,
@@ -725,15 +724,12 @@ class ConnectionHandler:
                 }
 
                 # 使用统一工具处理器处理所有工具调用
-                tool_result = asyncio.run_coroutine_threadsafe(
+                result = asyncio.run_coroutine_threadsafe(
                     self.func_handler.handle_llm_function_call(
                         self, function_call_data
                     ),
                     self.loop,
                 ).result()
-
-                # 转换ToolResult为ActionResponse
-                result = self._convert_tool_result_to_action_response(tool_result)
                 self._handle_function_result(result, function_call_data)
 
         # 存储对话内容
@@ -755,39 +751,6 @@ class ConnectionHandler:
         )
 
         return True
-
-    def _convert_tool_result_to_action_response(self, tool_result):
-        """转换ToolResult为ActionResponse"""
-        if tool_result.action == ToolAction.ERROR:
-            return ActionResponse(
-                action=Action.ERROR,
-                result=tool_result.error or tool_result.content,
-                response=tool_result.response or tool_result.content,
-            )
-        elif tool_result.action == ToolAction.NOT_FOUND:
-            return ActionResponse(
-                action=Action.NOTFOUND,
-                result=tool_result.content,
-                response=tool_result.response or tool_result.content,
-            )
-        elif tool_result.action == ToolAction.RESPONSE:
-            return ActionResponse(
-                action=Action.RESPONSE,
-                result=tool_result.content,
-                response=tool_result.response or tool_result.content,
-            )
-        elif tool_result.action == ToolAction.REQUEST_LLM:
-            return ActionResponse(
-                action=Action.REQLLM,
-                result=tool_result.content,
-                response=tool_result.response or "",
-            )
-        else:
-            return ActionResponse(
-                action=Action.NONE,
-                result=tool_result.content,
-                response=tool_result.response or "",
-            )
 
     def _handle_function_result(self, result, function_call_data):
         if result.action == Action.RESPONSE:  # 直接回复前端
@@ -828,7 +791,7 @@ class ConnectionHandler:
                 )
                 self.chat(text, tool_call=True)
         elif result.action == Action.NOTFOUND or result.action == Action.ERROR:
-            text = result.result
+            text = result.response if result.response else result.result
             self.tts.tts_one_sentence(self, ContentType.TEXT, content_detail=text)
             self.dialogue.put(Message(role="assistant", content=text))
         else:

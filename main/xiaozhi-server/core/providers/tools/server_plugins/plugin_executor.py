@@ -1,7 +1,7 @@
 """服务端插件工具执行器"""
 
 from typing import Dict, Any
-from ..base import ToolType, ToolDefinition, ToolResult, ToolExecutor, ToolAction
+from ..base import ToolType, ToolDefinition, ToolExecutor
 from plugins_func.register import all_function_registry, Action, ActionResponse
 
 
@@ -14,12 +14,12 @@ class ServerPluginExecutor(ToolExecutor):
 
     async def execute(
         self, conn, tool_name: str, arguments: Dict[str, Any]
-    ) -> ToolResult:
+    ) -> ActionResponse:
         """执行服务端插件工具"""
         func_item = all_function_registry.get(tool_name)
         if not func_item:
-            return ToolResult(
-                action=ToolAction.NOT_FOUND, content=f"插件函数 {tool_name} 不存在"
+            return ActionResponse(
+                action=Action.NOTFOUND, response=f"插件函数 {tool_name} 不存在"
             )
 
         try:
@@ -38,38 +38,13 @@ class ServerPluginExecutor(ToolExecutor):
                 # 默认不传conn参数
                 result = func_item.func(**arguments)
 
-            # 转换ActionResponse到ToolResult
-            if isinstance(result, ActionResponse):
-                if result.action == Action.ERROR:
-                    return ToolResult(
-                        action=ToolAction.ERROR,
-                        content=result.result,
-                        error=result.response,
-                    )
-                elif result.action == Action.RESPONSE:
-                    return ToolResult(
-                        action=ToolAction.RESPONSE,
-                        content=result.result,
-                        response=result.response,
-                    )
-                elif result.action == Action.REQLLM:
-                    return ToolResult(
-                        action=ToolAction.REQUEST_LLM,
-                        content=result.result,
-                        response=result.response,
-                    )
-                else:
-                    return ToolResult(
-                        action=ToolAction.NONE,
-                        content=result.result,
-                        response=result.response,
-                    )
-            else:
-                # 直接返回结果
-                return ToolResult(action=ToolAction.RESPONSE, content=str(result))
+            return result
 
         except Exception as e:
-            return ToolResult(action=ToolAction.ERROR, content=str(e), error=str(e))
+            return ActionResponse(
+                action=Action.ERROR,
+                response=str(e),
+            )
 
     def get_tools(self) -> Dict[str, ToolDefinition]:
         """获取所有注册的服务端插件工具"""

@@ -3,7 +3,8 @@
 import json
 import asyncio
 from typing import Dict, Any
-from ..base import ToolType, ToolDefinition, ToolResult, ToolExecutor, ToolAction
+from ..base import ToolType, ToolDefinition, ToolExecutor
+from plugins_func.register import Action, ActionResponse
 
 
 class DeviceIoTExecutor(ToolExecutor):
@@ -15,11 +16,11 @@ class DeviceIoTExecutor(ToolExecutor):
 
     async def execute(
         self, conn, tool_name: str, arguments: Dict[str, Any]
-    ) -> ToolResult:
+    ) -> ActionResponse:
         """执行设备端IoT工具"""
         if not self.has_tool(tool_name):
-            return ToolResult(
-                action=ToolAction.NOT_FOUND, content=f"IoT工具 {tool_name} 不存在"
+            return ActionResponse(
+                action=Action.NOTFOUND, response=f"IoT工具 {tool_name} 不存在"
             )
 
         try:
@@ -39,19 +40,16 @@ class DeviceIoTExecutor(ToolExecutor):
                         )
                         response = response_success.replace("{value}", str(value))
 
-                        return ToolResult(
-                            action=ToolAction.RESPONSE,
-                            content=str(value),
+                        return ActionResponse(
+                            action=Action.RESPONSE,
                             response=response,
                         )
                     else:
                         response_failure = arguments.get(
                             "response_failure", f"无法获取{device_name}的状态"
                         )
-                        return ToolResult(
-                            action=ToolAction.ERROR,
-                            content=f"属性{property_name}不存在",
-                            error=response_failure,
+                        return ActionResponse(
+                            action=Action.ERROR, response=response_failure
                         )
             else:
                 # 控制操作：devicename_method
@@ -90,19 +88,16 @@ class DeviceIoTExecutor(ToolExecutor):
                             )
                             break
 
-                    return ToolResult(
-                        action=ToolAction.REQUEST_LLM,
-                        content=f"{device_name}操作执行成功，请继续处理剩余指令",
-                        response=response_success,
+                    return ActionResponse(
+                        action=Action.REQLLM,
+                        result=response_success,
                     )
 
-            return ToolResult(action=ToolAction.ERROR, content="无法解析IoT工具名称")
+            return ActionResponse(action=Action.ERROR, response="无法解析IoT工具名称")
 
         except Exception as e:
             response_failure = arguments.get("response_failure", "操作失败")
-            return ToolResult(
-                action=ToolAction.ERROR, content=str(e), error=response_failure
-            )
+            return ActionResponse(action=Action.ERROR, response=response_failure)
 
     async def _get_iot_status(self, device_name: str, property_name: str):
         """获取IoT设备状态"""

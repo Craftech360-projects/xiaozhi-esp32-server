@@ -2,7 +2,8 @@
 
 from abc import ABC, abstractmethod
 from typing import Dict, Any
-from .tool_types import ToolDefinition, ToolResult
+from .tool_types import ToolDefinition
+from plugins_func.register import ActionResponse
 
 
 class ToolExecutor(ABC):
@@ -11,7 +12,7 @@ class ToolExecutor(ABC):
     @abstractmethod
     async def execute(
         self, conn, tool_name: str, arguments: Dict[str, Any]
-    ) -> ToolResult:
+    ) -> ActionResponse:
         """执行工具调用"""
         pass
 

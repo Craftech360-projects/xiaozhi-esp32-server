@@ -5,7 +5,8 @@ from typing import Dict, List, Any, Optional
 from config.logger import setup_logging
 from plugins_func.loadplugins import auto_import_modules
 
-from .base import ToolType, ToolResult, ToolAction
+from .base import ToolType
+from plugins_func.register import Action, ActionResponse
 from .unified_tool_manager import ToolManager
 from .server_plugins import ServerPluginExecutor
 from .server_mcp import ServerMCPExecutor
@@ -97,7 +98,7 @@ class UnifiedToolHandler:
 
     async def handle_llm_function_call(
         self, conn, function_call_data: Dict[str, Any]
-    ) -> Optional[ToolResult]:
+    ) -> Optional[ActionResponse]:
         """处理LLM函数调用"""
         try:
             # 处理多函数调用
@@ -120,10 +121,9 @@ class UnifiedToolHandler:
                     arguments = json.loads(arguments) if arguments else {}
                 except json.JSONDecodeError:
                     self.logger.error(f"无法解析函数参数: {arguments}")
-                    return ToolResult(
-                        action=ToolAction.ERROR,
-                        content="无法解析函数参数",
-                        error="无法解析函数参数",
+                    return ActionResponse(
+                        action=Action.ERROR,
+                        response="无法解析函数参数",
                     )
 
             self.logger.debug(f"调用函数: {function_name}, 参数: {arguments}")
@@ -134,16 +134,16 @@ class UnifiedToolHandler:
 
         except Exception as e:
             self.logger.error(f"处理function call错误: {e}")
-            return ToolResult(action=ToolAction.ERROR, content=str(e), error=str(e))
+            return ActionResponse(action=Action.ERROR, response=str(e))
 
-    def _combine_responses(self, responses: List[ToolResult]) -> ToolResult:
+    def _combine_responses(self, responses: List[ActionResponse]) -> ActionResponse:
         """合并多个函数调用的响应"""
         if not responses:
-            return ToolResult(action=ToolAction.NONE, content="无响应")
+            return ActionResponse(action=Action.NONE, response="无响应")
 
         # 如果有任何错误，返回第一个错误
         for response in responses:
-            if response.action == ToolAction.ERROR:
+            if response.action == Action.ERROR:
                 return response
 
         # 合并所有成功的响应
@@ -157,15 +157,15 @@ class UnifiedToolHandler:
                 responses_text.append(response.response)
 
         # 确定最终的动作类型
-        final_action = ToolAction.RESPONSE
+        final_action = Action.RESPONSE
         for response in responses:
-            if response.action == ToolAction.REQUEST_LLM:
-                final_action = ToolAction.REQUEST_LLM
+            if response.action == Action.REQLLM:
+                final_action = Action.REQLLM
                 break
 
-        return ToolResult(
+        return ActionResponse(
             action=final_action,
-            content="; ".join(contents),
+            result="; ".join(contents) if contents else None,
             response="; ".join(responses_text) if responses_text else None,
         )
 

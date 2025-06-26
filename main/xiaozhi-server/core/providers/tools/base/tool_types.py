@@ -1,9 +1,10 @@
 """工具系统的类型定义"""
 
 from enum import Enum
+
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Callable, Awaitable
-from abc import ABC, abstractmethod
+from typing import Any, Dict, Optional
+from plugins_func.register import Action
 
 
 class ToolType(Enum):
@@ -13,26 +14,6 @@ class ToolType(Enum):
     SERVER_MCP = "server_mcp"  # 服务端MCP
     DEVICE_IOT = "device_iot"  # 设备端IoT
     DEVICE_MCP = "device_mcp"  # 设备端MCP
-
-
-class ToolAction(Enum):
-    """工具执行后的动作类型"""
-
-    ERROR = "error"  # 错误
-    NOT_FOUND = "not_found"  # 工具未找到
-    RESPONSE = "response"  # 直接回复
-    REQUEST_LLM = "request_llm"  # 需要LLM处理
-    NONE = "none"  # 无需特殊处理
-
-
-@dataclass
-class ToolResult:
-    """工具执行结果"""
-
-    action: ToolAction
-    content: str  # 结果内容
-    response: Optional[str] = None  # 直接回复内容
-    error: Optional[str] = None  # 错误信息
 
 
 @dataclass

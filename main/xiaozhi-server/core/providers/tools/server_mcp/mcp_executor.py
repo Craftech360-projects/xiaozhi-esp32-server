@@ -1,7 +1,8 @@
 """服务端MCP工具执行器"""
 
 from typing import Dict, Any, Optional
-from ..base import ToolType, ToolDefinition, ToolResult, ToolExecutor, ToolAction
+from ..base import ToolType, ToolDefinition, ToolExecutor
+from plugins_func.register import Action, ActionResponse
 from .mcp_manager import ServerMCPManager
 
 
@@ -22,13 +23,12 @@ class ServerMCPExecutor(ToolExecutor):
 
     async def execute(
         self, conn, tool_name: str, arguments: Dict[str, Any]
-    ) -> ToolResult:
+    ) -> ActionResponse:
         """执行服务端MCP工具"""
         if not self._initialized or not self.mcp_manager:
-            return ToolResult(
-                action=ToolAction.ERROR,
-                content="MCP管理器未初始化",
-                error="MCP管理器未初始化",
+            return ActionResponse(
+                action=Action.ERROR,
+                response="MCP管理器未初始化",
             )
 
         try:
@@ -39,12 +39,18 @@ class ServerMCPExecutor(ToolExecutor):
 
             result = await self.mcp_manager.execute_tool(actual_tool_name, arguments)
 
-            return ToolResult(action=ToolAction.RESPONSE, content=str(result))
+            return ActionResponse(action=Action.REQLLM, result=str(result))
 
         except ValueError as e:
-            return ToolResult(action=ToolAction.NOT_FOUND, content=str(e), error=str(e))
+            return ActionResponse(
+                action=Action.NOTFOUND,
+                response=str(e),
+            )
         except Exception as e:
-            return ToolResult(action=ToolAction.ERROR, content=str(e), error=str(e))
+            return ActionResponse(
+                action=Action.ERROR,
+                response=str(e),
+            )
 
     def get_tools(self) -> Dict[str, ToolDefinition]:
         """获取所有服务端MCP工具"""
