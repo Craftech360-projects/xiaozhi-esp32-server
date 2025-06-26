@@ -59,6 +59,7 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
 
     @Async
     public void updateDeviceConnectionInfo(String agentId, String deviceId, String appVersion) {
+        log.info("Attempting to update connection info for deviceId: {}", deviceId);
         try {
             UpdateWrapper<DeviceEntity> updateWrapper = new UpdateWrapper<>();
             updateWrapper.eq("id", deviceId)
@@ -68,13 +69,14 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
             if (StringUtils.isNotBlank(appVersion)) {
                 updateWrapper.set("app_version", appVersion);
             }
-            deviceDao.update(null, updateWrapper);
+            int updatedRows = deviceDao.update(null, updateWrapper);
+            log.info("Update result for deviceId {}: {} rows affected.", deviceId, updatedRows);
             
             if (StringUtils.isNotBlank(agentId)) {
                 redisUtils.set(RedisKeys.getAgentDeviceLastConnectedAtById(agentId), new Date());
             }
         } catch (Exception e) {
-            log.error("异步更新设备连接信息失败", e);
+            log.error("Failed to update connection info for deviceId: {}", deviceId, e);
         }
     }
 
