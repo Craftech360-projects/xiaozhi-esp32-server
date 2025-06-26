@@ -422,6 +422,7 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
             throw new RenException("该Mac地址已存在");
         }
         DeviceEntity entity = new DeviceEntity();
+        entity.setId(dto.getMacAddress());
         entity.setUserId(userId);
         entity.setAgentId(dto.getAgentId());
         entity.setBoard(dto.getBoard());
