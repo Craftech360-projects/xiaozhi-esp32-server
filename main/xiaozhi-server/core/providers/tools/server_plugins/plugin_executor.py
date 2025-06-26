@@ -57,6 +57,13 @@ class ServerPluginExecutor(ToolExecutor):
         config_functions = self.config["Intent"][
             self.config["selected_module"]["Intent"]
         ].get("functions", [])
+        
+        # 转换为列表
+        if not isinstance(config_functions, list):
+            try:
+                config_functions = list(config_functions)
+            except TypeError:
+                config_functions = []
 
         # 合并所有需要的函数
         all_required_functions = list(set(necessary_functions + config_functions))
