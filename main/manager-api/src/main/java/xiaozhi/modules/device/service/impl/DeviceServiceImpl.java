@@ -60,14 +60,16 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
     @Async
     public void updateDeviceConnectionInfo(String agentId, String deviceId, String appVersion) {
         try {
-            DeviceEntity device = new DeviceEntity();
-            device.setId(deviceId);
-            device.setLastConnectedAt(new Date());
-            device.setUpdateDate(new Date());
+            UpdateWrapper<DeviceEntity> updateWrapper = new UpdateWrapper<>();
+            updateWrapper.eq("id", deviceId)
+                    .set("last_connected_at", new Date())
+                    .set("update_date", new Date());
+
             if (StringUtils.isNotBlank(appVersion)) {
-                device.setAppVersion(appVersion);
+                updateWrapper.set("app_version", appVersion);
             }
-            deviceDao.updateById(device);
+            deviceDao.update(null, updateWrapper);
+            
             if (StringUtils.isNotBlank(agentId)) {
                 redisUtils.set(RedisKeys.getAgentDeviceLastConnectedAtById(agentId), new Date());
             }
