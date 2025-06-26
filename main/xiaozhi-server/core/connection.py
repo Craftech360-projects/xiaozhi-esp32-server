@@ -10,7 +10,6 @@ import threading
 import traceback
 import subprocess
 import websockets
-from core.handle.mcpHandle import call_mcp_tool
 from core.utils.util import (
     extract_json_from_string,
     check_vad_update,
@@ -18,7 +17,6 @@ from core.utils.util import (
     filter_sensitive_info,
 )
 from typing import Dict, Any
-from core.mcp.manager import MCPManager
 from core.utils.modules_initialize import (
     initialize_modules,
     initialize_tts,
@@ -30,7 +28,7 @@ from concurrent.futures import ThreadPoolExecutor
 from core.utils.dialogue import Message, Dialogue
 from core.providers.asr.dto.dto import InterfaceType
 from core.handle.textHandle import handleTextMessage
-from core.handle.functionHandler import FunctionHandler
+from core.providers.tools.unified_tool_handler import UnifiedToolHandler
 from plugins_func.loadplugins import auto_import_modules
 from plugins_func.register import Action, ActionResponse
 from core.auth import AuthMiddleware, AuthenticationError
@@ -586,14 +584,12 @@ class ConnectionHandler:
                 self.intent.set_llm(self.llm)
                 self.logger.bind(tag=TAG).info("使用主LLM作为意图识别模型")
 
-        """加载插件"""
-        self.func_handler = FunctionHandler(self)
-        self.mcp_manager = MCPManager(self)
+        """加载统一工具处理器"""
+        self.func_handler = UnifiedToolHandler(self)
 
-        """加载MCP工具"""
-        asyncio.run_coroutine_threadsafe(
-            self.mcp_manager.initialize_servers(), self.loop
-        )
+        # 异步初始化工具处理器
+        if hasattr(self, "loop") and self.loop:
+            asyncio.run_coroutine_threadsafe(self.func_handler._initialize(), self.loop)
 
     def change_system_prompt(self, prompt):
         self.prompt = prompt
@@ -611,12 +607,6 @@ class ConnectionHandler:
         functions = None
         if self.intent_type == "function_call" and hasattr(self, "func_handler"):
             functions = self.func_handler.get_functions()
-        if hasattr(self, "mcp_client"):
-            mcp_tools = self.mcp_client.get_available_tools()
-            if mcp_tools is not None and len(mcp_tools) > 0:
-                if functions is None:
-                    functions = []
-                functions.extend(mcp_tools)
         response_message = []
 
         try:
@@ -629,7 +619,6 @@ class ConnectionHandler:
                 memory_str = future.result()
 
             self.sentence_id = str(uuid.uuid4().hex)
-
 
             if self.intent_type == "function_call" and functions is not None:
                 # 使用支持functions的streaming接口
@@ -734,59 +723,13 @@ class ConnectionHandler:
                     "arguments": function_arguments,
                 }
 
-                # 处理Server端MCP工具调用
-                if self.mcp_manager.is_mcp_tool(function_name):
-                    result = self._handle_mcp_tool_call(function_call_data)
-                elif hasattr(self, "mcp_client") and self.mcp_client.has_tool(
-                    function_name
-                ):
-                    # 如果是小智端MCP工具调用
-                    self.logger.bind(tag=TAG).debug(
-                        f"调用小智端MCP工具: {function_name}, 参数: {function_arguments}"
-                    )
-                    try:
-                        result = asyncio.run_coroutine_threadsafe(
-                            call_mcp_tool(
-                                self, self.mcp_client, function_name, function_arguments
-                            ),
-                            self.loop,
-                        ).result()
-                        self.logger.bind(tag=TAG).debug(f"MCP工具调用结果: {result}")
-
-                        resultJson = None
-                        if isinstance(result, str):
-                            try:
-                                resultJson = json.loads(result)
-                            except Exception as e:
-                                self.logger.bind(tag=TAG).error(
-                                    f"解析MCP工具返回结果失败: {e}"
-                                )
-
-                        # 视觉大模型不经过二次LLM处理
-                        if (
-                            resultJson is not None
-                            and isinstance(resultJson, dict)
-                            and "action" in resultJson
-                        ):
-                            result = ActionResponse(
-                                action=Action[resultJson["action"]],
-                                result=None,
-                                response=resultJson.get("response", ""),
-                            )
-                        else:
-                            result = ActionResponse(
-                                action=Action.REQLLM, result=result, response=""
-                            )
-                    except Exception as e:
-                        self.logger.bind(tag=TAG).error(f"MCP工具调用失败: {e}")
-                        result = ActionResponse(
-                            action=Action.REQLLM, result="MCP工具调用失败", response=""
-                        )
-                else:
-                    # 处理系统函数
-                    result = self.func_handler.handle_llm_function_call(
+                # 使用统一工具处理器处理所有工具调用
+                result = asyncio.run_coroutine_threadsafe(
+                    self.func_handler.handle_llm_function_call(
                         self, function_call_data
-                    )
+                    ),
+                    self.loop,
+                ).result()
                 self._handle_function_result(result, function_call_data)
 
         # 存储对话内容
@@ -808,48 +751,6 @@ class ConnectionHandler:
         )
 
         return True
-
-    def _handle_mcp_tool_call(self, function_call_data):
-        function_arguments = function_call_data["arguments"]
-        function_name = function_call_data["name"]
-        try:
-            args_dict = function_arguments
-            if isinstance(function_arguments, str):
-                try:
-                    args_dict = json.loads(function_arguments)
-                except json.JSONDecodeError:
-                    self.logger.bind(tag=TAG).error(
-                        f"无法解析 function_arguments: {function_arguments}"
-                    )
-                    return ActionResponse(
-                        action=Action.REQLLM, result="参数解析失败", response=""
-                    )
-
-            tool_result = asyncio.run_coroutine_threadsafe(
-                self.mcp_manager.execute_tool(function_name, args_dict), self.loop
-            ).result()
-            # meta=None content=[TextContent(type='text', text='北京当前天气:\n温度: 21°C\n天气: 晴\n湿度: 6%\n风向: 西北 风\n风力等级: 5级', annotations=None)] isError=False
-            content_text = ""
-            if tool_result is not None and tool_result.content is not None:
-                for content in tool_result.content:
-                    content_type = content.type
-                    if content_type == "text":
-                        content_text = content.text
-                    elif content_type == "image":
-                        pass
-
-            if len(content_text) > 0:
-                return ActionResponse(
-                    action=Action.REQLLM, result=content_text, response=""
-                )
-
-        except Exception as e:
-            self.logger.bind(tag=TAG).error(f"MCP工具调用错误: {e}")
-            return ActionResponse(
-                action=Action.REQLLM, result="工具调用出错", response=""
-            )
-
-        return ActionResponse(action=Action.REQLLM, result="工具调用出错", response="")
 
     def _handle_function_result(self, result, function_call_data):
         if result.action == Action.RESPONSE:  # 直接回复前端
@@ -890,7 +791,7 @@ class ConnectionHandler:
                 )
                 self.chat(text, tool_call=True)
         elif result.action == Action.NOTFOUND or result.action == Action.ERROR:
-            text = result.result
+            text = result.response if result.response else result.result
             self.tts.tts_one_sentence(self, ContentType.TEXT, content_detail=text)
             self.dialogue.put(Message(role="assistant", content=text))
         else:
@@ -945,9 +846,9 @@ class ConnectionHandler:
                 self.timeout_task.cancel()
                 self.timeout_task = None
 
-            # 清理MCP资源
-            if hasattr(self, "mcp_manager") and self.mcp_manager:
-                await self.mcp_manager.cleanup_all()
+            # 清理工具处理器资源
+            if hasattr(self, "func_handler") and self.func_handler:
+                await self.func_handler.cleanup()
 
             # 触发停止事件
             if self.stop_event:
