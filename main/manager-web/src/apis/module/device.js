@@ -1,5 +1,6 @@
 import { getServiceUrl } from '../api';
 import RequestService from '../httpRequest';
+import request from '../request'
 
 export default {
     // 已绑设备
@@ -67,5 +68,9 @@ export default {
                     this.updateDeviceInfo(id, payload, callback)
                 })
             }).send()
+    },
+    // 手动添加设备
+    manualAddDevice: (params, callback) => {
+        return request.post('/device/manual-add', params, callback);
     },
 }
