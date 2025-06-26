@@ -63,6 +63,7 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
             DeviceEntity device = new DeviceEntity();
             device.setId(deviceId);
             device.setLastConnectedAt(new Date());
+            device.setUpdateDate(new Date());
             if (StringUtils.isNotBlank(appVersion)) {
                 device.setAppVersion(appVersion);
             }
@@ -421,6 +422,7 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         if (exist != null) {
             throw new RenException("该Mac地址已存在");
         }
+        Date now = new Date();
         DeviceEntity entity = new DeviceEntity();
         entity.setId(dto.getMacAddress());
         entity.setUserId(userId);
@@ -428,9 +430,12 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         entity.setBoard(dto.getBoard());
         entity.setAppVersion(dto.getAppVersion());
         entity.setMacAddress(dto.getMacAddress());
-        entity.setCreateDate(new Date());
+        entity.setCreateDate(now);
+        entity.setUpdateDate(now);
+        entity.setLastConnectedAt(now);
+        entity.setCreator(userId);
+        entity.setUpdater(userId);
         entity.setAutoUpdate(1);
-        entity.setLastConnectedAt(null); // 最近对话时间为空
         baseDao.insert(entity);
     }
 }
