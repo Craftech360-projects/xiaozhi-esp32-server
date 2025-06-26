@@ -1,6 +1,5 @@
 import { getServiceUrl } from '../api';
 import RequestService from '../httpRequest';
-import request from '../request'
 
 export default {
     // 已绑设备
@@ -70,7 +69,20 @@ export default {
             }).send()
     },
     // 手动添加设备
-    manualAddDevice: (params, callback) => {
-        return request.post('/device/manual-add', params, callback);
+    manualAddDevice(params, callback) {
+        RequestService.sendRequest()
+            .url(`${getServiceUrl()}/device/manual-add`)
+            .method('POST')
+            .data(params)
+            .success((res) => {
+                RequestService.clearRequestTime();
+                callback(res);
+            })
+            .networkFail((err) => {
+                console.error('手动添加设备失败:', err);
+                RequestService.reAjaxFun(() => {
+                    this.manualAddDevice(params, callback);
+                });
+            }).send();
     },
 }
