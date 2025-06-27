@@ -2,7 +2,11 @@ package xiaozhi.modules.agent.service.impl;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
@@ -12,8 +16,12 @@ import lombok.extern.slf4j.Slf4j;
 import xiaozhi.common.constant.Constant;
 import xiaozhi.common.utils.AESUtils;
 import xiaozhi.common.utils.HashEncryptionUtil;
+import xiaozhi.common.utils.JsonUtils;
+import xiaozhi.modules.agent.dto.McpJsonRpcRequest;
+import xiaozhi.modules.agent.dto.McpJsonRpcResponse;
 import xiaozhi.modules.agent.service.AgentMcpAccessPointService;
 import xiaozhi.modules.sys.service.SysParamsService;
+import xiaozhi.modules.sys.utils.WebSocketClientManager;
 
 @AllArgsConstructor
 @Service
@@ -35,8 +43,10 @@ public class AgentMcpAccessPointServiceImpl implements AgentMcpAccessPointServic
         String key = getSecretKey(uri);
         // 获取加密的token
         String encryptToken = encryptToken(id, key);
+        // 对token进行URL编码
+        String encodedToken = URLEncoder.encode(encryptToken, StandardCharsets.UTF_8);
         // 返回智能体Mcp路径的格式
-        agentMcpUrl = "%s/mcp?token=%s".formatted(agentMcpUrl, encryptToken);
+        agentMcpUrl = "%s/mcp/?token=%s".formatted(agentMcpUrl, encodedToken);
         return agentMcpUrl;
     }
 
@@ -46,7 +56,65 @@ public class AgentMcpAccessPointServiceImpl implements AgentMcpAccessPointServic
         if (StringUtils.isBlank(wsUrl)) {
             return List.of();
         }
-        return List.of();
+
+        // 将 /mcp 替换为 /call
+        wsUrl = wsUrl.replace("/mcp/", "/call/");
+
+        try {
+            // 创建 WebSocket 连接
+            try (WebSocketClientManager client = WebSocketClientManager.build(
+                    new WebSocketClientManager.Builder()
+                            .uri(wsUrl)
+                            .connectTimeout(5, TimeUnit.SECONDS)
+                            .maxSessionDuration(20, TimeUnit.SECONDS))) {
+
+                // 发送初始化通知
+                McpJsonRpcRequest initRequest = new McpJsonRpcRequest("notifications/initialized");
+                client.sendJson(initRequest);
+
+                // 等待 0.2 秒
+                Thread.sleep(200);
+
+                // 发送工具列表请求
+                McpJsonRpcRequest toolsRequest = new McpJsonRpcRequest("tools/list", null, 1);
+                client.sendJson(toolsRequest);
+
+                // 监听响应，直到收到包含 id=1 的响应
+                List<String> responses = client.listener(response -> {
+                    try {
+                        McpJsonRpcResponse jsonResponse = JsonUtils.parseObject(response, McpJsonRpcResponse.class);
+                        return jsonResponse != null && Integer.valueOf(1).equals(jsonResponse.getId());
+                    } catch (Exception e) {
+                        log.warn("解析响应失败: {}", response, e);
+                        return false;
+                    }
+                });
+
+                // 处理响应
+                for (String response : responses) {
+                    try {
+                        McpJsonRpcResponse jsonResponse = JsonUtils.parseObject(response, McpJsonRpcResponse.class);
+                        if (jsonResponse != null && Integer.valueOf(1).equals(jsonResponse.getId())
+                                && jsonResponse.getResult() != null && jsonResponse.getResult().getTools() != null) {
+
+                            // 提取工具名称列表
+                            return java.util.Arrays.stream(jsonResponse.getResult().getTools())
+                                    .map(McpJsonRpcResponse.McpTool::getName)
+                                    .collect(Collectors.toList());
+                        }
+                    } catch (Exception e) {
+                        log.warn("处理工具列表响应失败: {}", response, e);
+                    }
+                }
+
+                log.warn("未找到有效的工具列表响应");
+                return List.of();
+
+            }
+        } catch (Exception e) {
+            log.error("获取智能体 MCP 工具列表失败，智能体ID: {}", id, e);
+            return List.of();
+        }
     }
 
     /**
