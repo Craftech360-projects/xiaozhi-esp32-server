@@ -111,7 +111,7 @@
             <div class="address-desc">
               <span>以下是智能体的MCP接入点地址。</span>
               <a href="https://github.com/xinnan-tech/xiaozhi-esp32-server/blob/main/docs/mcp-endpoint-integration.md"
-                class="doc-link">查看接入点使用文档</a>
+                target="_blank" class="doc-link">查看接入点使用文档</a>
             </div>
           </div>
           <el-input v-model="mcpUrl" readonly class="url-input">
