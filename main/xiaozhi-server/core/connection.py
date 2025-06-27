@@ -241,16 +241,12 @@ class ConnectionHandler:
             # 立即关闭连接，不等待记忆保存完成
             await self.close(ws)
 
-    async def reset_timeout(self):
-        """重置超时计时器"""
-        if self.timeout_task:
-            self.timeout_task.cancel()
-        self.timeout_task = asyncio.create_task(self._check_timeout())
-
     async def _route_message(self, message):
         """消息路由"""
         # 重置超时计时器
-        await self.reset_timeout()
+        if self.timeout_task:
+            self.timeout_task.cancel()
+            self.timeout_task = asyncio.create_task(self._check_timeout())
 
         if isinstance(message, str):
             await handleTextMessage(self, message)
