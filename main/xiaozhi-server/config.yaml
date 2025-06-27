@@ -104,7 +104,8 @@ wakeup_words:
   - "喵喵同学"
   - "小滨小滨"
   - "小冰小冰"
-
+# MCP接入点地址
+mcp_endpoint: 你的接入点 websocket地址
 # 插件的基础配置
 plugins:
   # 获取天气插件的配置，这里填写你的api_key
