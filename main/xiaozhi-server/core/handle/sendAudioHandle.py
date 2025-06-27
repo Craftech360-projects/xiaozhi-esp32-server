@@ -93,7 +93,7 @@ async def sendAudio(conn, audios, pre_buffer=True):
             break
 
         # 重置没有声音的状态
-        conn.client_no_voice_last_time = 0.0
+        conn.last_activity_time = time.time() * 1000
 
         # 计算预期发送时间
         expected_time = start_time + (play_position / 1000)
