@@ -925,9 +925,6 @@ class ConnectionHandler:
                             await self.close(self.websocket)
                         break
                 # 每10秒检查一次，避免过于频繁
-                self.logger.bind(tag=TAG).info(
-                    f"检查连接超时...{self.last_activity_time}"
-                )
                 await asyncio.sleep(10)
         except Exception as e:
             self.logger.bind(tag=TAG).error(f"超时检查任务出错: {e}")
