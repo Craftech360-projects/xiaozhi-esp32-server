@@ -200,6 +200,11 @@ async def handle_mcp_message(conn, mcp_client: MCPClient, payload: dict):
                 else:
                     await mcp_client.set_ready(True)
                     logger.bind(tag=TAG).info("所有工具已获取，MCP客户端准备就绪")
+
+                    # 刷新工具缓存，确保MCP工具被包含在函数列表中
+                    if hasattr(conn, "func_handler") and conn.func_handler:
+                        conn.func_handler.tool_manager.refresh_tools()
+                        conn.func_handler.current_support_functions()
             return
 
     # Handle method calls (requests from the client)

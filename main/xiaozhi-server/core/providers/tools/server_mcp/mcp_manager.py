@@ -66,6 +66,10 @@ class ServerMCPManager:
                     f"Failed to initialize MCP server {name}: {e}"
                 )
 
+        # 输出当前支持的服务端MCP工具列表
+        if hasattr(self.conn, "func_handler") and self.conn.func_handler:
+            self.conn.func_handler.current_support_functions()
+
     def get_all_tools(self) -> List[Dict[str, Any]]:
         """获取所有服务的工具function定义"""
         return self.tools

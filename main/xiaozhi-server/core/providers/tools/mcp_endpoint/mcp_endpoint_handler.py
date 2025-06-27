@@ -4,8 +4,6 @@ import json
 import asyncio
 import re
 import websockets
-from concurrent.futures import Future
-from core.utils.util import sanitize_tool_name
 from config.logger import setup_logging
 from .mcp_endpoint_client import MCPEndpointClient
 
@@ -13,16 +11,15 @@ TAG = __name__
 logger = setup_logging()
 
 
-async def connect_mcp_endpoint(mcp_endpoint_url: str) -> MCPEndpointClient:
+async def connect_mcp_endpoint(mcp_endpoint_url: str, conn=None) -> MCPEndpointClient:
     """连接到MCP接入点"""
     if not mcp_endpoint_url or "你的" in mcp_endpoint_url or mcp_endpoint_url == "null":
         return None
 
     try:
-        logger.bind(tag=TAG).info(f"正在连接到MCP接入点: {mcp_endpoint_url}")
         websocket = await websockets.connect(mcp_endpoint_url)
 
-        mcp_client = MCPEndpointClient()
+        mcp_client = MCPEndpointClient(conn)
         mcp_client.set_websocket(websocket)
 
         # 启动消息监听器
@@ -85,18 +82,27 @@ async def handle_mcp_endpoint_message(mcp_client: MCPEndpointClient, message: st
 
             if msg_id == 1:  # mcpInitializeID
                 logger.bind(tag=TAG).debug("收到MCP接入点初始化响应")
-                server_info = result.get("serverInfo")
-                if isinstance(server_info, dict):
-                    name = server_info.get("name")
-                    version = server_info.get("version")
-                    logger.bind(tag=TAG).info(
-                        f"MCP接入点服务器信息: name={name}, version={version}"
+                if result is not None and isinstance(result, dict):
+                    server_info = result.get("serverInfo")
+                    if isinstance(server_info, dict):
+                        name = server_info.get("name")
+                        version = server_info.get("version")
+                        logger.bind(tag=TAG).info(
+                            f"MCP接入点服务器信息: name={name}, version={version}"
+                        )
+                else:
+                    logger.bind(tag=TAG).warning(
+                        "MCP接入点初始化响应结果为空或格式错误"
                     )
                 return
 
             elif msg_id == 2:  # mcpToolsListID
                 logger.bind(tag=TAG).debug("收到MCP接入点工具列表响应")
-                if isinstance(result, dict) and "tools" in result:
+                if (
+                    result is not None
+                    and isinstance(result, dict)
+                    and "tools" in result
+                ):
                     tools_data = result["tools"]
                     if not isinstance(tools_data, list):
                         logger.bind(tag=TAG).error("工具列表格式错误")
@@ -152,7 +158,9 @@ async def handle_mcp_endpoint_message(mcp_client: MCPEndpointClient, message: st
                                 )
                             tool_data["description"] = description
 
-                    next_cursor = result.get("nextCursor", "")
+                    next_cursor = (
+                        result.get("nextCursor", "") if result is not None else ""
+                    )
                     if next_cursor:
                         logger.bind(tag=TAG).info(
                             f"有更多工具，nextCursor: {next_cursor}"
@@ -165,6 +173,24 @@ async def handle_mcp_endpoint_message(mcp_client: MCPEndpointClient, message: st
                         logger.bind(tag=TAG).info(
                             "所有MCP接入点工具已获取，客户端准备就绪"
                         )
+
+                        # 刷新工具缓存，确保MCP接入点工具被包含在函数列表中
+                        if (
+                            hasattr(mcp_client, "conn")
+                            and mcp_client.conn
+                            and hasattr(mcp_client.conn, "func_handler")
+                            and mcp_client.conn.func_handler
+                        ):
+                            mcp_client.conn.func_handler.tool_manager.refresh_tools()
+                            mcp_client.conn.func_handler.current_support_functions()
+
+                        logger.bind(tag=TAG).info(
+                            f"MCP接入点工具获取完成，共 {len(mcp_client.tools)} 个工具"
+                        )
+                else:
+                    logger.bind(tag=TAG).warning(
+                        "MCP接入点工具列表响应结果为空或格式错误"
+                    )
                 return
 
         # Handle method calls (requests from the endpoint)

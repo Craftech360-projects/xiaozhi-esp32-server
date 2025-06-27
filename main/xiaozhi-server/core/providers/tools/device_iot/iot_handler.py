@@ -58,10 +58,7 @@ async def handleIotDescriptors(conn, descriptors):
         # 注册IoT工具到统一工具处理器
         await conn.func_handler.register_iot_tools(descriptors)
 
-        func_names = conn.func_handler.current_support_functions()
-        logger.bind(tag=TAG).info(
-            f"更新function描述列表完成，当前支持的函数: {func_names}"
-        )
+        conn.func_handler.current_support_functions()
 
 
 async def handleIotStatus(conn, states):

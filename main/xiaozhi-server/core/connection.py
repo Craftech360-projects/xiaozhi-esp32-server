@@ -473,6 +473,8 @@ class ConnectionHandler:
             self.max_output_size = int(private_config["device_max_output_size"])
         if private_config.get("chat_history_conf", None) is not None:
             self.chat_history_conf = int(private_config["chat_history_conf"])
+        if private_config.get("mcp_endpoint", None) is not None:
+            self.config["mcp_endpoint"] = private_config["mcp_endpoint"]
         try:
             modules = initialize_modules(
                 self.logger,

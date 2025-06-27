@@ -71,6 +71,9 @@ class UnifiedToolHandler:
             self.finish_init = True
             self.logger.info("统一工具处理器初始化完成")
 
+            # 输出当前支持的所有工具列表
+            self.current_support_functions()
+
         except Exception as e:
             self.logger.error(f"统一工具处理器初始化失败: {e}")
 
@@ -88,7 +91,9 @@ class UnifiedToolHandler:
                 and mcp_endpoint_url != "null"
             ):
                 self.logger.info(f"正在初始化MCP接入点: {mcp_endpoint_url}")
-                mcp_endpoint_client = await connect_mcp_endpoint(mcp_endpoint_url)
+                mcp_endpoint_client = await connect_mcp_endpoint(
+                    mcp_endpoint_url, self.conn
+                )
 
                 if mcp_endpoint_client:
                     # 将MCP接入点客户端保存到连接对象中
