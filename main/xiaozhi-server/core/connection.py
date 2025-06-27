@@ -110,10 +110,8 @@ class ConnectionHandler:
         # vad相关变量
         self.client_audio_buffer = bytearray()
         self.client_have_voice = False
-        self.client_have_voice_last_time = 0.0
-        self.client_no_voice_last_time = 0.0
+        self.last_activity_time = 0.0  # 统一的活动时间戳（毫秒）
         self.client_voice_stop = False
-        self.client_voice_frame_count = 0
 
         # asr相关变量
         # 因为实际部署时可能会用到公共的本地ASR，不能把变量暴露给公共ASR
@@ -143,10 +141,10 @@ class ConnectionHandler:
         self.load_function_plugin = False
         self.intent_type = "nointent"
 
-        self.timeout_task = None
         self.timeout_seconds = (
             int(self.config.get("close_connection_no_voice_time", 120)) + 60
         )  # 在原来第一道关闭的基础上加60秒，进行二道关闭
+        self.timeout_task = None
 
         # {"mcp":true} 表示启用MCP功能
         self.features = None
@@ -186,6 +184,9 @@ class ConnectionHandler:
             # 认证通过,继续处理
             self.websocket = ws
             self.device_id = self.headers.get("device-id", None)
+
+            # 初始化活动时间戳
+            self.last_activity_time = time.time() * 1000
 
             # 启动超时检查任务
             self.timeout_task = asyncio.create_task(self._check_timeout())
@@ -243,12 +244,8 @@ class ConnectionHandler:
 
     async def _route_message(self, message):
         """消息路由"""
-        # 重置超时计时器
-        if self.timeout_task:
-            self.timeout_task.cancel()
-            self.timeout_task = asyncio.create_task(self._check_timeout())
-
         if isinstance(message, str):
+            self.last_activity_time = time.time() * 1000
             await handleTextMessage(self, message)
         elif isinstance(message, bytes):
             if self.vad is None:
@@ -898,7 +895,6 @@ class ConnectionHandler:
     def reset_vad_states(self):
         self.client_audio_buffer = bytearray()
         self.client_have_voice = False
-        self.client_have_voice_last_time = 0
         self.client_voice_stop = False
         self.logger.bind(tag=TAG).debug("VAD states reset.")
 
@@ -917,10 +913,21 @@ class ConnectionHandler:
         """检查连接超时"""
         try:
             while not self.stop_event.is_set():
-                await asyncio.sleep(self.timeout_seconds)
-                if not self.stop_event.is_set():
-                    self.logger.bind(tag=TAG).info("连接超时，准备关闭")
-                    await self.close(self.websocket)
-                    break
+                # 检查是否超时（只有在时间戳已初始化的情况下）
+                if self.last_activity_time > 0.0:
+                    current_time = time.time() * 1000
+                    if (
+                        current_time - self.last_activity_time
+                        > self.timeout_seconds * 1000
+                    ):
+                        if not self.stop_event.is_set():
+                            self.logger.bind(tag=TAG).info("连接超时，准备关闭")
+                            await self.close(self.websocket)
+                        break
+                # 每10秒检查一次，避免过于频繁
+                self.logger.bind(tag=TAG).info(
+                    f"检查连接超时...{self.last_activity_time}"
+                )
+                await asyncio.sleep(10)
         except Exception as e:
             self.logger.bind(tag=TAG).error(f"超时检查任务出错: {e}")
