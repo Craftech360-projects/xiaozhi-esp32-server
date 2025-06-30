@@ -94,8 +94,9 @@ class TTSProvider(TTSProviderBase):
         self.format = config.get("response_format", "wav")
         self.audio_file_type = config.get("response_format", "wav")
         self.api_key = config.get("api_key", "YOUR_API_KEY")
-        have_key = check_model_key("FishSpeech TTS", self.api_key)
-        if not have_key:
+        model_key_msg = check_model_key("FishSpeech TTS", self.api_key)
+        if model_key_msg:
+            logger.bind(tag=TAG).error(model_key_msg)
             return
         self.normalize = str(config.get("normalize", True)).lower() in (
             "true",

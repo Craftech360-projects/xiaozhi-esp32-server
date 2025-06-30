@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
@@ -16,7 +17,10 @@ import xiaozhi.common.redis.RedisKeys;
 import xiaozhi.common.redis.RedisUtils;
 import xiaozhi.common.utils.JsonUtils;
 import xiaozhi.modules.agent.entity.AgentEntity;
+import xiaozhi.modules.agent.entity.AgentPluginMapping;
 import xiaozhi.modules.agent.entity.AgentTemplateEntity;
+import xiaozhi.modules.agent.service.AgentMcpAccessPointService;
+import xiaozhi.modules.agent.service.AgentPluginMappingService;
 import xiaozhi.modules.agent.service.AgentService;
 import xiaozhi.modules.agent.service.AgentTemplateService;
 import xiaozhi.modules.config.service.ConfigService;
@@ -39,6 +43,8 @@ public class ConfigServiceImpl implements ConfigService {
     private final AgentTemplateService agentTemplateService;
     private final RedisUtils redisUtils;
     private final TimbreService timbreService;
+    private final AgentPluginMappingService agentPluginMappingService;
+    private final AgentMcpAccessPointService agentMcpAccessPointService;
 
     @Override
     public Object getConfig(Boolean isCache) {
@@ -136,6 +142,25 @@ public class ConfigServiceImpl implements ConfigService {
         String alreadySelectedAsrModelId = (String) selectedModule.get("ASR");
         if (alreadySelectedAsrModelId != null && alreadySelectedAsrModelId.equals(agent.getAsrModelId())) {
             agent.setAsrModelId(null);
+        }
+
+        // 添加函数调用参数信息
+        if (!Objects.equals(agent.getIntentModelId(), "Intent_nointent")) {
+            String agentId = agent.getId();
+            List<AgentPluginMapping> pluginMappings = agentPluginMappingService.agentPluginParamsByAgentId(agentId);
+            if (pluginMappings != null && !pluginMappings.isEmpty()) {
+                Map<String, Object> pluginParams = new HashMap<>();
+                for (AgentPluginMapping pluginMapping : pluginMappings) {
+                    pluginParams.put(pluginMapping.getProviderCode(), pluginMapping.getParamInfo());
+                }
+                result.put("plugins", pluginParams);
+            }
+        }
+        // 获取mcp接入点地址
+        String mcpEndpoint = agentMcpAccessPointService.getAgentMcpAccessAddress(agent.getId());
+        if (StringUtils.isNotBlank(mcpEndpoint) && mcpEndpoint.startsWith("ws")) {
+            mcpEndpoint = mcpEndpoint.replace("/mcp/", "/call/");
+            result.put("mcp_endpoint", mcpEndpoint);
         }
 
         // 构建模块配置
@@ -298,6 +323,7 @@ public class ConfigServiceImpl implements ConfigService {
                             map.put("functions", functions);
                         }
                     }
+                    System.out.println("map: " + map);
                 }
                 if ("Memory".equals(modelTypes[i])) {
                     Map<String, Object> map = (Map<String, Object>) model.getConfigJson();
