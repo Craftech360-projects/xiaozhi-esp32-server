@@ -1,6 +1,3 @@
--- 更新 get_news_from_newsnow 插件配置，添加新闻源配置字段
--- 执行时间：2025-06-25
-
 -- 更新现有的 get_news_from_newsnow 插件配置
 UPDATE ai_model_provider 
 SET fields = JSON_ARRAY(
@@ -12,10 +9,10 @@ SET fields = JSON_ARRAY(
     ),
     JSON_OBJECT(
         'key', 'news_sources',
-        'type', 'json',
+        'type', 'string',
         'label', '新闻源配置',
-        'default', '{"thepaper":"澎湃新闻","baidu":"百度热搜","cls-depth":"财联社"}'
+        'default', '澎湃新闻;百度热搜;财联社'
     )
 )
 WHERE provider_code = 'get_news_from_newsnow' 
-AND model_type = 'Plugin';
+AND model_type = 'Plugin'; 
