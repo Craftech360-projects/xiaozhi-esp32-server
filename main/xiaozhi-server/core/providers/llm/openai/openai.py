@@ -18,7 +18,8 @@ class LLMProvider(LLMProviderBase):
         else:
             self.base_url = config.get("url")
         # 增加timeout的配置项，单位为秒
-        self.timeout = config.get("timeout", 300.0)
+        timeout = config.get("timeout", 300)
+        self.timeout = int(timeout) if timeout else 300
 
         param_defaults = {
             "max_tokens": (500, int),
