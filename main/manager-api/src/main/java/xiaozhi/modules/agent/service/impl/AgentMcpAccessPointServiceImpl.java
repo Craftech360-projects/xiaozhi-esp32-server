@@ -5,6 +5,7 @@ import java.net.URISyntaxException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -18,7 +19,6 @@ import xiaozhi.common.utils.AESUtils;
 import xiaozhi.common.utils.HashEncryptionUtil;
 import xiaozhi.common.utils.JsonUtils;
 import xiaozhi.modules.agent.dto.McpJsonRpcRequest;
-import xiaozhi.modules.agent.dto.McpJsonRpcResponse;
 import xiaozhi.modules.agent.service.AgentMcpAccessPointService;
 import xiaozhi.modules.sys.service.SysParamsService;
 import xiaozhi.modules.sys.utils.WebSocketClientManager;
@@ -66,24 +66,42 @@ public class AgentMcpAccessPointServiceImpl implements AgentMcpAccessPointServic
                     new WebSocketClientManager.Builder()
                             .uri(wsUrl)
                             .connectTimeout(5, TimeUnit.SECONDS)
-                            .maxSessionDuration(20, TimeUnit.SECONDS))) {
+                            .maxSessionDuration(9, TimeUnit.SECONDS))) {
 
-                // 发送初始化通知
-                McpJsonRpcRequest initRequest = new McpJsonRpcRequest("notifications/initialized");
-                client.sendJson(initRequest);
+                // 发送初始化消息
+                McpJsonRpcRequest initializeRequest = new McpJsonRpcRequest("initialize",
+                        Map.of(
+                                "protocolVersion", "2024-11-05",
+                                "capabilities", Map.of(
+                                        "roots", Map.of("listChanged", false),
+                                        "sampling", Map.of()),
+                                "clientInfo", Map.of(
+                                        "name", "xz-mcp-broker",
+                                        "version", "0.0.1")),
+                        1);
+                client.sendJson(initializeRequest);
+
+                // 等待初始化响应
+                Thread.sleep(200);
+
+                // 发送初始化完成通知
+                // 对于通知类型的消息，手动构建JSON以避免包含null字段
+                String notificationJson = "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}";
+                client.sendText(notificationJson);
 
                 // 等待 0.2 秒
                 Thread.sleep(200);
 
                 // 发送工具列表请求
-                McpJsonRpcRequest toolsRequest = new McpJsonRpcRequest("tools/list", null, 1);
+                McpJsonRpcRequest toolsRequest = new McpJsonRpcRequest("tools/list", null, 2);
                 client.sendJson(toolsRequest);
 
-                // 监听响应，直到收到包含 id=1 的响应
+                // 监听响应，直到收到包含 id=2 的响应（tools/list响应）
                 List<String> responses = client.listener(response -> {
                     try {
-                        McpJsonRpcResponse jsonResponse = JsonUtils.parseObject(response, McpJsonRpcResponse.class);
-                        return jsonResponse != null && Integer.valueOf(1).equals(jsonResponse.getId());
+                        // 先尝试解析为通用JSON对象来获取id
+                        Map<String, Object> jsonMap = JsonUtils.parseObject(response, Map.class);
+                        return jsonMap != null && Integer.valueOf(2).equals(jsonMap.get("id"));
                     } catch (Exception e) {
                         log.warn("解析响应失败: {}", response, e);
                         return false;
@@ -93,14 +111,23 @@ public class AgentMcpAccessPointServiceImpl implements AgentMcpAccessPointServic
                 // 处理响应
                 for (String response : responses) {
                     try {
-                        McpJsonRpcResponse jsonResponse = JsonUtils.parseObject(response, McpJsonRpcResponse.class);
-                        if (jsonResponse != null && Integer.valueOf(1).equals(jsonResponse.getId())
-                                && jsonResponse.getResult() != null && jsonResponse.getResult().getTools() != null) {
-
-                            // 提取工具名称列表
-                            return java.util.Arrays.stream(jsonResponse.getResult().getTools())
-                                    .map(McpJsonRpcResponse.McpTool::getName)
-                                    .collect(Collectors.toList());
+                        // 先解析为通用JSON对象
+                        Map<String, Object> jsonMap = JsonUtils.parseObject(response, Map.class);
+                        if (jsonMap != null && Integer.valueOf(2).equals(jsonMap.get("id"))) {
+                            // 检查是否有result字段
+                            Object resultObj = jsonMap.get("result");
+                            if (resultObj instanceof Map) {
+                                Map<String, Object> resultMap = (Map<String, Object>) resultObj;
+                                Object toolsObj = resultMap.get("tools");
+                                if (toolsObj instanceof List) {
+                                    List<Map<String, Object>> toolsList = (List<Map<String, Object>>) toolsObj;
+                                    // 提取工具名称列表
+                                    return toolsList.stream()
+                                            .map(tool -> (String) tool.get("name"))
+                                            .filter(name -> name != null)
+                                            .collect(Collectors.toList());
+                                }
+                            }
                         }
                     } catch (Exception e) {
                         log.warn("处理工具列表响应失败: {}", response, e);
