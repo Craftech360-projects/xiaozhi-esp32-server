@@ -21,13 +21,13 @@ play_music_function_desc = {
     "type": "function",
     "function": {
         "name": "play_music",
-        "description": "唱歌、听歌、播放音乐的方法。",
+        "description": "A method for singing, listening to, or playing music.",
         "parameters": {
             "type": "object",
             "properties": {
                 "song_name": {
                     "type": "string",
-                    "description": "歌曲名称，如果用户没有指定具体歌名则为'random', 明确指定的时返回音乐的名字 示例: ```用户:播放两只老虎\n参数：两只老虎``` ```用户:播放音乐 \n参数：random ```",
+                    "description": "The name of the song. If the user does not specify a song, use 'random'. If specified, return the song name. Example: ```User: Play Two Tigers\nParameter: Two Tigers``` ```User: Play music\nParameter: random```",
                 }
             },
             "required": ["song_name"],
@@ -174,29 +174,29 @@ async def handle_music_command(conn, text):
 
 
 def _get_random_play_prompt(song_name):
-    """生成随机播放引导语"""
-    # 移除文件扩展名
+    """Generate a random play prompt"""
+    # Remove file extension
     clean_name = os.path.splitext(song_name)[0]
     prompts = [
-        f"正在为您播放，{clean_name}",
-        f"请欣赏歌曲，{clean_name}",
-        f"即将为您播放，{clean_name}",
-        f"为您带来，{clean_name}",
-        f"让我们聆听，{clean_name}",
-        f"接下来请欣赏，{clean_name}",
-        f"为您献上，{clean_name}",
+        f"Now playing: {clean_name}",
+        f"Enjoy the song: {clean_name}",
+        f"Up next: {clean_name}",
+        f"Bringing you: {clean_name}",
+        f"Let's listen to: {clean_name}",
+        f"Coming up: {clean_name}",
+        f"Presenting: {clean_name}",
     ]
-    # 直接使用random.choice，不设置seed
+    # Use random.choice directly, no seed set
     return random.choice(prompts)
 
 
 async def play_local_music(conn, specific_file=None):
     global MUSIC_CACHE
-    """播放本地音乐文件"""
+    """Play local music file"""
     try:
         if not os.path.exists(MUSIC_CACHE["music_dir"]):
             conn.logger.bind(tag=TAG).error(
-                f"音乐目录不存在: " + MUSIC_CACHE["music_dir"]
+                f"Music directory does not exist: " + MUSIC_CACHE["music_dir"]
             )
             return
 
@@ -206,7 +206,7 @@ async def play_local_music(conn, specific_file=None):
             music_path = os.path.join(MUSIC_CACHE["music_dir"], specific_file)
         else:
             if not MUSIC_CACHE["music_files"]:
-                conn.logger.bind(tag=TAG).error("未找到MP3音乐文件")
+                conn.logger.bind(tag=TAG).error("No MP3 music files found")
                 return
             selected_music = random.choice(MUSIC_CACHE["music_files"])
             music_path = os.path.join(MUSIC_CACHE["music_dir"], selected_music)

@@ -7,6 +7,13 @@ __pycache__/
 # C extensions
 *.so
 
+# add node_modules folder and its contents to .gitignore
+node_modules/
+
+# add mysql  files to .gitignore
+
+mysql/
+
 # Distribution / packaging
 .Python
 build/

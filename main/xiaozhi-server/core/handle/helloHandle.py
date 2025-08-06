@@ -18,7 +18,7 @@ TAG = __name__
 
 WAKEUP_CONFIG = {
     "refresh_time": 5,
-    "words": ["你好", "你好啊", "嘿，你好", "嗨"],
+    "words": ["Hello", "Hi there", "Hey, hello", "Hi"],
 }
 
 # 创建全局的唤醒词配置管理器
@@ -78,14 +78,14 @@ async def checkWakeupWords(conn, text):
             "voice": "default",
             "file_path": "config/assets/wakeup_words.wav",
             "time": 0,
-            "text": "哈啰啊，我是小智啦，声音好听的台湾女孩一枚，超开心认识你耶，最近在忙啥，别忘了给我来点有趣的料哦，我超爱听八卦的啦",
+            "text": "Hello There how can I help you?",
         }
 
     # 播放唤醒词回复
     conn.client_abort = False
     opus_packets, _ = audio_to_data(response.get("file_path"))
 
-    conn.logger.bind(tag=TAG).info(f"播放唤醒词回复: {response.get('text')}")
+    conn.logger.bind(tag=TAG).info(f"Play wake-up word response: {response.get('text')}")
     await sendAudioMessage(conn, SentenceType.FIRST, opus_packets, response.get("text"))
     await sendAudioMessage(conn, SentenceType.LAST, [], None)
 
@@ -111,12 +111,11 @@ async def wakeupWordsResponse(conn):
         # 生成唤醒词回复
         wakeup_word = random.choice(WAKEUP_CONFIG["words"])
         question = (
-            "此刻用户正在和你说```"
+            "The user is currently saying to you: ```"
             + wakeup_word
-            + "```。\n请你根据以上用户的内容进行20-30字回复。要符合系统设置的角色情感和态度，不要像机器人一样说话。\n"
-            + "请勿对这条内容本身进行任何解释和回应，请勿返回表情符号，仅返回对用户的内容的回复。"
+            + "```.\nPlease respond to the user's message above in 20–30 English characters. Make sure your reply matches the emotional tone and attitude set by the system, and do not sound like a robot.\n"
+            + "Do not explain or comment on this message itself. Do not include any emojis. Only return the reply to the user's message."
         )
-
         result = conn.llm.response_no_stream(conn.config["prompt"], question)
         if not result or len(result) == 0:
             return

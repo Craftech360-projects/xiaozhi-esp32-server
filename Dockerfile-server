@@ -23,7 +23,13 @@ RUN apt-get update && \
 COPY --from=builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
 
 # 复制应用代码
-COPY main/xiaozhi-server .
+# COPY main/xiaozhi-server .
 
 # 启动应用
-CMD ["python", "app.py"]
+# Install watchdog (for auto-restart)
+RUN pip install watchdog
+
+# Don’t copy app code here — will mount it with volumes during dev
+
+# Run app with auto-reload using watchmedo
+CMD ["watchmedo", "auto-restart", "--directory=.", "--pattern=*.py", "--recursive", "--", "python", "app.py"]

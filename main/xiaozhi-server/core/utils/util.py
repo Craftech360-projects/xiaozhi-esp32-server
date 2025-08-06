@@ -190,6 +190,14 @@ def check_model_key(modelType, modelKey):
     return None
 
 
+def validate_mcp_endpoint(endpoint):
+    """Validate MCP endpoint format"""
+    if not endpoint:
+        return False
+    # Basic validation - can be enhanced as needed
+    return isinstance(endpoint, str) and len(endpoint) > 0
+
+
 def parse_string_to_list(value, separator=";"):
     """
     将输入值转换为列表

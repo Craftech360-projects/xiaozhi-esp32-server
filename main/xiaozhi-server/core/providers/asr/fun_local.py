@@ -43,7 +43,8 @@ class ASRProvider(ASRProviderBase):
         min_mem_bytes = 2 * 1024 * 1024 * 1024
         total_mem = psutil.virtual_memory().total
         if total_mem < min_mem_bytes:
-            logger.bind(tag=TAG).error(f"可用内存不足2G，当前仅有 {total_mem / (1024*1024):.2f} MB，可能无法启动FunASR")
+            logger.bind(tag=TAG).error(f"Available memory is less than 2GB, currently only {total_mem / (1024*1024):.2f} MB, may not be able to start FunASR")
+
         
         self.interface_type = InterfaceType.LOCAL
         self.model_dir = config.get("model_dir")
@@ -64,7 +65,7 @@ class ASRProvider(ASRProviderBase):
     async def speech_to_text(
         self, opus_data: List[bytes], session_id: str, audio_format="opus"
     ) -> Tuple[Optional[str], Optional[str]]:
-        """语音转文本主处理逻辑"""
+        """Main logic for speech-to-text processing"""
         file_path = None
         retry_count = 0
 
@@ -82,7 +83,7 @@ class ASRProvider(ASRProviderBase):
                 if not self.delete_audio_file:
                     free_space = shutil.disk_usage(self.output_dir).free
                     if free_space < len(combined_pcm_data) * 2:  # 预留2倍空间
-                        raise OSError("磁盘空间不足")
+                        raise OSError("Insufficient disk space")
 
                 # 判断是否保存为WAV文件
                 if self.delete_audio_file:
@@ -95,7 +96,7 @@ class ASRProvider(ASRProviderBase):
                 result = self.model.generate(
                     input=combined_pcm_data,
                     cache={},
-                    language="auto",
+                    language="en",
                     use_itn=True,
                     batch_size_s=60,
                 )

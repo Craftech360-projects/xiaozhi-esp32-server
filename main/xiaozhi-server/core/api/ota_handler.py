@@ -49,19 +49,65 @@ class OTAHandler(BaseHandler):
             port = int(server_config.get("port", 8000))
             local_ip = get_local_ip()
 
-            return_json = {
-                "server_time": {
-                    "timestamp": int(round(time.time() * 1000)),
-                    "timezone_offset": server_config.get("timezone_offset", 8) * 60,
-                },
-                "firmware": {
-                    "version": data_json["application"].get("version", "1.0.0"),
-                    "url": "",
-                },
-                "websocket": {
-                    "url": self._get_websocket_url(local_ip, port),
-                },
-            }
+            # Get device MAC address from the request
+            device_mac = request.headers.get("device-id", "unknown_device")
+            
+            # Check if MQTT gateway is configured
+            mqtt_config = server_config.get("mqtt_gateway", {})
+            
+            # Build response in the exact format as ota.json
+            if mqtt_config.get("enabled", False):
+                import base64
+                import uuid
+                
+                # Generate client ID in the required format
+                device_uuid = str(uuid.uuid4())
+                client_id = f"GID_test@@@{device_mac}@@@{device_uuid}"
+                
+                # Create username (base64 encoded JSON with IP)
+                username = base64.b64encode(json.dumps({"ip": local_ip}).encode()).decode()
+                
+                # Generate a simple password (in production, use proper authentication)
+                password = base64.b64encode(f"device_{device_mac}_password".encode()).decode()
+                
+                return_json = {
+                    "mqtt": {
+                        "endpoint": f"{mqtt_config.get('broker', local_ip)}:{mqtt_config.get('port', 1883)}",
+                        "client_id": client_id,
+                        "username": username,
+                        "password": password,
+                        "publish_topic": "device-server",
+                        "subscribe_topic": f"devices/p2p/{device_mac.replace(':', '_')}"
+                    },
+                    "websocket": {
+                        "url": self._get_websocket_url(local_ip, port),
+                        "token": "test-token"
+                    },
+                    "server_time": {
+                        "timestamp": int(round(time.time() * 1000)),
+                        "timezone_offset": server_config.get("timezone_offset", 8) * 60,
+                    },
+                    "firmware": {
+                        "version": data_json["application"].get("version", "1.0.0"),
+                        "url": "",
+                    }
+                }
+            else:
+                # Fallback to WebSocket-only format
+                return_json = {
+                    "server_time": {
+                        "timestamp": int(round(time.time() * 1000)),
+                        "timezone_offset": server_config.get("timezone_offset", 8) * 60,
+                    },
+                    "firmware": {
+                        "version": data_json["application"].get("version", "1.0.0"),
+                        "url": "",
+                    },
+                    "websocket": {
+                        "url": self._get_websocket_url(local_ip, port),
+                        "token": "test-token"
+                    },
+                }
             response = web.Response(
                 text=json.dumps(return_json, separators=(",", ":")),
                 content_type="application/json",
