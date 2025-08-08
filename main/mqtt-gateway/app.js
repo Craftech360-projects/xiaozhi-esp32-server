@@ -84,11 +84,16 @@ class WebSocketBridge extends Emitter {
 
             this.wsClient.on('message', (data, isBinary) => {
                 if (isBinary) {
-                    const timestamp = data.readUInt32BE(8);
-                    const opusLength = data.readUInt32BE(12);
-                    const opus = data.subarray(16, 16 + opusLength);
-                    // 二进制数据通过UDP发送
-                    this.connection.sendUdpMessage(opus, timestamp);
+                    // xiaozhi-server sends raw Opus data directly as binary WebSocket messages
+                    // No header parsing needed - the entire binary message is the Opus payload
+                    console.log(`📦 WebSocket binary message: ${data.length} bytes of raw Opus data`);
+                    console.log(`📦 First 8 bytes: ${data.subarray(0, Math.min(8, data.length)).toString('hex')}`);
+                    
+                    // Generate timestamp for UDP packet (use relative timestamp to fit in 32-bit)
+                    const timestamp = (Date.now() - this.connection.udp.startTime) & 0xFFFFFFFF;
+                    
+                    // Send the raw Opus data directly via UDP
+                    this.connection.sendUdpMessage(data, timestamp);
                 } else {
                     // JSON数据通过MQTT发送
                     const message = JSON.parse(data.toString());
@@ -120,11 +125,9 @@ class WebSocketBridge extends Emitter {
 
     sendAudio(opus, timestamp) {
         if (this.wsClient && this.wsClient.readyState === WebSocket.OPEN) {
-            const buffer = Buffer.alloc(16 + opus.length);
-            buffer.writeUInt32BE(timestamp, 8);
-            buffer.writeUInt32BE(opus.length, 12);
-            buffer.set(opus, 16);
-            this.wsClient.send(buffer, { binary: true });
+            // Send raw Opus data directly without header
+            // This avoids the need to strip headers in xiaozhi-server
+            this.wsClient.send(opus, { binary: true });
         }
     }
 
@@ -336,18 +339,29 @@ class MQTTConnection {
         }
         this.udp.localSequence++;
         const header = this.generateUdpHeader(payload.length, timestamp, this.udp.localSequence);
+        
+        console.log(`🔐 Encrypting: payload=${payload.length}B, timestamp=${timestamp}, seq=${this.udp.localSequence}`);
+        console.log(`🔐 Header: ${header.toString('hex')}`);
+        console.log(`🔐 Key: ${this.udp.key.toString('hex')}`);
+        console.log(`🔐 Payload first 8 bytes: ${payload.subarray(0, 8).toString('hex')}`);
+        
         const cipher = crypto.createCipheriv(this.udp.encryption, this.udp.key, header);
-        const message = Buffer.concat([header, cipher.update(payload), cipher.final()]);
+        const encryptedPayload = Buffer.concat([cipher.update(payload), cipher.final()]);
+        
+        console.log(`🔐 Encrypted first 8 bytes: ${encryptedPayload.subarray(0, 8).toString('hex')}`);
+        
+        const message = Buffer.concat([header, encryptedPayload]);
         this.server.sendUdpMessage(message, this.udp.remoteAddress);
     }
 
     generateUdpHeader(length, timestamp, sequence) {
       // 重用预分配的缓冲区
-      this.headerBuffer.writeUInt8(1, 0);
-      this.headerBuffer.writeUInt16BE(length, 2);
-      this.headerBuffer.writeUInt32BE(this.connectionId, 4);
-      this.headerBuffer.writeUInt32BE(timestamp, 8);
-      this.headerBuffer.writeUInt32BE(sequence, 12);
+      this.headerBuffer.writeUInt8(1, 0);        // packet_type
+      this.headerBuffer.writeUInt8(0, 1);        // flags
+      this.headerBuffer.writeUInt16BE(length, 2); // payload_len
+      this.headerBuffer.writeUInt32BE(this.connectionId, 4); // ssrc/connection_id
+      this.headerBuffer.writeUInt32BE(timestamp, 8);         // timestamp
+      this.headerBuffer.writeUInt32BE(sequence, 12);         // sequence
       return Buffer.from(this.headerBuffer); // 返回副本以避免并发问题
     }
 
@@ -449,7 +463,7 @@ class MQTTServer {
     constructor() {
         this.mqttPort = parseInt(process.env.MQTT_PORT) || 1883;
         this.udpPort = parseInt(process.env.UDP_PORT) || this.mqttPort;
-        this.publicIp = process.env.PUBLIC_IP || 'mqtt.xiaozhi.me';
+        this.publicIp = process.env.PUBLIC_IP || 'broker.emqx.io';
         this.connections = new Map(); // clientId -> MQTTConnection
         this.keepAliveTimer = null;
         this.keepAliveCheckInterval = 1000; // 默认每1秒检查一次
@@ -473,8 +487,8 @@ class MQTTServer {
             new MQTTConnection(socket, connectionId, this);
         });
 
-        this.mqttServer.listen(this.mqttPort, () => {
-            console.warn(`MQTT 服务器正在监听端口 ${this.mqttPort}`);
+        this.mqttServer.listen(this.mqttPort, '0.0.0.0', () => {
+            console.warn(`MQTT 服务器正在监听端口 ${this.mqttPort} (所有接口)`);
         });
 
 
