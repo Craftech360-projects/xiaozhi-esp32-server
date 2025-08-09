@@ -151,6 +151,7 @@ main/xiaozhi-server/data
 main/manager-web/node_modules
 main/mqtt-gateway/node_modules
 node_modules/
+
 .config.yaml
 .secrets.yaml
 .private_config.yaml
