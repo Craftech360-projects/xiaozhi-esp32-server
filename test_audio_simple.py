@@ -14,7 +14,7 @@ import hashlib
 import hmac
 
 # Configuration
-MQTT_BROKER_HOST = "172.20.10.2"
+MQTT_BROKER_HOST = "192.168.1.99"
 MQTT_BROKER_PORT = 1883
 
 # Setup logging

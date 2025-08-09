@@ -9,7 +9,7 @@ def test_ota_response():
     """Test the OTA endpoint response format"""
     
     # OTA endpoint
-    ota_url = "http://172.20.10.2:8003/xiaozhi/ota"
+    ota_url = "http://192.168.1.99:8003/xiaozhi/ota"
     
     # Sample device data (similar to what ESP32 would send)
     device_data = {

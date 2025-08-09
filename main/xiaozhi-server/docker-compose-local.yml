@@ -4,7 +4,7 @@ services:
   # Server模块
   xiaozhi-esp32-server:
     build:
-      context: ..
+      context: ../..
       dockerfile: Dockerfile-server
     container_name: xiaozhi-esp32-server
     depends_on:
@@ -20,18 +20,16 @@ services:
       - "8003:8003"
     security_opt:
       - seccomp:unconfined
-    environment:
-      - TZ=Asia/Shanghai
+    # environment:
+    #   - TZ=Asia/Shanghai
     volumes:
       # 配置文件目录
       - ./data:/opt/xiaozhi-esp32-server/data
-      # 模型文件挂接，很重要
-      - ./models/SenseVoiceSmall/model.pt:/opt/xiaozhi-esp32-server/models/SenseVoiceSmall/model.pt
 
   # manager-api和manager-web模块
   xiaozhi-esp32-server-web:
     build:
-      context: ..
+      context: ../..
       dockerfile: Dockerfile-web
     container_name: xiaozhi-esp32-server-web
     restart: always

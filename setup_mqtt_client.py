@@ -54,10 +54,10 @@ def check_mqtt_gateway_config():
             "debug": True,
             "development": {
                 "mac_addresss": ["00_16_3e_fa_3d_de"],
-                "chat_servers": ["ws://172.20.10.2:8000/xiaozhi/v1/"]
+                "chat_servers": ["ws://192.168.1.99:8000/xiaozhi/v1/"]
             },
             "production": {
-                "chat_servers": ["ws://172.20.10.2:8000/xiaozhi/v1/"]
+                "chat_servers": ["ws://192.168.1.99:8000/xiaozhi/v1/"]
             }
         }
         
@@ -75,11 +75,11 @@ def check_xiaozhi_server():
     """Check if xiaozhi-server is running."""
     import requests
     try:
-        response = requests.get("http://172.20.10.2:8000", timeout=3)
+        response = requests.get("http://192.168.1.99:8000", timeout=3)
         print("✅ xiaozhi-server appears to be running")
         return True
     except:
-        print("❌ Cannot connect to xiaozhi-server at http://172.20.10.2:8000")
+        print("❌ Cannot connect to xiaozhi-server at http://192.168.1.99:8000")
         print("   Make sure xiaozhi-server is running first")
         return False
 
@@ -98,7 +98,7 @@ def start_mqtt_gateway():
     env = os.environ.copy()
     env['MQTT_PORT'] = '1883'
     env['UDP_PORT'] = '8884'
-    env['PUBLIC_IP'] = '172.20.10.2'
+    env['PUBLIC_IP'] = '192.168.1.99'
     
     try:
         # Start the gateway in the background

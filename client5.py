@@ -18,13 +18,13 @@ from queue import Queue, Empty
 import opuslib
 
 # --- Configuration for XiaoZhi Server ---
-XIAOZHI_SERVER_HOST = "172.20.10.2"  # XiaoZhi server IP
+XIAOZHI_SERVER_HOST = "192.168.1.99"  # XiaoZhi server IP
 XIAOZHI_SERVER_PORT = 8003  # XiaoZhi server port
 
 # --- Configuration for MQTT Gateway ---
-MQTT_BROKER_HOST = "172.20.10.2"  # Your local MQTT gateway IP
+MQTT_BROKER_HOST = "192.168.1.99"  # Your local MQTT gateway IP
 MQTT_BROKER_PORT = 1883
-MQTT_GATEWAY_IP = "172.20.10.2"  # Your mqtt-gateway server IP
+MQTT_GATEWAY_IP = "192.168.1.99"  # Your mqtt-gateway server IP
 MQTT_GATEWAY_PORT = 1883  # MQTT gateway port
 UDP_PORT = 8884  # UDP port for audio streaming
 

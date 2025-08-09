@@ -8,7 +8,7 @@ import time
 import json
 
 # Configuration
-MQTT_BROKER_HOST = "172.20.10.2"
+MQTT_BROKER_HOST = "192.168.1.99"
 MQTT_BROKER_PORT = 1883
 
 def on_connect(client, userdata, flags, rc, properties=None):
