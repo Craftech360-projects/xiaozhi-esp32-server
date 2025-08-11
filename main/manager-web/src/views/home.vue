@@ -1,10 +1,10 @@
 <template>
   <div class="welcome">
-    <!-- 公共头部 -->
+    <!-- Common header -->
     <HeaderBar :devices="devices" @search="handleSearch" @search-reset="handleSearchReset" />
     <el-main style="padding: 20px;display: flex;flex-direction: column;">
       <div>
-        <!-- 首页内容 -->
+        <!-- Home page content -->
         <div class="add-device">
           <div class="add-device-bg">
             <div class="hellow-text" style="margin-top: 30px;">
@@ -191,13 +191,13 @@ export default {
   flex-direction: column;
   background: linear-gradient(145deg, #e6eeff, #eff0ff);
   background-size: cover;
-  /* 确保背景图像覆盖整个元素 */
+  /* Ensure the background image covers the entire element */
   background-position: center;
-  /* 从顶部中心对齐 */
+  /* Align from top center */
   -webkit-background-size: cover;
-  /* 兼容老版本WebKit浏览器 */
+  /* Compatible with older WebKit browsers */
   -o-background-size: cover;
-  /* 兼容老版本Opera浏览器 */
+  /* Compatible with older Opera browsers */
 }
 
 .add-device {
@@ -218,15 +218,15 @@ export default {
   background-image: url("@/assets/home/main-top-bg.png");
   overflow: hidden;
   background-size: cover;
-  /* 确保背景图像覆盖整个元素 */
+  /* Ensure the background image covers the entire element */
   background-position: center;
-  /* 从顶部中心对齐 */
+  /* Align from top center */
   -webkit-background-size: cover;
-  /* 兼容老版本WebKit浏览器 */
+  /* Compatible with older WebKit browsers */
   -o-background-size: cover;
   box-sizing: border-box;
 
-  /* 兼容老版本Opera浏览器 */
+  /* Compatible with older Opera browsers */
   .hellow-text {
     margin-left: 75px;
     color: #3d4566;
@@ -283,10 +283,10 @@ export default {
   padding: 30px 0;
 }
 
-/* 在 DeviceItem.vue 的样式中 */
+/* In DeviceItem.vue styles */
 .device-item {
   margin: 0 !important;
-  /* 避免冲突 */
+  /* Avoid conflicts */
   width: auto !important;
 }
 
@@ -297,10 +297,10 @@ export default {
   padding-top: 30px;
   color: #979db1;
   text-align: center;
-  /* 居中显示 */
+  /* Center display */
 }
 
-/* 骨架屏动画 */
+/* Skeleton screen animation */
 @keyframes shimmer {
   100% {
     transform: translateX(100%);
