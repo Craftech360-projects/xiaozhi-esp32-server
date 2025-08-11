@@ -135,7 +135,7 @@ dmypy.json
 .pyre/
 
 # music directory
-music/
+# music/
 
 # pytype static type analyzer
 .pytype/
