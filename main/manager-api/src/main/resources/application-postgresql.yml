@@ -1,0 +1,61 @@
+# PostgreSQL-specific configuration
+# This profile should be used when running with PostgreSQL database
+
+spring:
+  liquibase:
+    # Use PostgreSQL-specific changelog
+    change-log: classpath:db/changelog/db.changelog-postgresql.yaml
+    # Enable Liquibase
+    enabled: true
+    # Drop first for clean migration (use with caution in production)
+    drop-first: false
+    # Validate checksums
+    check-change-log-location: true
+  
+  datasource:
+    druid:
+      #PostgreSQL
+      driver-class-name: org.postgresql.Driver
+      url: jdbc:postgresql://127.0.0.1:5432/xiaozhi_esp32_server?sslmode=disable&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+      username: postgres
+      password: 123456
+      
+      # PostgreSQL-optimized connection pool settings
+      initial-size: 5
+      max-active: 50
+      min-idle: 5
+      max-wait: 10000
+      pool-prepared-statements: true
+      max-pool-prepared-statement-per-connection-size: 20
+      time-between-eviction-runs-millis: 60000
+      min-evictable-idle-time-millis: 300000
+      test-while-idle: true
+      test-on-borrow: false
+      test-on-return: false
+      
+      # PostgreSQL-specific validation
+      validation-query: SELECT 1
+      validation-query-timeout: 30
+      test-on-connect: true
+      
+      stat-view-servlet:
+        enabled: false
+      filter:
+        stat:
+          log-slow-sql: true
+          slow-sql-millis: 1000
+          merge-sql: false
+        wall:
+          config:
+            multi-statement-allow: true
+
+# MyBatis-Plus PostgreSQL optimizations
+mybatis-plus:
+  configuration-properties:
+    # PostgreSQL uses BYTEA for binary data
+    blobType: BYTEA
+    boolValue: TRUE
+  global-config:
+    db-config:
+      # Use ASSIGN_ID for PostgreSQL compatibility
+      id-type: ASSIGN_ID

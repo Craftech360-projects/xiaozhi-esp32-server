@@ -16,6 +16,11 @@ spring:
   # 环境 dev|test|prod
   profiles:
     active: dev
+  liquibase:
+    # Use PostgreSQL-specific changelog by default
+    change-log: classpath:db/changelog/db.changelog-postgresql.yaml
+    enabled: true
+    drop-first: false
   messages:
     encoding: UTF-8
     basename: i18n/messages
@@ -62,5 +67,5 @@ mybatis-plus:
     jdbc-type-for-null: 'null'
   configuration-properties:
     prefix:
-    blobType: BLOB
+    blobType: BYTEA
     boolValue: TRUE

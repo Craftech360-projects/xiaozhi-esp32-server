@@ -1,0 +1,86 @@
+# Azure PostgreSQL Production Configuration Template
+# Copy this file to application-prod.yml and update with your Azure PostgreSQL details
+
+knife4j:
+  production: true
+  enable: false
+  basic:
+    enable: true
+    username: ${KNIFE4J_USERNAME:admin}
+    password: ${KNIFE4J_PASSWORD:admin}
+  setting:
+    enableFooter: false
+
+spring:
+  datasource:
+    druid:
+      #Azure PostgreSQL
+      driver-class-name: org.postgresql.Driver
+      # Azure PostgreSQL connection URL format:
+      # jdbc:postgresql://[server-name].postgres.database.azure.com:5432/[database-name]?sslmode=require
+      url: jdbc:postgresql://${AZURE_POSTGRES_SERVER:your-server}.postgres.database.azure.com:5432/${AZURE_POSTGRES_DATABASE:xiaozhi_esp32_server}?sslmode=require&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+      username: ${AZURE_POSTGRES_USERNAME:your-username}@${AZURE_POSTGRES_SERVER:your-server}
+      password: ${AZURE_POSTGRES_PASSWORD:your-password}
+      
+      # Connection pool settings optimized for Azure PostgreSQL
+      initial-size: 5
+      max-active: 50
+      min-idle: 5
+      max-wait: 10000
+      pool-prepared-statements: true
+      max-pool-prepared-statement-per-connection-size: 20
+      time-between-eviction-runs-millis: 60000
+      min-evictable-idle-time-millis: 300000
+      test-while-idle: true
+      test-on-borrow: false
+      test-on-return: false
+      
+      # Azure PostgreSQL specific settings
+      validation-query: SELECT 1
+      validation-query-timeout: 30
+      test-on-connect: true
+      
+      # Connection timeout settings for Azure
+      connect-timeout: 30000
+      socket-timeout: 30000
+      
+      stat-view-servlet:
+        enabled: false
+      filter:
+        stat:
+          log-slow-sql: true
+          slow-sql-millis: 2000
+          merge-sql: false
+        wall:
+          config:
+            multi-statement-allow: true
+            
+  data:
+    redis:
+      # Azure Redis Cache configuration
+      host: ${AZURE_REDIS_HOST:127.0.0.1}
+      port: ${AZURE_REDIS_PORT:6379}
+      password: ${AZURE_REDIS_PASSWORD:}
+      database: 0
+      timeout: 10000ms
+      ssl: ${AZURE_REDIS_SSL:false}
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+        shutdown-timeout: 100ms
+
+# Logging configuration for production
+logging:
+  level:
+    xiaozhi: INFO
+    org.springframework: WARN
+    com.alibaba.druid: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/xiaozhi-esp32-api.log
+    max-size: 100MB
+    max-history: 30

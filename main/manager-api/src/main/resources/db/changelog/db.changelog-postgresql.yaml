@@ -1,0 +1,76 @@
+# PostgreSQL-specific Liquibase changelog
+# 规范约定：
+# id生成根据时间时分，文件名对应id，常变数据可以根据模块命名自定义
+# 每次对数据表进行改动时，只允许新建新对changeSet，不允许对上一个changeSet配置及文件进行修改
+
+databaseChangeLog:
+  # PostgreSQL system tables creation
+  - changeSet:
+      id: "202503141335-postgresql"
+      author: "migration-tool"
+      dbms: "postgresql"
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202503141335-postgresql.sql
+      rollback:
+        - sql:
+            sql: |
+              DROP TABLE IF EXISTS sys_dict_data CASCADE;
+              DROP TABLE IF EXISTS sys_dict_type CASCADE;
+              DROP TABLE IF EXISTS sys_params CASCADE;
+              DROP TABLE IF EXISTS sys_user_token CASCADE;
+              DROP TABLE IF EXISTS sys_user CASCADE;
+
+  # PostgreSQL model provider data initialization
+  - changeSet:
+      id: "202504082211-postgresql"
+      author: "migration-tool"
+      dbms: "postgresql"
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202504082211-postgresql.sql
+      rollback:
+        - sql:
+            sql: "DELETE FROM ai_model_provider;"
+
+  # Additional PostgreSQL-specific optimizations
+  - changeSet:
+      id: "postgresql-optimizations"
+      author: "migration-tool"
+      dbms: "postgresql"
+      changes:
+        - sql:
+            sql: |
+              -- Create indexes for better performance
+              CREATE INDEX IF NOT EXISTS idx_sys_user_username ON sys_user(username);
+              CREATE INDEX IF NOT EXISTS idx_sys_user_token_user_id ON sys_user_token(user_id);
+              CREATE INDEX IF NOT EXISTS idx_sys_user_token_token ON sys_user_token(token);
+              CREATE INDEX IF NOT EXISTS idx_sys_params_param_code ON sys_params(param_code);
+              CREATE INDEX IF NOT EXISTS idx_sys_dict_type_dict_type ON sys_dict_type(dict_type);
+              CREATE INDEX IF NOT EXISTS idx_sys_dict_data_dict_type_id ON sys_dict_data(dict_type_id);
+              CREATE INDEX IF NOT EXISTS idx_sys_dict_data_sort ON sys_dict_data(sort);
+              
+              -- Set up PostgreSQL-specific configurations
+              ALTER TABLE sys_user ALTER COLUMN create_date SET DEFAULT CURRENT_TIMESTAMP;
+              ALTER TABLE sys_user ALTER COLUMN update_date SET DEFAULT CURRENT_TIMESTAMP;
+              ALTER TABLE sys_user_token ALTER COLUMN create_date SET DEFAULT CURRENT_TIMESTAMP;
+              ALTER TABLE sys_user_token ALTER COLUMN update_date SET DEFAULT CURRENT_TIMESTAMP;
+              ALTER TABLE sys_params ALTER COLUMN create_date SET DEFAULT CURRENT_TIMESTAMP;
+              ALTER TABLE sys_params ALTER COLUMN update_date SET DEFAULT CURRENT_TIMESTAMP;
+              ALTER TABLE sys_dict_type ALTER COLUMN create_date SET DEFAULT CURRENT_TIMESTAMP;
+              ALTER TABLE sys_dict_type ALTER COLUMN update_date SET DEFAULT CURRENT_TIMESTAMP;
+              ALTER TABLE sys_dict_data ALTER COLUMN create_date SET DEFAULT CURRENT_TIMESTAMP;
+              ALTER TABLE sys_dict_data ALTER COLUMN update_date SET DEFAULT CURRENT_TIMESTAMP;
+      rollback:
+        - sql:
+            sql: |
+              -- Remove PostgreSQL-specific optimizations
+              DROP INDEX IF EXISTS idx_sys_user_username;
+              DROP INDEX IF EXISTS idx_sys_user_token_user_id;
+              DROP INDEX IF EXISTS idx_sys_user_token_token;
+              DROP INDEX IF EXISTS idx_sys_params_param_code;
+              DROP INDEX IF EXISTS idx_sys_dict_type_dict_type;
+              DROP INDEX IF EXISTS idx_sys_dict_data_dict_type_id;
+              DROP INDEX IF EXISTS idx_sys_dict_data_sort;

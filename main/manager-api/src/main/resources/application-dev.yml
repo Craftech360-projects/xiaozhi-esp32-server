@@ -10,11 +10,11 @@ knife4j:
 spring:
   datasource:
     druid:
-      #MySQL
-      driver-class-name: com.mysql.cj.jdbc.Driver
-      url: jdbc:mysql://127.0.0.1:3306/xiaozhi_esp32_server?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&nullCatalogMeansCurrent=true
-      username: root
-      password: 123456
+      #Azure PostgreSQL
+      driver-class-name: org.postgresql.Driver
+      url: jdbc:postgresql://${AZURE_POSTGRES_SERVER:xiaozhi-postgres-server}.postgres.database.azure.com:5432/${AZURE_POSTGRES_DATABASE:xiaozhi_esp32_server}?sslmode=require&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+      username: ${AZURE_POSTGRES_USERNAME:xiaozhi_admin}@${AZURE_POSTGRES_SERVER:xiaozhi-postgres-server}
+      password: ${AZURE_POSTGRES_PASSWORD:YourSecurePassword123!}
       initial-size: 10
       max-active: 100
       min-idle: 10

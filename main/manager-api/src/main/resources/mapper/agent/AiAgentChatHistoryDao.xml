@@ -9,9 +9,9 @@
     <result column="agent_id" jdbcType="VARCHAR" property="agentId" />
     <result column="session_id" jdbcType="VARCHAR" property="sessionId" />
     <result column="sort" jdbcType="BIGINT" property="sort" />
-    <result column="chat_type" jdbcType="TINYINT" property="chatType" />
+    <result column="chat_type" jdbcType="SMALLINT" property="chatType" />
     <result column="content" jdbcType="VARCHAR" property="content" />
-    <result column="audio" jdbcType="LONGVARCHAR" property="audio" />
+    <result column="audio" jdbcType="VARCHAR" property="audio" />
     <result column="audio_url" jdbcType="VARCHAR" property="audioUrl" />
     <result column="created_at" jdbcType="TIMESTAMP" property="createdAt" />
     <result column="updated_at" jdbcType="TIMESTAMP" property="updatedAt" />
