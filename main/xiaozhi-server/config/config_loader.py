@@ -5,12 +5,12 @@ from collections.abc import Mapping
 from config.manage_api_client import init_service, get_server_config, get_agent_models
 
 
-# 添加全局配置缓存
+# Add global configuration cache
 _config_cache = None
 
 
 def get_project_dir():
-    """获取项目根目录"""
+    """Get project root directory"""
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + "/"
 
 
@@ -21,7 +21,7 @@ def read_config(config_path):
 
 
 def load_config():
-    """加载配置文件"""
+    """Load configuration file"""
     global _config_cache
     if _config_cache is not None:
         return _config_cache
@@ -29,27 +29,27 @@ def load_config():
     default_config_path = get_project_dir() + "config.yaml"
     custom_config_path = get_project_dir() + "data/.config.yaml"
 
-    # 加载默认配置
+    # Load default configuration
     default_config = read_config(default_config_path)
     custom_config = read_config(custom_config_path)
 
     if custom_config.get("manager-api", {}).get("url"):
         config = get_config_from_api(custom_config)
     else:
-        # 合并配置
+        # Merge configurations
         config = merge_configs(default_config, custom_config)
-    # 初始化目录
+    # Initialize directories
     ensure_directories(config)
     _config_cache = config
     return config
 
 
 def get_config_from_api(config):
-    """从Java API获取配置"""
-    # 初始化API客户端
+    """Get configuration from Java API"""
+    # Initialize API client
     init_service(config)
 
-    # 获取服务器配置
+    # Get server configuration
     config_data = get_server_config()
     if config_data is None:
         raise Exception("Failed to fetch server config from API")
@@ -59,7 +59,7 @@ def get_config_from_api(config):
         "url": config["manager-api"].get("url", ""),
         "secret": config["manager-api"].get("secret", ""),
     }
-    # server的配置以本地为准
+    # Server configuration takes precedence from local
     if config.get("server"):
         config_data["server"] = {
             "ip": config["server"].get("ip", ""),
@@ -72,19 +72,19 @@ def get_config_from_api(config):
 
 
 def get_private_config_from_api(config, device_id, client_id):
-    """从Java API获取私有配置"""
+    """Get private configuration from Java API"""
     return get_agent_models(device_id, client_id, config["selected_module"])
 
 
 def ensure_directories(config):
-    """确保所有配置路径存在"""
+    """Ensure all configuration paths exist"""
     dirs_to_create = set()
-    project_dir = get_project_dir()  # 获取项目根目录
-    # 日志文件目录
+    project_dir = get_project_dir()  # Get project root directory
+    # Log file directory
     log_dir = config.get("log", {}).get("log_dir", "tmp")
     dirs_to_create.add(os.path.join(project_dir, log_dir))
 
-    # ASR/TTS模块输出目录
+    # ASR/TTS module output directories
     for module in ["ASR", "TTS"]:
         if config.get(module) is None:
             continue
@@ -93,7 +93,7 @@ def ensure_directories(config):
             if output_dir:
                 dirs_to_create.add(output_dir)
 
-    # 根据selected_module创建模型目录
+    # Create model directories based on selected_module
     selected_modules = config.get("selected_module", {})
     for module_type in ["ASR", "LLM", "TTS"]:
         selected_provider = selected_modules.get(module_type)
@@ -103,30 +103,32 @@ def ensure_directories(config):
             continue
         if config.get(selected_provider) is None:
             continue
-        provider_config = config.get(module_type, {}).get(selected_provider, {})
+        provider_config = config.get(
+            module_type, {}).get(selected_provider, {})
         output_dir = provider_config.get("output_dir")
         if output_dir:
             full_model_dir = os.path.join(project_dir, output_dir)
             dirs_to_create.add(full_model_dir)
 
-    # 统一创建目录（保留原data目录创建）
+    # Create directories uniformly (preserve original data directory creation)
     for dir_path in dirs_to_create:
         try:
             os.makedirs(dir_path, exist_ok=True)
         except PermissionError:
-            print(f"警告：无法创建目录 {dir_path}，请检查写入权限")
+            print(
+                f"Warning: Unable to create directory {dir_path}, please check write permissions")
 
 
 def merge_configs(default_config, custom_config):
     """
-    递归合并配置，custom_config优先级更高
+    Recursively merge configurations, custom_config has higher priority
 
     Args:
-        default_config: 默认配置
-        custom_config: 用户自定义配置
+        default_config: Default configuration
+        custom_config: User custom configuration
 
     Returns:
-        合并后的配置
+        Merged configuration
     """
     if not isinstance(default_config, Mapping) or not isinstance(
         custom_config, Mapping

@@ -1,11 +1,9 @@
 import traceback
-
 from ..base import MemoryProviderBase, logger
 from mem0 import MemoryClient
 from core.utils.util import check_model_key
 
 TAG = __name__
-
 
 class MemoryProvider(MemoryProviderBase):
     def __init__(self, config, summary_memory=None):
@@ -20,19 +18,22 @@ class MemoryProvider(MemoryProviderBase):
         else:
             self.use_mem0 = True
 
+
         try:
             self.client = MemoryClient(api_key=self.api_key)
-            logger.bind(tag=TAG).info("成功连接到 Mem0ai 服务")
+            logger.bind(tag=TAG).info("Successfully connected to Mem0ai service")
         except Exception as e:
-            logger.bind(tag=TAG).error(f"连接到 Mem0ai 服务时发生错误: {str(e)}")
-            logger.bind(tag=TAG).error(f"详细错误: {traceback.format_exc()}")
+            logger.bind(tag=TAG).error(f"Error occurred while connecting to Mem0ai service: {str(e)}")
+            logger.bind(tag=TAG).error(f"Detailed error: {traceback.format_exc()}")
             self.use_mem0 = False
+
 
     async def save_memory(self, msgs):
         if not self.use_mem0:
             return None
         if len(msgs) < 2:
             return None
+
 
         try:
             # Format the content as a message list for mem0
@@ -46,8 +47,9 @@ class MemoryProvider(MemoryProviderBase):
             )
             logger.bind(tag=TAG).debug(f"Save memory result: {result}")
         except Exception as e:
-            logger.bind(tag=TAG).error(f"保存记忆失败: {str(e)}")
+            logger.bind(tag=TAG).error(f"Failed to save memory: {str(e)}")
             return None
+
 
     async def query_memory(self, query: str) -> str:
         if not self.use_mem0:
@@ -58,6 +60,7 @@ class MemoryProvider(MemoryProviderBase):
             )
             if not results or "results" not in results:
                 return ""
+
 
             # Format each memory entry with its update time up to minutes
             memories = []
@@ -75,13 +78,15 @@ class MemoryProvider(MemoryProviderBase):
                     # Store tuple of (timestamp, formatted_string) for sorting
                     memories.append((timestamp, f"[{formatted_time}] {memory}"))
 
+
             # Sort by timestamp in descending order (newest first)
             memories.sort(key=lambda x: x[0], reverse=True)
+
 
             # Extract only the formatted strings
             memories_str = "\n".join(f"- {memory[1]}" for memory in memories)
             logger.bind(tag=TAG).debug(f"Query results: {memories_str}")
             return memories_str
         except Exception as e:
-            logger.bind(tag=TAG).error(f"查询记忆失败: {str(e)}")
+            logger.bind(tag=TAG).error(f"Failed to query memory: {str(e)}")
             return ""

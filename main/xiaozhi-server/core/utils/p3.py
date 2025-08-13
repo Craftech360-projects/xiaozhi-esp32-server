@@ -1,59 +1,49 @@
-import struct
+import datetime
+from typing import Dict, Tuple
 
-def decode_opus_from_file(input_file):
+# Global dictionary to store daily output word count for each device
+_device_daily_output: Dict[Tuple[str, datetime.date], int] = {}
+
+# Record the last check date
+_last_check_date: datetime.date = None
+
+def reset_device_output():
     """
-    从p3文件中解码 Opus 数据，并返回一个 Opus 数据包的列表以及总时长。
+    Reset daily output word count for all devices
+    Call this function at midnight every day
     """
-    opus_datas = []
-    total_frames = 0
-    sample_rate = 16000  # 文件采样率
-    frame_duration_ms = 60  # 帧时长
-    frame_size = int(sample_rate * frame_duration_ms / 1000)
+    _device_daily_output.clear()
 
-    with open(input_file, 'rb') as f:
-        while True:
-            # 读取头部（4字节）：[1字节类型，1字节保留，2字节长度]
-            header = f.read(4)
-            if not header:
-                break
-
-            # 解包头部信息
-            _, _, data_len = struct.unpack('>BBH', header)
-
-            # 根据头部指定的长度读取 Opus 数据
-            opus_data = f.read(data_len)
-            if len(opus_data) != data_len:
-                raise ValueError(f"Data length({len(opus_data)}) mismatch({data_len}) in the file.")
-
-            opus_datas.append(opus_data)
-            total_frames += 1
-
-    # 计算总时长
-    total_duration = (total_frames * frame_duration_ms) / 1000.0
-    return opus_datas, total_duration
-
-def decode_opus_from_bytes(input_bytes):
+def get_device_output(device_id: str) -> int:
     """
-    从p3二进制数据中解码 Opus 数据，并返回一个 Opus 数据包的列表以及总时长。
+    Get device's output word count for the current day
     """
-    import io
-    opus_datas = []
-    total_frames = 0
-    sample_rate = 16000  # 文件采样率
-    frame_duration_ms = 60  # 帧时长
-    frame_size = int(sample_rate * frame_duration_ms / 1000)
+    current_date = datetime.datetime.now().date()
+    return _device_daily_output.get((device_id, current_date), 0)
 
-    f = io.BytesIO(input_bytes)
-    while True:
-        header = f.read(4)
-        if not header:
-            break
-        _, _, data_len = struct.unpack('>BBH', header)
-        opus_data = f.read(data_len)
-        if len(opus_data) != data_len:
-            raise ValueError(f"Data length({len(opus_data)}) mismatch({data_len}) in the bytes.")
-        opus_datas.append(opus_data)
-        total_frames += 1
+def add_device_output(device_id: str, char_count: int):
+    """
+    Increase device's output word count
+    """
+    current_date = datetime.datetime.now().date()
+    global _last_check_date
+    
+    # If it's the first call or date has changed, clear the counter
+    if _last_check_date is None or _last_check_date != current_date:
+        _device_daily_output.clear()
+        _last_check_date = current_date
+    
+    current_count = _device_daily_output.get((device_id, current_date), 0)
+    _device_daily_output[(device_id, current_date)] = current_count + char_count
 
-    total_duration = (total_frames * frame_duration_ms) / 1000.0
-    return opus_datas, total_duration
+def check_device_output_limit(device_id: str, max_output_size: int) -> bool:
+    """
+    Check if device exceeds output limit
+    
+    :return: True if limit exceeded, False if not exceeded
+    """
+    if not device_id:
+        return False
+    
+    current_output = get_device_output(device_id)
+    return current_output >= max_output_size

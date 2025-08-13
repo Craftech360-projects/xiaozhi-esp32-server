@@ -31,11 +31,13 @@ class ASRProvider(ASRProviderBase):
         )
         self.output_dir = config.get("output_dir")
         self.delete_audio_file = delete_audio_file
+
         self.uri = (
             f"wss://{self.host}:{self.port}"
             if self.is_ssl
             else f"ws://{self.host}:{self.port}"
         )
+
         self.ssl_context = ssl.SSLContext() if self.is_ssl else None
         if self.ssl_context:
             self.ssl_context.check_hostname = False
@@ -51,12 +53,15 @@ class ASRProvider(ASRProviderBase):
             try:
                 response = await asyncio.wait_for(ws.recv(), timeout=5)
                 response_data = json.loads(response)
-                logger.bind(tag=TAG).debug(f"Received response: {response_data}")
+                logger.bind(tag=TAG).debug(
+                    f"Received response: {response_data}")
+
                 if response_data.get("is_final", True):
                     text += response_data.get("text", "")
                     break
                 else:
                     text += response_data.get("text", "")
+
             except asyncio.TimeoutError:
                 logger.bind(tag=TAG).error(
                     "Timeout while waiting for response from WebSocket."
@@ -65,6 +70,7 @@ class ASRProvider(ASRProviderBase):
             except websockets.exceptions.ConnectionClosed as e:
                 logger.bind(tag=TAG).error(f"WebSocket connection closed: {e}")
                 break
+
         return text
 
     async def _send_data(self, ws, pcm_data: bytes, session_id: str) -> tuple:
@@ -75,7 +81,6 @@ class ASRProvider(ASRProviderBase):
         :param session_id: Unique session identifier.
         :return: Tuple containing recognized text and optional timestamp.
         """
-
         # Send initial configuration message
         config_message = json.dumps(
             {
@@ -88,11 +93,13 @@ class ASRProvider(ASRProviderBase):
             }
         )
         await ws.send(config_message)
-        logger.bind(tag=TAG).debug(f"Sent configuration message: {config_message}")
+        logger.bind(tag=TAG).debug(
+            f"Sent configuration message: {config_message}")
 
         # Send PCM data
         await ws.send(pcm_data)
-        logger.bind(tag=TAG).debug(f"Sent PCM data of length: {len(pcm_data)} bytes")
+        logger.bind(tag=TAG).debug(
+            f"Sent PCM data of length: {len(pcm_data)} bytes")
 
         # Indicate end of speech
         end_message = json.dumps({"is_speaking": False})
@@ -109,18 +116,22 @@ class ASRProvider(ASRProviderBase):
         :return: Tuple containing recognized text and optional timestamp.
         """
         file_path = None
+
         if audio_format == "pcm":
             pcm_data = opus_data
         else:
             pcm_data = self.decode_opus(opus_data)
+
         combined_pcm_data = b"".join(pcm_data)
 
-        # 判断是否保存为WAV文件
+        # Decide whether to save as WAV file
         if self.delete_audio_file:
             pass
         else:
             file_path = self.save_audio_to_file(pcm_data, session_id)
+
         auth_header = {"Authorization": "Bearer; {}".format(self.api_key)}
+
         async with websockets.connect(
             self.uri,
             additional_headers=auth_header,
@@ -151,9 +162,12 @@ class ASRProvider(ASRProviderBase):
 
                 # Get the result from the receive task
                 result = receive_task.result()
-                match = re.match(r"<\|(.*?)\|><\|(.*?)\|><\|(.*?)\|>(.*)", result)
+
+                match = re.match(
+                    r"<\|(.*?)\|><\|(.*?)\|><\|(.*?)\|>(.*)", result)
                 if match:
                     result = match.group(4).strip()
+
                 return (
                     result,
                     file_path,

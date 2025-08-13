@@ -1,0 +1,258 @@
+# MQTT Gateway Forwarding Function Test Guide
+
+This document explains how to test whether the MQTT gateway forwarding function is configured successfully.
+
+## Quick Test
+
+### 1. Basic Connection Test
+
+Run the quick test script:
+
+```bash
+node quick-test.js
+```
+
+This script will:
+
+- ✅ Check configuration files
+- ✅ Test MQTT server connection (port 1883)
+- ✅ Test WebSocket backend service connection
+- ✅ Display test results and recommendations
+
+### 2. Complete Function Test
+
+Run the complete test script:
+
+```bash
+node test-mqtt.js
+```
+
+This script will:
+
+- 🔗 Connect to MQTT server
+- 🔐 Authenticate using configured MAC address
+- 📝 Subscribe to reply topics
+- 📤 Send hello message to test WebSocket forwarding
+- 📥 Wait for and display server response
+- 🧪 Send other test messages
+
+## Manual Test Steps
+
+### 1. Start MQTT Gateway
+
+```bash
+node app.js
+```
+
+You should see similar output:
+
+```
+MQTT server listening on port 1883 (all interfaces)
+UDP server listening on 192.168.1.118:1883
+Connections: 0, Active: 0
+```
+
+### 2. Check Configuration File
+
+Confirm `config/mqtt.json` is configured correctly:
+
+```json
+{
+  "production": {
+    "chat_servers": ["ws://192.168.68.66:8000/xiaozhi/v1/"]
+  },
+  "development": {
+    "chat_servers": ["ws://192.168.68.66:8000/xiaozhi/v1/"],
+    "mac_addresss": ["d8:43:ae:3e:4b:5a"]
+  },
+  "debug": false
+}
+```
+
+### 3. Test Using MQTT Client Tools
+
+#### Using mosquitto client:
+
+**Connection test:**
+
+```bash
+mosquitto_pub -h localhost -p 1883 -t "test/topic" -m "hello"
+```
+
+**Subscription test:**
+
+```bash
+mosquitto_sub -h localhost -p 1883 -t "devices/p2p/d8_43_ae_3e_4b_5a"
+```
+
+#### Using MQTT.fx or other GUI tools:
+
+1. **Connection settings:**
+
+   - Server: localhost
+   - Port: 1883
+   - Client ID: `GID_test@@@d8_43_ae_3e_4b_5a`
+   - Username: test_user
+   - Password: test_password
+
+2. **Publish test message:**
+
+   - Topic: `test/topic`
+   - Message:
+
+   ```json
+   {
+     "type": "hello",
+     "version": 3,
+     "transport": "mqtt",
+     "audio_params": {
+       "sample_rate": 16000,
+       "channels": 1,
+       "format": "opus"
+     },
+     "features": ["tts", "asr"]
+   }
+   ```
+
+3. **Subscribe to reply topic:**
+   - Topic: `devices/p2p/d8_43_ae_3e_4b_5a`
+
+## Test Result Assessment
+
+### ✅ Success Indicators
+
+1. **MQTT connection successful:**
+
+   ```
+   ✓ Successfully connected to MQTT server localhost:1883
+   ✓ MQTT connection successful
+   ```
+
+2. **WebSocket forwarding successful:**
+
+   ```
+   ✓ WebSocket server connection successful
+   ✓ Received PUBLISH message
+   ```
+
+3. **Server logs normal:**
+   ```
+   Client connection: { clientId: 'GID_test@@@d8_43_ae_3e_4b_5a', ... }
+   Received publish message: { topic: 'test/topic', payload: '...', qos: 0 }
+   ```
+
+### ❌ Common Issues
+
+1. **MQTT server connection failed:**
+
+   ```
+   ✗ Connection error: connect ECONNREFUSED 127.0.0.1:1883
+   ```
+
+   **Solution:** Ensure you run `node app.js` to start the MQTT gateway
+
+2. **WebSocket connection failed:**
+
+   ```
+   ✗ WebSocket server connection failed: connect ECONNREFUSED
+   ```
+
+   **Solution:** Check if WebSocket backend service is running and network is reachable
+
+3. **Authentication failed:**
+
+   ```
+   Invalid clientId: xxx
+   ```
+
+   **Solution:** Check if client ID format is `GID_test@@@mac_address`
+
+4. **MAC address mismatch:**
+   ```
+   Chat server not found for xx:xx:xx:xx:xx:xx
+   ```
+   **Solution:** Confirm MAC address is in the `mac_addresss` list in configuration file
+
+## Debugging Tips
+
+### 1. Enable Debug Mode
+
+Modify `config/mqtt.json`:
+
+```json
+{
+  "debug": true
+}
+```
+
+Or set environment variable:
+
+```bash
+DEBUG=mqtt-server node app.js
+```
+
+### 2. View Detailed Logs
+
+Debug mode will display detailed connection and message processing information:
+
+```
+mqtt-server Client connection: { clientId: '...', username: '...', ... }
+mqtt-server Received publish message: { topic: '...', payload: '...', qos: 0 }
+mqtt-server Sending message to devices/p2p/...: {...}
+```
+
+### 3. Network Connectivity Test
+
+**Test WebSocket server:**
+
+```bash
+curl -I http://192.168.68.66:8000/xiaozhi/v1/
+```
+
+**Test MQTT port:**
+
+```bash
+telnet localhost 1883
+```
+
+## Performance Testing
+
+### Concurrent Connection Test
+
+You can modify the test script to create multiple concurrent connections:
+
+```javascript
+// Create multiple test clients
+const clients = [];
+for (let i = 0; i < 10; i++) {
+  const client = new MQTTTestClient();
+  clients.push(client);
+  // Connect and test...
+}
+```
+
+### Message Throughput Test
+
+Send a large number of messages to test forwarding performance:
+
+```javascript
+// Send 100 messages
+for (let i = 0; i < 100; i++) {
+  client.publish("test/topic", `Test message ${i}`);
+}
+```
+
+## Troubleshooting Checklist
+
+- [ ] Is MQTT gateway service running (`node app.js`)
+- [ ] Is port 1883 occupied
+- [ ] Is configuration file format correct
+- [ ] Is WebSocket backend service running
+- [ ] Is network connection normal
+- [ ] Is MAC address in configured whitelist
+- [ ] Is client ID format correct
+- [ ] Is firewall blocking connections
+
+## Summary
+
+Through the above testing methods, you can comprehensively verify whether the MQTT gateway forwarding function is configured successfully. It is recommended to run the quick test first, and if there are problems, then proceed with detailed manual testing and debugging.
