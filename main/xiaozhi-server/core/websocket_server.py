@@ -21,7 +21,7 @@ class WebSocketServer:
             "VAD" in self.config["selected_module"],
             "ASR" in self.config["selected_module"],
             "LLM" in self.config["selected_module"],
-            False,
+            "TTS" in self.config["selected_module"],  # Initialize TTS at startup
             "Memory" in self.config["selected_module"],
             "Intent" in self.config["selected_module"],
         )
@@ -29,6 +29,7 @@ class WebSocketServer:
         self._vad = modules["vad"] if "vad" in modules else None
         self._asr = modules["asr"] if "asr" in modules else None
         self._llm = modules["llm"] if "llm" in modules else None
+        self._tts = modules["tts"] if "tts" in modules else None
         self._intent = modules["intent"] if "intent" in modules else None
         self._memory = modules["memory"] if "memory" in modules else None
 
@@ -52,6 +53,7 @@ class WebSocketServer:
             self._vad,
             self._asr,
             self._llm,
+            self._tts,
             self._memory,
             self._intent,
             self,  # Pass server instance

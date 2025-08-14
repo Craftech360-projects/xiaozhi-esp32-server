@@ -77,6 +77,11 @@ class TTSProviderBase(ABC):
     def to_tts(self, text):
         text = MarkdownCleaner.clean_markdown(text)
         max_repeat_time = 5
+        
+        # Log which TTS provider is being used
+        provider_name = self.__class__.__module__.split('.')[-1]
+        logger.bind(tag=TAG).info(f"🔊 TTS Provider: {provider_name}, Processing text: '{text[:50]}...'")
+        
         if self.delete_audio_file:
             # Files that need to be deleted are directly converted to audio data
             while max_repeat_time > 0:

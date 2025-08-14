@@ -57,6 +57,7 @@ class ConnectionHandler:
         _vad,
         _asr,
         _llm,
+        _tts,
         _memory,
         _intent,
         server=None,
@@ -103,7 +104,7 @@ class ConnectionHandler:
         # Dependent components
         self.vad = None
         self.asr = None
-        self.tts = None
+        self.tts = _tts  # Use pre-initialized TTS from server startup
         self._asr = _asr
         self._vad = _vad
         self.llm = _llm
@@ -372,8 +373,9 @@ class ConnectionHandler:
             asyncio.run_coroutine_threadsafe(
                 self.asr.open_audio_channels(self), self.loop
             )
+            # TTS is now pre-initialized at server startup
             if self.tts is None:
-                self.tts = self._initialize_tts()
+                logger.bind(tag=TAG).error("TTS not initialized at server startup")
             # Open speech synthesis channel
             asyncio.run_coroutine_threadsafe(
                 self.tts.open_audio_channels(self), self.loop
@@ -573,7 +575,8 @@ class ConnectionHandler:
             self.logger.bind(tag=TAG).error(
                 f"Failed to initialize components: {e}")
             modules = {}
-        if modules.get("tts", None) is not None:
+        if modules.get("tts", None) is not None and self.tts is None:
+            # Only override TTS if not already set from server startup
             self.tts = modules["tts"]
         if modules.get("vad", None) is not None:
             self.vad = modules["vad"]
