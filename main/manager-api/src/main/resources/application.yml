@@ -27,9 +27,9 @@ spring:
   main:
     allow-bean-definition-overriding: true
   datasource:
-    url: jdbc:mysql://turntable.proxy.rlwy.net:38288/railway?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&nullCatalogMeansCurrent=true
+    url: jdbc:mysql://caboose.proxy.rlwy.net:41629/railway?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC
     username: root
-    password: nrTgFMCdwgjqZFFRXDhDZbCapfPNBxZK
+    password: IVIwxOEAWLTsPRfbhNKOmeCqVXdphTVV
   redis:
     host: shortline.proxy.rlwy.net
     port: 54353
