@@ -121,8 +121,9 @@ Railway MySQL:
   User: root
   Password: IVIwxOEAWLTsPRfbhNKOmeCqVXdphTVV
 
-Supabase (To Be Setup):
-  URL: https://your-project.supabase.co
+Supabase (Partial Setup Done):
+  URL: https://nstiqzvkvshqglfqmlxs.supabase.co
+  ANON Key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5zdGlxenZrdnNocWdsZnFtbHhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM4NzU4OTEsImV4cCI6MjA2OTQ1MTg5MX0.emltic5RhKi2ZgvqlVN7Qda_FJSni07FXhtCPxNCua0
   Schema: Provided in SUPABASE_SCHEMA_FOR_FLUTTER.md
 ```
 
