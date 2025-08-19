@@ -220,6 +220,8 @@ Intent:
       # play_music is server built-in music playback, hass_play_music is external program music playback controlled through home assistant
       # If using hass_play_music, don't enable play_music, keep only one of the two
       - play_music
+      # RAG textbook search function
+      - search_textbook
       #- hass_get_state
       #- hass_set_state
       #- hass_play_music
@@ -846,3 +848,21 @@ TTS:
     access_token: "U4YdYXVfpwWnk2t5Gp822zWPCuORyeJL"
     voice: "OUeAo1mhq6IBExi"
     output_dir: tmp/
+
+# #####################################################################################
+# ################################RAG Configuration#####################################
+# RAG (Retrieval-Augmented Generation) for textbook content search
+RAG:
+  # Enable or disable RAG functionality
+  enabled: true
+  # Database path for vector storage
+  db_path: "./rag_db"
+  # Collection name for textbooks
+  collection_name: "textbooks"
+  # Embedding model for semantic search
+  # Using multilingual model for Chinese/English support
+  model_name: "paraphrase-multilingual-MiniLM-L12-v2"
+  # Text chunk size for indexing (characters)
+  chunk_size: 500
+  # Overlap between chunks (characters)
+  chunk_overlap: 50
