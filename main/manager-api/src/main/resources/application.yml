@@ -35,6 +35,14 @@ spring:
     port: 54353
     password: mClDIOpuKWkawXKBcfhWFDwHHnhuWegp
 
+# Supabase configuration for mobile app
+supabase:
+  url: https://nstiqzvkvshqglfqmlxs.supabase.co
+  anon:
+    key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5zdGlxenZrdnNocWdsZnFtbHhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM4NzU4OTEsImV4cCI6MjA2OTQ1MTg5MX0.emltic5RhKi2ZgvqlVN7Qda_FJSni07FXhtCPxNCua0
+  jwt:
+    secret: BnEGeOtDvRZ0JXOmIOxrjmABZRZHDXjFqKCrOvuK7S1d5pGQBbRUBN13KGaCwKQ/a/ZAMUgiakkvO9XuiNcrug==
+
 knife4j:
   enable: true
   basic:

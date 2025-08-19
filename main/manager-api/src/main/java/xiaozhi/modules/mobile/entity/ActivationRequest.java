@@ -3,7 +3,7 @@ package xiaozhi.modules.mobile.entity;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
-import javax.validation.constraints.*;
+import jakarta.validation.constraints.*;
 import java.util.List;
 
 /**

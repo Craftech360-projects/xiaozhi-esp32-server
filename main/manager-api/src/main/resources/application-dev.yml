@@ -8,13 +8,15 @@ knife4j:
   setting:
     enableFooter: false
 spring:
+  liquibase:
+    enabled: false
   datasource:
     druid:
       #MySQL
       driver-class-name: com.mysql.cj.jdbc.Driver
-      url: jdbc:mysql://turntable.proxy.rlwy.net:38288/railway?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&nullCatalogMeansCurrent=true
+      url: jdbc:mysql://caboose.proxy.rlwy.net:41629/railway?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC&nullCatalogMeansCurrent=true
       username: root
-      password: nrTgFMCdwgjqZFFRXDhDZbCapfPNBxZK
+      password: IVIwxOEAWLTsPRfbhNKOmeCqVXdphTVV
       initial-size: 10
       max-active: 100
       min-idle: 10
