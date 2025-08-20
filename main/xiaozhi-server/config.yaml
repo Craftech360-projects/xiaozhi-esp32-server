@@ -705,60 +705,6 @@ TTS:
     temperature: 1.0
     cut_punc: ""
     speed: 1.0
-    inp_refs: []
-    sample_steps: 32
-    if_sr: false
-  MinimaxTTS:
-    # Minimax Speech Synthesis Service, need to first create account and recharge on minimax platform, and obtain login information
-    # Platform address: https://platform.minimaxi.com/
-    # Recharge address: https://platform.minimaxi.com/user-center/payment/balance
-    # group_id address: https://platform.minimaxi.com/user-center/basic-information
-    # api_key address: https://platform.minimaxi.com/user-center/basic-information/interface-key
-    # Define TTS API type
-    type: minimax
-    output_dir: tmp/
-    group_id: your-minimax-platform-group-id
-    api_key: your-minimax-platform-interface-key
-    model: "speech-01-turbo"
-    # This setting will take priority over voice_id setting in voice_setting; if neither is set, defaults to female-shaonv
-    voice_id: "female-shaonv"
-    # The following can be left unset, using default settings
-    # voice_setting:
-    #     voice_id: "male-qn-qingse"
-    #     speed: 1
-    #     vol: 1
-    #     pitch: 0
-    #     emotion: "happy"
-    # pronunciation_dict:
-    #     tone:
-    #       - "process/(chu3)(li3)"
-    #       - "danger/dangerous"
-    # audio_setting:
-    #     sample_rate: 32000
-    #     bitrate: 128000
-    #     format: "mp3"
-    #     channel: 1
-    # timber_weights:
-    #   -
-    #     voice_id: male-qn-qingse
-    #     weight: 1
-    #   -
-    #     voice_id: female-shaonv
-    #     weight: 1
-    # language_boost: auto
-  AliyunTTS:
-    # Alibaba Cloud Intelligent Speech Interaction Service, need to first activate service on Alibaba Cloud platform, then obtain verification information
-    # Platform address: https://nls-portal.console.aliyun.com/
-    # appkey address: https://nls-portal.console.aliyun.com/applist
-    # token address: https://nls-portal.console.aliyun.com/overview
-    # Define TTS API type
-    type: aliyun
-    output_dir: tmp/
-    appkey: your-alibaba-cloud-intelligent-speech-interaction-service-project-appkey
-    token: your-alibaba-cloud-intelligent-speech-interaction-service-accesstoken-temporary-24hours-for-long-term-use-access-key-id-access-key-secret-below
-    voice: xiaoyun
-    access_key_id: your-alibaba-cloud-account-access-key-id
-    access_key_secret: your-alibaba-cloud-account-access-key-secret
 
     # The following can be left unset, using default settings
     # format: wav
