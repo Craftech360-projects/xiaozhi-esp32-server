@@ -90,14 +90,14 @@ class WebSocketBridge extends Emitter {
         if (isBinary) {
           // xiaozhi-server sends raw Opus data directly as binary WebSocket messages
           // No header parsing needed - the entire binary message is the Opus payload
-          console.log(
-            `📦 WebSocket binary message: ${data.length} bytes of raw Opus data`
-          );
-          console.log(
-            `📦 First 8 bytes: ${data
-              .subarray(0, Math.min(8, data.length))
-              .toString("hex")}`
-          );
+          // console.log(
+          //   `📦 WebSocket binary message: ${data.length} bytes of raw Opus data`
+          // );
+          // console.log(
+          //   `📦 First 8 bytes: ${data
+          //     .subarray(0, Math.min(8, data.length))
+          //     .toString("hex")}`
+          // );
           // Generate timestamp for UDP packet (use relative timestamp to fit in 32-bit)
           const timestamp =
             (Date.now() - this.connection.udp.startTime) & 0xffffffff;
@@ -361,14 +361,14 @@ class MQTTConnection {
       timestamp,
       this.udp.localSequence
     );
-    console.log(
-      `🔐 Encrypting: payload=${payload.length}B, timestamp=${timestamp}, seq=${this.udp.localSequence}`
-    );
-    console.log(`🔐 Header: ${header.toString("hex")}`);
-    console.log(`🔐 Key: ${this.udp.key.toString("hex")}`);
-    console.log(
-      `🔐 Payload first 8 bytes: ${payload.subarray(0, 8).toString("hex")}`
-    );
+    // console.log(
+    //   `🔐 Encrypting: payload=${payload.length}B, timestamp=${timestamp}, seq=${this.udp.localSequence}`
+    // );
+    // console.log(`🔐 Header: ${header.toString("hex")}`);
+    // console.log(`🔐 Key: ${this.udp.key.toString("hex")}`);
+    // console.log(
+    //   `🔐 Payload first 8 bytes: ${payload.subarray(0, 8).toString("hex")}`
+    // );
     const cipher = crypto.createCipheriv(
       this.udp.encryption,
       this.udp.key,
@@ -378,11 +378,11 @@ class MQTTConnection {
       cipher.update(payload),
       cipher.final(),
     ]);
-    console.log(
-      `🔐 Encrypted first 8 bytes: ${encryptedPayload
-        .subarray(0, 8)
-        .toString("hex")}`
-    );
+    // console.log(
+    //   `🔐 Encrypted first 8 bytes: ${encryptedPayload
+    //     .subarray(0, 8)
+    //     .toString("hex")}`
+    // );
     const message = Buffer.concat([header, encryptedPayload]);
     this.server.sendUdpMessage(message, this.udp.remoteAddress);
   }

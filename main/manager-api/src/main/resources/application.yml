@@ -27,13 +27,21 @@ spring:
   main:
     allow-bean-definition-overriding: true
   datasource:
-    url: jdbc:mysql://turntable.proxy.rlwy.net:38288/railway?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&nullCatalogMeansCurrent=true
+    url: jdbc:mysql://caboose.proxy.rlwy.net:41629/railway?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC
     username: root
-    password: nrTgFMCdwgjqZFFRXDhDZbCapfPNBxZK
+    password: IVIwxOEAWLTsPRfbhNKOmeCqVXdphTVV
   redis:
     host: shortline.proxy.rlwy.net
     port: 54353
     password: mClDIOpuKWkawXKBcfhWFDwHHnhuWegp
+
+# Supabase configuration for mobile app
+supabase:
+  url: https://nstiqzvkvshqglfqmlxs.supabase.co
+  anon:
+    key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5zdGlxenZrdnNocWdsZnFtbHhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM4NzU4OTEsImV4cCI6MjA2OTQ1MTg5MX0.emltic5RhKi2ZgvqlVN7Qda_FJSni07FXhtCPxNCua0
+  jwt:
+    secret: BnEGeOtDvRZ0JXOmIOxrjmABZRZHDXjFqKCrOvuK7S1d5pGQBbRUBN13KGaCwKQ/a/ZAMUgiakkvO9XuiNcrug==
 
 knife4j:
   enable: true

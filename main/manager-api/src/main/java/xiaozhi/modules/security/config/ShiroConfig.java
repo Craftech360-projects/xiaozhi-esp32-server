@@ -90,6 +90,12 @@ public class ShiroConfig {
         filterMap.put("/agent/chat-history/report", "server");
         filterMap.put("/agent/saveMemory/**", "server");
         filterMap.put("/agent/play/**", "anon");
+        // Mobile API endpoints - health check and test endpoints without auth
+        filterMap.put("/api/mobile/health", "anon");
+        filterMap.put("/api/mobile/test", "anon");
+        filterMap.put("/api/mobile/activation/check-code", "anon");
+        // All other mobile API endpoints require custom authentication via MobileAuthFilter
+        filterMap.put("/api/mobile/**", "anon");
         filterMap.put("/**", "oauth2");
         shiroFilter.setFilterChainDefinitionMap(filterMap);
 
