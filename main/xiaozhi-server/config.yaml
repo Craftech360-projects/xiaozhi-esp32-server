@@ -235,7 +235,7 @@ manager-api:
   url: "http://localhost:8002"
   # Secret key for authentication - this will be auto-generated when you first run the Java backend
   # You can find it in the sys_params table with param_code = 'server.secret'
-  secret: "test-secret-key-12345"
+  secret: "cheeko-secret-key-2025"
   # Timeout in seconds for API requests
   timeout: 30
   # Maximum retry count for failed requests
