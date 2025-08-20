@@ -107,9 +107,22 @@ def get_ip_info(ip_addr, logger):
         if is_private_ip(ip_addr):
             ip_addr = ""
 
-        url = f"https://whois.pconline.com.cn/ipJson.jsp?json=true&ip={ip_addr}"
+        # Use Indian/International IP geolocation service
+        url = f"http://ip-api.com/json/{ip_addr}?fields=status,country,regionName,city,timezone"
         resp = requests.get(url).json()
-        ip_info = {"city": resp.get("city")}
+
+        if resp.get("status") == "success":
+            city = resp.get("city", "Unknown")
+            region = resp.get("regionName", "")
+            country = resp.get("country", "")
+
+            # Format Indian location
+            if country == "India":
+                ip_info = {"city": f"{city}, {region}"}
+            else:
+                ip_info = {"city": f"{city}, {country}"}
+        else:
+            ip_info = {"city": "Unknown location"}
 
         # Store in cache
         cache_manager.set(CacheType.IP_INFO, ip_addr, ip_info)
@@ -126,7 +139,7 @@ def write_json_file(file_path, data):
         json.dump(data, file, ensure_ascii=False, indent=4)
 
 
-def remove_punctuation_and_length(text):
+def remove_punctuation_and_length(text, config=None, use_filter=True):
     # Unicode ranges for full-width and half-width symbols
     full_width_punctuations = (
         "！＂＃＄％＆＇（）＊＋，－。／：；＜＝＞？＠［＼］＾＿｀｛｜｝～"
@@ -146,6 +159,16 @@ def remove_punctuation_and_length(text):
         and char not in full_width_space
     )
 
+    # Apply ASR filtering if enabled
+    if use_filter and config:
+        from core.utils.asr_filter import ASRFilter
+        asr_filter = ASRFilter(config)
+        should_filter, reason = asr_filter.should_filter(result)
+        
+        if should_filter:
+            return 0, ""
+    
+    # Legacy hardcoded filter (deprecated, but kept for compatibility)
     if result == "Yeah":
         return 0, ""
 

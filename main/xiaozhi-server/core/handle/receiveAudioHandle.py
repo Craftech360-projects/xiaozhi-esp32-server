@@ -12,8 +12,27 @@ TAG = __name__
 
 
 async def handleAudioMessage(conn, audio):
+    # Log that we received audio (only log periodically to avoid spam)
+    if not hasattr(conn, '_audio_log_counter'):
+        conn._audio_log_counter = 0
+    conn._audio_log_counter += 1
+    
+    if conn._audio_log_counter % 50 == 0:  # Log every 50th packet
+        conn.logger.bind(tag=TAG).debug(f"Received audio packet #{conn._audio_log_counter}, size: {len(audio)} bytes")
+    
     # Whether the current segment has someone speaking
     have_voice = conn.vad.is_vad(conn, audio)
+    
+    # Check if this is the initial connection period (ignore first 1 second of audio)
+    if have_voice and hasattr(conn, "initial_connection_handled") and not conn.initial_connection_handled:
+        current_time = asyncio.get_event_loop().time()
+        if current_time - conn.initial_connection_time < 1.0:  # Ignore first 1 second
+            have_voice = False
+            conn.asr_audio.clear()  # Clear any accumulated audio
+            return
+        else:
+            conn.initial_connection_handled = True
+    
     # If the device was just woken up, briefly ignore VAD detection
     if have_voice and hasattr(conn, "just_woken_up") and conn.just_woken_up:
         have_voice = False
