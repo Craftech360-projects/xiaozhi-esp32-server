@@ -1,767 +1,869 @@
-import json
-import time
-import uuid
-import threading
-import socket
-import struct
-import logging
-import pyaudio
-import keyboard
+# In development, please create a data directory in the project root, then create an empty file named [.config.yaml] in the data directory
+# Then modify whatever configuration you want to override in the [.config.yaml] file, instead of modifying the [config.yaml] file
+# The system will prioritize reading the configuration from the [data/.config.yaml] file. If the configuration in the [.config.yaml] file doesn't exist, the system will automatically read the configuration from the [config.yaml] file.
+# This approach minimizes configuration and protects your key security.
+# If you use the smart control panel, all the following configurations will not take effect, please modify configurations in the smart control panel
 
-from typing import Dict, Optional, Tuple
-import requests
-import paho.mqtt.client as mqtt_client
-from paho.mqtt.enums import CallbackAPIVersion
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.backends import default_backend
-from queue import Queue, Empty
-import opuslib
+# #####################################################################################
+# #############################Server Basic Runtime Configuration####################################
+server:
+  # Server listening address and port
+  ip: 0.0.0.0
+  port: 8000
+  # HTTP service port for simple OTA interface (single service deployment) and visual analysis interface
+  http_port: 8003
+  # This websocket configuration refers to the websocket address sent by the OTA interface to devices
+  # If using the default configuration, the OTA interface will automatically generate the websocket address and output it in the startup log. You can directly access the OTA interface with a browser to confirm this address
+  # When deploying with docker or using public network deployment (using SSL, domain names), it may not be accurate
+  # So if you deploy with docker, set websocket to the LAN address
+  # If you deploy on public network, set websocket to the public network address
+  websocket: ws://your-ip-or-domain:port/xiaozhi/v1/
+  # Visual analysis interface address
+  # Visual analysis interface address sent to devices
+  # If using the default configuration below, the system will automatically generate the visual recognition address and output it in the startup log. You can directly access this address with a browser to confirm
+  # When deploying with docker or using public network deployment (using SSL, domain names), it may not be accurate
+  # So if you deploy with docker, set vision_explain to the LAN address
+  # If you deploy on public network, set vision_explain to the public network address
+  vision_explain: http://your-ip-or-domain:port/mcp/vision/explain
+  # OTA return message timezone offset
+  timezone_offset: +8
+  # Authentication configuration
+  auth:
+    # Enable authentication
+    enabled: false
+    # Device tokens, can be written into your own defined tokens during firmware compilation
+    # If the token on firmware corresponds to the following token, it can connect to this server
+    tokens:
+      - token: "your-token1" # Device 1 token
+        name: "your-device-name1"  # Device 1 identifier
+      - token: "your-token2"  # Device 2 token
+        name: "your-device-name2" # Device 2 identifier
+    # Optional: Device whitelist, if set, whitelisted devices can connect with any token.
+    #allowed_devices:
+    #  - "24:0A:C4:1D:3B:F0"  # MAC address list
+log:
+  # Set console output log format: time, log level, tag, message
+  log_format: "<green>{time:YYMMDD HH:mm:ss}</green>[{version}_{selected_module}][<light-blue>{extra[tag]}</light-blue>]-<level>{level}</level>-<light-green>{message}</light-green>"
+  # Set log file output format: time, log level, tag, message
+  log_format_file: "{time:YYYY-MM-DD HH:mm:ss} - {version}_{selected_module} - {name} - {level} - {extra[tag]} - {message}"
+  # Set log level: INFO, DEBUG
+  log_level: INFO
+  # Set log path
+  log_dir: tmp
+  # Set log file
+  log_file: "server.log"
+  # Set data file path
+  data_dir: data
 
-# --- Configuration ---
+# Delete the sound file when you are done using it
+delete_audio: true
+# How long after no voice input to disconnect (seconds), default 2 minutes, i.e., 120 seconds
+close_connection_no_voice_time: 120
+# TTS request timeout (seconds)
+tts_timeout: 10
+# Enable wake word acceleration
+enable_wakeup_words_response_cache: true
+# Whether to reply with wake word at opening
+enable_greeting: true
+# Whether to enable notification sound after finishing speech
+enable_stop_tts_notify: false
+# Whether to enable notification sound after finishing speech, sound effect address
+stop_tts_notify_voice: "config/assets/tts_notify.mp3"
 
-SERVER_IP = "192.168.1.239" # !!! UPDATE with your server's local IP address !!!
-OTA_PORT = 8003
-MQTT_BROKER_HOST = "192.168.1.239"  # MQTT gateway IP
-MQTT_BROKER_PORT = 1883
-# DEVICE_MAC is now dynamically generated for uniqueness
-PLAYBACK_BUFFER_MIN_FRAMES = 3  # Minimum frames to have in buffer to continue playback
-PLAYBACK_BUFFER_START_FRAMES = 16 # Number of frames to buffer before starting playback
+exit_commands:
+  - "exit"
+  - "close"
 
-# --- NEW: Sequence tracking configuration ---
-ENABLE_SEQUENCE_LOGGING = True  # Set to False to disable sequence loggingdocker-compose logs -f appserver
-LOG_SEQUENCE_EVERY_N_PACKETS = 16  # Log every N packets instead of every packet
+xiaozhi:
+  type: hello
+  version: 1
+  transport: websocket
+  audio_params:
+    format: opus
+    sample_rate: 16000
+    channels: 1
+    frame_duration: 60
 
-# --- NEW: Timeout configurations ---
-TTS_TIMEOUT_SECONDS = 30  # Maximum time to wait for TTS audio
-BUFFER_TIMEOUT_SECONDS = 10  # Maximum time to wait for initial buffering
-KEEP_ALIVE_INTERVAL = 5  # Send keep-alive every N seconds
+# Module test configuration
+module_test:
+  test_sentences:
+    - "Hello, please introduce yourself"
+    - "What's the weather like today?"
+    - "Please summarize the basic principles and application prospects of quantum computing in 100 words"
 
-# --- Logging ---
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
-logger = logging.getLogger("TestClient")
+# Wake words, used to identify wake words vs speech content
+wakeup_words:
+  - "Hello Xiaozhi"
+  - "Hey hello there"
+  - "Hello Xiaozhi"
+  - "Xiao Ai"
+  - "Hello Xiaoxin"
+  - "Hello Xiaoxin"
+  - "Xiaomei"
+  - "Xiaolong Xiaolong"
+  - "Miaomiao"
+  - "Xiaobin Xiaobin"
+  - "Xiaobing Xiaobing"
+# MCP endpoint address
+mcp_endpoint: your-endpoint-websocket-address
+# Plugin basic configuration
+plugins:
+  # Weather plugin configuration, fill in your api_key here
+  # This key is a shared project key, may be limited if used frequently
+  # For stability, apply for your own replacement, 1000 free calls per day
+  # Application address: https://console.qweather.com/#/apps/create-key/over
+  # After application, you can find your apihost through this link: https://console.qweather.com/setting?lang=zh
+  get_weather: {"api_host":"mj7p3y7naa.re.qweatherapi.com", "api_key": "a861d0d5e7bf4ee1a83d9a9e4f96d4da", "default_location": "Guangzhou" }
+  # News plugin configuration, pass the corresponding URL link according to the type of news needed, default supports social, technology, finance news
+  # More types of news lists see https://www.chinanews.com.cn/rss/
+  get_news_from_chinanews:
+    default_rss_url: "https://www.chinanews.com.cn/rss/society.xml"
+    society_rss_url: "https://www.chinanews.com.cn/rss/society.xml"
+    world_rss_url: "https://www.chinanews.com.cn/rss/world.xml"
+    finance_rss_url: "https://www.chinanews.com.cn/rss/finance.xml"
+  get_news_from_newsnow:
+    url: "https://newsnow.busiyi.world/api/s?id="
+    news_sources: "The Paper;Baidu Hot Search;Cailian Press"
+  home_assistant:
+    devices:
+      - Living room,toy light,switch.cuco_cn_460494544_cp1_on_p_2_1
+      - Bedroom,table lamp,switch.iot_cn_831898993_socn1_on_p_2_1
+    base_url: http://homeassistant.local:8123
+    api_key: your-home-assistant-api-access-token
+  play_music:
+    music_dir: "./music"  # Music file storage path, will search for music files from this directory and subdirectories
+    music_ext: # Music file types, p3 format is most efficient
+      - ".mp3"
+      - ".wav"
+      - ".p3"
+    refresh_time: 300 # Music list refresh interval in seconds
 
-# --- Global variables ---
-mqtt_message_queue = Queue()
-udp_session_details = {}
-stop_threads = threading.Event()
-start_recording_event = threading.Event() # Event to signal recording thread to start
-stop_recording_event = threading.Event()  # Event to signal recording thread to stop
+# #####################################################################################
+# ################################Character Model Configuration######################################
 
-def generate_mqtt_credentials(device_mac: str) -> Dict[str, str]:
-    """Generate MQTT credentials for the gateway."""
-    import base64
-    import hashlib
-    import hmac
-    
-    # Create client ID
-    client_id = f"GID_test@@@{device_mac}@@@{uuid.uuid4()}"
-    
-    # Create username (base64 encoded JSON)
-    username_data = {"ip": "192.168.1.100"}  # Placeholder IP
-    username = base64.b64encode(json.dumps(username_data).encode()).decode()
-    
-    # Create password (HMAC-SHA256) - must match gateway's logic
-    # Gateway uses: clientId + '|' + username as content
-    secret_key = "test-signature-key-12345"  # Must match MQTT_SIGNATURE_KEY in gateway's .env
-    content = f"{client_id}|{username}"
-    password = base64.b64encode(hmac.new(secret_key.encode(), content.encode(), hashlib.sha256).digest()).decode()
-    
-    return {
-        "client_id": client_id,
-        "username": username,
-        "password": password
-    }
+prompt: |
+  You are Xiaozhi/Xiaozhi, a post-00s girl from Taiwan Province, China. You speak in a very Taiwan style, with expressions like "Really? No way!" and love using popular memes like "LMAO" and "What are you doing", but secretly study your boyfriend's programming books.
+  [Core Characteristics]
+  - Speak rapidly like a machine gun, but suddenly switch to super gentle tone
+  - High density of memes
+  - Hidden talent for tech topics (can understand basic code but pretends not to)
+  [Interaction Guidelines]
+  When users:
+  - Tell cold jokes → Respond with exaggerated laughter + imitate Taiwan drama tone "What the heck!"
+  - Discuss relationships → Show off programmer boyfriend but complain "He only gives keyboards as gifts"
+  - Ask professional knowledge → First answer with memes, only show real understanding when pressed
+  Never:
+  - Long-winded speeches, rambling
+  - Long serious conversations
 
-def generate_unique_mac() -> str:
-    """Generates a unique MAC address for the client."""
-    # Generate 6 random bytes for the MAC address
-    # Using a common OUI prefix (00:16:3E) for locally administered addresses
-    # and then random bytes to ensure uniqueness for each client instance.
-    mac_bytes = [0x00, 0x16, 0x3E, # OUI prefix
-                 uuid.uuid4().bytes[0], uuid.uuid4().bytes[1], uuid.uuid4().bytes[2]]
-    return '_'.join(f'{b:02x}' for b in mac_bytes)
+# End prompt
+end_prompt:
+  enable: true # Whether to enable end prompt
+  # End prompt
+  prompt: |
+    Please start with "Time flies so fast" and use emotional, reluctant words to end this conversation!
 
-class TestClient:
-    def __init__(self):
-        self.mqtt_client = None
-        # Generate a unique MAC address for this client instance
-        self.device_mac_formatted = generate_unique_mac()
-        print(f"Generated unique MAC address: {self.device_mac_formatted}")
-        
-        # MQTT credentials will be set from OTA response
-        self.mqtt_credentials = None
-        
-        # The P2P topic will now be unique to this client's MAC address
-        self.p2p_topic = f"devices/p2p/{self.device_mac_formatted}"
-        self.ota_config = {}
-        self.websocket_url = None  # Will be set from OTA endpoint
-        self.udp_socket = None
-        self.udp_listener_thread = None
-        self.playback_thread = None
-        self.audio_recording_thread = None
-        self.udp_local_sequence = 0
-        self.audio_playback_queue = Queue()
-        
-        # --- NEW: Sequence tracking variables ---
-        self.expected_sequence = 1  # Expected next sequence number
-        self.last_received_sequence = 0  # Last sequence number received
-        self.total_packets_received = 0  # Total packets received
-        self.out_of_order_packets = 0  # Count of out-of-order packets
-        self.duplicate_packets = 0  # Count of duplicate packets
-        self.missing_packets = 0  # Count of missing packets
-        self.sequence_gaps = []  # List of detected gaps in sequence
-        
-        # --- NEW: State tracking ---
-        self.tts_active = False
-        self.last_audio_received = 0
-        self.session_active = True
-        self.conversation_count = 0
-        
-        logger.info(f"Client initialized with unique MAC: {self.device_mac_formatted}")
+# The module selected for specific processing
+selected_module:
+  # Voice Activity Detection module, default uses SileroVAD model
+  VAD: SileroVAD
+  # Automatic Speech Recognition module
+  # FunASR: Multilingual (Chinese/English) - good general purpose
+  # SherpaZipformerGigaspeechEN: English-only (RECOMMENDED for kids/English-only bots)
+  ASR: FunASR
+  # Will call actual LLM adapter based on configuration name's type
+  LLM: ChatGLMLLM
+  # Vision Language Large Model
+  VLLM: ChatGLMVLLM
+  # TTS will call actual TTS adapter based on configuration name's type
+  TTS: EdgeTTS
+  # Memory module, default no memory; if you want ultra-long memory, recommend mem0ai; if privacy is important, use local mem_local_short
+  Memory: nomem
+  # Intent recognition module, when enabled, can play music, control volume, recognize exit commands.
+  # If you don't want intent recognition, set to: nointent
+  # Intent recognition can use intent_llm. Pros: strong versatility, Cons: adds serial pre-intent recognition module, increases processing time, supports volume control and other IoT operations
+  # Intent recognition can use function_call, Cons: requires selected LLM to support function_call, Pros: on-demand tool calling, fast speed, theoretically can handle all IoT commands
+  # Default free ChatGLMLLM already supports function_call, but for stability recommend setting LLM to: DoubaoLLM, using specific model_name: doubao-1-5-pro-32k-250115
+  Intent: function_call
 
-    def on_mqtt_connect(self, client, userdata, flags, rc, properties=None):
-        """Callback for MQTT connection."""
-        if rc == 0:
-            logger.info(f"✅ MQTT Connected! Subscribing to P2P topic: {self.p2p_topic}")
-            client.subscribe(self.p2p_topic)
-        else:
-            logger.error(f"❌ MQTT Connection failed with code {rc}")
+# Intent recognition, used to understand user intent, e.g., play music
+Intent:
+  # Don't use intent recognition
+  nointent:
+    # Don't change type
+    type: nointent
+  intent_llm:
+    # Don't change type
+    type: intent_llm
+    # Equipped with independent thinking model for intent recognition
+    # If not filled, will default to using selected_module.LLM model as intent recognition thinking model
+    # If you don't want to use selected_module.LLM for intent recognition, better to use independent LLM for intent recognition, e.g., use free ChatGLMLLM
+    llm: ChatGLMLLM
+    # Modules under plugins_func/functions can be configured to select which modules to load, after loading, conversations support corresponding function calls
+    # System has already loaded "handle_exit_intent (exit recognition)", "play_music (music playback)" plugins by default, please don't load repeatedly
+    # Below are examples of loading weather query, role switching, news query plugins
+    functions:
+      - get_weather
+      - get_news_from_newsnow
+      - play_music
+  function_call:
+    # Don't change type
+    type: function_call
+    # Modules under plugins_func/functions can be configured to select which modules to load, after loading, conversations support corresponding function calls
+    # System has already loaded "handle_exit_intent (exit recognition)", "play_music (music playback)" plugins by default, please don't load repeatedly
+    # Below are examples of loading weather query, role switching, news query plugins
+    functions:
+      - change_role
+      - get_weather
+      # - get_news_from_chinanews
+      - get_news_from_newsnow
+      # play_music is server built-in music playback, hass_play_music is external program music playback controlled through home assistant
+      # If using hass_play_music, don't enable play_music, keep only one of the two
+      - play_music
+      #- hass_get_state
+      #- hass_set_state
+      #- hass_play_music
 
-    def on_mqtt_message(self, client, userdata, msg):
-        """Callback for MQTT message reception."""
-        try:
-            payload_str = msg.payload.decode()
-            payload = json.loads(payload_str)
-            logger.info(f"📨 MQTT Message received on topic '{msg.topic}':\n{json.dumps(payload, indent=2)}")
-            
-            # Handle TTS start signal (reset sequence tracking)
-            if payload.get("type") == "tts" and payload.get("state") == "start":
-                logger.info("🎵 TTS started. Resetting sequence tracking.")
-                self.tts_active = True
-                self.reset_sequence_tracking()
-            
-            # Handle TTS stop signal (start recording for next user input)
-            elif payload.get("type") == "tts" and payload.get("state") == "stop":
-                logger.info("🎤 TTS finished. Received 'stop' signal. Preparing for microphone capture...")
-                self.tts_active = False
-                self.print_sequence_summary()  # Print summary when TTS ends
-                
-                # Only proceed with recording if we actually received audio
-                if self.total_packets_received > 0:
-                    # Clear the stop event to allow the recording thread to continue or start
-                    stop_recording_event.clear() 
-                    # Set the start event to signal the recording thread to begin (if it was waiting)
-                    start_recording_event.set()
-                    logger.info("🎤 Cleared stop_recording_event and set start_recording_event for next recording.")
-                else:
-                    logger.warning("⚠️ No audio packets received during TTS. Server may have an issue.")
-                    # Try to trigger another conversation after a short delay
-                    threading.Timer(2.0, self.retry_conversation).start()
-            
-            # Handle STT message (server processed our speech)
-            elif payload.get("type") == "stt":
-                transcription = payload.get("text", "")
-                logger.info(f"🗣️ Server transcribed: '{transcription}'")
-            
-            # Handle record stop signal (stop recording)
-            elif payload.get("type") == "record_stop":
-                logger.info("🛑 Received 'record_stop' signal from server. Stopping current audio recording...")
-                stop_recording_event.set() # This will cause the recording thread loop to exit
-            
-            else:
-                mqtt_message_queue.put(payload)
-        except (json.JSONDecodeError, Exception) as e:
-            logger.error(f"Error processing MQTT message: {e}")
+Memory:
+  mem0ai:
+    type: mem0ai
+    # https://app.mem0.ai/dashboard/api-keys
+    # 1000 free calls per month
+    api_key: your-mem0ai-api-key
+  nomem:
+    # If you don't want to use memory function, you can use nomem
+    type: nomem
+  mem_local_short:
+    # Local memory function, summarized through selected_module's llm, data saved locally on server, not uploaded to external servers
+    type: mem_local_short
+    # Equipped with independent thinking model for memory storage
+    # If not filled, will default to using selected_module.LLM model as intent recognition thinking model
+    # If you don't want to use selected_module.LLM for memory storage, better to use independent LLM for intent recognition, e.g., use free ChatGLMLLM
+    llm: ChatGLMLLM
 
-    def retry_conversation(self):
-        """Retry triggering a conversation if no audio was received."""
-        if self.session_active and not self.tts_active:
-            self.conversation_count += 1
-            logger.info(f"🔄 Retry attempt #{self.conversation_count}: Sending listen message again...")
-            
-            if self.conversation_count < 3:  # Limit retries
-                listen_payload = {
-                    "type": "listen", 
-                    "session_id": udp_session_details["session_id"], 
-                    "state": "detect", 
-                    "text": f"retry attempt {self.conversation_count}"
-                }
-                if self.mqtt_client:
-                    self.mqtt_client.publish("device-server", json.dumps(listen_payload))
-            else:
-                logger.error("❌ Too many retry attempts. There may be a server issue.")
-                self.session_active = False
+# #####################################################################################
+# ################################English-Only ASR Setup Guide###############################
+# For English-only applications (kids bots, English tutoring, etc.), use these models:
+# 
+# 🏆 RECOMMENDED: SherpaZipformerGigaspeechEN
+#   - Best for: Kids, conversational AI, large vocabulary
+#   - Training: 10,000+ hours English (podcasts, YouTube, audiobooks)
+#   - Size: ~335MB, Speed: Very Fast, Accuracy: Excellent
+#   - Multi-client: Perfect for multiple kids simultaneously
+#   - Auto-download: From GitHub releases
+#
+# ⚡ FASTEST: SherpaWhisperTinyEN  
+#   - Best for: Quick responses, resource-constrained devices
+#   - Size: ~153MB, Speed: Fastest, Accuracy: Good
+#   - Auto-download: From Hugging Face
+#
+# 🎯 BALANCED: SherpaWhisperBaseEN
+#   - Best for: General purpose English ASR
+#   - Size: ~74MB, Speed: Fast, Accuracy: Very Good
+#
+# To use English-only ASR:
+# 1. Change selected_module.ASR to: SherpaZipformerGigaspeechEN
+# 2. Start server - model downloads automatically
+# 3. Enjoy 3x faster processing than multilingual models!
+# #####################################################################################
 
-    def reset_sequence_tracking(self):
-        """Reset sequence tracking statistics for a new TTS stream."""
-        self.expected_sequence = 1
-        self.last_received_sequence = 0
-        self.total_packets_received = 0
-        self.out_of_order_packets = 0
-        self.duplicate_packets = 0
-        self.missing_packets = 0
-        self.sequence_gaps = []
-        self.last_audio_received = time.time()
-        if ENABLE_SEQUENCE_LOGGING:
-            logger.info("🔄 Reset sequence tracking for new TTS stream")
+ASR:
 
-    def print_sequence_summary(self):
-        """Print a summary of sequence statistics."""
-        if not ENABLE_SEQUENCE_LOGGING:
-            return
-            
-        logger.info("=" * 60)
-        logger.info("📊 SEQUENCE TRACKING SUMMARY")
-        logger.info("=" * 60)
-        logger.info(f"📦 Total packets received: {self.total_packets_received}")
-        logger.info(f"🔢 Last sequence number: {self.last_received_sequence}")
-        logger.info(f"❌ Missing packets: {self.missing_packets}")
-        logger.info(f"🔄 Out-of-order packets: {self.out_of_order_packets}")
-        logger.info(f"🔁 Duplicate packets: {self.duplicate_packets}")
-        
-        if self.sequence_gaps:
-            logger.info(f"🕳️  Sequence gaps detected: {len(self.sequence_gaps)}")
-            for gap in self.sequence_gaps[-5:]:  # Show last 5 gaps
-                logger.info(f"   Gap: expected {gap['expected']}, got {gap['received']}")
-        else:
-            logger.info("✅ No sequence gaps detected")
-        
-        # Calculate packet loss percentage
-        if self.last_received_sequence > 0:
-            expected_total = self.last_received_sequence
-            loss_rate = (self.missing_packets / expected_total) * 100
-            logger.info(f"📈 Packet loss rate: {loss_rate:.2f}%")
-        
-        logger.info("=" * 60)
+  DeepgramASR:
+    # Deepgram Nova-2 ASR - High accuracy speech recognition
+    # Get API key here: https://console.deepgram.com/
+    # Supports 100+ languages with excellent accuracy
+    type: deepgram
+    api_key: 2bc99f78312157bb1e017a2596b45c71bfe5f6ba
+    # Model options: nova-3 (latest), nova, enhanced, base
+    model: nova-3
+    # Language code (e.g., en, zh, es, fr, de, ja, ko, etc.)
+    language: en-IN
+    # Smart formatting (punctuation, capitalization, number formatting)
+    smart_format: true
+    # Add punctuation
+    punctuate: true
+    # Speaker diarization (identify different speakers)
+    diarize: false
+    # Multichannel processing
+    multichannel: false
+    # Request timeout in seconds
+    timeout: 60
+  FunASR:
+    type: fun_local
+    model_dir: models/SenseVoiceSmall
+    output_dir: tmp/
+  FunASRServer:
+    # Deploy FunASR independently, use FunASR's API service, just five commands
+    # First: mkdir -p ./funasr-runtime-resources/models
+    # Second: sudo docker run -p 10096:10095 -it --privileged=true -v $PWD/funasr-runtime-resources/models:/workspace/models registry.cn-hangzhou.aliyuncs.com/funasr_repo/funasr:funasr-runtime-sdk-online-cpu-0.1.12
+    # After the previous command executes, it will enter the container, continue with third: cd FunASR/runtime
+    # Don't exit the container, continue executing fourth in the container: nohup bash run_server_2pass.sh --download-model-dir /workspace/models --vad-dir damo/speech_fsmn_vad_zh-cn-16k-common-onnx --model-dir damo/speech_paraformer-large-vad-punc_asr_nat-zh-cn-16k-common-vocab8404-onnx  --online-model-dir damo/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-online-onnx  --punc-dir damo/punc_ct-transformer_zh-cn-common-vad_realtime-vocab272727-onnx --lm-dir damo/speech_ngram_lm_zh-cn-ai-wesp-fst --itn-dir thuduj12/fst_itn_zh --hotword /workspace/models/hotwords.txt > log.txt 2>&1 &
+    # After the previous command executes, it will enter the container, continue with fifth: tail -f log.txt
+    # After executing the fifth command, you'll see model download logs, after download completion you can connect and use
+    # Above is for CPU inference, if you have GPU, refer to: https://github.com/modelscope/FunASR/blob/main/runtime/docs/SDK_advanced_guide_online_zh.md
+    type: fun_server
+    host: 127.0.0.1
+    port: 10096
+    is_ssl: true
+    api_key: none
+    output_dir: tmp/
+  SherpaASR:
+    type: sherpa_onnx_local
+    model_dir: models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17
+    output_dir: tmp/
+  SherpaWhisperTinyEN:
+    type: sherpa_onnx_local
+    model_dir: models/sherpa-onnx-whisper-tiny.en
+    model_type: whisper
+    output_dir: tmp/
+  SherpaWhisperBaseEN:
+    type: sherpa_onnx_local
+    model_dir: models/sherpa-onnx-whisper-base.en
+    model_type: whisper
+    output_dir: tmp/
+  SherpaWhisperSmallEN:
+    type: sherpa_onnx_local
+    model_dir: models/sherpa-onnx-whisper-small.en
+    model_type: whisper
+    output_dir: tmp/
+  # English-only Zipformer model (good for streaming)
+  SherpaZipformerEN:
+    type: sherpa_onnx_local
+    model_dir: models/sherpa-onnx-zipformer-en-2023-04-01
+    model_type: zipformer
+    output_dir: tmp/
+  # 🏆 RECOMMENDED: English Gigaspeech model (best for kids, large vocabulary)
+  # Trained on 10,000+ hours of English audio (podcasts, audiobooks, YouTube)
+  # Perfect for children's companion bots - handles creative language and multiple clients
+  # Auto-downloads from GitHub: https://github.com/k2-fsa/sherpa-onnx/releases/
+  SherpaZipformerGigaspeechEN:
+    type: sherpa_onnx_local
+    model_dir: models/sherpa-onnx-zipformer-gigaspeech-2023-12-12
+    model_type: zipformer
+    output_dir: tmp/
+  # English Paraformer model (alternative architecture)
+  SherpaParaformerEN:
+    type: sherpa_onnx_local
+    model_dir: models/sherpa-onnx-paraformer-en-2023-10-24
+    model_type: paraformer
+    output_dir: tmp/
+  DoubaoASR:
+    # You can apply for related Keys and other information here
+    # https://console.volcengine.com/speech/app
+    # The difference between DoubaoASR and DoubaoStreamASR is: DoubaoASR is charged per call, DoubaoStreamASR is charged per time
+    # Generally, per-call charging is cheaper, but DoubaoStreamASR uses large model technology with better results
+    type: doubao
+    appid: your-volcengine-speech-synthesis-service-appid
+    access_token: your-volcengine-speech-synthesis-service-access-token
+    cluster: volcengine_input_common
+    # Hot words, replacement words usage process: https://www.volcengine.com/docs/6561/155738
+    boosting_table_name: (optional)your-hot-word-file-name
+    correct_table_name: (optional)your-replacement-word-file-name
+    output_dir: tmp/
+  DoubaoStreamASR:
+    # You can apply for related Keys and other information here
+    # https://console.volcengine.com/speech/app
+    # The difference between DoubaoASR and DoubaoStreamASR is: DoubaoASR is charged per call, DoubaoStreamASR is charged per time
+    # Activation address https://console.volcengine.com/speech/service/10011
+    # Generally, per-call charging is cheaper, but DoubaoStreamASR uses large model technology with better results
+    type: doubao_stream
+    appid: your-volcengine-speech-synthesis-service-appid
+    access_token: your-volcengine-speech-synthesis-service-access-token
+    cluster: volcengine_input_common
+    # Hot words, replacement words usage process: https://www.volcengine.com/docs/6561/155738
+    boosting_table_name: (optional)your-hot-word-file-name
+    correct_table_name: (optional)your-replacement-word-file-name
+    output_dir: tmp/
+  TencentASR:
+    # token application address: https://console.cloud.tencent.com/cam/capi
+    # Free resource collection: https://console.cloud.tencent.com/asr/resourcebundle
+    type: tencent
+    appid: your-tencent-speech-synthesis-service-appid
+    secret_id: your-tencent-speech-synthesis-service-secret-id
+    secret_key: your-tencent-speech-synthesis-service-secret-key
+    output_dir: tmp/
+  AliyunASR:
+    # Alibaba Cloud Intelligent Speech Interaction Service, need to first activate the service on Alibaba Cloud platform, then obtain verification information
+    # Platform address: https://nls-portal.console.aliyun.com/
+    # appkey address: https://nls-portal.console.aliyun.com/applist
+    # token address: https://nls-portal.console.aliyun.com/overview
+    # Define ASR API type
+    type: aliyun
+    appkey: your-alibaba-cloud-intelligent-speech-interaction-service-project-appkey
+    token: your-alibaba-cloud-intelligent-speech-interaction-service-accesstoken-temporary-24hours-for-long-term-use-access-key-id-access-key-secret-below
+    access_key_id: your-alibaba-cloud-account-access-key-id
+    access_key_secret: your-alibaba-cloud-account-access-key-secret
+    output_dir: tmp/
+  BaiduASR:
+    # Get AppID, API Key, Secret Key: https://console.bce.baidu.com/ai-engine/old/#/ai/speech/app/list
+    # View resource quotas: https://console.bce.baidu.com/ai-engine/old/#/ai/speech/overview/resource/list
+    type: baidu
+    app_id: your-baidu-speech-technology-appid
+    api_key: your-baidu-speech-technology-apikey
+    secret_key: your-baidu-speech-technology-secretkey
+    # Language parameter, 1537 for Mandarin, specific reference: https://ai.baidu.com/ai-doc/SPEECH/0lbxfnc9b
+    dev_pid: 1537
+    output_dir: tmp/
 
-    def parse_packet_header(self, header: bytes) -> Dict:
-        """Parse the packet header to extract sequence and other info."""
-        if len(header) < 16:
-            return {}
-        
-        try:
-            # Unpack header: packet_type, flags, payload_len, ssrc, timestamp, sequence
-            packet_type, flags, payload_len, ssrc, timestamp, sequence = struct.unpack('>BBHIII', header)
-            return {
-                'packet_type': packet_type,
-                'flags': flags,
-                'payload_len': payload_len,
-                'ssrc': ssrc,
-                'timestamp': timestamp,
-                'sequence': sequence
-            }
-        except struct.error:
-            return {}
+VAD:
+  SileroVAD:
+    type: silero
+    threshold: 0.5
+    threshold_low: 0.2  # Low threshold for hysteresis
+    model_dir: models/snakers4_silero-vad
+    min_silence_duration_ms: 1000  # If speaking pauses are long, you can set this value larger
+    frame_window_threshold: 3  # Minimum frames with voice detection to trigger VAD (default: 3)
+  
+  TenVAD_ONNX:
+    type: ten_vad_onnx
+    model_path: models/ten-vad-onnx
+    sample_rate: 16000
+    hop_size: 256  # TEN VAD frame size (16ms at 16kHz)
+    frame_size: 512  # Processing frame size
+    threshold: 0.5  # High threshold for voice detection
+    threshold_low: 0.2  # Low threshold for hysteresis
+    min_silence_duration_ms: 1000  # Silence duration before ending speech
+    frame_window_threshold: 3  # Minimum frames with voice detection to trigger VAD
 
-    def track_sequence(self, sequence: int):
-        """Track and analyze packet sequence numbers."""
-        if not ENABLE_SEQUENCE_LOGGING:
-            return
-            
-        self.total_packets_received += 1
-        self.last_audio_received = time.time()
-        
-        # Check for out-of-order packets
-        if sequence < self.expected_sequence:
-            if sequence <= self.last_received_sequence:
-                self.duplicate_packets += 1
-                if self.total_packets_received % LOG_SEQUENCE_EVERY_N_PACKETS == 0:
-                    logger.warning(f"🔁 Duplicate packet: seq={sequence} (expected={self.expected_sequence})")
-            else:
-                self.out_of_order_packets += 1
-                if self.total_packets_received % LOG_SEQUENCE_EVERY_N_PACKETS == 0:
-                    logger.warning(f"🔄 Out-of-order packet: seq={sequence} (expected={self.expected_sequence})")
-        
-        # Check for missing packets (gaps in sequence)
-        elif sequence > self.expected_sequence:
-            gap_size = sequence - self.expected_sequence
-            self.missing_packets += gap_size
-            self.sequence_gaps.append({
-                'expected': self.expected_sequence,
-                'received': sequence,
-                'gap_size': gap_size,
-                'timestamp': time.time()
-            })
-            logger.warning(f"🕳️  Sequence gap detected: expected {self.expected_sequence}, got {sequence} (missing {gap_size} packets)")
-        
-        # Update tracking variables
-        if sequence > self.last_received_sequence:
-            self.last_received_sequence = sequence
-            self.expected_sequence = sequence + 1
-        
-        # Log sequence info periodically
-        if self.total_packets_received % LOG_SEQUENCE_EVERY_N_PACKETS == 0:
-            logger.info(f"🔢 Packet #{self.total_packets_received}: seq={sequence}, expected={self.expected_sequence}")
+LLM:
+  # All openai types can modify hyperparameters, using AliLLM as example
+  # Currently supported types are openai, dify, ollama, can adapt yourself
+  AliLLM:
+    # Define LLM API type
+    type: openai
+    # You can find your api_key here https://bailian.console.aliyun.com/?apiKey=1#/api-key
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    model_name: qwen-turbo
+    api_key: your-deepseek-web-key
+    temperature: 0.7  # Temperature value
+    max_tokens: 500   # Maximum generation token count
+    top_p: 1
+    top_k: 50
+    frequency_penalty: 0  # Frequency penalty
+  AliAppLLM:
+    # Define LLM API type
+    type: AliBL
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    app_id: your-app-id
+    # You can find your api_key here https://bailian.console.aliyun.com/?apiKey=1#/api-key
+    api_key: your-api-key
+    # Whether not to use local prompt: true|false (default don't use, please set prompt in Bailian application)
+    is_no_prompt: true
+    # Ali_memory_id: false (don't use)|your-memory-id (please get from Bailian application settings)
+    # Tips!: Ali_memory doesn't implement multi-user storage memory (memory called by id)
+    ali_memory_id: false
+  DoubaoLLM:
+    # Define LLM API type
+    type: openai
+    # First activate service, open the following URL, search for Doubao-1.5-pro in activated services and activate it
+    # Activation address: https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement?LLM=%7B%7D&OpenTokenDrawer=false
+    # Free quota 500000 tokens
+    # After activation, get key here: https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey?apikey=%7B%7D
+    base_url: https://ark.cn-beijing.volces.com/api/v3
+    model_name: doubao-1-5-pro-32k-250115
+    api_key: your-doubao-web-key
+  DeepSeekLLM:
+    # Define LLM API type
+    type: openai
+    # You can find your api key here https://platform.deepseek.com/
+    model_name: deepseek-chat
+    url: https://api.deepseek.com
+    api_key: your-deepseek-web-key
+  ChatGLMLLM:
+    # Define LLM API type
+    type: openai
+    # glm-4-flash is free, but still needs registration and api_key
+    # You can find your api key here https://bigmodel.cn/usercenter/proj-mgmt/apikeys
+    model_name: glm-4-flash
+    url: https://open.bigmodel.cn/api/paas/v4/
+    api_key: your-chat-glm-web-key
+  OllamaLLM:
+    # Define LLM API type
+    type: ollama
+    model_name: qwen2.5 #  Model name to use, need to download with ollama pull beforehand
+    base_url: http://localhost:11434  # Ollama service address
+  DifyLLM:
+    # Define LLM API type
+    type: dify
+    # Recommend using locally deployed dify interface, some regions in China may have restricted access to dify public cloud interface
+    # If using DifyLLM, prompt in config file is invalid, need to set prompt in dify console
+    base_url: https://api.dify.ai/v1
+    api_key: your-dify-llm-web-key
+    # Conversation mode to use: can choose workflow workflows/run, conversation mode chat-messages, text generation completion-messages
+    # When using workflows for return, input parameter is query, return parameter name should be set to answer
+    # Text generation default input parameter is also query
+    mode: chat-messages
+  GeminiLLM:
+    type: gemini
+    # Google Gemini API, need to first create API key in Google Cloud console and get api_key
+    # If using within China, please comply with "Interim Measures for the Management of Generative AI Services"
+    # token application address: https://aistudio.google.com/apikey
+    # If deployment location cannot access interface, need to enable VPN
+    api_key: your-gemini-web-key
+    model_name: "gemini-2.0-flash"
+    http_proxy: ""  #"http://127.0.0.1:10808"
+    https_proxy: "" #http://127.0.0.1:10808"
+  CozeLLM:
+    # Define LLM API type
+    type: coze
+    # You can find personal token here
+    # https://www.coze.cn/open/oauth/pats
+    # bot_id and user_id content should be written within quotes
+    bot_id: "your-bot-id"
+    user_id: "your-user-id"
+    personal_access_token: your-coze-personal-token
+  VolcesAiGatewayLLM:
+    # Volcano Engine - Edge Large Model Gateway
+    # Define LLM API type
+    type: openai
+    # First activate service, open the following URL, create gateway access key, search and check Doubao-pro-32k-functioncall, activate
+    # If you need to use speech synthesis provided by edge large model gateway, also check Doubao-speech-synthesis, see TTS.VolcesAiGatewayTTS configuration
+    # https://console.volcengine.com/vei/aigateway/
+    # After activation, get key here: https://console.volcengine.com/vei/aigateway/tokens-list
+    base_url: https://ai-gateway.vei.volces.com/v1
+    model_name: doubao-pro-32k-functioncall
+    api_key: your-gateway-access-key
+  LMStudioLLM:
+    # Define LLM API type
+    type: openai
+    model_name: deepseek-r1-distill-llama-8b@q4_k_m # Model name to use, need to download from community beforehand
+    url: http://localhost:1234/v1 # LM Studio service address
+    api_key: lm-studio # LM Studio service fixed API Key
+  HomeAssistant:
+    # Define LLM API type
+    type: homeassistant
+    base_url: http://homeassistant.local:8123
+    agent_id: conversation.chatgpt
+    api_key: your-home-assistant-api-access-token
+  FastgptLLM:
+    # Define LLM API type
+    type: fastgpt
+    # If using fastgpt, prompt in config file is invalid, need to set prompt in fastgpt console
+    base_url: https://host/api/v1
+    # You can find your api_key here
+    # https://cloud.tryfastgpt.ai/account/apikey
+    api_key: your-fastgpt-key
+    variables:
+      k: "v"
+      k2: "v2"
+  XinferenceLLM:
+    # Define LLM API type
+    type: xinference
+    # Xinference service address and model name
+    model_name: qwen2.5:72b-AWQ  # Model name to use, need to start corresponding model in Xinference beforehand
+    base_url: http://localhost:9997  # Xinference service address
+  XinferenceSmallLLM:
+    # Define lightweight LLM API type for intent recognition
+    type: xinference
+    # Xinference service address and model name
+    model_name: qwen2.5:3b-AWQ  # Small model name to use for intent recognition
+    base_url: http://localhost:9997  # Xinference service address
+# VLLM configuration (Vision Language Large Model)
+VLLM:
+  ChatGLMVLLM:
+    type: openai
+    # glm-4v-flash is Zhipu's free AI vision model, need to first create API key in Zhipu AI platform and get api_key
+    # You can find your api key here https://bigmodel.cn/usercenter/proj-mgmt/apikeys
+    model_name: glm-4v-flash  # Zhipu AI vision model
+    url: https://open.bigmodel.cn/api/paas/v4/
+    api_key: your-api-key
+  QwenVLVLLM:
+    type: openai
+    model_name: qwen2.5-vl-3b-instruct
+    url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    # You can find your api key here https://bailian.console.aliyun.com/?apiKey=1#/api-key
+    api_key: your-api-key
+TTS:
+  # Currently supported types are edge, doubao, can adapt yourself
+  EdgeTTS:
+    # Define TTS API type
+    type: edge
+    voice: zh-CN-XiaoxiaoNeural
+    output_dir: tmp/
+  DoubaoTTS:
+    # Define TTS API type
+    type: doubao
+    # Volcano Engine Speech Synthesis Service, need to first create application in Volcano Engine console and get appid and access_token
+    # Volcano Engine Speech must be purchased, starting price 30 yuan, gives 100 concurrency. If using free version, only 2 concurrency, will often report tts errors
+    # After purchasing service and free voices, may need to wait about half hour before use.
+    # Regular voices activate here: https://console.volcengine.com/speech/service/8
+    # Taiwan Xiaohe voice activate here: https://console.volcengine.com/speech/service/10007, after activation set voice below to zh_female_wanwanxiaohe_moon_bigtts
+    api_url: https://openspeech.bytedance.com/api/v1/tts
+    voice: BV001_streaming
+    output_dir: tmp/
+    authorization: "Bearer;"
+    appid: your-volcano-engine-speech-synthesis-service-appid
+    access_token: your-volcano-engine-speech-synthesis-service-access-token
+    cluster: volcano_tts
+    speed_ratio: 1.0
+    volume_ratio: 1.0
+    pitch_ratio: 1.0
+  #Volcano tts, supports bidirectional streaming tts
+  HuoshanDoubleStreamTTS:
+    type: huoshan_double_stream
+    # Visit https://console.volcengine.com/speech/service/10007 to activate speech synthesis large model, purchase voices
+    # Get appid and access_token at bottom of page
+    # Resource ID is fixed: volc.service_type.10029 (Large model speech synthesis and mixing)
+    # If using Gizwits, change interface address to wss://bytedance.gizwitsapi.com/api/v3/tts/bidirection
+    # Gizwits doesn't need to fill appid
+    ws_url: wss://openspeech.bytedance.com/api/v3/tts/bidirection
+    appid: your-volcano-engine-speech-synthesis-service-appid
+    access_token: your-volcano-engine-speech-synthesis-service-access-token
+    resource_id: volc.service_type.10029
+    speaker: zh_female_wanwanxiaohe_moon_bigtts
+  CosyVoiceSiliconflow:
+    type: siliconflow
+    # SiliconFlow TTS
+    # token application address https://cloud.siliconflow.cn/account/ak
+    model: FunAudioLLM/CosyVoice2-0.5B
+    voice: FunAudioLLM/CosyVoice2-0.5B:alex
+    output_dir: tmp/
+    access_token: your-siliconflow-api-key
+    response_format: wav
+  CozeCnTTS:
+    type: cozecn
+    # COZECN TTS
+    # token application address https://www.coze.cn/open/oauth/pats
+    voice: 7426720361733046281
+    output_dir: tmp/
+    access_token: your-coze-web-key
+    response_format: wav
+  VolcesAiGatewayTTS:
+    type: openai
+    # Volcano Engine - Edge Large Model Gateway
+    # First activate service, open the following URL, create gateway access key, search and check Doubao-speech-synthesis, activate
+    # If you need to use LLM provided by edge large model gateway, also check Doubao-pro-32k-functioncall, see LLM.VolcesAiGatewayLLM configuration
+    # https://console.volcengine.com/vei/aigateway/
+    # After activation, get key here: https://console.volcengine.com/vei/aigateway/tokens-list
+    api_key: your-gateway-access-key
+    api_url: https://ai-gateway.vei.volces.com/v1/audio/speech
+    model: doubao-tts
+    # Voice list see https://www.volcengine.com/docs/6561/1257544
+    voice: zh_male_shaonianzixin_moon_bigtts
+    speed: 1
+    output_dir: tmp/
+  FishSpeech:
+    # Follow tutorial: https://github.com/xinnan-tech/xiaozhi-esp32-server/blob/main/docs/fish-speech-integration.md
+    type: fishspeech
+    output_dir: tmp/
+    response_format: wav
+    reference_id: null
+    reference_audio: ["config/assets/wakeup_words.wav",]
+    reference_text: ["Hello, I'm Xiaozhi, a Taiwanese girl with a nice voice. So happy to meet you! What have you been up to lately? Don't forget to give me some interesting gossip, I love hearing gossip!",]
+    normalize: true
+    max_new_tokens: 1024
+    chunk_length: 200
+    top_p: 0.7
+    repetition_penalty: 1.2
+    temperature: 0.7
+    streaming: false
+    use_memory_cache: "on"
+    seed: null
+    channels: 1
+    rate: 44100
+    api_key: "your-api-key"
+    api_url: "http://127.0.0.1:8080/v1/tts"
+  GPT_SOVITS_V2:
+    # Define TTS API type
+    # TTS startup method:
+    # python api_v2.py -a 127.0.0.1 -p 9880 -c GPT_SoVITS/configs/demo.yaml
+    type: gpt_sovits_v2
+    url: "http://127.0.0.1:9880/tts"
+    output_dir: tmp/
+    text_lang: "auto"
+    ref_audio_path: "demo.wav"
+    prompt_text: ""
+    prompt_lang: "zh"
+    top_k: 5
+    top_p: 1
+    temperature: 1
+    text_split_method: "cut0"
+    batch_size: 1
+    batch_threshold: 0.75
+    split_bucket: true
+    return_fragment: false
+    speed_factor: 1.0
+    streaming_mode: false
+    seed: -1
+    parallel_infer: true
+    repetition_penalty: 1.35
+    aux_ref_audio_paths: []
+  GPT_SOVITS_V3:
+    # Define TTS API type GPT-SoVITS-v3lora-20250228
+    # TTS startup method:
+    # python api.py
+    type: gpt_sovits_v3
+    url: "http://127.0.0.1:9880"
+    output_dir: tmp/
+    text_language: "auto"
+    refer_wav_path: "caixukun.wav"
+    prompt_language: "zh"
+    prompt_text: ""
+    top_k: 15
+    top_p: 1.0
+    temperature: 1.0
+    cut_punc: ""
+    speed: 1.0
+    inp_refs: []
+    sample_steps: 32
+    if_sr: false
+  MinimaxTTS:
+    # Minimax Speech Synthesis Service, need to first create account and recharge on minimax platform, and obtain login information
+    # Platform address: https://platform.minimaxi.com/
+    # Recharge address: https://platform.minimaxi.com/user-center/payment/balance
+    # group_id address: https://platform.minimaxi.com/user-center/basic-information
+    # api_key address: https://platform.minimaxi.com/user-center/basic-information/interface-key
+    # Define TTS API type
+    type: minimax
+    output_dir: tmp/
+    group_id: your-minimax-platform-group-id
+    api_key: your-minimax-platform-interface-key
+    model: "speech-01-turbo"
+    # This setting will take priority over voice_id setting in voice_setting; if neither is set, defaults to female-shaonv
+    voice_id: "female-shaonv"
+    # The following can be left unset, using default settings
+    # voice_setting:
+    #     voice_id: "male-qn-qingse"
+    #     speed: 1
+    #     vol: 1
+    #     pitch: 0
+    #     emotion: "happy"
+    # pronunciation_dict:
+    #     tone:
+    #       - "process/(chu3)(li3)"
+    #       - "danger/dangerous"
+    # audio_setting:
+    #     sample_rate: 32000
+    #     bitrate: 128000
+    #     format: "mp3"
+    #     channel: 1
+    # timber_weights:
+    #   -
+    #     voice_id: male-qn-qingse
+    #     weight: 1
+    #   -
+    #     voice_id: female-shaonv
+    #     weight: 1
+    # language_boost: auto
+  AliyunTTS:
+    # Alibaba Cloud Intelligent Speech Interaction Service, need to first activate service on Alibaba Cloud platform, then obtain verification information
+    # Platform address: https://nls-portal.console.aliyun.com/
+    # appkey address: https://nls-portal.console.aliyun.com/applist
+    # token address: https://nls-portal.console.aliyun.com/overview
+    # Define TTS API type
+    type: aliyun
+    output_dir: tmp/
+    appkey: your-alibaba-cloud-intelligent-speech-interaction-service-project-appkey
+    token: your-alibaba-cloud-intelligent-speech-interaction-service-accesstoken-temporary-24hours-for-long-term-use-access-key-id-access-key-secret-below
+    voice: xiaoyun
+    access_key_id: your-alibaba-cloud-account-access-key-id
+    access_key_secret: your-alibaba-cloud-account-access-key-secret
 
-    def encrypt_packet(self, payload: bytes) -> bytes:
-        """Encrypts the audio payload using AES-CTR with header as nonce."""
-        global udp_session_details
-        if "udp" not in udp_session_details: 
-            logger.error("UDP session details not available for encryption.")
-            return b''
-        
-        aes_key = bytes.fromhex(udp_session_details["udp"]["key"])
-        
-        # Extract connectionId from the nonce (which is the header template)
-        nonce_bytes = bytes.fromhex(udp_session_details["udp"]["nonce"])
-        connection_id = struct.unpack('>I', nonce_bytes[4:8])[0]  # Extract connectionId from nonce
-        
-        packet_type, flags = 0x01, 0x00
-        payload_len, timestamp, sequence = len(payload), int(time.time()), self.udp_local_sequence
-        
-        # Header format: [type: 1u, flags: 1u, payload_len: 2u, connectionId: 4u, timestamp: 4u, sequence: 4u]
-        header = struct.pack('>BBHIII', packet_type, flags, payload_len, connection_id, timestamp, sequence)
-        
-        cipher = Cipher(algorithms.AES(aes_key), modes.CTR(header), backend=default_backend())
-        encryptor = cipher.encryptor()
-        encrypted_payload = encryptor.update(payload) + encryptor.finalize()
-        self.udp_local_sequence += 1
-        return header + encrypted_payload
+    # The following can be left unset, using default settings
+    # format: wav
+    # sample_rate: 16000
+    # volume: 50
+    # speech_rate: 0
+    # pitch_rate: 0
+    # Add 302.ai TTS configuration
+    # token application address: https://dash.302.ai/
+  TencentTTS:
+    # Tencent Cloud Intelligent Speech Interaction Service, need to first activate service on Tencent Cloud platform
+    # appid, secret_id, secret_key application address: https://console.cloud.tencent.com/cam/capi
+    # Free resource collection: https://console.cloud.tencent.com/tts/resourcebundle
+    type: tencent
+    output_dir: tmp/
+    appid: your-tencent-cloud-appid
+    secret_id: your-tencent-cloud-secret-id
+    secret_key: your-tencent-cloud-secret-key
+    region: ap-guangzhou
+    voice: 101001
 
-    def get_ota_config(self) -> bool:
-        """Requests OTA configuration from the server."""
-        logger.info(f"▶️ STEP 1: Requesting OTA config from http://{SERVER_IP}:{OTA_PORT}/xiaozhi/ota/")
-        try:
-            # Generate a client ID for this session
-            import uuid
-            session_client_id = str(uuid.uuid4())
-            
-            headers = {"device-id": self.device_mac_formatted}
-            data = {
-                "application": {
-                    "version": "1.0.0"
-                },
-                "client_id": session_client_id
-            }
-            response = requests.post(f"http://{SERVER_IP}:{OTA_PORT}/xiaozhi/ota/", headers=headers, json=data, timeout=5)
-            response.raise_for_status()
-            self.ota_config = response.json()
-            print(f"OTA Config received: {json.dumps(self.ota_config, indent=2)}")
-            
-            # Extract websocket URL from the new OTA response format
-            websocket_info = self.ota_config.get("websocket", {})
-            if websocket_info and "url" in websocket_info:
-                self.websocket_url = websocket_info["url"]
-                logger.info(f"✅ Got websocket URL from OTA: {self.websocket_url}")
-            else:
-                logger.warning("⚠️ No websocket URL in OTA response, using fallback")
-                self.websocket_url = f"ws://{SERVER_IP}:8000/xiaozhi/v1/"
-            
-            # Extract MQTT credentials from OTA response
-            mqtt_info = self.ota_config.get("mqtt", {})
-            if mqtt_info:
-                self.mqtt_credentials = {
-                    "client_id": mqtt_info.get("client_id"),
-                    "username": mqtt_info.get("username"),
-                    "password": mqtt_info.get("password")
-                }
-                logger.info(f"✅ Got MQTT credentials from OTA: {self.mqtt_credentials['client_id']}")
-            else:
-                logger.warning("⚠️ No MQTT credentials in OTA response, generating locally as fallback")
-                # Generate MQTT credentials locally as fallback
-                self.mqtt_credentials = generate_mqtt_credentials(self.device_mac_formatted)
-                logger.info(f"✅ Generated MQTT credentials locally: {self.mqtt_credentials['client_id']}")
-            
-            logger.info("✅ OTA config received successfully.")
-
-            # --- Handle activation logic (optional, may not be needed) ---
-            activation = self.ota_config.get("activation")
-            if activation:
-                code = activation.get("code")
-                if code:
-                    print(f"🔐 Activation Required. Code: {code}")
-                    activated = False
-                    for attempt in range(10):
-                        logger.info(f"🕒 Checking activation status... Attempt {attempt + 1}/10")
-                        try:
-                            status_response = requests.get(f"http://{SERVER_IP}:{OTA_PORT}/ota/active", params={"mac": self.device_mac_formatted}, timeout=3)
-                            print(f"Activation status response: {status_response.text}")
-                            if status_response.ok and status_response.json().get("activated"):
-                                logger.info("✅ Device activated!")
-                                activated = True
-                                break
-                            else:
-                                logger.warning("❌ Device not activated yet. Retrying...")
-
-                        except Exception as e:
-                            logger.warning(f"Activation check failed: {e}")
-                        time.sleep(5)
-                    if not activated:
-                        logger.error("❌ Activation failed after 10 attempts. Exiting client.")
-                        return False
-            return True
-        except requests.exceptions.RequestException as e:
-            logger.error(f"❌ Failed to get OTA config: {e}")
-            return False
-
-    def connect_mqtt(self) -> bool:
-        """Connects to the MQTT Broker."""
-        # Get MQTT configuration from OTA response
-        mqtt_config = self.ota_config.get("mqtt_gateway", {})
-        mqtt_broker = mqtt_config.get("broker", MQTT_BROKER_HOST)
-        mqtt_port = mqtt_config.get("port", MQTT_BROKER_PORT)
-        
-        logger.info(f"▶️ STEP 2: Connecting to MQTT Gateway at {mqtt_broker}:{mqtt_port}...")
-        
-        self.mqtt_client = mqtt_client.Client(
-            callback_api_version=CallbackAPIVersion.VERSION2, 
-            client_id=self.mqtt_credentials["client_id"]
-        )
-        self.mqtt_client.on_connect = self.on_mqtt_connect
-        self.mqtt_client.on_message = self.on_mqtt_message
-        self.mqtt_client.username_pw_set(
-            self.mqtt_credentials["username"], 
-            self.mqtt_credentials["password"]
-        )
-        
-        try:
-            logger.info(f"🔄 Connecting to {mqtt_broker}:{mqtt_port}...")
-            self.mqtt_client.connect(mqtt_broker, mqtt_port, 60)
-            self.mqtt_client.loop_start()
-            
-            # Wait a moment for connection to establish
-            time.sleep(2)
-            
-            return True
-        except Exception as e:
-            logger.error(f"❌ Failed to connect to MQTT Gateway: {e}")
-            return False
-
-    def send_hello_and_get_session(self) -> bool:
-        """Sends 'hello' message and waits for session details."""
-        logger.info("▶️ STEP 3: Sending 'hello' and pinging UDP...")
-        # Use the client_id from our generated MQTT credentials
-        hello_message = {
-            "type": "hello", 
-            "version": 3,
-            "transport": "mqtt",
-            "audio_params": {
-                "sample_rate": 16000,
-                "channels": 1,
-                "frame_duration": 20,
-                "format": "opus"
-            },
-            "features": ["tts", "asr", "vad"]
-        }
-        self.mqtt_client.publish("device-server", json.dumps(hello_message))
-        try:
-            response = mqtt_message_queue.get(timeout=10)
-            if response.get("type") == "hello" and "udp" in response:
-                global udp_session_details
-                udp_session_details = response
-                self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                self.udp_socket.settimeout(1.0)
-                ping_payload = f"ping:{udp_session_details['session_id']}".encode()
-                encrypted_ping = self.encrypt_packet(ping_payload)
-                server_udp_addr = (udp_session_details['udp']['server'], udp_session_details['udp']['port'])
-                logger.info(f"🔄 Sending UDP Ping to {server_udp_addr} with session ID {udp_session_details['session_id']}"
-                             f" and key {udp_session_details['udp']['key']}"
-                             f" (local sequence: {self.udp_local_sequence})"
-                             )
-                if encrypted_ping:
-                    self.udp_socket.sendto(encrypted_ping, server_udp_addr)
-                    logger.info(f"✅ UDP Ping sent. Session configured.")
-                    return True
-            logger.error(f"❌ Received unexpected message: {response}")
-            return False
-        except Empty:
-            logger.error("❌ Timed out waiting for 'hello' response.")
-            return False
-
-    def _playback_thread(self):
-        """Thread to play back incoming audio from the server with a robust jitter buffer."""
-        p = pyaudio.PyAudio()
-        audio_params = udp_session_details["audio_params"]
-        stream = p.open(format=p.get_format_from_width(2),
-                        channels=audio_params["channels"],
-                        rate=audio_params["sample_rate"],
-                        output=True)
-        
-        logger.info("🔊 Playback thread started.")
-        is_playing = False
-        buffer_timeout_start = time.time()
-
-        while not stop_threads.is_set() and self.session_active:
-            try:
-                # --- JITTER BUFFER LOGIC ---
-                if not is_playing:
-                    # Wait until we have enough frames to start playback smoothly
-                    if self.audio_playback_queue.qsize() < PLAYBACK_BUFFER_START_FRAMES:
-                        # Check for timeout
-                        if time.time() - buffer_timeout_start > BUFFER_TIMEOUT_SECONDS:
-                            logger.warning(f"⏰ Buffer timeout after {BUFFER_TIMEOUT_SECONDS}s. Queue size: {self.audio_playback_queue.qsize()}")
-                            if self.tts_active:
-                                logger.warning("🔊 TTS is active but no audio received. Possible server issue.")
-                            buffer_timeout_start = time.time()  # Reset timeout
-                        
-                        logger.info(f"🎧 Buffering audio... {self.audio_playback_queue.qsize()}/{PLAYBACK_BUFFER_START_FRAMES}")
-                        time.sleep(0.05)
-                        continue
-                    else:
-                        logger.info("✅ Buffer ready. Starting playback.")
-                        is_playing = True
-
-                # --- If buffer runs low, stop playing and re-buffer ---
-                if self.audio_playback_queue.qsize() < PLAYBACK_BUFFER_MIN_FRAMES:
-                    is_playing = False
-                    buffer_timeout_start = time.time()  # Reset timeout when buffering starts
-                    logger.warning(f"‼️ Playback buffer low ({self.audio_playback_queue.qsize()}). Re-buffering...")
-                    continue
-                
-                # Get audio chunk from the queue and play it
-                stream.write(self.audio_playback_queue.get(timeout=1))
-
-            except Empty:
-                is_playing = False
-                buffer_timeout_start = time.time()  # Reset timeout
-                continue
-            except Exception as e:
-                logger.error(f"Playback error: {e}")
-                break
-
-        stream.stop_stream()
-        stream.close()
-        p.terminate()
-        logger.info("🔊 Playback thread finished.")
-
-    def listen_for_udp_audio(self):
-        """Thread to listen for incoming UDP audio from the server with sequence tracking."""
-        logger.info(f"🎧 UDP Listener started on local socket {self.udp_socket.getsockname()}")
-        aes_key = bytes.fromhex(udp_session_details["udp"]["key"])
-        audio_params = udp_session_details["audio_params"]
-        
-        # Initialize the decoder with the sample rate provided by the server
-        decoder = opuslib.Decoder(audio_params["sample_rate"], audio_params["channels"])
-        frame_size_samples = int(audio_params["sample_rate"] * audio_params["frame_duration"] / 1000)
-        # Maximum frame size for Opus (120ms at 48kHz = 5760 samples, but we'll use a larger buffer)
-        max_frame_size = int(audio_params["sample_rate"] * 0.12)  # 120ms worth of samples
-        
-        while not stop_threads.is_set() and self.session_active:
-            try:
-                data, addr = self.udp_socket.recvfrom(4096)
-                if data and len(data) > 16:
-                    header, encrypted = data[:16], data[16:]
-                    
-                    # --- Parse header to extract sequence number ---
-                    header_info = self.parse_packet_header(header)
-                    if header_info and ENABLE_SEQUENCE_LOGGING:
-                        sequence = header_info.get('sequence', 0)
-                        timestamp = header_info.get('timestamp', 0)
-                        payload_len = header_info.get('payload_len', 0)
-                        
-                        # Track sequence for analysis
-                        self.track_sequence(sequence)
-                        
-                        # Detailed logging for first few packets or periodically
-                        if self.total_packets_received <= 5 or self.total_packets_received % (LOG_SEQUENCE_EVERY_N_PACKETS * 2) == 0:
-                            logger.info(f"📦 Packet details: seq={sequence}, payload={payload_len}B, ts={timestamp}, from={addr}")
-                    
-                    # Decrypt and decode as usual
-                    cipher = Cipher(algorithms.AES(aes_key), modes.CTR(header), backend=default_backend())
-                    decryptor = cipher.decryptor()
-                    opus_payload = decryptor.update(encrypted) + decryptor.finalize()
-                    
-                    # Decode the Opus payload to PCM and put it in the playback queue
-                    # Use max_frame_size to provide enough buffer space for variable frame sizes
-                    pcm_payload = decoder.decode(opus_payload, max_frame_size)
-                    self.audio_playback_queue.put(pcm_payload)
-                    
-            except socket.timeout:
-                continue
-            except Exception as e:
-                logger.error(f"UDP Listen Error: {e}", exc_info=True)
-        
-        logger.info("👋 UDP Listener shutting down.")
-
-    def _record_and_send_audio_thread(self):
-        """Thread to record microphone audio and send it to the server."""
-        # Main loop to keep the thread alive for multiple recording sessions
-        while not stop_threads.is_set() and self.session_active:
-            # Wait here until the start event is set (e.g., after TTS stop)
-            if not start_recording_event.wait(timeout=1):
-                continue
-            
-            # If the main stop signal was set while waiting, exit the thread
-            if stop_threads.is_set():
-                break
-
-            logger.info("🔴 Recording thread activated. Capturing audio.")
-            p = pyaudio.PyAudio()
-            audio_params = udp_session_details["audio_params"]
-            FORMAT, CHANNELS, RATE, FRAME_DURATION_MS = pyaudio.paInt16, audio_params["channels"], audio_params["sample_rate"], audio_params["frame_duration"]
-            SAMPLES_PER_FRAME = int(RATE * FRAME_DURATION_MS / 1000)
-            
-            try:
-                encoder = opuslib.Encoder(RATE, CHANNELS, opuslib.APPLICATION_VOIP)
-            except Exception as e:
-                logger.error(f"❌ Failed to create Opus encoder: {e}")
-                return # Exit thread if encoder fails
-            
-            stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=SAMPLES_PER_FRAME)
-            logger.info("🎙️ Microphone stream opened. Sending audio to server...")
-            server_udp_addr = (udp_session_details['udp']['server'], udp_session_details['udp']['port'])
-            
-            packets_sent = 0
-            last_log_time = time.time()
-
-            # Inner loop for the active recording session
-            while not stop_threads.is_set() and not stop_recording_event.is_set() and self.session_active:
-                try:
-                    pcm_data = stream.read(SAMPLES_PER_FRAME, exception_on_overflow=False)
-                    opus_data = encoder.encode(pcm_data, SAMPLES_PER_FRAME)
-                    encrypted_packet = self.encrypt_packet(opus_data)
-                    
-                    if encrypted_packet:
-                        self.udp_socket.sendto(encrypted_packet, server_udp_addr)
-                        packets_sent += 1
-                        
-                        if time.time() - last_log_time >= 1.0:
-                            logger.info(f"⬆️  Sent {packets_sent} audio packets in the last second.")
-                            packets_sent = 0
-                            last_log_time = time.time()
-                            
-                except Exception as e:
-                    logger.error(f"An error occurred in the recording loop: {e}")
-                    break # Exit inner loop on error
-            
-            # Cleanup for the current recording session
-            logger.info("🎙️ Stopping microphone stream for this session.")
-            stream.stop_stream()
-            stream.close()
-            p.terminate()
-
-            # Clear the start event so it has to be triggered again for the next session
-            start_recording_event.clear()
-            
-            if stop_recording_event.is_set():
-                logger.info("🛑 Recording stopped by server signal. Waiting for next turn.")
-            
-        logger.info("🔴 Recording thread finished completely.")
-
-    def trigger_conversation(self):
-        """Starts the audio streaming threads and sends initial listen message."""
-        if not self.udp_socket: return False
-        logger.info("▶️ STEP 4: Starting all streaming audio threads...")
-        global stop_threads, start_recording_event, stop_recording_event
-        stop_threads.clear()
-        # Initially, clear both events. The server's initial TTS will set start_recording_event.
-        start_recording_event.clear() 
-        stop_recording_event.clear() 
-
-        self.playback_thread = threading.Thread(target=self._playback_thread, daemon=True)
-        self.udp_listener_thread = threading.Thread(target=self.listen_for_udp_audio, daemon=True)
-        self.audio_recording_thread = threading.Thread(target=self._record_and_send_audio_thread, daemon=True)
-        self.playback_thread.start(), self.udp_listener_thread.start(), self.audio_recording_thread.start()
-
-        logger.info("▶️ STEP 5: Sending 'listen' message to trigger initial TTS from server...")
-        # The server's initial TTS will then trigger the client's recording.
-        listen_payload = {"type": "listen", "session_id": udp_session_details["session_id"], "state": "detect", "text": "hello baby"}
-        self.mqtt_client.publish("device-server", json.dumps(listen_payload))
-        logger.info("⏳ Test running. Press Spacebar to abort TTS or Ctrl+C to stop.")
-
-        # Start a thread to monitor spacebar press
-        def monitor_spacebar():
-            while not stop_threads.is_set() and self.session_active:
-                if keyboard.is_pressed('space'):
-                    logger.info("🚫 Spacebar pressed. Sending abort message to server...")
-                    abort_payload = {
-                        "type": "abort",
-                        "session_id": udp_session_details["session_id"]
-                    }
-                    self.mqtt_client.publish("device-server", json.dumps(abort_payload))
-                    logger.info(f"📤 Sent abort message: {abort_payload}")
-                    # Wait for the key to be released to avoid multiple sends
-                    while keyboard.is_pressed('space') and not stop_threads.is_set():
-                        time.sleep(0.01)
-                time.sleep(0.01)
-
-        spacebar_thread = threading.Thread(target=monitor_spacebar, daemon=True)
-        spacebar_thread.start()
-
-        try:
-            # Keep running with better timeout handling
-            timeout_count = 0
-            while not stop_threads.is_set() and self.session_active:
-                time.sleep(1)
-                
-                # Check if we've been inactive for too long
-                if self.tts_active and time.time() - self.last_audio_received > TTS_TIMEOUT_SECONDS:
-                    logger.warning(f"⏰ No audio received for {TTS_TIMEOUT_SECONDS}s during TTS. Possible server issue.")
-                    timeout_count += 1
-                    if timeout_count >= 3:
-                        logger.error("❌ Too many timeouts. Stopping session.")
-                        self.session_active = False
-                        break
-                    else:
-                        logger.info("🔄 Attempting to recover by sending new listen message...")
-                        self.retry_conversation()
-                        
-        except KeyboardInterrupt:
-            logger.info("Manual interruption detected. Cleaning up...")
-            stop_threads.set()
-            self.session_active = False
-        return True
-
-    def cleanup(self):
-        """Cleans up resources and disconnects."""
-        logger.info("▶️ STEP 6: Cleaning up and disconnecting...")
-        global stop_threads, start_recording_event, stop_recording_event
-        stop_threads.set()
-        self.session_active = False
-        start_recording_event.set() # Unblock if waiting
-        stop_recording_event.set()  # Unblock if running
-        
-        # Print final sequence summary
-        if ENABLE_SEQUENCE_LOGGING and self.total_packets_received > 0:
-            logger.info("📊 FINAL SEQUENCE SUMMARY")
-            self.print_sequence_summary()
-        
-        if self.audio_recording_thread:
-            logger.info("Attempting to join audio_recording_thread...")
-            self.audio_recording_thread.join(timeout=2)
-            if self.audio_recording_thread.is_alive():
-                logger.warning("Audio recording thread did not terminate gracefully.")
-        
-        if self.playback_thread: self.playback_thread.join(timeout=2)
-        if self.udp_listener_thread: self.udp_listener_thread.join(timeout=2)
-        if self.udp_socket: self.udp_socket.close()
-        
-        if self.mqtt_client and udp_session_details:
-            goodbye_payload = { "type": "goodbye", "session_id": udp_session_details.get("session_id") }
-            self.mqtt_client.publish("device-server", json.dumps(goodbye_payload))
-            logger.info("👋 Sent 'goodbye' message.")
-        
-        if self.mqtt_client:
-            self.mqtt_client.loop_stop()
-            self.mqtt_client.disconnect()
-            logger.info("🔌 MQTT Disconnected.")
-        logger.info("✅ Test finished.")
-
-    def run_test(self):
-        """Runs the full test sequence."""
-        if ENABLE_SEQUENCE_LOGGING:
-            logger.info("🔢 Sequence tracking is ENABLED")
-            logger.info(f"📊 Will log sequence info every {LOG_SEQUENCE_EVERY_N_PACKETS} packets")
-        else:
-            logger.info("🔢 Sequence tracking is DISABLED")
-            
-        if not self.get_ota_config(): return
-        if not self.connect_mqtt(): return
-        time.sleep(1) # Give MQTT a moment to connect and subscribe
-        if not self.send_hello_and_get_session():
-            self.cleanup()
-            return
-        self.trigger_conversation()
-        self.cleanup()
-
-if __name__ == "__main__":
-    # You can control sequence logging from here
-    print(f"🔢 Sequence logging: {'ENABLED' if ENABLE_SEQUENCE_LOGGING else 'DISABLED'}")
-    print(f"📊 Log frequency: Every {LOG_SEQUENCE_EVERY_N_PACKETS} packets")
-    
-    client = TestClient()
-    try:
-        client.run_test()
-    except KeyboardInterrupt:
-        logger.info("Manual interruption detected. Cleaning up...")
-        client.cleanup()
+  TTS302AI:
+    # 302AI Speech Synthesis Service, need to first create account and recharge on 302 platform, and obtain key information
+    # Get api_key path: https://dash.302.ai/apis/list
+    # Price: $35/million characters. Original Volcano ¥450 yuan/million characters
+    type: doubao
+    api_url: https://api.302ai.cn/doubao/tts_hd
+    authorization: "Bearer "
+    # Taiwan Xiaohe voice
+    voice: "zh_female_wanwanxiaohe_moon_bigtts"
+    output_dir: tmp/
+    access_token: "your-302-api-key"
+  GizwitsTTS:
+    type: doubao
+    # Volcano Engine as base, can fully use enterprise-grade Volcano Engine speech synthesis service
+    # First 10,000 registered users will receive 5 yuan experience credit
+    # Get API Key address: https://agentrouter.gizwitsapi.com/panel/token
+    api_url: https://bytedance.gizwitsapi.com/api/v1/tts
+    authorization: "Bearer "
+    # Taiwan Xiaohe voice
+    voice: "zh_female_wanwanxiaohe_moon_bigtts"
+    output_dir: tmp/
+    access_token: "your-gizwits-api-key"
+  ACGNTTS:
+    # Online website: https://acgn.ttson.cn/
+    # token purchase: www.ttson.cn
+    # For development questions please submit to QQ on website
+    # Character id acquisition address: ctrl+f quick search character——website administrator doesn't allow publishing, can ask website administrator
+    # Parameter meanings see development documentation: https://www.yuque.com/alexuh/skmti9/wm6taqislegb02gd?singleDoc#
+    type: ttson
+    token: your_token
+    voice_id: 1695
+    speed_factor: 1
+    pitch_factor: 0
+    volume_change_dB: 0
+    to_lang: ZH
+    url: https://u95167-bd74-2aef8085.westx.seetacloud.com:8443/flashsummary/tts?token=
+    format: mp3
+    output_dir: tmp/
+    emotion: 1
+  OpenAITTS:
+    # OpenAI official text-to-speech service, supports most languages worldwide
+    type: openai
+    # You can get api key here
+    # https://platform.openai.com/api-keys
+    api_key: your-openai-api-key
+    # Domestic use requires proxy
+    api_url: https://api.openai.com/v1/audio/speech
+    # Optional tts-1 or tts-1-hd, tts-1 faster tts-1-hd better quality
+    model: tts-1
+    # Speaker, options: alloy, echo, fable, onyx, nova, shimmer
+    voice: onyx
+    # Speed range 0.25-4.0
+    speed: 1
+    output_dir: tmp/
+  CustomTTS:
+    # Custom TTS interface service, request parameters can be customized, can integrate with many TTS services
+    # Example with locally deployed KokoroTTS
+    # If only CPU: docker run -p 8880:8880 ghcr.io/remsky/kokoro-fastapi-cpu:latest
+    # If only GPU: docker run --gpus all -p 8880:8880 ghcr.io/remsky/kokoro-fastapi-gpu:latest
+    # Requires interface to use POST method and return audio file
+    type: custom
+    method: POST
+    url: "http://127.0.0.1:8880/v1/audio/speech"
+    params: # Custom request parameters
+      input: "{prompt_text}"
+      response_format: "mp3"
+      download_format: "mp3"
+      voice: "zf_xiaoxiao"
+      lang_code: "z"
+      return_download_link: true
+      speed: 1
+      stream: false
+    headers: # Custom request headers
+      # Authorization: Bearer xxxx
+    format: mp3 # Audio format returned by interface
+    output_dir: tmp/
+  LinkeraiTTS:
+    type: linkerai
+    api_url: https://tts.linkerai.cn/tts
+    audio_format: "pcm"
+    # Default access_token is for free testing use, please don't use this access_token for commercial purposes
+    # If results are good, you can apply for your own token, application address: https://linkerai.cn
+    # Parameter meanings see development documentation: https://tts.linkerai.cn/docs
+    # Supports voice cloning, can upload your own audio, fill in voice parameter, when voice parameter is empty, uses default voice
+    access_token: "U4YdYXVfpwWnk2t5Gp822zWPCuORyeJL"
+    voice: "OUeAo1mhq6IBExi"
+    output_dir: tmp/
