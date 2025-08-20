@@ -41,7 +41,7 @@ public class SupabaseJwtConfig {
     /**
      * JWT issuer
      */
-    private String issuer = "https://nstiqzvkvshqglfqmlxs.supabase.co/auth/v1";
+    private String issuer = "https://popppjirsdedxhetcphs.supabase.co/auth/v1";
     
     /**
      * Enable/disable JWT verification

@@ -37,11 +37,11 @@ spring:
 
 # Supabase configuration for mobile app
 supabase:
-  url: https://nstiqzvkvshqglfqmlxs.supabase.co
+  url: ${SUPABASE_URL:https://popppjirsdedxhetcphs.supabase.co}
   anon:
-    key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5zdGlxenZrdnNocWdsZnFtbHhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM4NzU4OTEsImV4cCI6MjA2OTQ1MTg5MX0.emltic5RhKi2ZgvqlVN7Qda_FJSni07FXhtCPxNCua0
+    key: ${SUPABASE_ANON_KEY:eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBvcHBwamlyc2RlZHhoZXRjcGhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM3NjMxMDAsImV4cCI6MjA1OTMzOTEwMH0.Ihv60cbfUSeDN5dPDsOZRz4y79ek3D5YZZgKwBsMkSc}
   jwt:
-    secret: BnEGeOtDvRZ0JXOmIOxrjmABZRZHDXjFqKCrOvuK7S1d5pGQBbRUBN13KGaCwKQ/a/ZAMUgiakkvO9XuiNcrug==
+    secret: ${SUPABASE_JWT_SECRET:16nXk8sfm1fOG51l15H0mW6R7c0E2KCQRE1R8QqJIBcdwsRVWno6qJs8XvLKhkhn2eq9kJ9T2Yap89EQ0h6eqw==}
 
 knife4j:
   enable: true
@@ -75,7 +75,7 @@ mybatis-plus:
     map-underscore-to-camel-case: true
     cache-enabled: false
     call-setters-on-nulls: true
-    jdbc-type-for-null: 'null'
+    jdbc-type-for-null: "null"
   configuration-properties:
     prefix:
     blobType: BLOB

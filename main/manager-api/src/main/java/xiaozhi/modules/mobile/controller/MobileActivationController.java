@@ -63,6 +63,33 @@ public class MobileActivationController {
             Integer childAge = (Integer) request.get("childAge");
             List<String> childInterests = (List<String>) request.get("childInterests");
             
+            // Extract additional fields from request
+            String toyName = (String) request.get("toyName");
+            String toyRole = (String) request.get("toyRole");
+            String toyLanguage = (String) request.get("toyLanguage");
+            String toyVoice = (String) request.get("toyVoice");
+            String additionalInstructions = (String) request.get("additionalInstructions");
+            
+            // Apply default values if not provided
+            if (childName == null || childName.trim().isEmpty() || "My Child".equals(childName)) {
+                childName = "Buddy";
+            }
+            if (childAge == null) {
+                childAge = 5;
+            }
+            if (toyName == null || toyName.trim().isEmpty()) {
+                toyName = "Cheeko";
+            }
+            if (toyRole == null || toyRole.trim().isEmpty()) {
+                toyRole = "Story Teller";
+            }
+            if (toyLanguage == null || toyLanguage.trim().isEmpty()) {
+                toyLanguage = "English";
+            }
+            if (toyVoice == null || toyVoice.trim().isEmpty()) {
+                toyVoice = "Sparkles for Kids";
+            }
+            
             log.info("Validating activation code {} for user {}", activationCode, userId);
             
             // Check if toy exists and is not activated
@@ -91,17 +118,53 @@ public class MobileActivationController {
             
             // Create activation record
             String activationId = UUID.randomUUID().toString();
-            String insertSql = "INSERT INTO activated_toys (id, toy_id, user_id, " +
-                    "child_name, child_age, child_interests) VALUES (?, ?, ?, ?, ?, ?)";
             
-            jdbcTemplate.update(insertSql, 
-                activationId,
-                toyId,
-                userId,
-                childName,
-                childAge,
-                childInterestsJson
-            );
+            // Check if new columns exist by trying to query them
+            boolean hasNewColumns = false;
+            try {
+                jdbcTemplate.queryForObject(
+                    "SELECT toy_name FROM activated_toys LIMIT 1", String.class);
+                hasNewColumns = true;
+            } catch (Exception e) {
+                // New columns don't exist yet
+                log.info("New columns not yet available, using legacy schema");
+            }
+            
+            if (hasNewColumns) {
+                // Use new schema with all fields
+                String insertSql = "INSERT INTO activated_toys (id, toy_id, user_id, " +
+                        "toy_name, toy_role, toy_language, toy_voice, " +
+                        "child_name, child_age, child_interests, additional_instructions) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                
+                jdbcTemplate.update(insertSql, 
+                    activationId,
+                    toyId,
+                    userId,
+                    toyName,
+                    toyRole,
+                    toyLanguage,
+                    toyVoice,
+                    childName,
+                    childAge,
+                    childInterestsJson,
+                    additionalInstructions
+                );
+            } else {
+                // Use legacy schema - store toy name in child_name for now
+                String insertSql = "INSERT INTO activated_toys (id, toy_id, user_id, " +
+                        "child_name, child_age, child_interests) VALUES (?, ?, ?, ?, ?, ?)";
+                
+                // Store "Cheeko" as child_name temporarily until migration runs
+                jdbcTemplate.update(insertSql, 
+                    activationId,
+                    toyId,
+                    userId,
+                    childName,  // This will be "Buddy" by default
+                    childAge,
+                    childInterestsJson
+                );
+            }
             
             // Mark toy as activated
             String updateToySql = "UPDATE toys SET is_activated = true WHERE id = ?";
@@ -116,7 +179,14 @@ public class MobileActivationController {
             result.put("serialNumber", serialNumber);
             result.put("model", model);
             result.put("macAddress", macAddress);
+            // Always return both fields for compatibility
+            result.put("toyName", toyName);
+            result.put("toy_name", toyName); // Include both formats
             result.put("childName", childName);
+            result.put("child_name", childName); // Include both formats
+            result.put("toy_role", toyRole);
+            result.put("toy_language", toyLanguage);
+            result.put("toy_voice", toyVoice);
             result.put("message", "Toy activated successfully");
             
             return new Result<Map<String, Object>>().ok(result);
@@ -141,6 +211,22 @@ public class MobileActivationController {
                     "ORDER BY at.activated_at DESC";
             
             List<Map<String, Object>> devices = jdbcTemplate.queryForList(sql, userId);
+            
+            // Transform devices to include toy_name if not present
+            for (Map<String, Object> device : devices) {
+                // If new columns don't exist, provide defaults
+                if (!device.containsKey("toy_name")) {
+                    device.put("toy_name", "Cheeko");
+                    device.put("toy_role", "Story Teller");
+                    device.put("toy_language", "English");
+                    device.put("toy_voice", "Sparkles for Kids");
+                }
+                // Ensure child_name has a default
+                if (device.get("child_name") == null || 
+                    device.get("child_name").toString().isEmpty()) {
+                    device.put("child_name", "Buddy");
+                }
+            }
             
             Map<String, Object> result = new HashMap<>();
             result.put("devices", devices);
@@ -206,6 +292,86 @@ public class MobileActivationController {
         } catch (Exception e) {
             log.error("Error getting activation details", e);
             return new Result<Map<String, Object>>().error("Failed to get activation details: " + e.getMessage());
+        }
+    }
+    
+    @PutMapping("/toy-details/{activationId}")
+    @Operation(summary = "Update toy and child details for an activation")
+    public Result<Map<String, Object>> updateToyDetails(
+            @PathVariable String activationId,
+            @RequestBody Map<String, Object> updates,
+            HttpServletRequest request) {
+        try {
+            String userId = (String) request.getAttribute("supabaseUserId");
+            
+            // Extract toy configuration fields
+            String toyName = (String) updates.get("toyName");
+            String toyRole = (String) updates.get("toyRole");
+            String toyLanguage = (String) updates.get("toyLanguage");
+            String toyVoice = (String) updates.get("toyVoice");
+            String additionalInstructions = (String) updates.get("additionalInstructions");
+            
+            // Extract child fields
+            String childName = (String) updates.get("childName");
+            Integer childAge = (Integer) updates.get("childAge");
+            
+            log.info("Updating toy details for activation {} by user {}", activationId, userId);
+            
+            StringBuilder sqlBuilder = new StringBuilder("UPDATE activated_toys SET ");
+            List<Object> params = new ArrayList<>();
+            
+            // Add toy fields
+            if (toyName != null && !toyName.trim().isEmpty()) {
+                sqlBuilder.append("toy_name = ?, ");
+                params.add(toyName);
+            }
+            if (toyRole != null && !toyRole.trim().isEmpty()) {
+                sqlBuilder.append("toy_role = ?, ");
+                params.add(toyRole);
+            }
+            if (toyLanguage != null && !toyLanguage.trim().isEmpty()) {
+                sqlBuilder.append("toy_language = ?, ");
+                params.add(toyLanguage);
+            }
+            if (toyVoice != null && !toyVoice.trim().isEmpty()) {
+                sqlBuilder.append("toy_voice = ?, ");
+                params.add(toyVoice);
+            }
+            if (additionalInstructions != null) {
+                sqlBuilder.append("additional_instructions = ?, ");
+                params.add(additionalInstructions);
+            }
+            
+            // Add child fields
+            if (childName != null && !childName.trim().isEmpty()) {
+                sqlBuilder.append("child_name = ?, ");
+                params.add(childName);
+            }
+            if (childAge != null) {
+                sqlBuilder.append("child_age = ?, ");
+                params.add(childAge);
+            }
+            
+            // Remove trailing comma and add WHERE clause
+            String sql = sqlBuilder.toString().replaceAll(", $", "") + 
+                    " WHERE id = ? AND user_id = ?";
+            params.add(activationId);
+            params.add(userId);
+            
+            int rows = jdbcTemplate.update(sql, params.toArray());
+            
+            if (rows > 0) {
+                Map<String, Object> result = new HashMap<>();
+                result.put("message", "Toy details updated successfully");
+                result.put("success", true);
+                return new Result<Map<String, Object>>().ok(result);
+            } else {
+                return new Result<Map<String, Object>>().error("Toy not found or unauthorized");
+            }
+            
+        } catch (Exception e) {
+            log.error("Error updating toy details", e);
+            return new Result<Map<String, Object>>().error("Failed to update toy details: " + e.getMessage());
         }
     }
     
