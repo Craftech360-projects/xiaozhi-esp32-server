@@ -257,3 +257,10 @@ databaseChangeLog:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202508141200.sql
+  - changeSet:
+      id: add_english_sherpa_models
+      author: Assistant
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/add_english_sherpa_models.sql

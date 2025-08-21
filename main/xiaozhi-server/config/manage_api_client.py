@@ -67,7 +67,22 @@ class ManageApiClient:
     def _request(cls, method: str, endpoint: str, **kwargs) -> Dict:
         """Send a single HTTP request and handle response"""
         endpoint = endpoint.lstrip("/")
+        
+        # Debug logging
+        print(f"\n[DEBUG] API Request:")
+        print(f"  Method: {method}")
+        print(f"  URL: {cls._client.base_url}{endpoint}")
+        print(f"  Headers: {dict(cls._client.headers)}")
+        print(f"  Secret: {cls._secret}")
+        if kwargs.get("json"):
+            print(f"  Body: {kwargs.get('json')}")
+        
         response = cls._client.request(method, endpoint, **kwargs)
+        
+        print(f"\n[DEBUG] API Response:")
+        print(f"  Status Code: {response.status_code}")
+        print(f"  Response: {response.text}")
+        
         response.raise_for_status()
 
         result = response.json()

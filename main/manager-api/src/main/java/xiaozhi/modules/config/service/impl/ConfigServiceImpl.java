@@ -66,21 +66,21 @@ public class ConfigServiceImpl implements ConfigService {
             throw new RenException("默认智能体未找到");
         }
 
-        // 构建模块配置
+        // 构建模块配置 - Pass all model IDs from the default agent template
         buildModuleConfig(
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
+                agent.getAgentName(),
+                agent.getSystemPrompt(),
+                agent.getSummaryMemory(),
+                agent.getTtsVoiceId(),
+                null,  // referenceAudio
+                null,  // referenceText
                 agent.getVadModelId(),
                 agent.getAsrModelId(),
-                null,
-                null,
-                null,
-                null,
-                null,
+                agent.getLlmModelId(),
+                agent.getVllmModelId(),
+                agent.getTtsModelId(),
+                agent.getMemModelId(),
+                agent.getIntentModelId(),
                 result,
                 isCache);
 
@@ -213,7 +213,14 @@ public class ConfigServiceImpl implements ConfigService {
             String value = param.getParamValue();
 
             // 根据valueType转换值
-            switch (param.getValueType().toLowerCase()) {
+            // The database stores value_type as tinyint, but param.getValueType() returns String
+            // We need to handle the String type properly
+            String valueTypeStr = param.getValueType();
+            if (valueTypeStr == null || valueTypeStr.isEmpty()) {
+                valueTypeStr = "string"; // Default to string
+            }
+            
+            switch (valueTypeStr.toLowerCase()) {
                 case "number":
                     try {
                         double doubleValue = Double.parseDouble(value);
@@ -247,9 +254,39 @@ public class ConfigServiceImpl implements ConfigService {
                         current.put(lastKey, value);
                     }
                     break;
+                case "string":
                 default:
                     current.put(lastKey, value);
             }
+        }
+
+        // Add default log configuration if not present
+        if (!config.containsKey("log")) {
+            Map<String, Object> logConfig = new HashMap<>();
+            logConfig.put("log_format", "<green>{time:YYMMDD HH:mm:ss}</green>[{version}_{selected_module}][<light-blue>{extra[tag]}</light-blue>]-<level>{level}</level>-<light-green>{message}</light-green>");
+            logConfig.put("log_format_file", "{time:YYYY-MM-DD HH:mm:ss} - {version}_{selected_module} - {name} - {level} - {extra[tag]} - {message}");
+            logConfig.put("log_level", "INFO");
+            logConfig.put("log_dir", "tmp");
+            logConfig.put("log_file", "server.log");
+            logConfig.put("data_dir", "data");
+            config.put("log", logConfig);
+        }
+        
+        // Add default xiaozhi configuration if not present
+        if (!config.containsKey("xiaozhi")) {
+            Map<String, Object> xiaozhiConfig = new HashMap<>();
+            xiaozhiConfig.put("type", "hello");
+            xiaozhiConfig.put("version", 1);
+            xiaozhiConfig.put("transport", "websocket");
+            
+            Map<String, Object> audioParams = new HashMap<>();
+            audioParams.put("format", "opus");
+            audioParams.put("sample_rate", 16000);
+            audioParams.put("channels", 1);
+            audioParams.put("frame_duration", 60);
+            xiaozhiConfig.put("audio_params", audioParams);
+            
+            config.put("xiaozhi", xiaozhiConfig);
         }
 
         return config;
@@ -317,11 +354,15 @@ public class ConfigServiceImpl implements ConfigService {
                         }
                     }
                     if (map.get("functions") != null) {
-                        String functionStr = (String) map.get("functions");
-                        if (StringUtils.isNotBlank(functionStr)) {
-                            String[] functions = functionStr.split("\\;");
-                            map.put("functions", functions);
+                        Object functionsObj = map.get("functions");
+                        if (functionsObj instanceof String) {
+                            String functionStr = (String) functionsObj;
+                            if (StringUtils.isNotBlank(functionStr)) {
+                                String[] functions = functionStr.split("\\;");
+                                map.put("functions", functions);
+                            }
                         }
+                        // If it's already an array or list, leave it as is
                     }
                     System.out.println("map: " + map);
                 }
