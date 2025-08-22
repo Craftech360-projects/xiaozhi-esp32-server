@@ -1,0 +1,16 @@
+
+================================================================================
+Timestamp: 2025-08-19T13:23:09.640588
+Filename: asr_base_a1ced473-41cf-48a1-a8a0-2165793f6022_2847669c-698b-44f3-a017-233e51590ca6.wav
+Full Path: ./audio_files\asr_base_a1ced473-41cf-48a1-a8a0-2165793f6022_2847669c-698b-44f3-a017-233e51590ca6.wav
+Audio Length: 2.10 seconds
+Transcript: Hello. Good morning.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-19T13:23:29.912414
+Filename: asr_base_a1ced473-41cf-48a1-a8a0-2165793f6022_b869c87f-5a07-469e-a9bd-7eba507de0ea.wav
+Full Path: ./audio_files\asr_base_a1ced473-41cf-48a1-a8a0-2165793f6022_b869c87f-5a07-469e-a9bd-7eba507de0ea.wav
+Audio Length: 3.20 seconds
+Transcript: Can you tell me what is eccentric?
+================================================================================

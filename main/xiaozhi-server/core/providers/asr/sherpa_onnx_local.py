@@ -174,11 +174,11 @@ class ASRProvider(ASRProviderBase):
                 "source": "huggingface",
                 "model_id": "csukuangfj/sherpa-onnx-zipformer-en-2023-04-01"
             },
-            "sherpa-onnx-zipformer-gigaspeech-2023-12-12": {
-                "source": "github",
-                "model_id": "sherpa-onnx-zipformer-gigaspeech-2023-12-12",
-                "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-zipformer-gigaspeech-2023-12-12.tar.bz2"
-            },
+                "sherpa-onnx-zipformer-gigaspeech-2023-12-12": {
+                    "source": "github",
+                    "model_id": "sherpa-onnx-zipformer-gigaspeech-2023-12-12",
+                    "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-zipformer-gigaspeech-2023-12-12.tar.bz2"
+                },
         }
         
         return model_mapping.get(dir_name, {

@@ -384,6 +384,44 @@ ASR:
     # Language parameter, 1537 for Mandarin, specific reference: https://ai.baidu.com/ai-doc/SPEECH/0lbxfnc9b
     dev_pid: 1537
     output_dir: tmp/
+  DeepgramASR:
+    # Deepgram Nova-2 ASR - High accuracy speech recognition
+    # Get API key here: https://console.deepgram.com/
+    # Supports 100+ languages with excellent accuracy
+    type: deepgram
+    api_key: 2bc99f78312157bb1e017a2596b45c71bfe5f6ba
+    # Model options: nova-2 (latest), nova, enhanced, base
+    model: nova-3
+    # Language code (e.g., en, zh, es, fr, de, ja, ko, etc.)
+    language: en-IN
+    # Smart formatting (punctuation, capitalization, number formatting)
+    smart_format: true
+    # Add punctuation
+    punctuate: true
+    # Speaker diarization (identify different speakers)
+    diarize: false
+    # Multichannel processing
+    multichannel: false
+    # Request timeout in seconds
+    timeout: 60
+    
+  GroqASR:
+    # Groq Whisper ASR - Fast inference using Groq's LPU technology
+    # Get API key here: https://console.groq.com/keys
+    # Free tier available with generous limits
+    type: groq_whisper
+    api_key: your-groq-api-key
+    # Model options: whisper-large-v3, whisper-large-v3-turbo
+    model: whisper-large-v3
+    # Language code (e.g., en, zh, es, fr, de, ja, ko, etc.)
+    language: en
+    # Temperature for sampling (0.0 = deterministic)
+    temperature: 0.0
+    # Response format: text, json, verbose_json
+    response_format: text
+    # Request timeout in seconds
+    timeout: 60
+    output_dir: tmp/
 
 VAD:
   SileroVAD:
@@ -483,6 +521,20 @@ LLM:
     model_name: "gemini-2.0-flash"
     http_proxy: ""  #"http://127.0.0.1:10808"
     https_proxy: "" #http://127.0.0.1:10808"
+  GeminiRealtimeLLM:
+    # Gemini Real-time LLM with Audio - Combines Deepgram ASR + Gemini LLM/TTS
+    # This provides real-time audio conversation capabilities
+    # Get API key from: https://aistudio.google.com/apikey
+    type: gemini_realtime
+    api_key: AIzaSyCl9yuCQjgoM2IMExHv9fD6FrdHaNKW7RQ
+    # Model for real-time audio (must support audio input/output)
+    model: models/gemini-2.5-flash-preview-native-audio-dialog
+    # Voice for TTS output
+    voice_name: Zephyr  # Options: Zephyr, Aria, Charon, Kore, Fenrir, Aoede
+    # Media resolution for any video input
+    media_resolution: MEDIA_RESOLUTION_MEDIUM
+    # Enable audio output (TTS)
+    enable_audio_output: true
   CozeLLM:
     # Define LLM API type
     type: coze
@@ -846,3 +898,46 @@ TTS:
     access_token: "U4YdYXVfpwWnk2t5Gp822zWPCuORyeJL"
     voice: "OUeAo1mhq6IBExi"
     output_dir: tmp/
+# #
+####################################################################################
+# ######################## Gemini Real-time Integration ############################
+# Hybrid configuration combining Deepgram ASR with Gemini's real-time capabilities
+# This provides the best of both worlds:
+# - Deepgram: Industry-leading ASR accuracy
+# - Gemini: Real-time LLM conversation and natural TTS
+# #####################################################################################
+
+gemini_realtime_integration:
+  # Enable Gemini real-time mode (requires both Deepgram and Gemini API keys)
+  enabled: false
+  
+  # Deepgram ASR configuration for this integration
+  deepgram_asr:
+    api_key: 2bc99f78312157bb1e017a2596b45c71bfe5f6ba
+    model: nova-3
+    language: en
+    smart_format: true
+    punctuate: true
+    diarize: false
+    multichannel: false
+    timeout: 60
+    output_dir: tmp/
+  
+  # Gemini real-time configuration
+  gemini_realtime:
+    api_key: AIzaSyCl9yuCQjgoM2IMExHv9fD6FrdHaNKW7RQkey
+    model: models/gemini-2.5-flash-preview-native-audio-dialog
+    voice_name: Zephyr
+    media_resolution: MEDIA_RESOLUTION_MEDIUM
+    enable_audio_output: true
+  
+  # Audio processing settings
+  audio_settings:
+    # Minimum audio chunks before processing (affects latency vs accuracy)
+    min_chunks_for_processing: 10  # ~600ms at 60ms chunks
+    # Maximum buffer size to prevent memory issues
+    max_buffer_chunks: 50  # ~3 seconds
+    # Voice activity detection threshold
+    voice_threshold: 100  # bytes, simple threshold
+    # Processing timeout
+    processing_timeout: 30  # seconds
