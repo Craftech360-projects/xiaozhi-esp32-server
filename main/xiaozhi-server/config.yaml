@@ -137,6 +137,13 @@ plugins:
       - ".wav"
       - ".p3"
     refresh_time: 300 # Music list refresh interval in seconds
+  play_story:
+    story_dir: "./stories"  # Story file storage path, will search for story files from category subdirectories
+    story_ext: # Story file types, mp3 format is most common
+      - ".mp3"
+      - ".wav"
+      - ".p3"
+    refresh_time: 300 # Story list refresh interval in seconds
 
 # #####################################################################################
 # ################################Character Model Configuration######################################
@@ -206,6 +213,7 @@ Intent:
       - get_weather
       - get_news_from_newsnow
       - play_music
+      - play_story
   function_call:
     # Don't change type
     type: function_call
@@ -220,6 +228,7 @@ Intent:
       # play_music is server built-in music playback, hass_play_music is external program music playback controlled through home assistant
       # If using hass_play_music, don't enable play_music, keep only one of the two
       - play_music
+      - play_story
       #- hass_get_state
       #- hass_set_state
       #- hass_play_music
