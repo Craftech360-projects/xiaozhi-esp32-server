@@ -202,7 +202,7 @@ class ASRProviderBase(ABC):
             speaker_name = results.get("voiceprint", None)
 
             # Apply ASR filtering if enabled
-            if self.asr_filter and raw_text:
+            if hasattr(self, 'asr_filter') and self.asr_filter and raw_text:
                 # Prepare context for filtering
                 filter_context = {
                     'time_since_bot_utterance': time.time() - getattr(conn, 'last_bot_utterance_time', 0),
@@ -237,6 +237,10 @@ class ASRProviderBase(ABC):
 
             # Check text length
             text_len, _ = remove_punctuation_and_length(raw_text)
+            
+            # Handle empty transcription tracking
+            await self._handle_empty_transcription(conn, raw_text, text_len)
+            
             self.stop_ws_connection()
 
             if text_len > 0:
@@ -253,6 +257,99 @@ class ASRProviderBase(ABC):
             import traceback
             logger.bind(tag=TAG).debug(
                 f"Exception details: {traceback.format_exc()}")
+
+    async def _handle_empty_transcription(self, conn, raw_text: str, text_len: int):
+        """Handle empty transcription tracking and send message after 3 failures"""
+        # Initialize empty transcription counter if not exists
+        if not hasattr(conn, 'empty_transcription_count'):
+            conn.empty_transcription_count = 0
+        
+        if text_len == 0 and raw_text.strip() == "":
+            # Increment counter for empty transcription
+            conn.empty_transcription_count += 1
+            logger.bind(tag=TAG).info(f"Empty transcription #{conn.empty_transcription_count}")
+            
+            # After 3 empty transcriptions, send a message
+            if conn.empty_transcription_count >= 3:
+                logger.bind(tag=TAG).info("3 empty transcriptions detected, sending retry message directly to TTS")
+                retry_message = "Sorry! I could not listen to you, repeat again."
+                
+                # Send message directly to TTS, bypassing LLM
+                await self._send_direct_tts_message(conn, retry_message)
+                
+                # Reset the counter after sending the message
+                conn.empty_transcription_count = 0
+        else:
+            # Reset counter when we get a successful transcription
+            if conn.empty_transcription_count > 0:
+                logger.bind(tag=TAG).info(f"Successful transcription received, resetting empty count from {conn.empty_transcription_count}")
+                conn.empty_transcription_count = 0
+
+    async def _send_direct_tts_message(self, conn, message: str):
+        """Send message directly to TTS queue, bypassing LLM"""
+        try:
+            # Import here to avoid circular imports
+            from core.handle.sendAudioHandle import send_stt_message
+            from core.providers.tts.dto.dto import TTSMessageDTO, SentenceType, ContentType
+            from core.utils.dialogue import Message
+            
+            # Generate new sentence ID for the message
+            if hasattr(conn, 'sentence_id') and conn.sentence_id:
+                try:
+                    # Try to increment if it's numeric
+                    current_id = int(conn.sentence_id)
+                    conn.sentence_id = str(current_id + 1)
+                except (ValueError, TypeError):
+                    # If not numeric, generate a new one
+                    import time
+                    conn.sentence_id = str(int(time.time() * 1000))
+            else:
+                # Generate initial sentence ID
+                import time
+                conn.sentence_id = str(int(time.time() * 1000))
+            
+            # Send STT message to client (shows the message in UI)
+            await send_stt_message(conn, message)
+            
+            # Add to dialogue history
+            conn.dialogue.put(Message(role="assistant", content=message))
+            
+            # Send message sequence to TTS queue (simplified approach)
+            # FIRST - Start the TTS session
+            conn.tts.tts_text_queue.put(
+                TTSMessageDTO(
+                    sentence_id=conn.sentence_id,
+                    sentence_type=SentenceType.FIRST,
+                    content_type=ContentType.ACTION,
+                )
+            )
+            
+            # MIDDLE - Send the actual text message to TTS
+            conn.tts.tts_text_queue.put(
+                TTSMessageDTO(
+                    sentence_id=conn.sentence_id,
+                    sentence_type=SentenceType.MIDDLE,
+                    content_type=ContentType.TEXT,
+                    content_detail=message,
+                )
+            )
+            
+            # LAST - End the TTS session
+            conn.tts.tts_text_queue.put(
+                TTSMessageDTO(
+                    sentence_id=conn.sentence_id,
+                    sentence_type=SentenceType.LAST,
+                    content_type=ContentType.ACTION,
+                )
+            )
+            
+            logger.bind(tag=TAG).info(f"Sent retry message directly to TTS: {message}")
+            
+        except Exception as e:
+            logger.bind(tag=TAG).error(f"Failed to send direct TTS message: {e}")
+            logger.bind(tag=TAG).error(f"Exception details: {traceback.format_exc()}")
+            # Fallback to regular chat if direct TTS fails
+            await startToChat(conn, message)
 
     def _build_enhanced_text(self, text: str, speaker_name: Optional[str]) -> str:
         """Build text with speaker information"""

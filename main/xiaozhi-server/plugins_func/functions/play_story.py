@@ -317,7 +317,7 @@ def get_story_intro(story_file, requested_language=None):
         f"Get comfortable and enjoy this {category.lower()} story: '{story_name}'",
         f"I have a special {category.lower()} story for you called '{story_name}'",
         f"Listen carefully to this amazing story: '{story_name}'",
-        f"Once upon a time... Let's begin '{story_name}'",
+        f" Let's begin '{story_name}'",
     ]
     
     intro = random.choice(intros)
