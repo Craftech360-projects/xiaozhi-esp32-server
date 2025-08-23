@@ -18,13 +18,13 @@ play_music_function_desc = {
     "type": "function",
     "function": {
         "name": "play_music",
-        "description": "唱歌、听歌、播放音乐的方法。",
+        "description": "Method for singing, listening to music, playing music, and any music-related requests. Supports language-specific requests and educational content like phonics. Triggers on phrases like 'sing a song', 'play music', 'can you sing', 'I want to hear music', 'put on some music', 'play any English song', 'sing a Telugu song', 'play phonics', 'learn phonics', etc.",
         "parameters": {
             "type": "object",
             "properties": {
                 "song_name": {
                     "type": "string",
-                    "description": "歌曲名称，如果用户没有指定具体歌名则为'random', 明确指定的时返回音乐的名字 示例: ```用户:播放两只老虎\n参数：两只老虎``` ```用户:播放音乐 \n参数：random ```",
+                    "description": "Song name, language request, or educational content request. If the user doesn't specify a specific song name, it should be 'random'. For language requests, use the language name. Examples: ```User: sing Two Tigers for me\nParameter: Two Tigers``` ```User: can you sing a song\nParameter: random``` ```User: play any English song\nParameter: any English song``` ```User: sing a Telugu song\nParameter: Telugu song``` ```User: play phonics\nParameter: phonics``` ```User: learn phonics sounds\nParameter: phonics sounds```",
                 }
             },
             "required": ["song_name"],
@@ -37,53 +37,165 @@ play_music_function_desc = {
 def play_music(conn, song_name: str):
     try:
         music_intent = (
-            f"播放音乐 {song_name}" if song_name != "random" else "随机播放音乐"
+            f"Play music {song_name}" if song_name != "random" else "Play random music"
         )
 
-        # 检查事件循环状态
+        # Check event loop status
         if not conn.loop.is_running():
-            conn.logger.bind(tag=TAG).error("事件循环未运行，无法提交任务")
+            conn.logger.bind(tag=TAG).error("Event loop is not running, unable to submit task")
             return ActionResponse(
-                action=Action.RESPONSE, result="系统繁忙", response="请稍后再试"
+                action=Action.RESPONSE, result="System busy", response="Please try again later"
             )
 
-        # 提交异步任务
+        # Submit async task
         task = conn.loop.create_task(
-            handle_music_command(conn, music_intent)  # 封装异步逻辑
+            handle_music_command(conn, music_intent)  # Wrap async logic
         )
 
-        # 非阻塞回调处理
+        # Non-blocking callback handling
         def handle_done(f):
             try:
-                f.result()  # 可在此处理成功逻辑
-                conn.logger.bind(tag=TAG).info("播放完成")
+                f.result()  # Can handle success logic here
+                conn.logger.bind(tag=TAG).info("Playback completed")
             except Exception as e:
-                conn.logger.bind(tag=TAG).error(f"播放失败: {e}")
+                conn.logger.bind(tag=TAG).error(f"Playback failed: {e}")
 
         task.add_done_callback(handle_done)
 
         return ActionResponse(
-            action=Action.NONE, result="指令已接收", response="正在为您播放音乐"
+            action=Action.NONE, result="Command received", response="Playing music for you"
         )
     except Exception as e:
-        conn.logger.bind(tag=TAG).error(f"处理音乐意图错误: {e}")
+        conn.logger.bind(tag=TAG).error(f"Error handling music intent: {e}")
         return ActionResponse(
-            action=Action.RESPONSE, result=str(e), response="播放音乐时出错了"
+            action=Action.RESPONSE, result=str(e), response="Error occurred while playing music"
         )
 
 
 def _extract_song_name(text):
-    """从用户输入中提取歌名"""
-    for keyword in ["播放音乐"]:
-        if keyword in text:
-            parts = text.split(keyword)
-            if len(parts) > 1:
-                return parts[1].strip()
+    """Extract song name from user input with multiple trigger patterns"""
+    # Define various music-related keywords and patterns
+    music_keywords = [
+        "play music",
+        "play",
+        "sing",
+        "sing a song",
+        "sing me",
+        "can you sing",
+        "put on some music",
+        "put on",
+        "I want to hear",
+        "listen to",
+        "play some music",
+        "music"
+    ]
+    
+    text_lower = text.lower()
+    
+    # Try to extract song name after various patterns
+    for keyword in music_keywords:
+        keyword_lower = keyword.lower()
+        if keyword_lower in text_lower:
+            # Find the position of the keyword
+            keyword_pos = text_lower.find(keyword_lower)
+            
+            # Extract everything after the keyword
+            after_keyword = text[keyword_pos + len(keyword):].strip()
+            
+            # Remove common words that might follow
+            common_words = ["for me", "please", "now", "some", "a song", "the song"]
+            for word in common_words:
+                after_keyword = after_keyword.replace(word, "").strip()
+            
+            # If we found something meaningful after the keyword, return it
+            if after_keyword and len(after_keyword) > 1:
+                return after_keyword
+    
     return None
 
 
+def _detect_language_request(text):
+    """Detect if user is requesting music from a specific language/folder"""
+    text_lower = text.lower()
+    
+    # Define language mappings (you can add more languages as needed)
+    language_mappings = {
+        # Phonics variations (Educational content)
+        "phonics": "phonics",
+        "phonics song": "phonics",
+        "phonics music": "phonics",
+        "play phonics": "phonics",
+        "sing phonics": "phonics",
+        "learn phonics": "phonics",
+        "phonics sounds": "phonics",
+        "alphabet sounds": "phonics",
+        "letter sounds": "phonics",
+        
+        # English variations
+        "english": "English",
+        "english song": "English", 
+        "english music": "English",
+        "any english": "English",
+        
+        # Telugu variations
+        "telugu": "Telugu",
+        "telugu song": "Telugu",
+        "telugu music": "Telugu",
+        "any telugu": "Telugu",
+        
+        # Hindi variations
+        "hindi": "Hindi",
+        "hindi song": "Hindi",
+        "hindi music": "Hindi",
+        "any hindi": "Hindi",
+        
+        # Tamil variations
+        "tamil": "Tamil",
+        "tamil song": "Tamil",
+        "tamil music": "Tamil",
+        "any tamil": "Tamil",
+        
+        # Add more languages as needed
+        "kannada": "Kannada",
+        "malayalam": "Malayalam",
+        "bengali": "Bengali",
+        "punjabi": "Punjabi",
+        "marathi": "Marathi",
+        "gujarati": "Gujarati",
+    }
+    
+    # Check for language requests
+    for key, folder_name in language_mappings.items():
+        if key in text_lower:
+            return folder_name
+    
+    return None
+
+
+def _get_language_specific_files(music_dir, music_ext, language_folder):
+    """Get music files from a specific language folder"""
+    language_path = Path(music_dir) / language_folder
+    
+    if not language_path.exists():
+        return [], []
+    
+    music_files = []
+    music_file_names = []
+    
+    for file in language_path.rglob("*"):
+        if file.is_file():
+            ext = file.suffix.lower()
+            if ext in music_ext:
+                # Get relative path from the main music directory
+                relative_path = str(file.relative_to(Path(music_dir)))
+                music_files.append(relative_path)
+                music_file_names.append(os.path.splitext(relative_path)[0])
+    
+    return music_files, music_file_names
+
+
 def _find_best_match(potential_song, music_files):
-    """查找最匹配的歌曲"""
+    """Find the best matching song"""
     best_match = None
     highest_ratio = 0
 
@@ -101,13 +213,13 @@ def get_music_files(music_dir, music_ext):
     music_files = []
     music_file_names = []
     for file in music_dir.rglob("*"):
-        # 判断是否是文件
+        # Check if it's a file
         if file.is_file():
-            # 获取文件扩展名
+            # Get file extension
             ext = file.suffix.lower()
-            # 判断扩展名是否在列表中
+            # Check if extension is in the list
             if ext in music_ext:
-                # 添加相对路径
+                # Add relative path
                 music_files.append(str(file.relative_to(music_dir)))
                 music_file_names.append(
                     os.path.splitext(str(file.relative_to(music_dir)))[0]
@@ -121,7 +233,7 @@ def initialize_music_handler(conn):
         if "play_music" in conn.config["plugins"]:
             MUSIC_CACHE["music_config"] = conn.config["plugins"]["play_music"]
             MUSIC_CACHE["music_dir"] = os.path.abspath(
-                MUSIC_CACHE["music_config"].get("music_dir", "./music")  # 默认路径修改
+                MUSIC_CACHE["music_config"].get("music_dir", "./music")  # Default path modified
             )
             MUSIC_CACHE["music_ext"] = MUSIC_CACHE["music_config"].get(
                 "music_ext", (".mp3", ".wav", ".p3")
@@ -133,7 +245,7 @@ def initialize_music_handler(conn):
             MUSIC_CACHE["music_dir"] = os.path.abspath("./music")
             MUSIC_CACHE["music_ext"] = (".mp3", ".wav", ".p3")
             MUSIC_CACHE["refresh_time"] = 60
-        # 获取音乐文件列表
+        # Get music file list
         MUSIC_CACHE["music_files"], MUSIC_CACHE["music_file_names"] = get_music_files(
             MUSIC_CACHE["music_dir"], MUSIC_CACHE["music_ext"]
         )
@@ -145,35 +257,56 @@ async def handle_music_command(conn, text):
     initialize_music_handler(conn)
     global MUSIC_CACHE
 
-    """处理音乐播放指令"""
+    """Handle music playback commands"""
     clean_text = re.sub(r"[^\w\s]", "", text).strip()
-    conn.logger.bind(tag=TAG).debug(f"检查是否是音乐命令: {clean_text}")
+    conn.logger.bind(tag=TAG).debug(f"Check if it's a music command: {clean_text}")
 
-    # 尝试匹配具体歌名
+    # Check if user is requesting a specific language
+    requested_language = _detect_language_request(clean_text)
+    
     if os.path.exists(MUSIC_CACHE["music_dir"]):
         if time.time() - MUSIC_CACHE["scan_time"] > MUSIC_CACHE["refresh_time"]:
-            # 刷新音乐文件列表
+            # Refresh music file list
             MUSIC_CACHE["music_files"], MUSIC_CACHE["music_file_names"] = (
                 get_music_files(MUSIC_CACHE["music_dir"], MUSIC_CACHE["music_ext"])
             )
             MUSIC_CACHE["scan_time"] = time.time()
 
+        # If language is specified, get files from that language folder
+        if requested_language:
+            conn.logger.bind(tag=TAG).info(f"Language request detected: {requested_language}")
+            language_files, language_file_names = _get_language_specific_files(
+                MUSIC_CACHE["music_dir"], MUSIC_CACHE["music_ext"], requested_language
+            )
+            
+            if language_files:
+                # Play random song from the requested language folder
+                selected_music = random.choice(language_files)
+                conn.logger.bind(tag=TAG).info(f"Playing {requested_language} song: {selected_music}")
+                await play_local_music(conn, specific_file=selected_music)
+                return True
+            else:
+                conn.logger.bind(tag=TAG).warning(f"No {requested_language} songs found")
+                # Fall back to general music if no songs found in requested language
+        
+        # Try to match specific song name
         potential_song = _extract_song_name(clean_text)
         if potential_song:
             best_match = _find_best_match(potential_song, MUSIC_CACHE["music_files"])
             if best_match:
-                conn.logger.bind(tag=TAG).info(f"找到最匹配的歌曲: {best_match}")
+                conn.logger.bind(tag=TAG).info(f"Found best matching song: {best_match}")
                 await play_local_music(conn, specific_file=best_match)
                 return True
-    # 检查是否是通用播放音乐命令
+    
+    # Check if it's a general play music command
     await play_local_music(conn)
     return True
 
 
 def _get_random_play_prompt(song_name):
-    """生成随机播放引导语"""
-    # 移除文件扩展名
-    clean_name = os.path.splitext(song_name)[0]
+    """Generate random play prompt"""
+    # Remove file extension and extract just the filename (not the folder path)
+    clean_name = os.path.splitext(os.path.basename(song_name))[0]
     prompts = [
         f"Now playing for you, '{clean_name}'",
         f"Please enjoy the song, '{clean_name}'",
@@ -183,33 +316,33 @@ def _get_random_play_prompt(song_name):
         f"Next, please enjoy, '{clean_name}'",
         f"At this moment, presenting to you, '{clean_name}'",
     ]
-     # 直接使用random.choice，不设置seed
+     # Use random.choice directly, don't set seed
     return random.choice(prompts)
 
 
 async def play_local_music(conn, specific_file=None):
     global MUSIC_CACHE
-    """播放本地音乐文件"""
+    """Play local music file"""
     try:
         if not os.path.exists(MUSIC_CACHE["music_dir"]):
             conn.logger.bind(tag=TAG).error(
-                f"音乐目录不存在: " + MUSIC_CACHE["music_dir"]
+                f"Music directory does not exist: " + MUSIC_CACHE["music_dir"]
             )
             return
 
-        # 确保路径正确性
+        # Ensure path correctness
         if specific_file:
             selected_music = specific_file
             music_path = os.path.join(MUSIC_CACHE["music_dir"], specific_file)
         else:
             if not MUSIC_CACHE["music_files"]:
-                conn.logger.bind(tag=TAG).error("未找到MP3音乐文件")
+                conn.logger.bind(tag=TAG).error("No MP3 music files found")
                 return
             selected_music = random.choice(MUSIC_CACHE["music_files"])
             music_path = os.path.join(MUSIC_CACHE["music_dir"], selected_music)
 
         if not os.path.exists(music_path):
-            conn.logger.bind(tag=TAG).error(f"选定的音乐文件不存在: {music_path}")
+            conn.logger.bind(tag=TAG).error(f"Selected music file does not exist: {music_path}")
             return
         text = _get_random_play_prompt(selected_music)
         await send_stt_message(conn, text)
@@ -249,5 +382,5 @@ async def play_local_music(conn, specific_file=None):
             )
 
     except Exception as e:
-        conn.logger.bind(tag=TAG).error(f"播放音乐失败: {str(e)}")
-        conn.logger.bind(tag=TAG).error(f"详细错误: {traceback.format_exc()}")
+        conn.logger.bind(tag=TAG).error(f"Failed to play music: {str(e)}")
+        conn.logger.bind(tag=TAG).error(f"Detailed error: {traceback.format_exc()}")

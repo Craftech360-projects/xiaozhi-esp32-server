@@ -13,14 +13,21 @@ logger = setup_logging()
 
 class ASRProvider(ASRProviderBase):
     def __init__(self, config: dict, delete_audio_file: bool):
+        # Call parent constructor to initialize asr_filter and other base attributes
+        super().__init__(config)
+        
         self.interface_type = InterfaceType.NON_STREAM
         self.api_key = config.get("api_key")
         self.api_url = config.get("base_url")
         self.model = config.get("model_name")
-        self.output_dir = config.get("output_dir")
+        self.output_dir = config.get("output_dir", "tmp/")
         self.delete_audio_file = delete_audio_file
 
         os.makedirs(self.output_dir, exist_ok=True)
+        
+        logger.bind(tag=TAG).info(
+            f"OpenAI Whisper ASR initialized - Model: {self.model}, Output: {self.output_dir}"
+        )
 
     async def speech_to_text(self, opus_data: List[bytes], session_id: str, audio_format="opus") -> Tuple[Optional[str], Optional[str]]:
         file_path = None
