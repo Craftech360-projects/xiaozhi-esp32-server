@@ -1,0 +1,54 @@
+{
+  "emperor new clothes": {
+    "romanized": "Emperor New Clothes",
+    "filename": "emperor new clothes.mp3",
+    "alternatives": [
+      "Emperor New Clothes",
+      "emperor's new clothes",
+      "naked emperor",
+      "invisible clothes story",
+      "fantasy emperor story",
+      "magic clothes",
+      "emperor clothing story"
+    ]
+  },
+  "king of apes": {
+    "romanized": "King of Apes",
+    "filename": "king of apes.mp3",
+    "alternatives": [
+      "King of Apes",
+      "ape king",
+      "monkey king",
+      "jungle king",
+      "fantasy ape story",
+      "animal king story",
+      "apes kingdom"
+    ]
+  },
+  "The Wind and the Sun": {
+    "romanized": "The Wind and the Sun",
+    "filename": "The Wind and the Sun.mp3",
+    "alternatives": [
+      "The Wind and the Sun",
+      "wind and sun",
+      "sun vs wind",
+      "wind sun story",
+      "fantasy elements story",
+      "nature story",
+      "weather story"
+    ]
+  },
+  "thrushbeard": {
+    "romanized": "Thrushbeard",
+    "filename": "thrushbeard.mp3",
+    "alternatives": [
+      "Thrushbeard",
+      "king thrushbeard",
+      "beard king",
+      "fantasy king story",
+      "magical king",
+      "thrush beard story",
+      "proud princess story"
+    ]
+  }
+}

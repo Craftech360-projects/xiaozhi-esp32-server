@@ -1,0 +1,28 @@
+{
+  "Sherlock Holmes The Mystery of the Missing Colors": {
+    "romanized": "Sherlock Holmes The Mystery of the Missing Colors",
+    "filename": "Sherlock Holmes The Mystery of the Missing Colors.mp3",
+    "alternatives": [
+      "Sherlock Holmes",
+      "Mystery of Missing Colors",
+      "Missing Colors"
+    ]
+  },
+  "The Boy Who Cried Wolf": {
+    "romanized": "The Boy Who Cried Wolf",
+    "filename": "The Boy Who Cried Wolf.mp3",
+    "alternatives": [
+      "Boy Who Cried Wolf",
+      "Crying Wolf",
+      "Wolf Story"
+    ]
+  },
+  "The Enchanted Adventure": {
+    "romanized": "The Enchanted Adventure",
+    "filename": "The Enchanted Adventure.mp3",
+    "alternatives": [
+      "Enchanted Adventure",
+      "Adventure Story"
+    ]
+  }
+}

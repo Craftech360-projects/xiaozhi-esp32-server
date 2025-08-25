@@ -1,0 +1,54 @@
+{
+  "hansel and gretel": {
+    "romanized": "Hansel and Gretel",
+    "filename": "hansel and gretel.mp3",
+    "alternatives": [
+      "Hansel and Gretel",
+      "hansel and gretel",
+      "hansel gretel",
+      "gingerbread house story",
+      "witch story",
+      "fairy tale hansel",
+      "classic fairy tale"
+    ]
+  },
+  "leap frog": {
+    "romanized": "Leap Frog",
+    "filename": "leap frog.mp3",
+    "alternatives": [
+      "Leap Frog",
+      "leap frog",
+      "leapfrog",
+      "frog story",
+      "jumping frog",
+      "fairy tale frog",
+      "frog leap story"
+    ]
+  },
+  "snow white shorter": {
+    "romanized": "Snow White Shorter",
+    "filename": "snow white shorter.mp3",
+    "alternatives": [
+      "Snow White Shorter",
+      "snow white",
+      "snow white short version",
+      "seven dwarfs",
+      "mirror mirror story",
+      "fairy tale snow white",
+      "classic snow white"
+    ]
+  },
+  "THE PRINCESS AND THE SALT": {
+    "romanized": "The Princess and the Salt",
+    "filename": "THE PRINCESS AND THE SALT.mp3",
+    "alternatives": [
+      "The Princess and the Salt",
+      "princess and salt",
+      "salt princess",
+      "princess salt story",
+      "fairy tale princess",
+      "salt story",
+      "wise princess story"
+    ]
+  }
+}

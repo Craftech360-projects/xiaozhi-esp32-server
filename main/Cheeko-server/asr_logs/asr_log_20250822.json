@@ -1,0 +1,324 @@
+[
+  {
+    "timestamp": "2025-08-22T13:59:59.256442",
+    "filename": "asr_base_66ba881e-8c4b-46d1-83a1-1021f5157d9d_8d3fbb4b-770e-4afd-87b5-0ad5401f69a5.wav",
+    "file_path": "./audio_files\\asr_base_66ba881e-8c4b-46d1-83a1-1021f5157d9d_8d3fbb4b-770e-4afd-87b5-0ad5401f69a5.wav",
+    "audio_length_seconds": 2.4,
+    "transcript": "Am I audible now?"
+  },
+  {
+    "timestamp": "2025-08-22T14:00:18.515311",
+    "filename": "asr_base_66ba881e-8c4b-46d1-83a1-1021f5157d9d_abff2390-edfc-4216-9ff6-d91be0f28d5a.wav",
+    "file_path": "./audio_files\\asr_base_66ba881e-8c4b-46d1-83a1-1021f5157d9d_abff2390-edfc-4216-9ff6-d91be0f28d5a.wav",
+    "audio_length_seconds": 2.36,
+    "transcript": "Play music."
+  },
+  {
+    "timestamp": "2025-08-22T14:03:14.053359",
+    "filename": "asr_base_31c024c3-c75f-4cab-ac5b-a89b3f6089e4_80ab5c29-0130-4271-93e4-7b1d137ac542.wav",
+    "file_path": "./audio_files\\asr_base_31c024c3-c75f-4cab-ac5b-a89b3f6089e4_80ab5c29-0130-4271-93e4-7b1d137ac542.wav",
+    "audio_length_seconds": 2.22,
+    "transcript": "Okay. I'm good."
+  },
+  {
+    "timestamp": "2025-08-22T14:03:45.446087",
+    "filename": "asr_base_31c024c3-c75f-4cab-ac5b-a89b3f6089e4_e6f9ba78-6d66-43ef-ac4f-0b77a5b88303.wav",
+    "file_path": "./audio_files\\asr_base_31c024c3-c75f-4cab-ac5b-a89b3f6089e4_e6f9ba78-6d66-43ef-ac4f-0b77a5b88303.wav",
+    "audio_length_seconds": 1.8,
+    "transcript": "Okay. Bye."
+  },
+  {
+    "timestamp": "2025-08-22T15:07:03.537573",
+    "filename": "asr_base_b548c59e-8de9-4528-adc2-0f577a6fe0cb_02589282-b00c-4830-b494-d54f3b362772.wav",
+    "file_path": "./audio_files\\asr_base_b548c59e-8de9-4528-adc2-0f577a6fe0cb_02589282-b00c-4830-b494-d54f3b362772.wav",
+    "audio_length_seconds": 1.86,
+    "transcript": "Play story."
+  },
+  {
+    "timestamp": "2025-08-22T15:15:36.173950",
+    "filename": "asr_base_fc0377b2-b150-4c8f-984d-fc8ac39eb3cb_da9540da-b904-4bc6-b61c-37a6c7783240.wav",
+    "file_path": "./audio_files\\asr_base_fc0377b2-b150-4c8f-984d-fc8ac39eb3cb_da9540da-b904-4bc6-b61c-37a6c7783240.wav",
+    "audio_length_seconds": 2.0,
+    "transcript": "Play music."
+  },
+  {
+    "timestamp": "2025-08-22T15:16:22.252916",
+    "filename": "asr_base_8b27400e-150a-410c-8837-6cf8467c2ffb_e14653f2-9fd8-4c83-9e8d-86be7bc7e911.wav",
+    "file_path": "./audio_files\\asr_base_8b27400e-150a-410c-8837-6cf8467c2ffb_e14653f2-9fd8-4c83-9e8d-86be7bc7e911.wav",
+    "audio_length_seconds": 1.94,
+    "transcript": "Play story."
+  },
+  {
+    "timestamp": "2025-08-22T15:26:14.430905",
+    "filename": "asr_base_bbef8431-2bd0-4136-b8db-1c07c0d6109d_5f95e549-9779-43f5-a742-271ac1f6bd03.wav",
+    "file_path": "./audio_files\\asr_base_bbef8431-2bd0-4136-b8db-1c07c0d6109d_5f95e549-9779-43f5-a742-271ac1f6bd03.wav",
+    "audio_length_seconds": 1.84,
+    "transcript": "Play story."
+  },
+  {
+    "timestamp": "2025-08-22T15:27:08.129853",
+    "filename": "asr_base_c66efb72-648c-481b-8a38-f97c14ed4188_9f936aba-8335-4c22-af7c-73214aa70515.wav",
+    "file_path": "./audio_files\\asr_base_c66efb72-648c-481b-8a38-f97c14ed4188_9f936aba-8335-4c22-af7c-73214aa70515.wav",
+    "audio_length_seconds": 3.04,
+    "transcript": "Lay the wind and the sun."
+  },
+  {
+    "timestamp": "2025-08-22T15:27:36.703629",
+    "filename": "asr_base_c66efb72-648c-481b-8a38-f97c14ed4188_ab0cb844-c53d-479e-ac3c-498cad76f69a.wav",
+    "file_path": "./audio_files\\asr_base_c66efb72-648c-481b-8a38-f97c14ed4188_ab0cb844-c53d-479e-ac3c-498cad76f69a.wav",
+    "audio_length_seconds": 2.44,
+    "transcript": "Play adventure story."
+  },
+  {
+    "timestamp": "2025-08-22T15:28:14.754043",
+    "filename": "asr_base_c66efb72-648c-481b-8a38-f97c14ed4188_d9af2b1a-d253-4c15-8dc6-9181e2bcf6c3.wav",
+    "file_path": "./audio_files\\asr_base_c66efb72-648c-481b-8a38-f97c14ed4188_d9af2b1a-d253-4c15-8dc6-9181e2bcf6c3.wav",
+    "audio_length_seconds": 2.46,
+    "transcript": "Play bedtime story."
+  },
+  {
+    "timestamp": "2025-08-22T15:31:31.349409",
+    "filename": "asr_base_e8e9224b-3b78-4d3b-a936-34d96315e12e_a82fe2db-3d10-430d-8d06-04a70bde00f7.wav",
+    "file_path": "./audio_files\\asr_base_e8e9224b-3b78-4d3b-a936-34d96315e12e_a82fe2db-3d10-430d-8d06-04a70bde00f7.wav",
+    "audio_length_seconds": 1.86,
+    "transcript": "Hello?"
+  },
+  {
+    "timestamp": "2025-08-22T15:31:49.890411",
+    "filename": "asr_base_e8e9224b-3b78-4d3b-a936-34d96315e12e_466e0831-e7dc-456b-8fdf-6cf20cb6679a.wav",
+    "file_path": "./audio_files\\asr_base_e8e9224b-3b78-4d3b-a936-34d96315e12e_466e0831-e7dc-456b-8fdf-6cf20cb6679a.wav",
+    "audio_length_seconds": 1.94,
+    "transcript": "Play story."
+  },
+  {
+    "timestamp": "2025-08-22T15:32:20.778550",
+    "filename": "asr_base_e8e9224b-3b78-4d3b-a936-34d96315e12e_9984401b-2743-42ce-89d6-e6dbb84d84e9.wav",
+    "file_path": "./audio_files\\asr_base_e8e9224b-3b78-4d3b-a936-34d96315e12e_9984401b-2743-42ce-89d6-e6dbb84d84e9.wav",
+    "audio_length_seconds": 2.32,
+    "transcript": "Play bedtime story."
+  },
+  {
+    "timestamp": "2025-08-22T15:34:10.542265",
+    "filename": "asr_base_e8e9224b-3b78-4d3b-a936-34d96315e12e_81a3a7ac-25a9-43f4-8219-638e907a35e6.wav",
+    "file_path": "./audio_files\\asr_base_e8e9224b-3b78-4d3b-a936-34d96315e12e_81a3a7ac-25a9-43f4-8219-638e907a35e6.wav",
+    "audio_length_seconds": 2.56,
+    "transcript": "Play educational story."
+  },
+  {
+    "timestamp": "2025-08-22T15:34:49.416430",
+    "filename": "asr_base_e8e9224b-3b78-4d3b-a936-34d96315e12e_cd7d0d24-59e2-4d7b-8298-68544a2d52b3.wav",
+    "file_path": "./audio_files\\asr_base_e8e9224b-3b78-4d3b-a936-34d96315e12e_cd7d0d24-59e2-4d7b-8298-68544a2d52b3.wav",
+    "audio_length_seconds": 2.5,
+    "transcript": "Yes."
+  },
+  {
+    "timestamp": "2025-08-22T15:35:28.160784",
+    "filename": "asr_base_e8e9224b-3b78-4d3b-a936-34d96315e12e_20ba9237-3cea-43b1-8cf7-4c88a3860db6.wav",
+    "file_path": "./audio_files\\asr_base_e8e9224b-3b78-4d3b-a936-34d96315e12e_20ba9237-3cea-43b1-8cf7-4c88a3860db6.wav",
+    "audio_length_seconds": 3.48,
+    "transcript": "Play fairy tales story."
+  },
+  {
+    "timestamp": "2025-08-22T15:36:22.190074",
+    "filename": "asr_base_1297ad58-66fe-483e-8837-2ade57a71c03_9bc36420-afa1-4190-9a87-a80be0efabe3.wav",
+    "file_path": "./audio_files\\asr_base_1297ad58-66fe-483e-8837-2ade57a71c03_9bc36420-afa1-4190-9a87-a80be0efabe3.wav",
+    "audio_length_seconds": 4.2,
+    "transcript": "Play bedtime storing."
+  },
+  {
+    "timestamp": "2025-08-22T15:37:13.668912",
+    "filename": "asr_base_7ccdcd21-323a-4261-a431-9d2edf299e08_f9705c61-e2ef-44f7-80c4-e7d7fcc49844.wav",
+    "file_path": "./audio_files\\asr_base_7ccdcd21-323a-4261-a431-9d2edf299e08_f9705c61-e2ef-44f7-80c4-e7d7fcc49844.wav",
+    "audio_length_seconds": 3.66,
+    "transcript": "No. That's this will remove."
+  },
+  {
+    "timestamp": "2025-08-22T15:37:28.552627",
+    "filename": "asr_base_7ccdcd21-323a-4261-a431-9d2edf299e08_2963e5e4-1323-4f53-8685-3004db571e44.wav",
+    "file_path": "./audio_files\\asr_base_7ccdcd21-323a-4261-a431-9d2edf299e08_2963e5e4-1323-4f53-8685-3004db571e44.wav",
+    "audio_length_seconds": 2.62,
+    "transcript": "Play adventure story."
+  },
+  {
+    "timestamp": "2025-08-22T15:38:31.594509",
+    "filename": "asr_base_7ccdcd21-323a-4261-a431-9d2edf299e08_69c2c1ea-7605-477d-a8da-f5df6bd3d896.wav",
+    "file_path": "./audio_files\\asr_base_7ccdcd21-323a-4261-a431-9d2edf299e08_69c2c1ea-7605-477d-a8da-f5df6bd3d896.wav",
+    "audio_length_seconds": 2.86,
+    "transcript": "Play fantasy story."
+  },
+  {
+    "timestamp": "2025-08-22T15:39:05.644995",
+    "filename": "asr_base_7ccdcd21-323a-4261-a431-9d2edf299e08_78bc821e-cdfa-4a59-b909-107195a3a7ac.wav",
+    "file_path": "./audio_files\\asr_base_7ccdcd21-323a-4261-a431-9d2edf299e08_78bc821e-cdfa-4a59-b909-107195a3a7ac.wav",
+    "audio_length_seconds": 3.6,
+    "transcript": "Adventure story."
+  },
+  {
+    "timestamp": "2025-08-22T15:39:39.248207",
+    "filename": "asr_base_7ccdcd21-323a-4261-a431-9d2edf299e08_a39cf23a-cf78-4a76-8c62-8f65ac1ff6c6.wav",
+    "file_path": "./audio_files\\asr_base_7ccdcd21-323a-4261-a431-9d2edf299e08_a39cf23a-cf78-4a76-8c62-8f65ac1ff6c6.wav",
+    "audio_length_seconds": 1.24,
+    "transcript": "Last seven days, please."
+  },
+  {
+    "timestamp": "2025-08-22T15:40:07.847081",
+    "filename": "asr_base_7ccdcd21-323a-4261-a431-9d2edf299e08_6fa822b7-f770-49da-877a-a9782eaa04e7.wav",
+    "file_path": "./audio_files\\asr_base_7ccdcd21-323a-4261-a431-9d2edf299e08_6fa822b7-f770-49da-877a-a9782eaa04e7.wav",
+    "audio_length_seconds": 2.66,
+    "transcript": "Play bedtime story."
+  },
+  {
+    "timestamp": "2025-08-22T15:40:35.763620",
+    "filename": "asr_base_7ccdcd21-323a-4261-a431-9d2edf299e08_9dec32b3-93e0-4c78-8adb-6c23785dd9dc.wav",
+    "file_path": "./audio_files\\asr_base_7ccdcd21-323a-4261-a431-9d2edf299e08_9dec32b3-93e0-4c78-8adb-6c23785dd9dc.wav",
+    "audio_length_seconds": 3.22,
+    "transcript": "Play story."
+  },
+  {
+    "timestamp": "2025-08-22T15:50:38.806839",
+    "filename": "asr_base_de0e8954-ee23-49ad-8b1b-0f078353a397_1631e48b-cf0f-4f4e-83e7-90ba850a1e29.wav",
+    "file_path": "./audio_files\\asr_base_de0e8954-ee23-49ad-8b1b-0f078353a397_1631e48b-cf0f-4f4e-83e7-90ba850a1e29.wav",
+    "audio_length_seconds": 1.46,
+    "transcript": "Yes."
+  },
+  {
+    "timestamp": "2025-08-22T15:50:54.801980",
+    "filename": "asr_base_de0e8954-ee23-49ad-8b1b-0f078353a397_f7d815aa-02e0-47af-b128-698cdb93aad0.wav",
+    "file_path": "./audio_files\\asr_base_de0e8954-ee23-49ad-8b1b-0f078353a397_f7d815aa-02e0-47af-b128-698cdb93aad0.wav",
+    "audio_length_seconds": 2.82,
+    "transcript": ".Com. This one. Right? Story."
+  },
+  {
+    "timestamp": "2025-08-22T15:51:44.572671",
+    "filename": "asr_base_b4084eea-21cf-481d-a8b1-f0ce08a0c017_c76a3709-630d-4619-95a4-2448f51971e1.wav",
+    "file_path": "./audio_files\\asr_base_b4084eea-21cf-481d-a8b1-f0ce08a0c017_c76a3709-630d-4619-95a4-2448f51971e1.wav",
+    "audio_length_seconds": 2.84,
+    "transcript": "Play bedtime story."
+  },
+  {
+    "timestamp": "2025-08-22T15:52:18.145038",
+    "filename": "asr_base_3ef1a1d5-37a8-4975-acb0-24b8afe8427e_1c1a38dd-8331-46ee-a1c2-6f88a199e393.wav",
+    "file_path": "./audio_files\\asr_base_3ef1a1d5-37a8-4975-acb0-24b8afe8427e_1c1a38dd-8331-46ee-a1c2-6f88a199e393.wav",
+    "audio_length_seconds": 4.88,
+    "transcript": "And you have to get a how many options are there? No. That many limited."
+  },
+  {
+    "timestamp": "2025-08-22T15:52:38.579941",
+    "filename": "asr_base_3ef1a1d5-37a8-4975-acb0-24b8afe8427e_325af368-51a6-49dd-94d4-92fdb6a1f5b3.wav",
+    "file_path": "./audio_files\\asr_base_3ef1a1d5-37a8-4975-acb0-24b8afe8427e_325af368-51a6-49dd-94d4-92fdb6a1f5b3.wav",
+    "audio_length_seconds": 2.96,
+    "transcript": "Play adventure story."
+  },
+  {
+    "timestamp": "2025-08-22T15:59:45.687034",
+    "filename": "asr_base_9eee3fc6-8d5b-4cc2-a76f-a33ad73c7317_4c9a3beb-7e8f-4120-8145-3741a771105f.wav",
+    "file_path": "./audio_files\\asr_base_9eee3fc6-8d5b-4cc2-a76f-a33ad73c7317_4c9a3beb-7e8f-4120-8145-3741a771105f.wav",
+    "audio_length_seconds": 4.08,
+    "transcript": "Hey. Can you tell me a story?"
+  },
+  {
+    "timestamp": "2025-08-22T16:00:13.874576",
+    "filename": "asr_base_9eee3fc6-8d5b-4cc2-a76f-a33ad73c7317_bd48bb98-1ac4-471f-ba14-463e5f48aa0a.wav",
+    "file_path": "./audio_files\\asr_base_9eee3fc6-8d5b-4cc2-a76f-a33ad73c7317_bd48bb98-1ac4-471f-ba14-463e5f48aa0a.wav",
+    "audio_length_seconds": 5.62,
+    "transcript": "Properly working that once you test, that's fine."
+  },
+  {
+    "timestamp": "2025-08-22T16:07:07.865940",
+    "filename": "asr_base_804973fe-afcd-4770-bc1e-4bb47c355fb0_5f66ddad-e1ea-4d79-841f-213fb1a4dd35.wav",
+    "file_path": "./audio_files\\asr_base_804973fe-afcd-4770-bc1e-4bb47c355fb0_5f66ddad-e1ea-4d79-841f-213fb1a4dd35.wav",
+    "audio_length_seconds": 1.96,
+    "transcript": "Play story."
+  },
+  {
+    "timestamp": "2025-08-22T16:07:34.671822",
+    "filename": "asr_base_804973fe-afcd-4770-bc1e-4bb47c355fb0_61d38e7f-7e6d-4513-9ebf-e47806b410d8.wav",
+    "file_path": "./audio_files\\asr_base_804973fe-afcd-4770-bc1e-4bb47c355fb0_61d38e7f-7e6d-4513-9ebf-e47806b410d8.wav",
+    "audio_length_seconds": 2.38,
+    "transcript": "You tell me a story?"
+  },
+  {
+    "timestamp": "2025-08-22T16:08:27.209383",
+    "filename": "asr_base_91f69f67-8d20-4dba-a596-6625f69ec8f3_52610c03-f55c-4f9d-bff2-be7293bc9a7a.wav",
+    "file_path": "./audio_files\\asr_base_91f69f67-8d20-4dba-a596-6625f69ec8f3_52610c03-f55c-4f9d-bff2-be7293bc9a7a.wav",
+    "audio_length_seconds": 1.9,
+    "transcript": "Play story."
+  },
+  {
+    "timestamp": "2025-08-22T16:09:02.171516",
+    "filename": "asr_base_91f69f67-8d20-4dba-a596-6625f69ec8f3_efb640df-f687-48b7-83eb-e53e2733309a.wav",
+    "file_path": "./audio_files\\asr_base_91f69f67-8d20-4dba-a596-6625f69ec8f3_efb640df-f687-48b7-83eb-e53e2733309a.wav",
+    "audio_length_seconds": 3.06,
+    "transcript": "Okay. Now can you tell me a story?"
+  },
+  {
+    "timestamp": "2025-08-22T16:09:38.414460",
+    "filename": "asr_base_91f69f67-8d20-4dba-a596-6625f69ec8f3_3e1d83d2-6643-44b3-bbfe-e485acf0d173.wav",
+    "file_path": "./audio_files\\asr_base_91f69f67-8d20-4dba-a596-6625f69ec8f3_3e1d83d2-6643-44b3-bbfe-e485acf0d173.wav",
+    "audio_length_seconds": 2.44,
+    "transcript": "Play bedtime story."
+  },
+  {
+    "timestamp": "2025-08-22T16:29:44.933899",
+    "filename": "asr_base_58cb3b29-596a-4f83-bc30-e3a46744c822_d645a6c0-55ae-494e-9284-6d3083be15d8.wav",
+    "file_path": "./audio_files\\asr_base_58cb3b29-596a-4f83-bc30-e3a46744c822_d645a6c0-55ae-494e-9284-6d3083be15d8.wav",
+    "audio_length_seconds": 2.06,
+    "transcript": "Play a golden gift."
+  },
+  {
+    "timestamp": "2025-08-22T16:30:05.707791",
+    "filename": "asr_base_58cb3b29-596a-4f83-bc30-e3a46744c822_a04a6a27-4f09-421b-89f1-e4950a664875.wav",
+    "file_path": "./audio_files\\asr_base_58cb3b29-596a-4f83-bc30-e3a46744c822_a04a6a27-4f09-421b-89f1-e4950a664875.wav",
+    "audio_length_seconds": 2.84,
+    "transcript": "Play the bahou cried wolf."
+  },
+  {
+    "timestamp": "2025-08-22T16:30:25.595072",
+    "filename": "asr_base_58cb3b29-596a-4f83-bc30-e3a46744c822_7fad7fc1-fb5d-464a-82d4-7a29e916da35.wav",
+    "file_path": "./audio_files\\asr_base_58cb3b29-596a-4f83-bc30-e3a46744c822_7fad7fc1-fb5d-464a-82d4-7a29e916da35.wav",
+    "audio_length_seconds": 2.66,
+    "transcript": "Play invisible warrior."
+  },
+  {
+    "timestamp": "2025-08-22T16:30:40.678239",
+    "filename": "asr_base_58cb3b29-596a-4f83-bc30-e3a46744c822_6e2f1e4f-afc5-4c19-8a98-f9bfcb816176.wav",
+    "file_path": "./audio_files\\asr_base_58cb3b29-596a-4f83-bc30-e3a46744c822_6e2f1e4f-afc5-4c19-8a98-f9bfcb816176.wav",
+    "audio_length_seconds": 1.86,
+    "transcript": "Play story."
+  },
+  {
+    "timestamp": "2025-08-22T16:30:55.631556",
+    "filename": "asr_base_58cb3b29-596a-4f83-bc30-e3a46744c822_2db376a0-034d-47d6-ade0-3221d4ad3926.wav",
+    "file_path": "./audio_files\\asr_base_58cb3b29-596a-4f83-bc30-e3a46744c822_2db376a0-034d-47d6-ade0-3221d4ad3926.wav",
+    "audio_length_seconds": 2.72,
+    "transcript": "Play a bedtime story."
+  },
+  {
+    "timestamp": "2025-08-22T16:31:09.252111",
+    "filename": "asr_base_58cb3b29-596a-4f83-bc30-e3a46744c822_181cdc64-3816-4b26-a031-a6641414c86f.wav",
+    "file_path": "./audio_files\\asr_base_58cb3b29-596a-4f83-bc30-e3a46744c822_181cdc64-3816-4b26-a031-a6641414c86f.wav",
+    "audio_length_seconds": 3.38,
+    "transcript": "Can you tell me a story?"
+  },
+  {
+    "timestamp": "2025-08-22T17:37:32.383044",
+    "filename": "asr_base_bf33b928-6cb2-4aaf-9ff5-e15fdd27aecc_e0ac76d4-284c-43f8-afcd-35b37b071008.wav",
+    "file_path": "./audio_files\\asr_base_bf33b928-6cb2-4aaf-9ff5-e15fdd27aecc_e0ac76d4-284c-43f8-afcd-35b37b071008.wav",
+    "audio_length_seconds": 2.44,
+    "transcript": "Hello. Hi."
+  },
+  {
+    "timestamp": "2025-08-22T17:37:52.919111",
+    "filename": "asr_base_bf33b928-6cb2-4aaf-9ff5-e15fdd27aecc_11304b11-4936-4d28-b88f-9a29dde53d8e.wav",
+    "file_path": "./audio_files\\asr_base_bf33b928-6cb2-4aaf-9ff5-e15fdd27aecc_11304b11-4936-4d28-b88f-9a29dde53d8e.wav",
+    "audio_length_seconds": 3.76,
+    "transcript": "I want to hear a story."
+  },
+  {
+    "timestamp": "2025-08-22T17:38:31.198317",
+    "filename": "asr_base_bf33b928-6cb2-4aaf-9ff5-e15fdd27aecc_25f5798b-9c66-4136-9e93-827991bf2986.wav",
+    "file_path": "./audio_files\\asr_base_bf33b928-6cb2-4aaf-9ff5-e15fdd27aecc_25f5798b-9c66-4136-9e93-827991bf2986.wav",
+    "audio_length_seconds": 2.08,
+    "transcript": "Play story."
+  }
+]

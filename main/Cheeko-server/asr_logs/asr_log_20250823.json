@@ -1,0 +1,310 @@
+[
+  {
+    "timestamp": "2025-08-23T15:36:09.448190",
+    "filename": "asr_base_8efb0440-9c34-4c29-9e15-66e65cbf64c3_7a5b1388-f02b-4bbc-9966-d15386aab54f.wav",
+    "file_path": "./audio_files\\asr_base_8efb0440-9c34-4c29-9e15-66e65cbf64c3_7a5b1388-f02b-4bbc-9966-d15386aab54f.wav",
+    "audio_length_seconds": 2.88,
+    "transcript": "Can you sing a song for me?"
+  },
+  {
+    "timestamp": "2025-08-23T15:37:07.081490",
+    "filename": "asr_base_5caad903-bc5c-43c6-9550-63d023cddd21_ee44d196-7c77-4bd0-8aa9-a21fc46f629c.wav",
+    "file_path": "./audio_files\\asr_base_5caad903-bc5c-43c6-9550-63d023cddd21_ee44d196-7c77-4bd0-8aa9-a21fc46f629c.wav",
+    "audio_length_seconds": 2.02,
+    "transcript": "Tell me a story."
+  },
+  {
+    "timestamp": "2025-08-23T15:37:52.782467",
+    "filename": "asr_base_5caad903-bc5c-43c6-9550-63d023cddd21_1ef3a117-2cb8-4bac-924a-5c32bcb400d6.wav",
+    "file_path": "./audio_files\\asr_base_5caad903-bc5c-43c6-9550-63d023cddd21_1ef3a117-2cb8-4bac-924a-5c32bcb400d6.wav",
+    "audio_length_seconds": 2.68,
+    "transcript": "Want to hear a song."
+  },
+  {
+    "timestamp": "2025-08-23T15:42:25.406675",
+    "filename": "asr_base_f0af71c6-2952-4c48-bffe-8bd3c3cf11f3_adec2c24-e885-48e6-846e-206ee48e7674.wav",
+    "file_path": "./audio_files\\asr_base_f0af71c6-2952-4c48-bffe-8bd3c3cf11f3_adec2c24-e885-48e6-846e-206ee48e7674.wav",
+    "audio_length_seconds": 2.42,
+    "transcript": "Can you sing a song?"
+  },
+  {
+    "timestamp": "2025-08-23T15:42:52.156793",
+    "filename": "asr_base_f0af71c6-2952-4c48-bffe-8bd3c3cf11f3_606481c3-6ec3-42c9-aad8-9c7aaf74d0f6.wav",
+    "file_path": "./audio_files\\asr_base_f0af71c6-2952-4c48-bffe-8bd3c3cf11f3_606481c3-6ec3-42c9-aad8-9c7aaf74d0f6.wav",
+    "audio_length_seconds": 2.26,
+    "transcript": "Yeah. I'm listening."
+  },
+  {
+    "timestamp": "2025-08-23T15:43:18.812160",
+    "filename": "asr_base_f0af71c6-2952-4c48-bffe-8bd3c3cf11f3_be438548-4255-4142-891f-9287bb148fc8.wav",
+    "file_path": "./audio_files\\asr_base_f0af71c6-2952-4c48-bffe-8bd3c3cf11f3_be438548-4255-4142-891f-9287bb148fc8.wav",
+    "audio_length_seconds": 2.22,
+    "transcript": "Put on some music."
+  },
+  {
+    "timestamp": "2025-08-23T15:44:10.511061",
+    "filename": "asr_base_f0af71c6-2952-4c48-bffe-8bd3c3cf11f3_1d2b8114-91ff-4212-a40e-c730932ae26b.wav",
+    "file_path": "./audio_files\\asr_base_f0af71c6-2952-4c48-bffe-8bd3c3cf11f3_1d2b8114-91ff-4212-a40e-c730932ae26b.wav",
+    "audio_length_seconds": 5.36,
+    "transcript": "Yes. Okay. Can I hear you?"
+  },
+  {
+    "timestamp": "2025-08-23T15:44:44.765794",
+    "filename": "asr_base_f0af71c6-2952-4c48-bffe-8bd3c3cf11f3_6aefca1f-576b-4ec9-9fe1-4d386ed77b94.wav",
+    "file_path": "./audio_files\\asr_base_f0af71c6-2952-4c48-bffe-8bd3c3cf11f3_6aefca1f-576b-4ec9-9fe1-4d386ed77b94.wav",
+    "audio_length_seconds": 2.44,
+    "transcript": "Any English song?"
+  },
+  {
+    "timestamp": "2025-08-23T15:45:18.522384",
+    "filename": "asr_base_f0af71c6-2952-4c48-bffe-8bd3c3cf11f3_16b60664-9582-4aee-8a55-9152f2568b2c.wav",
+    "file_path": "./audio_files\\asr_base_f0af71c6-2952-4c48-bffe-8bd3c3cf11f3_16b60664-9582-4aee-8a55-9152f2568b2c.wav",
+    "audio_length_seconds": 3.62,
+    "transcript": "Play any English song."
+  },
+  {
+    "timestamp": "2025-08-23T15:47:04.092657",
+    "filename": "asr_base_6ae2e564-dbaf-4d39-a14a-a5877e98b792_ba0f803f-0e11-4c5a-a69a-7a6d7061aa3a.wav",
+    "file_path": "./audio_files\\asr_base_6ae2e564-dbaf-4d39-a14a-a5877e98b792_ba0f803f-0e11-4c5a-a69a-7a6d7061aa3a.wav",
+    "audio_length_seconds": 3.08,
+    "transcript": "Play Anuman Chalisa."
+  },
+  {
+    "timestamp": "2025-08-23T15:50:30.385390",
+    "filename": "asr_base_ac23d009-fdde-4e42-b24a-d8bfae2d7da8_9a111496-5489-46c1-950a-fe6838161d2e.wav",
+    "file_path": "./audio_files\\asr_base_ac23d009-fdde-4e42-b24a-d8bfae2d7da8_9a111496-5489-46c1-950a-fe6838161d2e.wav",
+    "audio_length_seconds": 2.8,
+    "transcript": "Play any English song."
+  },
+  {
+    "timestamp": "2025-08-23T15:50:50.014890",
+    "filename": "asr_base_ac23d009-fdde-4e42-b24a-d8bfae2d7da8_766ab3ce-23cc-4cff-a49f-8cfb3139d8b0.wav",
+    "file_path": "./audio_files\\asr_base_ac23d009-fdde-4e42-b24a-d8bfae2d7da8_766ab3ce-23cc-4cff-a49f-8cfb3139d8b0.wav",
+    "audio_length_seconds": 2.26,
+    "transcript": "Play any karana song."
+  },
+  {
+    "timestamp": "2025-08-23T15:52:23.874472",
+    "filename": "asr_base_ac23d009-fdde-4e42-b24a-d8bfae2d7da8_eafa763a-adf5-4a5b-ba28-d8b753844ba3.wav",
+    "file_path": "./audio_files\\asr_base_ac23d009-fdde-4e42-b24a-d8bfae2d7da8_eafa763a-adf5-4a5b-ba28-d8b753844ba3.wav",
+    "audio_length_seconds": 1.56,
+    "transcript": "Yes."
+  },
+  {
+    "timestamp": "2025-08-23T16:50:45.795767",
+    "filename": "asr_base_d701678a-29e3-463b-807e-8459423f5b68_327fd6bf-5e7e-45fd-a1ce-5a4ed52b2a06.wav",
+    "file_path": "./audio_files\\asr_base_d701678a-29e3-463b-807e-8459423f5b68_327fd6bf-5e7e-45fd-a1ce-5a4ed52b2a06.wav",
+    "audio_length_seconds": 1.66,
+    "transcript": "Hello?"
+  },
+  {
+    "timestamp": "2025-08-23T16:54:38.539815",
+    "filename": "asr_base_9d6d0aab-e8bf-4b25-8e06-1eed495c058b_76041247-d1ea-40e9-94b8-94d2481b7bea.wav",
+    "file_path": "./audio_files\\asr_base_9d6d0aab-e8bf-4b25-8e06-1eed495c058b_76041247-d1ea-40e9-94b8-94d2481b7bea.wav",
+    "audio_length_seconds": 2.56,
+    "transcript": "Hello?"
+  },
+  {
+    "timestamp": "2025-08-23T16:57:52.267172",
+    "filename": "asr_base_be2d523f-bc57-4fe4-b8cb-d40c4498a82a_0d858c7f-e436-4684-a1d0-15121066c833.wav",
+    "file_path": "./audio_files\\asr_base_be2d523f-bc57-4fe4-b8cb-d40c4498a82a_0d858c7f-e436-4684-a1d0-15121066c833.wav",
+    "audio_length_seconds": 2.22,
+    "transcript": "Hello. Good morning."
+  },
+  {
+    "timestamp": "2025-08-23T16:58:22.023622",
+    "filename": "asr_base_be2d523f-bc57-4fe4-b8cb-d40c4498a82a_910da8a4-55e6-4f3a-bb18-e3b31b8db7e3.wav",
+    "file_path": "./audio_files\\asr_base_be2d523f-bc57-4fe4-b8cb-d40c4498a82a_910da8a4-55e6-4f3a-bb18-e3b31b8db7e3.wav",
+    "audio_length_seconds": 2.0,
+    "transcript": "Am I audible?"
+  },
+  {
+    "timestamp": "2025-08-23T16:59:47.885892",
+    "filename": "asr_base_be2d523f-bc57-4fe4-b8cb-d40c4498a82a_82b01b50-5d50-4cd0-9bde-e646466abac5.wav",
+    "file_path": "./audio_files\\asr_base_be2d523f-bc57-4fe4-b8cb-d40c4498a82a_82b01b50-5d50-4cd0-9bde-e646466abac5.wav",
+    "audio_length_seconds": 1.8,
+    "transcript": "Play music."
+  },
+  {
+    "timestamp": "2025-08-23T17:00:27.189253",
+    "filename": "asr_base_be2d523f-bc57-4fe4-b8cb-d40c4498a82a_2e3ea8ba-6243-48cc-857d-83631eb6d6e3.wav",
+    "file_path": "./audio_files\\asr_base_be2d523f-bc57-4fe4-b8cb-d40c4498a82a_2e3ea8ba-6243-48cc-857d-83631eb6d6e3.wav",
+    "audio_length_seconds": 1.6,
+    "transcript": "Hello?"
+  },
+  {
+    "timestamp": "2025-08-23T17:04:00.025941",
+    "filename": "asr_base_a1548686-3e60-41f7-8602-faf6e25dc5a7_e932b859-d499-4719-a51d-33c6ccd4f006.wav",
+    "file_path": "./audio_files\\asr_base_a1548686-3e60-41f7-8602-faf6e25dc5a7_e932b859-d499-4719-a51d-33c6ccd4f006.wav",
+    "audio_length_seconds": 2.16,
+    "transcript": "Hello. Hi."
+  },
+  {
+    "timestamp": "2025-08-23T17:04:42.376384",
+    "filename": "asr_base_a1548686-3e60-41f7-8602-faf6e25dc5a7_42c0a46a-ec9d-4607-9d8c-ace40d1536da.wav",
+    "file_path": "./audio_files\\asr_base_a1548686-3e60-41f7-8602-faf6e25dc5a7_42c0a46a-ec9d-4607-9d8c-ace40d1536da.wav",
+    "audio_length_seconds": 2.3,
+    "transcript": "And"
+  },
+  {
+    "timestamp": "2025-08-23T17:04:57.265938",
+    "filename": "asr_base_a1548686-3e60-41f7-8602-faf6e25dc5a7_4dc14d32-1abe-478e-9645-07f8f2054dd0.wav",
+    "file_path": "./audio_files\\asr_base_a1548686-3e60-41f7-8602-faf6e25dc5a7_4dc14d32-1abe-478e-9645-07f8f2054dd0.wav",
+    "audio_length_seconds": 1.46,
+    "transcript": "Yes."
+  },
+  {
+    "timestamp": "2025-08-23T17:06:17.085253",
+    "filename": "asr_base_a1548686-3e60-41f7-8602-faf6e25dc5a7_f894a7e4-6055-4233-9fd0-f8dd559c5089.wav",
+    "file_path": "./audio_files\\asr_base_a1548686-3e60-41f7-8602-faf6e25dc5a7_f894a7e4-6055-4233-9fd0-f8dd559c5089.wav",
+    "audio_length_seconds": 5.36,
+    "transcript": "If we send the message directly to VPS for some it is the timing."
+  },
+  {
+    "timestamp": "2025-08-23T17:19:12.706654",
+    "filename": "asr_base_e79a33af-713e-4514-b021-0dfda7945053_3cc35ce4-6ca9-42b7-a376-0aeb3cde715b.wav",
+    "file_path": "./audio_files\\asr_base_e79a33af-713e-4514-b021-0dfda7945053_3cc35ce4-6ca9-42b7-a376-0aeb3cde715b.wav",
+    "audio_length_seconds": 1.9,
+    "transcript": "Hello. Hello."
+  },
+  {
+    "timestamp": "2025-08-23T17:21:48.337367",
+    "filename": "asr_base_00f5b526-0ed5-4070-8133-b938fcde450d_a88793a2-1194-4ecc-88d9-ce7ea81ddf50.wav",
+    "file_path": "./audio_files\\asr_base_00f5b526-0ed5-4070-8133-b938fcde450d_a88793a2-1194-4ecc-88d9-ce7ea81ddf50.wav",
+    "audio_length_seconds": 2.3,
+    "transcript": "Hello?"
+  },
+  {
+    "timestamp": "2025-08-23T17:26:29.705685",
+    "filename": "asr_base_717a4308-8e4b-43fa-b40d-8e405dd013ea_117725ae-942e-4e2a-a862-1fa30f3c875d.wav",
+    "file_path": "./audio_files\\asr_base_717a4308-8e4b-43fa-b40d-8e405dd013ea_117725ae-942e-4e2a-a862-1fa30f3c875d.wav",
+    "audio_length_seconds": 1.72,
+    "transcript": "Hello."
+  },
+  {
+    "timestamp": "2025-08-23T17:26:49.532605",
+    "filename": "asr_base_717a4308-8e4b-43fa-b40d-8e405dd013ea_e6163e84-1b31-40e8-be55-6e2035919ef5.wav",
+    "file_path": "./audio_files\\asr_base_717a4308-8e4b-43fa-b40d-8e405dd013ea_e6163e84-1b31-40e8-be55-6e2035919ef5.wav",
+    "audio_length_seconds": 1.8,
+    "transcript": "Yes."
+  },
+  {
+    "timestamp": "2025-08-23T17:27:29.608667",
+    "filename": "asr_base_717a4308-8e4b-43fa-b40d-8e405dd013ea_a39fbd59-d2c3-441b-9de0-7ed107591dab.wav",
+    "file_path": "./audio_files\\asr_base_717a4308-8e4b-43fa-b40d-8e405dd013ea_a39fbd59-d2c3-441b-9de0-7ed107591dab.wav",
+    "audio_length_seconds": 1.86,
+    "transcript": "Am I audible now?"
+  },
+  {
+    "timestamp": "2025-08-23T17:30:55.070942",
+    "filename": "asr_base_cc1b5e06-b53d-4190-8209-5eb32ae8ee3a_3b07565f-aef3-4a5f-a8fd-2f044346006a.wav",
+    "file_path": "./audio_files\\asr_base_cc1b5e06-b53d-4190-8209-5eb32ae8ee3a_3b07565f-aef3-4a5f-a8fd-2f044346006a.wav",
+    "audio_length_seconds": 3.28,
+    "transcript": "Hello?"
+  },
+  {
+    "timestamp": "2025-08-23T17:31:22.024153",
+    "filename": "asr_base_cc1b5e06-b53d-4190-8209-5eb32ae8ee3a_a2302a89-1d37-4fc9-9a16-010184595fa2.wav",
+    "file_path": "./audio_files\\asr_base_cc1b5e06-b53d-4190-8209-5eb32ae8ee3a_a2302a89-1d37-4fc9-9a16-010184595fa2.wav",
+    "audio_length_seconds": 3.48,
+    "transcript": "Hello. Hi, Jacob. How are you?"
+  },
+  {
+    "timestamp": "2025-08-23T17:31:43.369280",
+    "filename": "asr_base_cc1b5e06-b53d-4190-8209-5eb32ae8ee3a_359af051-e2d2-4b19-8a88-3956ba040a6c.wav",
+    "file_path": "./audio_files\\asr_base_cc1b5e06-b53d-4190-8209-5eb32ae8ee3a_359af051-e2d2-4b19-8a88-3956ba040a6c.wav",
+    "audio_length_seconds": 1.92,
+    "transcript": "Can I go?"
+  },
+  {
+    "timestamp": "2025-08-23T17:32:02.788833",
+    "filename": "asr_base_705ab2b7-9ab2-456f-9906-5bf6567b2703_01ca6e24-2cda-4ae5-8ecb-3c6a6b40b5f5.wav",
+    "file_path": "./audio_files\\asr_base_705ab2b7-9ab2-456f-9906-5bf6567b2703_01ca6e24-2cda-4ae5-8ecb-3c6a6b40b5f5.wav",
+    "audio_length_seconds": 4.5,
+    "transcript": "Chiku, what are languages you can speak?"
+  },
+  {
+    "timestamp": "2025-08-23T17:32:23.281634",
+    "filename": "asr_base_705ab2b7-9ab2-456f-9906-5bf6567b2703_355832fd-8d9d-4f54-aa18-1bed3c9e0c56.wav",
+    "file_path": "./audio_files\\asr_base_705ab2b7-9ab2-456f-9906-5bf6567b2703_355832fd-8d9d-4f54-aa18-1bed3c9e0c56.wav",
+    "audio_length_seconds": 2.3,
+    "transcript": "I want to track another."
+  },
+  {
+    "timestamp": "2025-08-23T17:32:44.444341",
+    "filename": "asr_base_705ab2b7-9ab2-456f-9906-5bf6567b2703_938a0f41-fa09-4476-8bca-ce317c140c15.wav",
+    "file_path": "./audio_files\\asr_base_705ab2b7-9ab2-456f-9906-5bf6567b2703_938a0f41-fa09-4476-8bca-ce317c140c15.wav",
+    "audio_length_seconds": 2.2,
+    "transcript": "Can I speak in Canada?"
+  },
+  {
+    "timestamp": "2025-08-23T17:33:12.841146",
+    "filename": "asr_base_705ab2b7-9ab2-456f-9906-5bf6567b2703_f12a6428-b281-4f03-b63a-2eb6ad81102d.wav",
+    "file_path": "./audio_files\\asr_base_705ab2b7-9ab2-456f-9906-5bf6567b2703_f12a6428-b281-4f03-b63a-2eb6ad81102d.wav",
+    "audio_length_seconds": 1.46,
+    "transcript": "Eight"
+  },
+  {
+    "timestamp": "2025-08-23T17:41:17.540327",
+    "filename": "asr_base_dbb3c9e3-e6f0-4bd8-ab97-dcc94eca3573_85089e4b-7393-41cc-b5c6-173078050c77.wav",
+    "file_path": "./audio_files\\asr_base_dbb3c9e3-e6f0-4bd8-ab97-dcc94eca3573_85089e4b-7393-41cc-b5c6-173078050c77.wav",
+    "audio_length_seconds": 1.42,
+    "transcript": "Hello?"
+  },
+  {
+    "timestamp": "2025-08-23T17:42:38.468965",
+    "filename": "asr_base_dbb3c9e3-e6f0-4bd8-ab97-dcc94eca3573_298bebd9-0a78-4307-90a6-424a0cd38b83.wav",
+    "file_path": "./audio_files\\asr_base_dbb3c9e3-e6f0-4bd8-ab97-dcc94eca3573_298bebd9-0a78-4307-90a6-424a0cd38b83.wav",
+    "audio_length_seconds": 1.86,
+    "transcript": "Tell me a story."
+  },
+  {
+    "timestamp": "2025-08-23T17:44:42.026899",
+    "filename": "asr_base_8b1d2709-f5b7-4b3d-9d0a-8e2a34501ab1_613527a1-8731-488e-9aff-481c12a8f0bb.wav",
+    "file_path": "./audio_files\\asr_base_8b1d2709-f5b7-4b3d-9d0a-8e2a34501ab1_613527a1-8731-488e-9aff-481c12a8f0bb.wav",
+    "audio_length_seconds": 2.98,
+    "transcript": "Play some."
+  },
+  {
+    "timestamp": "2025-08-23T17:45:16.747699",
+    "filename": "asr_base_8b1d2709-f5b7-4b3d-9d0a-8e2a34501ab1_0e9fb8c9-4fa8-4caa-8ce2-ed342ba5a50b.wav",
+    "file_path": "./audio_files\\asr_base_8b1d2709-f5b7-4b3d-9d0a-8e2a34501ab1_0e9fb8c9-4fa8-4caa-8ce2-ed342ba5a50b.wav",
+    "audio_length_seconds": 2.98,
+    "transcript": "Play 10 little dinos song."
+  },
+  {
+    "timestamp": "2025-08-23T17:45:44.323761",
+    "filename": "asr_base_8b1d2709-f5b7-4b3d-9d0a-8e2a34501ab1_4ba55f65-4543-4670-a7cd-2689ee91700b.wav",
+    "file_path": "./audio_files\\asr_base_8b1d2709-f5b7-4b3d-9d0a-8e2a34501ab1_4ba55f65-4543-4670-a7cd-2689ee91700b.wav",
+    "audio_length_seconds": 3.52,
+    "transcript": "Play song."
+  },
+  {
+    "timestamp": "2025-08-23T17:46:39.558037",
+    "filename": "asr_base_8b1d2709-f5b7-4b3d-9d0a-8e2a34501ab1_fbeb393d-6cc3-477e-a9e9-a21ee9478b93.wav",
+    "file_path": "./audio_files\\asr_base_8b1d2709-f5b7-4b3d-9d0a-8e2a34501ab1_fbeb393d-6cc3-477e-a9e9-a21ee9478b93.wav",
+    "audio_length_seconds": 5.04,
+    "transcript": "Play."
+  },
+  {
+    "timestamp": "2025-08-23T19:26:09.275644",
+    "filename": "asr_base_3658284c-3f51-49a1-9539-13d77f0a8f1f_cc3de5ad-84e4-4f7a-bbd3-4da67d4109e3.wav",
+    "file_path": "./audio_files\\asr_base_3658284c-3f51-49a1-9539-13d77f0a8f1f_cc3de5ad-84e4-4f7a-bbd3-4da67d4109e3.wav",
+    "audio_length_seconds": 1.5,
+    "transcript": "Hello?"
+  },
+  {
+    "timestamp": "2025-08-23T19:26:23.370318",
+    "filename": "asr_base_3658284c-3f51-49a1-9539-13d77f0a8f1f_f48c79cd-52ea-4a48-a10b-ab790e393be4.wav",
+    "file_path": "./audio_files\\asr_base_3658284c-3f51-49a1-9539-13d77f0a8f1f_f48c79cd-52ea-4a48-a10b-ab790e393be4.wav",
+    "audio_length_seconds": 2.2,
+    "transcript": "Sing a song for me."
+  },
+  {
+    "timestamp": "2025-08-23T19:26:37.061080",
+    "filename": "asr_base_3658284c-3f51-49a1-9539-13d77f0a8f1f_84b9f6ff-352a-4fed-855f-84087afd56ea.wav",
+    "file_path": "./audio_files\\asr_base_3658284c-3f51-49a1-9539-13d77f0a8f1f_84b9f6ff-352a-4fed-855f-84087afd56ea.wav",
+    "audio_length_seconds": 2.58,
+    "transcript": "Can you tell me a story?"
+  }
+]

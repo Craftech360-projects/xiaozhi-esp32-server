@@ -1,0 +1,64 @@
+{
+  "A Golden Gift": {
+    "romanized": "A Golden Gift",
+    "filename": "A Golden Gift.mp3",
+    "alternatives": [
+      "A Golden Gift",
+      "golden gift",
+      "the golden gift",
+      "gold gift story",
+      "golden present",
+      "bedtime golden gift"
+    ]
+  },
+  "BEANS MAKE YOU FAST": {
+    "romanized": "Beans Make You Fast",
+    "filename": "BEANS MAKE YOU FAST.mp3",
+    "alternatives": [
+      "Beans Make You Fast",
+      "beans make you fast",
+      "fast beans",
+      "magic beans story",
+      "beans story",
+      "speedy beans",
+      "bedtime beans story"
+    ]
+  },
+  "Honest jack": {
+    "romanized": "Honest Jack",
+    "filename": "Honest jack.mp3",
+    "alternatives": [
+      "Honest Jack",
+      "honest jack",
+      "jack honest story",
+      "honest boy jack",
+      "truthful jack",
+      "bedtime honest story"
+    ]
+  },
+  "Invincible Warrior": {
+    "romanized": "Invincible Warrior",
+    "filename": "Invincible Warrior.mp3",
+    "alternatives": [
+      "Invincible Warrior",
+      "invincible warrior",
+      "brave warrior",
+      "strong warrior",
+      "warrior story",
+      "bedtime warrior story",
+      "unbeatable warrior"
+    ]
+  },
+  "princesspea-shorter": {
+    "romanized": "Princess Pea Shorter",
+    "filename": "princesspea-shorter.mp3",
+    "alternatives": [
+      "Princess Pea Shorter",
+      "princess pea",
+      "princess and the pea",
+      "pea princess",
+      "bedtime princess story",
+      "princess pea short version"
+    ]
+  }
+}
