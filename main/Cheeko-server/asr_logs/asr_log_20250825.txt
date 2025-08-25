@@ -1,0 +1,792 @@
+
+================================================================================
+Timestamp: 2025-08-25T17:28:27.640175
+Filename: asr_base_0027d816-8039-4d65-bfb4-635d68208276_4c9642d3-bccb-4966-bfaa-d0b68508c120.wav
+Full Path: ./audio_files\asr_base_0027d816-8039-4d65-bfb4-635d68208276_4c9642d3-bccb-4966-bfaa-d0b68508c120.wav
+Audio Length: 3.10 seconds
+Transcript: Hello. Hello.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T17:28:41.189080
+Filename: asr_base_0027d816-8039-4d65-bfb4-635d68208276_d30ebbf2-a409-493d-85b8-cf3bf048e55a.wav
+Full Path: ./audio_files\asr_base_0027d816-8039-4d65-bfb4-635d68208276_d30ebbf2-a409-493d-85b8-cf3bf048e55a.wav
+Audio Length: 1.34 seconds
+Transcript: Sense. So
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:01:38.714799
+Filename: asr_base_4451fb4f-df61-472c-8eb5-5fa0dedc9c74_9adf012b-b6a5-42ed-8d65-6b95b8b51543.wav
+Full Path: ./audio_files\asr_base_4451fb4f-df61-472c-8eb5-5fa0dedc9c74_9adf012b-b6a5-42ed-8d65-6b95b8b51543.wav
+Audio Length: 5.84 seconds
+Transcript: Can you sing me baby shower dance songs?
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:02:23.183000
+Filename: asr_base_4451fb4f-df61-472c-8eb5-5fa0dedc9c74_d407dad6-91ad-4fc1-b6a6-fa2df3c4d456.wav
+Full Path: ./audio_files\asr_base_4451fb4f-df61-472c-8eb5-5fa0dedc9c74_d407dad6-91ad-4fc1-b6a6-fa2df3c4d456.wav
+Audio Length: 4.58 seconds
+Transcript: Can you play always for for me?
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:02:50.314509
+Filename: asr_base_4451fb4f-df61-472c-8eb5-5fa0dedc9c74_3d406fe9-2a6a-46a4-aabe-914d847151ef.wav
+Full Path: ./audio_files\asr_base_4451fb4f-df61-472c-8eb5-5fa0dedc9c74_3d406fe9-2a6a-46a4-aabe-914d847151ef.wav
+Audio Length: 4.60 seconds
+Transcript: Can you sing Anumansalisa for me?
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:03:12.307869
+Filename: asr_base_4451fb4f-df61-472c-8eb5-5fa0dedc9c74_85c9c363-b206-4452-8260-000dbdc86e2f.wav
+Full Path: ./audio_files\asr_base_4451fb4f-df61-472c-8eb5-5fa0dedc9c74_85c9c363-b206-4452-8260-000dbdc86e2f.wav
+Audio Length: 3.24 seconds
+Transcript: Can you play Bambombolla song for me?
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:03:36.894423
+Filename: asr_base_4451fb4f-df61-472c-8eb5-5fa0dedc9c74_4de9b689-d282-4d2c-9049-4744d6a67f1c.wav
+Full Path: ./audio_files\asr_base_4451fb4f-df61-472c-8eb5-5fa0dedc9c74_4de9b689-d282-4d2c-9049-4744d6a67f1c.wav
+Audio Length: 3.72 seconds
+Transcript: You play sound?
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:03:58.636249
+Filename: asr_base_4451fb4f-df61-472c-8eb5-5fa0dedc9c74_155f3f1c-e87b-4b66-8f38-849f0182d523.wav
+Full Path: ./audio_files\asr_base_4451fb4f-df61-472c-8eb5-5fa0dedc9c74_155f3f1c-e87b-4b66-8f38-849f0182d523.wav
+Audio Length: 3.28 seconds
+Transcript: Play song.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:04:16.830223
+Filename: asr_base_4451fb4f-df61-472c-8eb5-5fa0dedc9c74_74587df9-d1ae-4513-b9f2-87ba26ed2ba2.wav
+Full Path: ./audio_files\asr_base_4451fb4f-df61-472c-8eb5-5fa0dedc9c74_74587df9-d1ae-4513-b9f2-87ba26ed2ba2.wav
+Audio Length: 3.38 seconds
+Transcript: Can you tell me a story?
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:04:44.996803
+Filename: asr_base_4451fb4f-df61-472c-8eb5-5fa0dedc9c74_14b63752-b326-45b4-9048-e6101a337b27.wav
+Full Path: ./audio_files\asr_base_4451fb4f-df61-472c-8eb5-5fa0dedc9c74_14b63752-b326-45b4-9048-e6101a337b27.wav
+Audio Length: 3.72 seconds
+Transcript: Play bedtime story for me.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:05:02.939257
+Filename: asr_base_4451fb4f-df61-472c-8eb5-5fa0dedc9c74_fc540ca5-0ab1-4d63-a085-af524b365376.wav
+Full Path: ./audio_files\asr_base_4451fb4f-df61-472c-8eb5-5fa0dedc9c74_fc540ca5-0ab1-4d63-a085-af524b365376.wav
+Audio Length: 3.44 seconds
+Transcript: Can you tell me a golden gift story?
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:05:24.353615
+Filename: asr_base_4451fb4f-df61-472c-8eb5-5fa0dedc9c74_2d2c2800-5ead-4af0-9f6a-c0dd2d8cf4a9.wav
+Full Path: ./audio_files\asr_base_4451fb4f-df61-472c-8eb5-5fa0dedc9c74_2d2c2800-5ead-4af0-9f6a-c0dd2d8cf4a9.wav
+Audio Length: 6.26 seconds
+Transcript: Tell me the boy who cried a wolf story.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:05:56.735944
+Filename: asr_base_4451fb4f-df61-472c-8eb5-5fa0dedc9c74_19680be8-1cb8-404a-b47a-0d2d0bf93ec8.wav
+Full Path: ./audio_files\asr_base_4451fb4f-df61-472c-8eb5-5fa0dedc9c74_19680be8-1cb8-404a-b47a-0d2d0bf93ec8.wav
+Audio Length: 2.76 seconds
+Transcript: Tell me your adventure story.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:06:15.792854
+Filename: asr_base_4451fb4f-df61-472c-8eb5-5fa0dedc9c74_c9e52b42-c6ba-4460-993a-b97420845b56.wav
+Full Path: ./audio_files\asr_base_4451fb4f-df61-472c-8eb5-5fa0dedc9c74_c9e52b42-c6ba-4460-993a-b97420845b56.wav
+Audio Length: 3.20 seconds
+Transcript: Sing a Hindi song for me.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:07:47.562705
+Filename: asr_base_be3bef96-e87d-446d-b6fb-938681d22a19_4075c79e-b825-4bbc-9915-9a4d4137c4fd.wav
+Full Path: ./audio_files\asr_base_be3bef96-e87d-446d-b6fb-938681d22a19_4075c79e-b825-4bbc-9915-9a4d4137c4fd.wav
+Audio Length: 4.00 seconds
+Transcript: Sing an English song.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:14:59.960329
+Filename: asr_base_a3ecc14a-58c9-44e2-9fc7-8d7ce3303911_7ea9794b-e355-4134-8eb6-dcd5835ce54d.wav
+Full Path: ./audio_files\asr_base_a3ecc14a-58c9-44e2-9fc7-8d7ce3303911_7ea9794b-e355-4134-8eb6-dcd5835ce54d.wav
+Audio Length: 3.26 seconds
+Transcript: Can you sing a English song for me?
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:16:31.481057
+Filename: asr_base_61ccd9b5-410f-49d0-8b54-1b35717dbe57_5a7eb607-04a8-45fd-bc3f-55e955e530f6.wav
+Full Path: ./audio_files\asr_base_61ccd9b5-410f-49d0-8b54-1b35717dbe57_5a7eb607-04a8-45fd-bc3f-55e955e530f6.wav
+Audio Length: 2.72 seconds
+Transcript: Can you tell me a story?
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:16:54.029364
+Filename: asr_base_61ccd9b5-410f-49d0-8b54-1b35717dbe57_1c2e9633-bc4f-4210-8f43-3d9ab245c046.wav
+Full Path: ./audio_files\asr_base_61ccd9b5-410f-49d0-8b54-1b35717dbe57_1c2e9633-bc4f-4210-8f43-3d9ab245c046.wav
+Audio Length: 4.72 seconds
+Transcript: Sing that song for me.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:17:09.404686
+Filename: asr_base_61ccd9b5-410f-49d0-8b54-1b35717dbe57_5a1981b0-4414-493e-b191-2ef338d6f500.wav
+Full Path: ./audio_files\asr_base_61ccd9b5-410f-49d0-8b54-1b35717dbe57_5a1981b0-4414-493e-b191-2ef338d6f500.wav
+Audio Length: 4.42 seconds
+Transcript: Can you sing a Canada song for me?
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:17:27.764927
+Filename: asr_base_61ccd9b5-410f-49d0-8b54-1b35717dbe57_b595838c-5711-4dd5-a9cf-89cc3754ae39.wav
+Full Path: ./audio_files\asr_base_61ccd9b5-410f-49d0-8b54-1b35717dbe57_b595838c-5711-4dd5-a9cf-89cc3754ae39.wav
+Audio Length: 2.56 seconds
+Transcript: Sing a English song for me.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:17:49.920778
+Filename: asr_base_61ccd9b5-410f-49d0-8b54-1b35717dbe57_0fb707c8-a561-4ec7-8d30-04ff82b5484d.wav
+Full Path: ./audio_files\asr_base_61ccd9b5-410f-49d0-8b54-1b35717dbe57_0fb707c8-a561-4ec7-8d30-04ff82b5484d.wav
+Audio Length: 7.74 seconds
+Transcript: That is this this Can you play all is well sound?
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:18:08.216496
+Filename: asr_base_61ccd9b5-410f-49d0-8b54-1b35717dbe57_ca5ad136-391d-41e3-a13d-c725e95de92f.wav
+Full Path: ./audio_files\asr_base_61ccd9b5-410f-49d0-8b54-1b35717dbe57_ca5ad136-391d-41e3-a13d-c725e95de92f.wav
+Audio Length: 4.14 seconds
+Transcript: Can you sing an song?
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:19:00.769481
+Filename: asr_base_61ccd9b5-410f-49d0-8b54-1b35717dbe57_7baad1f3-1a7c-4cd0-bae4-caee34f476cc.wav
+Full Path: ./audio_files\asr_base_61ccd9b5-410f-49d0-8b54-1b35717dbe57_7baad1f3-1a7c-4cd0-bae4-caee34f476cc.wav
+Audio Length: 3.96 seconds
+Transcript: Can you sing a Hindi song for me?
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:19:27.546845
+Filename: asr_base_61ccd9b5-410f-49d0-8b54-1b35717dbe57_f8bd5c62-ed10-402d-8688-5cf798266008.wav
+Full Path: ./audio_files\asr_base_61ccd9b5-410f-49d0-8b54-1b35717dbe57_f8bd5c62-ed10-402d-8688-5cf798266008.wav
+Audio Length: 2.32 seconds
+Transcript: Yeah. It is not there. Right?
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:19:40.729087
+Filename: asr_base_61ccd9b5-410f-49d0-8b54-1b35717dbe57_4fd83e18-82f9-4bdd-b348-b060a79fc802.wav
+Full Path: ./audio_files\asr_base_61ccd9b5-410f-49d0-8b54-1b35717dbe57_4fd83e18-82f9-4bdd-b348-b060a79fc802.wav
+Audio Length: 5.66 seconds
+Transcript: Can you sing for me?
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:19:51.216390
+Filename: asr_base_61ccd9b5-410f-49d0-8b54-1b35717dbe57_fccc463e-0a9a-492d-94f5-c34369a52a28.wav
+Full Path: ./audio_files\asr_base_61ccd9b5-410f-49d0-8b54-1b35717dbe57_fccc463e-0a9a-492d-94f5-c34369a52a28.wav
+Audio Length: 1.88 seconds
+Transcript: That's for Robert. That's good.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:20:19.932097
+Filename: asr_base_61ccd9b5-410f-49d0-8b54-1b35717dbe57_d4194c65-6e23-4f3b-a756-b6f53a790ffe.wav
+Full Path: ./audio_files\asr_base_61ccd9b5-410f-49d0-8b54-1b35717dbe57_d4194c65-6e23-4f3b-a756-b6f53a790ffe.wav
+Audio Length: 2.72 seconds
+Transcript: Sing the English song for me.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:22:54.770777
+Filename: asr_base_0dbca387-e094-49d7-a799-b464457ed412_ad5c9458-4ca9-45b8-b9c8-53374e2c5624.wav
+Full Path: ./audio_files\asr_base_0dbca387-e094-49d7-a799-b464457ed412_ad5c9458-4ca9-45b8-b9c8-53374e2c5624.wav
+Audio Length: 1.96 seconds
+Transcript: Yes. Sorry.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:24:05.731787
+Filename: asr_base_0dbca387-e094-49d7-a799-b464457ed412_99f896f5-d44b-403c-8c20-3ef6f2f70288.wav
+Full Path: ./audio_files\asr_base_0dbca387-e094-49d7-a799-b464457ed412_99f896f5-d44b-403c-8c20-3ef6f2f70288.wav
+Audio Length: 5.20 seconds
+Transcript: No. No. No. What my no. Have chosen sign of the 90
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:24:34.056085
+Filename: asr_base_0dbca387-e094-49d7-a799-b464457ed412_f09a16aa-5c77-4adb-80e4-2667a0ea713d.wav
+Full Path: ./audio_files\asr_base_0dbca387-e094-49d7-a799-b464457ed412_f09a16aa-5c77-4adb-80e4-2667a0ea713d.wav
+Audio Length: 2.52 seconds
+Transcript: Know. But it's a waste of
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:24:59.162379
+Filename: asr_base_0dbca387-e094-49d7-a799-b464457ed412_34374810-e694-4bfb-aa83-df24bd13f4a6.wav
+Full Path: ./audio_files\asr_base_0dbca387-e094-49d7-a799-b464457ed412_34374810-e694-4bfb-aa83-df24bd13f4a6.wav
+Audio Length: 1.92 seconds
+Transcript: Yes.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:25:26.698737
+Filename: asr_base_0dbca387-e094-49d7-a799-b464457ed412_66d1c3d3-0668-42c2-9d52-4ada34e478a0.wav
+Full Path: ./audio_files\asr_base_0dbca387-e094-49d7-a799-b464457ed412_66d1c3d3-0668-42c2-9d52-4ada34e478a0.wav
+Audio Length: 2.38 seconds
+Transcript: Sing a English song for me.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:25:41.051138
+Filename: asr_base_0dbca387-e094-49d7-a799-b464457ed412_f2dd9f0e-6ced-4977-b34f-01c92d76625f.wav
+Full Path: ./audio_files\asr_base_0dbca387-e094-49d7-a799-b464457ed412_f2dd9f0e-6ced-4977-b34f-01c92d76625f.wav
+Audio Length: 2.44 seconds
+Transcript: Sing a Hindi song, Parman.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:25:54.313953
+Filename: asr_base_0dbca387-e094-49d7-a799-b464457ed412_44869747-2de8-446f-8404-6357fd5c344b.wav
+Full Path: ./audio_files\asr_base_0dbca387-e094-49d7-a799-b464457ed412_44869747-2de8-446f-8404-6357fd5c344b.wav
+Audio Length: 2.50 seconds
+Transcript: Sing a Kannada song for me.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:29:24.111919
+Filename: asr_base_ea5922e4-1bc1-46df-a88d-3dedf114dc1e_6b90b20e-9e94-42e9-92fe-65e03fbe05c5.wav
+Full Path: ./audio_files\asr_base_ea5922e4-1bc1-46df-a88d-3dedf114dc1e_6b90b20e-9e94-42e9-92fe-65e03fbe05c5.wav
+Audio Length: 2.66 seconds
+Transcript: Hello. Good morning.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:29:41.886312
+Filename: asr_base_ea5922e4-1bc1-46df-a88d-3dedf114dc1e_ae0e7bea-8a6b-4be1-8f0a-a7607c3ab97d.wav
+Full Path: ./audio_files\asr_base_ea5922e4-1bc1-46df-a88d-3dedf114dc1e_ae0e7bea-8a6b-4be1-8f0a-a7607c3ab97d.wav
+Audio Length: 3.30 seconds
+Transcript: Okay. Sing a song for me.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:30:01.750535
+Filename: asr_base_ea5922e4-1bc1-46df-a88d-3dedf114dc1e_b392eea5-a5ef-4128-a09f-8e589a1752cd.wav
+Full Path: ./audio_files\asr_base_ea5922e4-1bc1-46df-a88d-3dedf114dc1e_b392eea5-a5ef-4128-a09f-8e589a1752cd.wav
+Audio Length: 3.26 seconds
+Transcript: Play English song for me.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:31:21.894429
+Filename: asr_base_ea5922e4-1bc1-46df-a88d-3dedf114dc1e_505b8ff4-97fb-48e1-89eb-6c7237baae15.wav
+Full Path: ./audio_files\asr_base_ea5922e4-1bc1-46df-a88d-3dedf114dc1e_505b8ff4-97fb-48e1-89eb-6c7237baae15.wav
+Audio Length: 1.68 seconds
+Transcript: Hello?
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:32:57.389183
+Filename: asr_base_ea5922e4-1bc1-46df-a88d-3dedf114dc1e_6c525ddd-5582-41c9-9091-a4810eb4dc35.wav
+Full Path: ./audio_files\asr_base_ea5922e4-1bc1-46df-a88d-3dedf114dc1e_6c525ddd-5582-41c9-9091-a4810eb4dc35.wav
+Audio Length: 3.84 seconds
+Transcript: Hello? Hello? Am I audible? Can you listen to me?
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:33:14.565663
+Filename: asr_base_ea5922e4-1bc1-46df-a88d-3dedf114dc1e_90cf71aa-4022-43d8-bb0f-4da5e732d770.wav
+Full Path: ./audio_files\asr_base_ea5922e4-1bc1-46df-a88d-3dedf114dc1e_90cf71aa-4022-43d8-bb0f-4da5e732d770.wav
+Audio Length: 1.32 seconds
+Transcript: Three
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:42:41.156105
+Filename: asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_0f40e1b8-77c4-4372-a2b7-c975b7d699bc.wav
+Full Path: ./audio_files\asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_0f40e1b8-77c4-4372-a2b7-c975b7d699bc.wav
+Audio Length: 2.78 seconds
+Transcript: Hello?
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:42:57.248130
+Filename: asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_6eae4206-dfbe-4a57-a80d-89537347a648.wav
+Full Path: ./audio_files\asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_6eae4206-dfbe-4a57-a80d-89537347a648.wav
+Audio Length: 2.84 seconds
+Transcript: Play any song for me.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:43:14.027044
+Filename: asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_3457e8ad-bf5b-4ddb-8f97-8ff04eb86f32.wav
+Full Path: ./audio_files\asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_3457e8ad-bf5b-4ddb-8f97-8ff04eb86f32.wav
+Audio Length: 1.62 seconds
+Transcript: Yeah.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:43:25.364504
+Filename: asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_bafdae20-b4d3-47db-a5c5-108c8c78e9ea.wav
+Full Path: ./audio_files\asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_bafdae20-b4d3-47db-a5c5-108c8c78e9ea.wav
+Audio Length: 2.10 seconds
+Transcript: Play a Kannada song.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:43:39.698528
+Filename: asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_b0d87eeb-c4e0-47a0-b4eb-142089c5bc70.wav
+Full Path: ./audio_files\asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_b0d87eeb-c4e0-47a0-b4eb-142089c5bc70.wav
+Audio Length: 3.56 seconds
+Transcript: Play song.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:43:59.918627
+Filename: asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_501e6e09-40a3-4502-9011-b824e0776c6b.wav
+Full Path: ./audio_files\asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_501e6e09-40a3-4502-9011-b824e0776c6b.wav
+Audio Length: 2.96 seconds
+Transcript: Play song.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:44:24.945046
+Filename: asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_05470024-081a-484d-a0f9-dc9e6be25da0.wav
+Full Path: ./audio_files\asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_05470024-081a-484d-a0f9-dc9e6be25da0.wav
+Audio Length: 3.40 seconds
+Transcript: Play kannada song
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:44:50.612168
+Filename: asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_a5803456-5f21-4059-b3c2-80c567e2fd41.wav
+Full Path: ./audio_files\asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_a5803456-5f21-4059-b3c2-80c567e2fd41.wav
+Audio Length: 2.62 seconds
+Transcript: Can you tell me a story?
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:45:19.338811
+Filename: asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_1c32d5b9-1c14-4bc6-926b-ae8be543d841.wav
+Full Path: ./audio_files\asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_1c32d5b9-1c14-4bc6-926b-ae8be543d841.wav
+Audio Length: 3.52 seconds
+Transcript: Can you tell me a adventure story?
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:45:37.397437
+Filename: asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_3100eed2-aa11-4daa-ba3a-633a379b71e7.wav
+Full Path: ./audio_files\asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_3100eed2-aa11-4daa-ba3a-633a379b71e7.wav
+Audio Length: 3.48 seconds
+Transcript: Can you sing a Bambambole song for me?
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:45:55.353312
+Filename: asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_259f02b2-5e04-47a0-b18d-af8950c94a61.wav
+Full Path: ./audio_files\asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_259f02b2-5e04-47a0-b18d-af8950c94a61.wav
+Audio Length: 3.26 seconds
+Transcript: Play Bambambole song for me.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:46:08.938494
+Filename: asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_e275c9b1-5427-49db-92bb-6b25eb88a397.wav
+Full Path: ./audio_files\asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_e275c9b1-5427-49db-92bb-6b25eb88a397.wav
+Audio Length: 2.66 seconds
+Transcript: Singh Anamantalisa.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:46:21.884800
+Filename: asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_d8502950-dbc0-4230-baa0-0e0d8bc2816e.wav
+Full Path: ./audio_files\asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_d8502950-dbc0-4230-baa0-0e0d8bc2816e.wav
+Audio Length: 2.90 seconds
+Transcript: Play Anuman Chalisa song.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:46:36.975724
+Filename: asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_88e259ff-6807-40c2-89a2-d475c39c07af.wav
+Full Path: ./audio_files\asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_88e259ff-6807-40c2-89a2-d475c39c07af.wav
+Audio Length: 3.86 seconds
+Transcript: Play bandar mama or kele song
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:47:35.888085
+Filename: asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_7a37f152-932a-4cd1-bfe0-be2f22c52aa7.wav
+Full Path: ./audio_files\asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_7a37f152-932a-4cd1-bfe0-be2f22c52aa7.wav
+Audio Length: 4.52 seconds
+Transcript: Play hathi raja khanachale sangh.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:48:01.486117
+Filename: asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_c1b9487a-747d-48b4-bac1-d8b533e104f5.wav
+Full Path: ./audio_files\asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_c1b9487a-747d-48b4-bac1-d8b533e104f5.wav
+Audio Length: 3.78 seconds
+Transcript: Play koti matubale hanno song
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:48:19.261337
+Filename: asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_34e9e72b-1dfe-42ad-be90-a27e4c21e16a.wav
+Full Path: ./audio_files\asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_34e9e72b-1dfe-42ad-be90-a27e4c21e16a.wav
+Audio Length: 5.68 seconds
+Transcript: Can you play Naimari Naimaal Cindy Baker song?
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:48:40.980801
+Filename: asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_2e428bbf-5781-4e41-a4d8-d6b3d9b9f2ed.wav
+Full Path: ./audio_files\asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_2e428bbf-5781-4e41-a4d8-d6b3d9b9f2ed.wav
+Audio Length: 5.86 seconds
+Transcript: Can you play song?
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:48:54.253493
+Filename: asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_4d77dc26-66d3-4623-a37a-091c0cb808bd.wav
+Full Path: ./audio_files\asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_4d77dc26-66d3-4623-a37a-091c0cb808bd.wav
+Audio Length: 2.20 seconds
+Transcript: Tell me a bedtime story.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:50:41.704462
+Filename: asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_c7fc209b-c8bd-42f9-a9f2-396f501134c1.wav
+Full Path: ./audio_files\asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_c7fc209b-c8bd-42f9-a9f2-396f501134c1.wav
+Audio Length: 3.28 seconds
+Transcript: Can you play a phonics song for me?
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:52:16.705912
+Filename: asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_439b5898-7200-482c-b02f-c303bb083d37.wav
+Full Path: ./audio_files\asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_439b5898-7200-482c-b02f-c303bb083d37.wav
+Audio Length: 4.28 seconds
+Transcript: Can you play song?
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:52:37.644546
+Filename: asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_d3ed30c7-ebeb-437d-99d3-f50ed6d0a7b1.wav
+Full Path: ./audio_files\asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_d3ed30c7-ebeb-437d-99d3-f50ed6d0a7b1.wav
+Audio Length: 3.88 seconds
+Transcript: Can you play song?
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:52:53.804399
+Filename: asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_50d12e98-305f-49a9-91b8-5539520f5670.wav
+Full Path: ./audio_files\asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_50d12e98-305f-49a9-91b8-5539520f5670.wav
+Audio Length: 2.64 seconds
+Transcript: Can you play
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:53:45.640657
+Filename: asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_7cd90f42-6ee1-4b72-8868-e64f1ec37489.wav
+Full Path: ./audio_files\asr_base_da7448cb-ebde-43f0-9078-725ecbcf7bb5_7cd90f42-6ee1-4b72-8868-e64f1ec37489.wav
+Audio Length: 1.24 seconds
+Transcript: Chow mein.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:54:09.761092
+Filename: asr_base_1fcba3fa-4259-4a72-8b5f-41a75cde5ec0_dd6d4e8e-0f5b-401d-aef3-6a319a30ba52.wav
+Full Path: ./audio_files\asr_base_1fcba3fa-4259-4a72-8b5f-41a75cde5ec0_dd6d4e8e-0f5b-401d-aef3-6a319a30ba52.wav
+Audio Length: 3.32 seconds
+Transcript: Play bandar mama or Kale song.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:54:25.665720
+Filename: asr_base_1fcba3fa-4259-4a72-8b5f-41a75cde5ec0_f54c3ab2-5599-47ea-8d7f-3b603c76045e.wav
+Full Path: ./audio_files\asr_base_1fcba3fa-4259-4a72-8b5f-41a75cde5ec0_f54c3ab2-5599-47ea-8d7f-3b603c76045e.wav
+Audio Length: 2.70 seconds
+Transcript: Play Bandar Mama.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:54:38.414646
+Filename: asr_base_1fcba3fa-4259-4a72-8b5f-41a75cde5ec0_fdf24366-fb6e-435f-94d0-409acf9ca543.wav
+Full Path: ./audio_files\asr_base_1fcba3fa-4259-4a72-8b5f-41a75cde5ec0_fdf24366-fb6e-435f-94d0-409acf9ca543.wav
+Audio Length: 3.26 seconds
+Transcript: Play song
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:54:57.527644
+Filename: asr_base_1fcba3fa-4259-4a72-8b5f-41a75cde5ec0_353d333a-b20d-402c-8888-fdabf4ffb5dc.wav
+Full Path: ./audio_files\asr_base_1fcba3fa-4259-4a72-8b5f-41a75cde5ec0_353d333a-b20d-402c-8888-fdabf4ffb5dc.wav
+Audio Length: 3.54 seconds
+Transcript: Play Hanuman Talisa song.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T18:55:15.901586
+Filename: asr_base_1fcba3fa-4259-4a72-8b5f-41a75cde5ec0_b6b61127-7f28-41c3-b296-d56221d7508a.wav
+Full Path: ./audio_files\asr_base_1fcba3fa-4259-4a72-8b5f-41a75cde5ec0_b6b61127-7f28-41c3-b296-d56221d7508a.wav
+Audio Length: 2.96 seconds
+Transcript: Playing a song.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T19:05:43.244890
+Filename: asr_base_a2d50f0b-0545-46b2-a805-8a3f8e36f0ff_9a9d981b-c476-47f4-a6ad-4a213106b35b.wav
+Full Path: ./audio_files\asr_base_a2d50f0b-0545-46b2-a805-8a3f8e36f0ff_9a9d981b-c476-47f4-a6ad-4a213106b35b.wav
+Audio Length: 2.30 seconds
+Transcript: Good morning.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T19:05:57.525974
+Filename: asr_base_a2d50f0b-0545-46b2-a805-8a3f8e36f0ff_4dfe6cc8-1ad0-4186-b5ed-d94f6e3321ce.wav
+Full Path: ./audio_files\asr_base_a2d50f0b-0545-46b2-a805-8a3f8e36f0ff_4dfe6cc8-1ad0-4186-b5ed-d94f6e3321ce.wav
+Audio Length: 2.20 seconds
+Transcript: Just tell me a story.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T19:06:12.678152
+Filename: asr_base_a2d50f0b-0545-46b2-a805-8a3f8e36f0ff_dc07e72f-4898-4f4d-a0a1-5c99a1472672.wav
+Full Path: ./audio_files\asr_base_a2d50f0b-0545-46b2-a805-8a3f8e36f0ff_dc07e72f-4898-4f4d-a0a1-5c99a1472672.wav
+Audio Length: 2.68 seconds
+Transcript: Can you play a song for me?
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T19:06:53.518643
+Filename: asr_base_a2d50f0b-0545-46b2-a805-8a3f8e36f0ff_afcdfb91-96c7-480c-9735-4594a79d68d9.wav
+Full Path: ./audio_files\asr_base_a2d50f0b-0545-46b2-a805-8a3f8e36f0ff_afcdfb91-96c7-480c-9735-4594a79d68d9.wav
+Audio Length: 2.76 seconds
+Transcript: Singbaba black chip song.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T19:07:16.760945
+Filename: asr_base_a2d50f0b-0545-46b2-a805-8a3f8e36f0ff_57329640-a18c-4968-9b7f-310240185cb4.wav
+Full Path: ./audio_files\asr_base_a2d50f0b-0545-46b2-a805-8a3f8e36f0ff_57329640-a18c-4968-9b7f-310240185cb4.wav
+Audio Length: 1.50 seconds
+Transcript: Come on.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T19:07:38.351529
+Filename: asr_base_a2d50f0b-0545-46b2-a805-8a3f8e36f0ff_ea3562dc-461c-4edd-92f5-89739f59b9c7.wav
+Full Path: ./audio_files\asr_base_a2d50f0b-0545-46b2-a805-8a3f8e36f0ff_ea3562dc-461c-4edd-92f5-89739f59b9c7.wav
+Audio Length: 3.28 seconds
+Transcript: Play song.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T19:08:17.907878
+Filename: asr_base_a2d50f0b-0545-46b2-a805-8a3f8e36f0ff_757eb404-1c49-4dd2-b111-b1c002e2bd0a.wav
+Full Path: ./audio_files\asr_base_a2d50f0b-0545-46b2-a805-8a3f8e36f0ff_757eb404-1c49-4dd2-b111-b1c002e2bd0a.wav
+Audio Length: 3.68 seconds
+Transcript: Play nai mari nai mari song
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T19:20:27.708208
+Filename: asr_base_aeca3898-e6ad-49c4-b088-e8d0dea5b58f_998ff31b-be1c-4520-b366-386d1daab6f2.wav
+Full Path: ./audio_files\asr_base_aeca3898-e6ad-49c4-b088-e8d0dea5b58f_998ff31b-be1c-4520-b366-386d1daab6f2.wav
+Audio Length: 2.16 seconds
+Transcript: Tell me a story.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T19:20:43.569798
+Filename: asr_base_aeca3898-e6ad-49c4-b088-e8d0dea5b58f_e9cdb604-9a07-4b6f-a982-28dd64b9edb7.wav
+Full Path: ./audio_files\asr_base_aeca3898-e6ad-49c4-b088-e8d0dea5b58f_e9cdb604-9a07-4b6f-a982-28dd64b9edb7.wav
+Audio Length: 4.22 seconds
+Transcript: Play song
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T19:21:05.597495
+Filename: asr_base_aeca3898-e6ad-49c4-b088-e8d0dea5b58f_95b92091-a17a-486f-b413-27ba2bff6639.wav
+Full Path: ./audio_files\asr_base_aeca3898-e6ad-49c4-b088-e8d0dea5b58f_95b92091-a17a-486f-b413-27ba2bff6639.wav
+Audio Length: 4.76 seconds
+Transcript: Play song.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T19:21:26.188458
+Filename: asr_base_aeca3898-e6ad-49c4-b088-e8d0dea5b58f_f629446b-d9e6-485d-8926-83bd5ca8e612.wav
+Full Path: ./audio_files\asr_base_aeca3898-e6ad-49c4-b088-e8d0dea5b58f_f629446b-d9e6-485d-8926-83bd5ca8e612.wav
+Audio Length: 3.22 seconds
+Transcript: Playing a mama Nelly song.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T19:21:45.055998
+Filename: asr_base_aeca3898-e6ad-49c4-b088-e8d0dea5b58f_ab451deb-d543-43e1-b02b-0f8f653f7e9b.wav
+Full Path: ./audio_files\asr_base_aeca3898-e6ad-49c4-b088-e8d0dea5b58f_ab451deb-d543-43e1-b02b-0f8f653f7e9b.wav
+Audio Length: 3.22 seconds
+Transcript: Play Hathi Raja Kanna Chiliya song.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T19:25:51.001398
+Filename: asr_base_903baf70-27da-4781-98a9-ef4fde751ead_a5a5add7-77e3-4314-a438-32e6e17f4a18.wav
+Full Path: ./audio_files\asr_base_903baf70-27da-4781-98a9-ef4fde751ead_a5a5add7-77e3-4314-a438-32e6e17f4a18.wav
+Audio Length: 2.84 seconds
+Transcript: Play a song for me.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T19:26:01.837744
+Filename: asr_base_903baf70-27da-4781-98a9-ef4fde751ead_29e25646-bc62-428c-932a-27c4f9de4784.wav
+Full Path: ./audio_files\asr_base_903baf70-27da-4781-98a9-ef4fde751ead_29e25646-bc62-428c-932a-27c4f9de4784.wav
+Audio Length: 3.40 seconds
+Transcript: Play a English song for me.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T19:26:22.500122
+Filename: asr_base_903baf70-27da-4781-98a9-ef4fde751ead_ff44ed27-7101-4b68-a78c-a5f07395cda0.wav
+Full Path: ./audio_files\asr_base_903baf70-27da-4781-98a9-ef4fde751ead_ff44ed27-7101-4b68-a78c-a5f07395cda0.wav
+Audio Length: 4.52 seconds
+Transcript: Play song.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T19:26:36.336549
+Filename: asr_base_903baf70-27da-4781-98a9-ef4fde751ead_6247948b-6e14-4dc6-bab5-e96953b67776.wav
+Full Path: ./audio_files\asr_base_903baf70-27da-4781-98a9-ef4fde751ead_6247948b-6e14-4dc6-bab5-e96953b67776.wav
+Audio Length: 3.40 seconds
+Transcript: Play Hindi song.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T19:26:48.066306
+Filename: asr_base_903baf70-27da-4781-98a9-ef4fde751ead_8236eae3-481d-40ff-b6ab-a0bb669ed5a4.wav
+Full Path: ./audio_files\asr_base_903baf70-27da-4781-98a9-ef4fde751ead_8236eae3-481d-40ff-b6ab-a0bb669ed5a4.wav
+Audio Length: 2.92 seconds
+Transcript: Play Naimeri Naimeri song.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T19:27:06.198330
+Filename: asr_base_903baf70-27da-4781-98a9-ef4fde751ead_31db686e-cece-4f5e-b72a-54abc5d1f32e.wav
+Full Path: ./audio_files\asr_base_903baf70-27da-4781-98a9-ef4fde751ead_31db686e-cece-4f5e-b72a-54abc5d1f32e.wav
+Audio Length: 4.56 seconds
+Transcript: Play black baby shark dance.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T19:27:15.803992
+Filename: asr_base_903baf70-27da-4781-98a9-ef4fde751ead_a4b0e49b-e1ce-44c2-9957-5c338dd3b0ad.wav
+Full Path: ./audio_files\asr_base_903baf70-27da-4781-98a9-ef4fde751ead_a4b0e49b-e1ce-44c2-9957-5c338dd3b0ad.wav
+Audio Length: 2.44 seconds
+Transcript: Tell me a bedtime story.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T19:27:34.618298
+Filename: asr_base_903baf70-27da-4781-98a9-ef4fde751ead_7f9dcdee-15e6-4a24-8159-afa4151ea09b.wav
+Full Path: ./audio_files\asr_base_903baf70-27da-4781-98a9-ef4fde751ead_7f9dcdee-15e6-4a24-8159-afa4151ea09b.wav
+Audio Length: 3.56 seconds
+Transcript: Can you tell me a a bedtime story?
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T19:27:51.426429
+Filename: asr_base_903baf70-27da-4781-98a9-ef4fde751ead_ba61d7d6-0f4f-403e-8fb2-7667259bdb73.wav
+Full Path: ./audio_files\asr_base_903baf70-27da-4781-98a9-ef4fde751ead_ba61d7d6-0f4f-403e-8fb2-7667259bdb73.wav
+Audio Length: 2.32 seconds
+Transcript: Play a bedtime story.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T19:28:25.637111
+Filename: asr_base_903baf70-27da-4781-98a9-ef4fde751ead_da988205-4181-476a-acc4-d25796e21599.wav
+Full Path: ./audio_files\asr_base_903baf70-27da-4781-98a9-ef4fde751ead_da988205-4181-476a-acc4-d25796e21599.wav
+Audio Length: 4.46 seconds
+Transcript: For now, I can see. Sing a song.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T19:28:38.890347
+Filename: asr_base_903baf70-27da-4781-98a9-ef4fde751ead_f04889b9-c64d-4669-abc2-0a02b7931d17.wav
+Full Path: ./audio_files\asr_base_903baf70-27da-4781-98a9-ef4fde751ead_f04889b9-c64d-4669-abc2-0a02b7931d17.wav
+Audio Length: 1.74 seconds
+Transcript: Good morning. I'm on the call.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T19:28:50.557608
+Filename: asr_base_903baf70-27da-4781-98a9-ef4fde751ead_6043f7fd-6cc9-401f-8f91-3a8ebcb4d9c2.wav
+Full Path: ./audio_files\asr_base_903baf70-27da-4781-98a9-ef4fde751ead_6043f7fd-6cc9-401f-8f91-3a8ebcb4d9c2.wav
+Audio Length: 1.32 seconds
+Transcript: 15
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T19:29:26.948885
+Filename: asr_base_903baf70-27da-4781-98a9-ef4fde751ead_dd871eff-1517-4124-a292-c7df832a3d2d.wav
+Full Path: ./audio_files\asr_base_903baf70-27da-4781-98a9-ef4fde751ead_dd871eff-1517-4124-a292-c7df832a3d2d.wav
+Audio Length: 2.60 seconds
+Transcript: Sing a Kannada song for me.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T19:34:17.240300
+Filename: asr_base_63c68009-5ff7-4600-b172-e6f03160e0ec_7f7eb9d7-d5d9-47a4-9b86-b4d7c7130aca.wav
+Full Path: ./audio_files\asr_base_63c68009-5ff7-4600-b172-e6f03160e0ec_7f7eb9d7-d5d9-47a4-9b86-b4d7c7130aca.wav
+Audio Length: 2.86 seconds
+Transcript: Yeah. Can you tell me a story?
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T19:34:32.794749
+Filename: asr_base_63c68009-5ff7-4600-b172-e6f03160e0ec_91822731-e0c9-4593-9d29-5ff3ebcc8493.wav
+Full Path: ./audio_files\asr_base_63c68009-5ff7-4600-b172-e6f03160e0ec_91822731-e0c9-4593-9d29-5ff3ebcc8493.wav
+Audio Length: 4.80 seconds
+Transcript: Can you tell me a a fantasy story?
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T19:34:58.225468
+Filename: asr_base_63c68009-5ff7-4600-b172-e6f03160e0ec_175c01e9-fe2e-4e20-b5d6-ad3b83a346a4.wav
+Full Path: ./audio_files\asr_base_63c68009-5ff7-4600-b172-e6f03160e0ec_175c01e9-fe2e-4e20-b5d6-ad3b83a346a4.wav
+Audio Length: 2.74 seconds
+Transcript: Tell me a bedtime story.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T19:35:27.270690
+Filename: asr_base_63c68009-5ff7-4600-b172-e6f03160e0ec_0a80b509-6f4a-407c-ad80-00caaceed713.wav
+Full Path: ./audio_files\asr_base_63c68009-5ff7-4600-b172-e6f03160e0ec_0a80b509-6f4a-407c-ad80-00caaceed713.wav
+Audio Length: 2.60 seconds
+Transcript: Tell me a fairytale story.
+================================================================================
+
+================================================================================
+Timestamp: 2025-08-25T19:35:39.140000
+Filename: asr_base_63c68009-5ff7-4600-b172-e6f03160e0ec_34260b2f-9e8d-4fe0-9779-a213c89bdedc.wav
+Full Path: ./audio_files\asr_base_63c68009-5ff7-4600-b172-e6f03160e0ec_34260b2f-9e8d-4fe0-9779-a213c89bdedc.wav
+Audio Length: 3.16 seconds
+Transcript: Play Naimeri Naimeri song.
+================================================================================

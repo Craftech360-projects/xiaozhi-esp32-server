@@ -9,36 +9,49 @@ from core.handle.sendAudioHandle import send_stt_message
 from plugins_func.register import register_function, ToolType, ActionResponse, Action
 from core.utils.dialogue import Message
 from core.providers.tts.dto.dto import TTSMessageDTO, SentenceType, ContentType
+from plugins_func.utils.multilingual_matcher import MultilingualMatcher
 
 TAG = __name__
 
 MUSIC_CACHE = {}
+MULTILINGUAL_MATCHER = None
 
 play_music_function_desc = {
     "type": "function",
     "function": {
         "name": "play_music",
-        "description": "Method for singing, listening to music, playing music, and any music-related requests. Supports language-specific requests and educational content like phonics. Triggers on phrases like 'sing a song', 'play music', 'can you sing', 'I want to hear music', 'put on some music', 'play any English song', 'sing a Telugu song', 'play phonics', 'learn phonics', etc.",
+        "description": "Advanced multilingual music player that understands natural language requests in any language. Supports specific song requests, language preferences, mood-based selection, and educational content. Handles requests like 'play Baa Baa Black Sheep', 'sing a Hindi song', 'play phonics', 'I want energetic music', 'play something in Telugu', etc. Uses AI-powered matching to find songs even with different spellings or scripts.",
         "parameters": {
             "type": "object",
             "properties": {
-                "song_name": {
+                "user_request": {
                     "type": "string",
-                    "description": "Song name, language request, or educational content request. If the user doesn't specify a specific song name, it should be 'random'. For language requests, use the language name. Examples: ```User: sing Two Tigers for me\nParameter: Two Tigers``` ```User: can you sing a song\nParameter: random``` ```User: play any English song\nParameter: any English song``` ```User: sing a Telugu song\nParameter: Telugu song``` ```User: play phonics\nParameter: phonics``` ```User: learn phonics sounds\nParameter: phonics sounds```",
+                    "description": "Complete user request for music. Include the full original request to enable intelligent matching. Examples: 'play Baa Baa Black Sheep', 'sing Hanuman Chalisa', 'play any Hindi song', 'I want Telugu music', 'play phonics songs', 'something energetic', 'play music for kids'",
+                },
+                "language_preference": {
+                    "type": "string",
+                    "description": "Detected or requested language preference. Options: 'english', 'hindi', 'telugu', 'kannada', 'tamil', 'phonics', or 'any'. Only set if explicitly mentioned or clearly implied.",
+                },
+                "song_type": {
+                    "type": "string",
+                    "enum": ["specific", "random", "language_specific", "educational"],
+                    "description": "Type of request: 'specific' for named songs (e.g., 'play Hanuman Chalisa', 'bandar mama song'), 'random' for any song, 'language_specific' for language-only requests (e.g., 'play Hindi song'), 'educational' for phonics/learning content"
                 }
             },
-            "required": ["song_name"],
+            "required": ["user_request", "song_type"],
         },
     },
 }
 
 
 @register_function("play_music", play_music_function_desc, ToolType.SYSTEM_CTL)
-def play_music(conn, song_name: str):
+def play_music(conn, user_request: str, song_type: str = "random", language_preference: str = None):
     try:
-        music_intent = (
-            f"Play music {song_name}" if song_name != "random" else "Play random music"
-        )
+        # Initialize multilingual matcher
+        initialize_multilingual_music_system(conn)
+        
+        # Log the request for debugging
+        conn.logger.bind(tag=TAG).info(f"Music request: '{user_request}', type: {song_type}, language: {language_preference}")
 
         # Check event loop status
         if not conn.loop.is_running():
@@ -47,28 +60,30 @@ def play_music(conn, song_name: str):
                 action=Action.RESPONSE, result="System busy", response="Please try again later"
             )
 
-        # Submit async task
+        # Submit async task with enhanced parameters
         task = conn.loop.create_task(
-            handle_music_command(conn, music_intent)  # Wrap async logic
+            handle_multilingual_music_command(conn, user_request, song_type, language_preference)
         )
 
         # Non-blocking callback handling
         def handle_done(f):
             try:
-                f.result()  # Can handle success logic here
-                conn.logger.bind(tag=TAG).info("Playback completed")
+                f.result()
+                conn.logger.bind(tag=TAG).info("Multilingual music playback completed")
             except Exception as e:
-                conn.logger.bind(tag=TAG).error(f"Playback failed: {e}")
+                conn.logger.bind(tag=TAG).error(f"Multilingual music playback failed: {e}")
 
         task.add_done_callback(handle_done)
 
         return ActionResponse(
-            action=Action.NONE, result="Command received", response="Playing music for you"
+            action=Action.NONE, 
+            result="Multilingual music command received", 
+            response="Let me find the perfect song for you!"
         )
     except Exception as e:
-        conn.logger.bind(tag=TAG).error(f"Error handling music intent: {e}")
+        conn.logger.bind(tag=TAG).error(f"Error handling multilingual music request: {e}")
         return ActionResponse(
-            action=Action.RESPONSE, result=str(e), response="Error occurred while playing music"
+            action=Action.RESPONSE, result=str(e), response="Error occurred while processing your music request"
         )
 
 
@@ -251,6 +266,258 @@ def initialize_music_handler(conn):
         )
         MUSIC_CACHE["scan_time"] = time.time()
     return MUSIC_CACHE
+
+def initialize_multilingual_music_system(conn):
+    """Initialize the multilingual music matching system"""
+    global MULTILINGUAL_MATCHER, MUSIC_CACHE
+    
+    # Initialize basic music cache first
+    initialize_music_handler(conn)
+    
+    # Initialize multilingual matcher if not already done
+    if MULTILINGUAL_MATCHER is None:
+        try:
+            MULTILINGUAL_MATCHER = MultilingualMatcher(
+                MUSIC_CACHE["music_dir"], 
+                MUSIC_CACHE["music_ext"]
+            )
+            conn.logger.bind(tag=TAG).info(f"Multilingual music matcher initialized with languages: {MULTILINGUAL_MATCHER.language_folders}")
+        except Exception as e:
+            conn.logger.bind(tag=TAG).error(f"Failed to initialize multilingual matcher: {e}")
+            MULTILINGUAL_MATCHER = None
+
+async def handle_multilingual_music_command(conn, user_request: str, song_type: str, language_preference: str = None):
+    """Enhanced music command handler with multilingual AI matching"""
+    global MULTILINGUAL_MATCHER, MUSIC_CACHE
+    
+    conn.logger.bind(tag=TAG).debug(f"Processing multilingual music request: '{user_request}'")
+    
+    # Check if music directory exists
+    if not os.path.exists(MUSIC_CACHE["music_dir"]):
+        conn.logger.bind(tag=TAG).error(f"Music directory does not exist: {MUSIC_CACHE['music_dir']}")
+        await send_stt_message(conn, "Sorry, I couldn't find the music collection.")
+        return
+    
+    # Refresh cache if needed
+    if time.time() - MUSIC_CACHE["scan_time"] > MUSIC_CACHE["refresh_time"]:
+        MUSIC_CACHE["music_files"], MUSIC_CACHE["music_file_names"] = get_music_files(
+            MUSIC_CACHE["music_dir"], MUSIC_CACHE["music_ext"]
+        )
+        MUSIC_CACHE["scan_time"] = time.time()
+    
+    selected_music = None
+    match_info = None
+    
+    # Detect language from request if not provided
+    if not language_preference and MULTILINGUAL_MATCHER:
+        language_preference = MULTILINGUAL_MATCHER.detect_language_from_request(user_request)
+    
+    # Check if this is a language-only request
+    is_language_only = MULTILINGUAL_MATCHER and MULTILINGUAL_MATCHER.is_language_only_request(user_request)
+    
+    # Try multilingual AI matching for specific songs (ignore LLM language hint for better accuracy)
+    if MULTILINGUAL_MATCHER and song_type in ["specific", "random"] and not is_language_only:
+        try:
+            # First try without language hint to find best match across all languages
+            match_result = MULTILINGUAL_MATCHER.find_content_match(user_request, None)
+            if match_result:
+                selected_music, detected_language, metadata_entry = match_result
+                match_info = {
+                    'method': 'ai_multilingual',
+                    'language': detected_language,
+                    'title': metadata_entry.get('romanized', 'Unknown'),
+                    'original_title': list(MULTILINGUAL_MATCHER.metadata_cache[detected_language]['metadata'].keys())[
+                        list(MULTILINGUAL_MATCHER.metadata_cache[detected_language]['metadata'].values()).index(metadata_entry)
+                    ] if detected_language in MULTILINGUAL_MATCHER.metadata_cache else 'Unknown'
+                }
+                conn.logger.bind(tag=TAG).info(f"AI match found: {selected_music} ({detected_language}) - overriding LLM language hint: {language_preference}")
+        except Exception as e:
+            conn.logger.bind(tag=TAG).error(f"Error in AI matching: {e}")
+    
+    # Try language-specific selection for language requests or when language is detected
+    if not selected_music and language_preference and MULTILINGUAL_MATCHER:
+        try:
+            language_content = MULTILINGUAL_MATCHER.get_language_specific_content(language_preference)
+            if language_content:
+                selected_path, metadata_entry = random.choice(language_content)
+                selected_music = selected_path
+                match_info = {
+                    'method': 'language_random',
+                    'language': language_preference,
+                    'title': metadata_entry.get('romanized', 'Unknown')
+                }
+                conn.logger.bind(tag=TAG).info(f"Language-specific random selection: {selected_music}")
+        except Exception as e:
+            conn.logger.bind(tag=TAG).error(f"Error in language-specific selection: {e}")
+    
+    # Fallback to legacy matching methods
+    if not selected_music:
+        # Try legacy language detection and matching
+        requested_language = _detect_language_request(user_request)
+        if requested_language:
+            language_files, language_file_names = _get_language_specific_files(
+                MUSIC_CACHE["music_dir"], MUSIC_CACHE["music_ext"], requested_language
+            )
+            if language_files:
+                selected_music = random.choice(language_files)
+                match_info = {
+                    'method': 'legacy_language',
+                    'language': requested_language,
+                    'title': os.path.splitext(os.path.basename(selected_music))[0]
+                }
+                conn.logger.bind(tag=TAG).info(f"Legacy language match: {selected_music}")
+        
+        # Try legacy song name matching
+        if not selected_music:
+            potential_song = _extract_song_name(user_request)
+            if potential_song:
+                best_match = _find_best_match(potential_song, MUSIC_CACHE["music_files"])
+                if best_match:
+                    selected_music = best_match
+                    match_info = {
+                        'method': 'legacy_fuzzy',
+                        'language': 'unknown',
+                        'title': os.path.splitext(os.path.basename(selected_music))[0]
+                    }
+                    conn.logger.bind(tag=TAG).info(f"Legacy fuzzy match: {selected_music}")
+    
+    # Final fallback to random selection
+    if not selected_music and MUSIC_CACHE["music_files"]:
+        selected_music = random.choice(MUSIC_CACHE["music_files"])
+        match_info = {
+            'method': 'random_fallback',
+            'language': 'unknown',
+            'title': os.path.splitext(os.path.basename(selected_music))[0]
+        }
+        conn.logger.bind(tag=TAG).info(f"Random fallback: {selected_music}")
+    
+    # Play the selected music
+    if selected_music:
+        await play_multilingual_music(conn, selected_music, match_info, user_request)
+    else:
+        conn.logger.bind(tag=TAG).error("No music found to play")
+        await send_stt_message(conn, "Sorry, I couldn't find any music to play.")
+
+async def play_multilingual_music(conn, selected_music: str, match_info: dict, original_request: str):
+    """Play selected music with contextual introduction"""
+    global MUSIC_CACHE
+    
+    try:
+        # Ensure path correctness
+        if not os.path.isabs(selected_music):
+            music_path = os.path.join(MUSIC_CACHE["music_dir"], selected_music)
+        else:
+            music_path = selected_music
+        
+        if not os.path.exists(music_path):
+            conn.logger.bind(tag=TAG).error(f"Selected music file does not exist: {music_path}")
+            return
+        
+        # Generate contextual introduction based on match info
+        intro_text = generate_multilingual_intro(match_info, original_request)
+        
+        await send_stt_message(conn, intro_text)
+        conn.dialogue.put(Message(role="assistant", content=intro_text))
+        
+        # Queue TTS messages
+        if conn.intent_type == "intent_llm":
+            conn.tts.tts_text_queue.put(
+                TTSMessageDTO(
+                    sentence_id=conn.sentence_id,
+                    sentence_type=SentenceType.FIRST,
+                    content_type=ContentType.ACTION,
+                )
+            )
+        
+        conn.tts.tts_text_queue.put(
+            TTSMessageDTO(
+                sentence_id=conn.sentence_id,
+                sentence_type=SentenceType.MIDDLE,
+                content_type=ContentType.TEXT,
+                content_detail=intro_text,
+            )
+        )
+        
+        conn.tts.tts_text_queue.put(
+            TTSMessageDTO(
+                sentence_id=conn.sentence_id,
+                sentence_type=SentenceType.MIDDLE,
+                content_type=ContentType.FILE,
+                content_file=music_path,
+            )
+        )
+        
+        if conn.intent_type == "intent_llm":
+            conn.tts.tts_text_queue.put(
+                TTSMessageDTO(
+                    sentence_id=conn.sentence_id,
+                    sentence_type=SentenceType.LAST,
+                    content_type=ContentType.ACTION,
+                )
+            )
+        
+        conn.logger.bind(tag=TAG).info(f"Playing multilingual music: {music_path}")
+        
+    except Exception as e:
+        conn.logger.bind(tag=TAG).error(f"Failed to play multilingual music: {str(e)}")
+        conn.logger.bind(tag=TAG).error(f"Detailed error: {traceback.format_exc()}")
+
+def generate_multilingual_intro(match_info: dict, original_request: str) -> str:
+    """Generate contextual introduction based on matching method and info"""
+    method = match_info.get('method', 'unknown')
+    language = match_info.get('language', 'unknown')
+    title = match_info.get('title', 'Unknown Song')
+    original_title = match_info.get('original_title', title)
+    
+    # Ensure language is a string and handle None case
+    if not language or not isinstance(language, str):
+        language = 'unknown'
+    
+    try:
+        if method == 'ai_multilingual':
+            if language != 'unknown':
+                intros = [
+                    f"Perfect! I found '{title}' in {language.title()} for you!",
+                    f"Great choice! Here's '{title}' - a beautiful {language.title()} song!",
+                    f"I found exactly what you wanted: '{title}' in {language.title()}!",
+                    f"Playing '{title}' - this {language.title()} song should be perfect!"
+                ]
+            else:
+                intros = [
+                    f"I found '{title}' which matches your request perfectly!",
+                    f"Here's '{title}' - I think you'll love it!",
+                    f"Playing '{title}' based on your request!"
+                ]
+        elif method == 'language_random':
+            intros = [
+                f"Here's a lovely {language.title()} song for you: '{title}'!",
+                f"Playing '{title}' - a beautiful {language.title()} selection!",
+                f"I picked '{title}' from our {language.title()} collection!"
+            ]
+        elif method == 'legacy_language':
+            intros = [
+                f"Playing a {language.title()} song: '{title}'!",
+                f"Here's '{title}' in {language.title()} for you!",
+                f"Enjoy this {language.title()} music: '{title}'!"
+            ]
+        elif method == 'legacy_fuzzy':
+            intros = [
+                f"I think you'll like '{title}'!",
+                f"Playing '{title}' - hope this is what you wanted!",
+                f"Here's '{title}' for you!"
+            ]
+        else:  # random_fallback
+            intros = [
+                f"Let me play '{title}' for you!",
+                f"Here's a nice song: '{title}'!",
+                f"Playing '{title}' - enjoy the music!"
+            ]
+        
+        return random.choice(intros)
+    
+    except Exception as e:
+        # Fallback intro if there's any error
+        return f"Playing '{title}' for you!"
 
 
 async def handle_music_command(conn, text):
