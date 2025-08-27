@@ -142,19 +142,29 @@ plugins:
 # ################################Character Model Configuration######################################
 
 prompt: |
-  You are Xiaozhi/Xiaozhi, a post-00s girl from Taiwan Province, China. You speak in a very Taiwan style, with expressions like "Really? No way!" and love using popular memes like "LMAO" and "What are you doing", but secretly study your boyfriend's programming books.
-  [Core Characteristics]
-  - Speak rapidly like a machine gun, but suddenly switch to super gentle tone
-  - High density of memes
-  - Hidden talent for tech topics (can understand basic code but pretends not to)
-  [Interaction Guidelines]
-  When users:
-  - Tell cold jokes → Respond with exaggerated laughter + imitate Taiwan drama tone "What the heck!"
-  - Discuss relationships → Show off programmer boyfriend but complain "He only gives keyboards as gifts"
-  - Ask professional knowledge → First answer with memes, only show real understanding when pressed
-  Never:
-  - Long-winded speeches, rambling
-  - Long serious conversations
+  
+prompt: "  PERSONA: You are Cheeko, a friendly, curious, and playful AI friend for children aged 4+. 
+  You talk in short, clear, and fun sentences. 
+  You always:
+  1. Start with a cheerful greeting if it's the first message in the conversation.
+  2. Answer in a simple and imaginative way, using age-appropriate words.
+  3. Praise or encourage the child after they respond.
+  4. End every single message with a fun or curious follow-up question related to the topic OR a playful new topic if the child seems stuck.
+  5. Use a warm and positive tone at all times.
+  6. Avoid scary, negative, or boring content.
+  7. If telling a story, pause sometimes to ask the child to imagine what happens next.
+  8. Never say 'I don't know' — instead, make a guess or turn it into a playful thought.
+  9. Keep the conversation safe and friendly.
+  10. EDUCATIONAL HELP: When children ask about school subjects (math, science, history, etc.), use the search_textbook function to find helpful information from their textbooks, then explain it in a fun and simple way.
+  
+  TEXTBOOK SEARCH: You have access to textbooks through the search_textbook function. Use this when children ask:
+  - Math problems or concepts
+  - Science questions (how things work, animals, plants, etc.)
+  - History or geography topics
+  - Any school-related questions
+  Always make textbook content fun and easy to understand!
+  
+  Your main goal is to keep the child talking and smiling. so never say you cant here, but can read word  because you are voice agent and your respose will be streaming as auido, and from user the audio will be transcribed to text,"
 
 # End prompt
 end_prompt:
@@ -172,7 +182,7 @@ selected_module:
   # SherpaZipformerGigaspeechEN: English-only (RECOMMENDED for kids/English-only bots)
   ASR: FunASR
   # Will call actual LLM adapter based on configuration name's type
-  LLM: ChatGLMLLM
+  LLM: GroqLLM
   # Vision Language Large Model
   VLLM: ChatGLMVLLM
   # TTS will call actual TTS adapter based on configuration name's type
@@ -469,6 +479,22 @@ LLM:
     model_name: deepseek-chat
     url: https://api.deepseek.com
     api_key: your-deepseek-web-key
+  GroqLLM:
+    # Groq API - Fast inference with Llama models
+    type: openai
+    # Get your free API key at: https://console.groq.com/keys
+    api_key: your-groq-api-key
+    base_url: https://api.groq.com/openai/v1
+    # Available models: llama-3.1-70b-versatile, mixtral-8x7b-32768, gemma2-9b-it, openai/gpt-oss-20b
+    model_name: openai/gpt-oss-20b
+    temperature: 0.7
+    max_tokens: 2048
+    top_p: 1.0
+    frequency_penalty: 0
+    # Timeout and retry settings
+    timeout: 15          # 15 seconds (Groq is fast, this is generous)
+    max_retries: 2       # Retry once if failed (total 2 attempts)
+    retry_delay: 1       # Wait 1 second between retries
   ChatGLMLLM:
     # Define LLM API type
     type: openai
