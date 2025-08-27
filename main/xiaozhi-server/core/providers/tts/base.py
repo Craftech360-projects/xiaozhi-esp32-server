@@ -229,7 +229,9 @@ class TTSProviderBase(ABC):
                 elif ContentType.FILE == message.content_type:
                     self._process_remaining_text()
                     tts_file = message.content_file
-                    if tts_file and os.path.exists(tts_file):
+                    # Check if it's a URL (S3) or local file
+                    is_url = tts_file and (tts_file.startswith('http://') or tts_file.startswith('https://'))
+                    if tts_file and (is_url or os.path.exists(tts_file)):
                         audio_datas = self._process_audio_file(tts_file)
                         self.tts_audio_queue.put(
                             (message.sentence_type, audio_datas, message.content_detail)

@@ -11,8 +11,10 @@ import requests
 import opuslib_next
 from pydub import AudioSegment
 import copy
+from config.logger import setup_logging
 
 TAG = __name__
+logger = setup_logging()
 
 emoji_map = {
     "neutral": "😶",
@@ -238,15 +240,46 @@ def extract_json_from_string(input_string):
 
 
 def audio_to_data(audio_file_path, is_opus=True):
-    # Get file extension
-    file_type = os.path.splitext(audio_file_path)[1]
-    if file_type:
-        file_type = file_type.lstrip(".")
+    # Check if it's an S3 URL or HTTP URL
+    if audio_file_path.startswith(('http://', 'https://')):
+        # Stream the file from URL without downloading entire file to memory
+        try:
+            response = requests.get(audio_file_path, stream=True, timeout=30)
+            response.raise_for_status()
+            
+            # Get file extension from URL or default to mp3
+            file_type = "mp3"  # Default for S3 audio files
+            if '.' in audio_file_path.split('?')[0]:  # Remove query parameters
+                file_type = audio_file_path.split('?')[0].split('.')[-1]
+            
+            # Stream content into BytesIO buffer efficiently
+            audio_buffer = BytesIO()
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:  # Filter out keep-alive chunks
+                    audio_buffer.write(chunk)
+            
+            audio_buffer.seek(0)  # Reset buffer position
+            
+            # Create AudioSegment from streamed bytes
+            audio = AudioSegment.from_file(
+                audio_buffer, format=file_type, parameters=["-nostdin"]
+            )
+            
+            logger.bind(tag=TAG).info(f"Successfully streamed audio from S3: {len(audio_buffer.getvalue())} bytes")
+            
+        except Exception as e:
+            logger.bind(tag=TAG).error(f"Failed to stream audio from URL {audio_file_path}: {e}")
+            raise
+    else:
+        # Local file processing (original logic)
+        file_type = os.path.splitext(audio_file_path)[1]
+        if file_type:
+            file_type = file_type.lstrip(".")
 
-    # Read audio file, -nostdin parameter: don't read data from stdin, otherwise FFmpeg will block
-    audio = AudioSegment.from_file(
-        audio_file_path, format=file_type, parameters=["-nostdin"]
-    )
+        # Read audio file, -nostdin parameter: don't read data from stdin, otherwise FFmpeg will block
+        audio = AudioSegment.from_file(
+            audio_file_path, format=file_type, parameters=["-nostdin"]
+        )
 
     # Convert to mono/16kHz sample rate/16-bit little endian encoding (ensure match with encoder)
     audio = audio.set_channels(1).set_frame_rate(16000).set_sample_width(2)
