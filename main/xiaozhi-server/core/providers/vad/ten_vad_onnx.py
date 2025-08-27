@@ -255,6 +255,9 @@ class VADProvider(VADProviderBase):
             bool: True if voice activity detected, False otherwise
         """
         try:
+            # Skip VAD processing if disabled for audio playback
+            if hasattr(self, 'vad_disabled_for_playback') and self.vad_disabled_for_playback:
+                return False  # Always return False during audio playback
             # Decode Opus packet to PCM
             pcm_frame = self.decoder.decode(opus_packet, 960)
             conn.client_audio_buffer.extend(pcm_frame)

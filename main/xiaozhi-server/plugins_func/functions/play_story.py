@@ -235,8 +235,33 @@ def initialize_s3_client():
             logging.error(f"Failed to initialize S3 client: {e}")
             S3_CLIENT = None
 
-def generate_s3_story_url(category, filename):
-    """Generate S3 streaming URL for story file"""
+def generate_cdn_story_url(category, filename):
+    """Generate CDN streaming URL for story file"""
+    try:
+        # Import CDN helper
+        from utils.cdn_helper import get_audio_url
+        
+        # Ensure proper capitalization for S3 key (S3 folders are capitalized)
+        # Handle special cases like "Fairy Tales"
+        if category.lower() == "fairy tales":
+            category_capitalized = "Fairy Tales"
+        else:
+            category_capitalized = category.capitalize()
+        
+        audio_path = f"stories/{category_capitalized}/{filename}"
+        
+        # Use CDN helper to generate URL with automatic encoding
+        cdn_url = get_audio_url(audio_path)
+        logging.info(f"Generated CDN URL for story: {audio_path} -> {cdn_url}")
+        return cdn_url
+        
+    except Exception as e:
+        logging.error(f"Error generating CDN URL for story: {e}")
+        # Fallback to S3 presigned URL if CDN fails
+        return generate_s3_story_url_fallback(category, filename)
+
+def generate_s3_story_url_fallback(category, filename):
+    """Fallback S3 streaming URL for story file"""
     global S3_CLIENT, S3_BUCKET_NAME
     
     if not S3_CLIENT:
@@ -256,10 +281,10 @@ def generate_s3_story_url(category, filename):
             Params={'Bucket': S3_BUCKET_NAME, 'Key': s3_key},
             ExpiresIn=7200  # 2 hours for streaming
         )
-        logging.info(f"Generated S3 URL for story: {s3_key}")
+        logging.info(f"Generated fallback S3 URL for story: {s3_key}")
         return url
     except ClientError as e:
-        logging.error(f"Error generating S3 URL for story: {e}")
+        logging.error(f"Error generating fallback S3 URL for story: {e}")
         return None
 
 def initialize_story_handler(conn):
@@ -428,7 +453,7 @@ async def handle_multilingual_story_command(conn, user_request: str, story_type:
         await send_stt_message(conn, "Sorry, I couldn't find any stories to play.")
 
 async def play_multilingual_story(conn, selected_story: str, match_info: dict, original_request: str):
-    """Play selected story with contextual introduction - S3 STREAMING VERSION"""
+    """Play selected story with contextual introduction - CDN STREAMING VERSION"""
     global STORY_CACHE
     
     try:
@@ -443,11 +468,11 @@ async def play_multilingual_story(conn, selected_story: str, match_info: dict, o
             category = match_info.get('category', 'Fantasy')
             filename = os.path.basename(selected_story)
         
-        # Generate S3 streaming URL
-        s3_url = generate_s3_story_url(category, filename)
+        # Generate CDN streaming URL
+        cdn_url = generate_cdn_story_url(category, filename)
         
-        if not s3_url:
-            conn.logger.bind(tag=TAG).error(f"Failed to generate S3 URL for: {category}/{filename}")
+        if not cdn_url:
+            conn.logger.bind(tag=TAG).error(f"Failed to generate CDN URL for: {category}/{filename}")
             await send_stt_message(conn, "Sorry, I couldn't access the story file.")
             return
         
@@ -476,13 +501,13 @@ async def play_multilingual_story(conn, selected_story: str, match_info: dict, o
             )
         )
         
-        # Use S3 URL instead of local file path
+        # Use CDN URL instead of local file path
         conn.tts.tts_text_queue.put(
             TTSMessageDTO(
                 sentence_id=conn.sentence_id,
                 sentence_type=SentenceType.MIDDLE,
                 content_type=ContentType.FILE,
-                content_file=s3_url,  # S3 streaming URL
+                content_file=cdn_url,  # CDN streaming URL
             )
         )
         
@@ -495,10 +520,10 @@ async def play_multilingual_story(conn, selected_story: str, match_info: dict, o
                 )
             )
         
-        conn.logger.bind(tag=TAG).info(f"Streaming story from S3: {s3_url}")
+        conn.logger.bind(tag=TAG).info(f"Streaming story from CDN: {cdn_url}")
         
     except Exception as e:
-        conn.logger.bind(tag=TAG).error(f"Failed to stream story from S3: {str(e)}")
+        conn.logger.bind(tag=TAG).error(f"Failed to stream story from CDN: {str(e)}")
         conn.logger.bind(tag=TAG).error(f"Detailed error: {traceback.format_exc()}")
 
 def generate_multilingual_story_intro(match_info: dict, original_request: str) -> str:
@@ -672,7 +697,7 @@ def get_story_intro(story_file, requested_language=None):
 
 
 async def play_story_file(conn, story_file, requested_language=None):
-    """Play the selected story file - S3 STREAMING VERSION"""
+    """Play the selected story file - CDN STREAMING VERSION"""
     try:
         # Extract category and filename from story_file path
         path_parts = story_file.split('/')
@@ -684,11 +709,11 @@ async def play_story_file(conn, story_file, requested_language=None):
             category = "Fantasy"
             filename = os.path.basename(story_file)
 
-        # Generate S3 streaming URL
-        s3_url = generate_s3_story_url(category, filename)
+        # Generate CDN streaming URL
+        cdn_url = generate_cdn_story_url(category, filename)
         
-        if not s3_url:
-            conn.logger.bind(tag=TAG).error(f"Failed to generate S3 URL for: {category}/{filename}")
+        if not cdn_url:
+            conn.logger.bind(tag=TAG).error(f"Failed to generate CDN URL for: {category}/{filename}")
             await send_stt_message(conn, "Sorry, I couldn't access the story file.")
             return
         
@@ -697,7 +722,7 @@ async def play_story_file(conn, story_file, requested_language=None):
         await send_stt_message(conn, intro_text)
         conn.dialogue.put(Message(role="assistant", content=intro_text))
         
-        # Send TTS messages to play the story from S3
+        # Send TTS messages to play the story from CDN
         if conn.intent_type == "intent_llm":
             conn.tts.tts_text_queue.put(
                 TTSMessageDTO(
@@ -716,13 +741,13 @@ async def play_story_file(conn, story_file, requested_language=None):
             )
         )
         
-        # Use S3 URL instead of local file path
+        # Use CDN URL instead of local file path
         conn.tts.tts_text_queue.put(
             TTSMessageDTO(
                 sentence_id=conn.sentence_id,
                 sentence_type=SentenceType.MIDDLE,
                 content_type=ContentType.FILE,
-                content_file=s3_url,  # S3 streaming URL
+                content_file=cdn_url,  # CDN streaming URL
             )
         )
         
@@ -735,8 +760,8 @@ async def play_story_file(conn, story_file, requested_language=None):
                 )
             )
         
-        conn.logger.bind(tag=TAG).info(f"Streaming story from S3: {s3_url}")
+        conn.logger.bind(tag=TAG).info(f"Streaming story from CDN: {cdn_url}")
         
     except Exception as e:
-        conn.logger.bind(tag=TAG).error(f"Failed to stream story from S3: {str(e)}")
+        conn.logger.bind(tag=TAG).error(f"Failed to stream story from CDN: {str(e)}")
         conn.logger.bind(tag=TAG).error(f"Detailed error: {traceback.format_exc()}")

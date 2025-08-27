@@ -303,8 +303,28 @@ def initialize_s3_client():
             logging.error(f"Failed to initialize S3 client: {e}")
             S3_CLIENT = None
 
-def generate_s3_music_url(language, filename):
-    """Generate S3 streaming URL for music file"""
+def generate_cdn_music_url(language, filename):
+    """Generate CDN streaming URL for music file"""
+    try:
+        # Import CDN helper
+        from utils.cdn_helper import get_audio_url
+        
+        # Ensure proper capitalization for S3 key (S3 folders are capitalized)
+        language_capitalized = language.capitalize()
+        audio_path = f"music/{language_capitalized}/{filename}"
+        
+        # Use CDN helper to generate URL with automatic encoding
+        cdn_url = get_audio_url(audio_path)
+        logging.info(f"Generated CDN URL for music: {audio_path} -> {cdn_url}")
+        return cdn_url
+        
+    except Exception as e:
+        logging.error(f"Error generating CDN URL for music: {e}")
+        # Fallback to S3 presigned URL if CDN fails
+        return generate_s3_music_url_fallback(language, filename)
+
+def generate_s3_music_url_fallback(language, filename):
+    """Fallback S3 streaming URL for music file"""
     global S3_CLIENT, S3_BUCKET_NAME
     
     if not S3_CLIENT:
@@ -319,10 +339,10 @@ def generate_s3_music_url(language, filename):
             Params={'Bucket': S3_BUCKET_NAME, 'Key': s3_key},
             ExpiresIn=7200  # 2 hours for streaming
         )
-        logging.info(f"Generated S3 URL for music: {s3_key}")
+        logging.info(f"Generated fallback S3 URL for music: {s3_key}")
         return url
     except ClientError as e:
-        logging.error(f"Error generating S3 URL for music: {e}")
+        logging.error(f"Error generating fallback S3 URL for music: {e}")
         return None
 
 def initialize_music_handler(conn):
@@ -485,7 +505,7 @@ async def handle_multilingual_music_command(conn, user_request: str, song_type: 
         await send_stt_message(conn, "Sorry, I couldn't find any music to play.")
 
 async def play_multilingual_music(conn, selected_music: str, match_info: dict, original_request: str):
-    """Play selected music with contextual introduction - S3 STREAMING VERSION"""
+    """Play selected music with contextual introduction - CDN STREAMING VERSION"""
     global MUSIC_CACHE
     
     try:
@@ -500,11 +520,11 @@ async def play_multilingual_music(conn, selected_music: str, match_info: dict, o
             language = match_info.get('language', 'English')
             filename = os.path.basename(selected_music)
         
-        # Generate S3 streaming URL
-        s3_url = generate_s3_music_url(language, filename)
+        # Generate CDN streaming URL
+        cdn_url = generate_cdn_music_url(language, filename)
         
-        if not s3_url:
-            conn.logger.bind(tag=TAG).error(f"Failed to generate S3 URL for: {language}/{filename}")
+        if not cdn_url:
+            conn.logger.bind(tag=TAG).error(f"Failed to generate CDN URL for: {language}/{filename}")
             await send_stt_message(conn, "Sorry, I couldn't access the music file.")
             return
         
@@ -533,13 +553,13 @@ async def play_multilingual_music(conn, selected_music: str, match_info: dict, o
             )
         )
         
-        # Use S3 URL instead of local file path
+        # Use CDN URL instead of local file path
         conn.tts.tts_text_queue.put(
             TTSMessageDTO(
                 sentence_id=conn.sentence_id,
                 sentence_type=SentenceType.MIDDLE,
                 content_type=ContentType.FILE,
-                content_file=s3_url,  # S3 streaming URL
+                content_file=cdn_url,  # CDN streaming URL
             )
         )
         
@@ -552,10 +572,10 @@ async def play_multilingual_music(conn, selected_music: str, match_info: dict, o
                 )
             )
         
-        conn.logger.bind(tag=TAG).info(f"Streaming music from S3: {s3_url}")
+        conn.logger.bind(tag=TAG).info(f"Streaming music from CDN: {cdn_url}")
         
     except Exception as e:
-        conn.logger.bind(tag=TAG).error(f"Failed to stream music from S3: {str(e)}")
+        conn.logger.bind(tag=TAG).error(f"Failed to stream music from CDN: {str(e)}")
         conn.logger.bind(tag=TAG).error(f"Detailed error: {traceback.format_exc()}")
 
 def generate_multilingual_intro(match_info: dict, original_request: str) -> str:
