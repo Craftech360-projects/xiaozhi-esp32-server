@@ -103,7 +103,8 @@ class TTSProviderBase(ABC):
                 logger.bind(tag=TAG).error(
                     f"Speech generation failed: {text}, please check network or service status"
                 )
-            return None
+                # Return empty audio data instead of None to avoid breaking the flow
+                return []
         else:
             tmp_file = self.generate_filename()
             try:
@@ -127,6 +128,8 @@ class TTSProviderBase(ABC):
                     logger.bind(tag=TAG).error(
                         f"Speech generation failed: {text}, please check network or service status"
                     )
+                    # Return None for file mode when generation fails - calling code should handle this
+                    return None
                 return tmp_file
             except Exception as e:
                 logger.bind(tag=TAG).error(f"Failed to generate TTS file: {e}")
@@ -214,16 +217,21 @@ class TTSProviderBase(ABC):
                     if segment_text:
                         if self.delete_audio_file:
                             audio_datas = self.to_tts(segment_text)
-                            if audio_datas:
-                                self.tts_audio_queue.put(
-                                    (message.sentence_type, audio_datas, segment_text)
-                                )
+                            # Always put something in the queue, even if TTS failed
+                            self.tts_audio_queue.put(
+                                (message.sentence_type, audio_datas if audio_datas else [], segment_text)
+                            )
                         else:
                             tts_file = self.to_tts(segment_text)
                             if tts_file:
                                 audio_datas = self._process_audio_file(tts_file)
                                 self.tts_audio_queue.put(
                                     (message.sentence_type, audio_datas, segment_text)
+                                )
+                            else:
+                                # TTS failed, send empty audio to maintain flow
+                                self.tts_audio_queue.put(
+                                    (message.sentence_type, [], segment_text)
                                 )
 
                 elif ContentType.FILE == message.content_type:
@@ -247,6 +255,10 @@ class TTSProviderBase(ABC):
                 logger.bind(tag=TAG).error(
                     f"Failed to process TTS text: {str(e)}, type: {type(e).__name__}, stack: {traceback.format_exc()}"
                 )
+                # On TTS error, ensure we send completion signal to prevent client getting stuck
+                if hasattr(message, 'sentence_type') and message.sentence_type == SentenceType.FIRST:
+                    # If this was a FIRST message that failed, send LAST to complete the cycle
+                    self.tts_audio_queue.put((SentenceType.LAST, [], "TTS Error"))
                 continue
 
     def _audio_play_priority_thread(self):
@@ -374,16 +386,22 @@ class TTSProviderBase(ABC):
             if segment_text:
                 if self.delete_audio_file:
                     audio_datas = self.to_tts(segment_text)
-                    if audio_datas:
+                    # Always put something in the queue, even if TTS failed
+                    self.tts_audio_queue.put(
+                        (SentenceType.MIDDLE, audio_datas if audio_datas else [], segment_text)
+                    )
+                else:
+                    tts_file = self.to_tts(segment_text)
+                    if tts_file:
+                        audio_datas = self._process_audio_file(tts_file)
                         self.tts_audio_queue.put(
                             (SentenceType.MIDDLE, audio_datas, segment_text)
                         )
-                else:
-                    tts_file = self.to_tts(segment_text)
-                    audio_datas = self._process_audio_file(tts_file)
-                    self.tts_audio_queue.put(
-                        (SentenceType.MIDDLE, audio_datas, segment_text)
-                    )
+                    else:
+                        # TTS failed, send empty audio to maintain flow
+                        self.tts_audio_queue.put(
+                            (SentenceType.MIDDLE, [], segment_text)
+                        )
                 self.processed_chars += len(full_text)
                 return True
         return False

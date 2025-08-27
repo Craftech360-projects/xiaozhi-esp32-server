@@ -794,6 +794,32 @@ class ConnectionHandler:
         except Exception as e:
             self.logger.bind(tag=TAG).error(
                 f"LLM processing error for '{query}': {e}")
+            
+            ##Hre to 
+            
+            # Send error message to client and ensure proper completion
+            if depth == 0:
+                error_message = "Sorry, I'm having trouble understanding right now. Please try again."
+                self.tts.tts_text_queue.put(
+                    TTSMessageDTO(
+                        sentence_id=self.sentence_id,
+                        sentence_type=SentenceType.MIDDLE,
+                        content_type=ContentType.TEXT,
+                        content_detail=error_message,
+                    )
+                )
+                # Send completion signal
+                self.tts.tts_text_queue.put(
+                    TTSMessageDTO(
+                        sentence_id=self.sentence_id,
+                        sentence_type=SentenceType.LAST,
+                        content_type=ContentType.ACTION,
+                    )
+                )
+            
+            self.llm_finish_task = True
+
+            #here
             return None
 
         # Handle streaming response
