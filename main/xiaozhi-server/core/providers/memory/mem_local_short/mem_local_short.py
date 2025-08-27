@@ -118,6 +118,14 @@ class MemoryProvider(MemoryProviderBase):
     ):
         super().init_memory(role_id, llm, **kwargs)
         self.save_to_file = save_to_file
+        # Add debug logging to see which LLM is being used
+        if hasattr(llm, 'base_url'):
+            logger.info(f"🧠 [MEMORY] Using LLM with base_url: {llm.base_url}")
+        if hasattr(llm, 'model_name'):
+            logger.info(f"🧠 [MEMORY] Using LLM model: {llm.model_name}")
+        if hasattr(llm, 'api_key') and llm.api_key:
+            key_preview = llm.api_key[:20] + "..." if len(llm.api_key) > 20 else llm.api_key
+            logger.info(f"🧠 [MEMORY] Using API key: {key_preview}")
         self.load_memory(summary_memory)
 
     def load_memory(self, summary_memory):

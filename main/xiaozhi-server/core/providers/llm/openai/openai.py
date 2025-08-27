@@ -16,6 +16,10 @@ class LLMProvider(LLMProviderBase):
     def __init__(self, config):
         self.model_name = config.get("model_name")
         self.api_key = config.get("api_key")
+        # Add debug logging to track which LLM instance is created
+        base_url = config.get("base_url", config.get("url", "unknown"))
+        key_preview = self.api_key[:20] + "..." if self.api_key and len(self.api_key) > 20 else self.api_key
+        logger.bind(tag=TAG).info(f"🤖 [LLM] Creating LLM instance: model={self.model_name}, base_url={base_url}, api_key={key_preview}")
         if "base_url" in config:
             self.base_url = config.get("base_url")
         else:
@@ -74,7 +78,7 @@ class LLMProvider(LLMProviderBase):
         # Retry logic for API calls
         for attempt in range(self.max_retries):
             try:
-                logger.bind(tag=TAG).debug(f"LLM request attempt {attempt + 1}/{self.max_retries}")
+                logger.bind(tag=TAG).info(f"🚀 [LLM] Using {self.base_url} with model {self.model_name} (attempt {attempt + 1}/{self.max_retries})")
                 
                 responses = self.client.chat.completions.create(
                     model=self.model_name,
@@ -134,6 +138,7 @@ class LLMProvider(LLMProviderBase):
 
     def response_with_functions(self, session_id, dialogue, functions=None):
         try:
+            logger.bind(tag=TAG).info(f"🔧 [LLM-FUNCTIONS] Using {self.base_url} with model {self.model_name}")
             stream = self.client.chat.completions.create(
                 model=self.model_name, messages=dialogue, stream=True, tools=functions
             )

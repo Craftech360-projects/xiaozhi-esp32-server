@@ -14,6 +14,11 @@ class LLMProviderBase(ABC):
 
     def response_no_stream(self, system_prompt, user_prompt, **kwargs):
         try:
+            # Add logging to track non-streaming calls (used by memory/intent)
+            base_url = getattr(self, 'base_url', 'unknown')
+            model_name = getattr(self, 'model_name', 'unknown')
+            logger.bind(tag=TAG).info(f"📝 [LLM-NO-STREAM] Using {base_url} with model {model_name}")
+            
             # Construct dialogue format
             dialogue = [
                 {"role": "system", "content": system_prompt},

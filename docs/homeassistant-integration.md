@@ -29,7 +29,7 @@ http://192.168.4.7:8123
 >
 > 2. 点击左下角 **设置（Settings）** → **系统（System）** → **网络（Network）**。
 >
-> 3. 滑到最底部`Home Assistant 网址(Home Assistant website)`区域，在`本地网络(local network)`中，点击`眼睛`按钮，可以看到当前使用的 IP 地址（如 `192.168.1.10`）和网络接口。点击`复制连接(copy link)`可以直接复制。
+> 3. 滑到最底部`Home Assistant 网址(Home Assistant website)`区域，在`本地网络(local network)`中，点击`眼睛`按钮，可以看到当前使用的 IP 地址（如 `192.168.1.20`）和网络接口。点击`复制连接(copy link)`可以直接复制。
 >
 >    ![image-20250504051716417](images/image-ha-integration-01.png)
 
@@ -197,7 +197,7 @@ http://homeassistant.local:8123
 注意：
 
 1. **替换配置：**
-   - 替换`args`内的`YOUR_HA_HOST`为您的HA服务地址，如果你的服务地址已经包含了https/http字样（例如`http://192.168.1.101:8123`)，则只需要填入`192.168.1.101:8123`即可。
+   - 替换`args`内的`YOUR_HA_HOST`为您的HA服务地址，如果你的服务地址已经包含了https/http字样（例如`http://192.168.1.201:8123`)，则只需要填入`192.168.1.201:8123`即可。
    - 将`env`内`API_ACCESS_TOKEN`的`YOUR_API_ACCESS_TOKEN`替换成您之前获取到的开发密钥api key。
 2. **如果你添加配置是在`"mcpServers"`的括号内后续没有新的`mcpServers`的配置时，需要把最后的逗号`,`移除**，否则可能会解析失败。
 
@@ -208,7 +208,7 @@ http://homeassistant.local:8123
     "Home Assistant": {
       "command": "mcp-proxy",
       "args": [
-        "http://192.168.1.101:8123/mcp_server/sse"
+        "http://192.168.1.201:8123/mcp_server/sse"
       ],
       "env": {
         "API_ACCESS_TOKEN": "abcd.efghi.jkl"
