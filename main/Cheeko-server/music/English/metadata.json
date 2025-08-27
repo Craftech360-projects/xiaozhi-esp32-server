@@ -85,5 +85,67 @@
       "prehistoric song",
       "kids dinosaur song"
     ]
-  }
+  },
+  "Twinkle Twinkle Little Star" :
+  {
+  "romanized": "Twinkle Twinkle Little Star",
+  "filename": "Twinkle Twinkle Little Star.mp3",
+  "alternatives": [
+    "Twinkle Twinkle Little Star",
+    "twinkle twinkle little star",
+    "twinkle little star",
+    "star song",
+    "twinkle song",
+    "children's star song",
+    "classic nursery rhyme",
+    "traditional lullaby",
+    "preschool star song",
+    "kids bedtime song",
+    "nursery rhyme classic",
+    "little star song",
+    "wonder what you are",
+    "up above the world so high",
+    "diamond in the sky"
+  ]
+},
+"Hot Cross Buns" : {
+  "romanized": "Hot Cross Buns",
+  "filename": "Hot Cross Buns.mp3",
+  "alternatives": [
+    "Hot Cross Buns",
+    "hot cross buns",
+    "one a penny two a penny",
+    "hot cross buns song",
+    "traditional nursery rhyme",
+    "Easter song",
+    "children's food song",
+    "classic kids song",
+    "penny buns",
+    "nursery rhyme classic",
+    "simple melody song",
+    "beginner music song",
+    "three note song",
+    "recorder song"
+  ]
+},
+
+   "The Wheels on the Bus": {
+  "romanized": "Wheels on the Bus",
+  "filename": "Wheels on the Bus Go.mp3",
+  "alternatives": [
+    "The Wheels on the Bus",
+    "wheels on the bus",
+    "wheels on the bus go",
+    "bus song",
+    "wheels go round and round",
+    "children's bus song",
+    "classic kids song",
+    "nursery rhyme bus",
+    "preschool bus song",
+    "traditional children's song",
+    "kids transport song",
+    "bus wheels song",
+    "go round and round"
+  ]
+}
 }
