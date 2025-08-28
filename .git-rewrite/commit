@@ -1,0 +1,6 @@
+tree 1a1ceca6d35ec59639bc920398eb3aded22ac62e
+parent df0e44798a5fe0836c2b58253d3ad06cb253943c
+author 玄凤科技 <eric230308@gmail.com> 1739499842 +0800
+committer 玄凤科技 <eric230308@gmail.com> 1739499842 +0800
+
+增加本地大模型ollama支持

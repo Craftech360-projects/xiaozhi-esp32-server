@@ -95,7 +95,9 @@ def play_music(conn, user_request: str, song_type: str = "random", language_pref
     except Exception as e:
         conn.logger.bind(tag=TAG).error(f"Error handling multilingual music request: {e}")
         return ActionResponse(
-            action=Action.RESPONSE, result=str(e), response="Error occurred while processing your music request"
+            action=Action.RESPONSE, 
+            result="Song not available", 
+            response="The song you requested is not available right now, but it will be available soon. Please try again later."
         )
 
 
@@ -404,7 +406,7 @@ async def handle_multilingual_music_command(conn, user_request: str, song_type: 
     # Check if music directory exists
     if not os.path.exists(MUSIC_CACHE["music_dir"]):
         conn.logger.bind(tag=TAG).error(f"Music directory does not exist: {MUSIC_CACHE['music_dir']}")
-        await send_stt_message(conn, "Sorry, I couldn't find the music collection.")
+        await send_stt_message(conn, "The music collection is being set up. Songs will be available soon. Please try again later.")
         return
     
     # Refresh cache if needed
@@ -504,8 +506,10 @@ async def handle_multilingual_music_command(conn, user_request: str, song_type: 
     if selected_music:
         await play_multilingual_music(conn, selected_music, match_info, user_request)
     else:
-        conn.logger.bind(tag=TAG).error("No music found to play")
-        await send_stt_message(conn, "Sorry, I couldn't find any music to play.")
+        # Provide a user-friendly message when song is not available
+        conn.logger.bind(tag=TAG).info(f"Song not found for request: {user_request}")
+        not_available_message = "The song you requested is not available right now, but it will be available soon. Please try again later or ask for a different song."
+        await send_stt_message(conn, not_available_message)
 
 async def play_multilingual_music(conn, selected_music: str, match_info: dict, original_request: str):
     """Play selected music with contextual introduction - CDN STREAMING VERSION"""
@@ -528,14 +532,14 @@ async def play_multilingual_music(conn, selected_music: str, match_info: dict, o
         
         if not cdn_url:
             conn.logger.bind(tag=TAG).error(f"Failed to generate CDN URL for: {language}/{filename}")
-            await send_stt_message(conn, "Sorry, I couldn't access the music file.")
+            await send_stt_message(conn, "The song is not available right now, but it will be available soon. Please try again later.")
             return
         
         # CRITICAL CHANGE: Download from CDN to local file first
         local_file_path = await download_cdn_file(cdn_url, conn)
         if not local_file_path:
             conn.logger.bind(tag=TAG).error(f"Failed to download CDN file: {cdn_url}")
-            await send_stt_message(conn, "Sorry, I couldn't download the music file.")
+            await send_stt_message(conn, "The song is not available right now, but it will be available soon. Please try again later.")
             return
         
         # Generate contextual introduction based on match info
@@ -587,6 +591,7 @@ async def play_multilingual_music(conn, selected_music: str, match_info: dict, o
     except Exception as e:
         conn.logger.bind(tag=TAG).error(f"Failed to stream music from CDN: {str(e)}")
         conn.logger.bind(tag=TAG).error(f"Detailed error: {traceback.format_exc()}")
+        await send_stt_message(conn, "The song is not available right now, but it will be available soon. Please try again later.")
 
 def generate_multilingual_intro(match_info: dict, original_request: str) -> str:
     """Generate contextual introduction based on matching method and info"""
@@ -741,7 +746,7 @@ async def play_local_music(conn, specific_file=None):
         
         if not s3_url:
             conn.logger.bind(tag=TAG).error(f"Failed to generate S3 URL for: {language}/{filename}")
-            await send_stt_message(conn, "Sorry, I couldn't access the music file.")
+            await send_stt_message(conn, "The song is not available right now, but it will be available soon. Please try again later.")
             return
 
         text = _get_random_play_prompt(selected_music)
@@ -787,3 +792,4 @@ async def play_local_music(conn, specific_file=None):
     except Exception as e:
         conn.logger.bind(tag=TAG).error(f"Failed to stream music from S3: {str(e)}")
         conn.logger.bind(tag=TAG).error(f"Detailed error: {traceback.format_exc()}")
+        await send_stt_message(conn, "The song is not available right now, but it will be available soon. Please try again later.")
