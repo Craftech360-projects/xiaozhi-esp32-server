@@ -22,7 +22,7 @@ def test_successful_connection():
     
     config = {
         "type": "openai",
-        "api_key": "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",
+        "api_key": "your-groq-api-key-here",
         "base_url": "https://api.groq.com/openai/v1",
         "model_name": "openai/gpt-oss-20b",
         "temperature": 0.7,
@@ -114,7 +114,7 @@ def test_timeout_scenario():
     
     config = {
         "type": "openai",
-        "api_key": "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",
+        "api_key": "your-groq-api-key-here",
         "base_url": "https://api.groq.com/openai/v1",
         "model_name": "openai/gpt-oss-20b",
         "temperature": 0.7,

@@ -16,6 +16,9 @@ import boto3
 from botocore.exceptions import ClientError
 import logging
 
+# CDN Download imports
+from core.utils.cdn_manager import download_cdn_file
+
 TAG = __name__
 
 STORY_CACHE = {}
@@ -476,6 +479,13 @@ async def play_multilingual_story(conn, selected_story: str, match_info: dict, o
             await send_stt_message(conn, "Sorry, I couldn't access the story file.")
             return
         
+        # CRITICAL CHANGE: Download from CDN to local file first  
+        local_file_path = await download_cdn_file(cdn_url, conn)
+        if not local_file_path:
+            conn.logger.bind(tag=TAG).error(f"Failed to download CDN file: {cdn_url}")
+            await send_stt_message(conn, "Sorry, I couldn't download the story file.")
+            return
+        
         # Generate contextual introduction based on match info
         intro_text = generate_multilingual_story_intro(match_info, original_request)
         
@@ -507,7 +517,7 @@ async def play_multilingual_story(conn, selected_story: str, match_info: dict, o
                 sentence_id=conn.sentence_id,
                 sentence_type=SentenceType.MIDDLE,
                 content_type=ContentType.FILE,
-                content_file=cdn_url,  # CDN streaming URL
+                content_file=local_file_path,  # LOCAL FILE, NOT CDN URL!
             )
         )
         
@@ -520,7 +530,7 @@ async def play_multilingual_story(conn, selected_story: str, match_info: dict, o
                 )
             )
         
-        conn.logger.bind(tag=TAG).info(f"Streaming story from CDN: {cdn_url}")
+        conn.logger.bind(tag=TAG).info(f"Streaming story from local cache: {local_file_path}")
         
     except Exception as e:
         conn.logger.bind(tag=TAG).error(f"Failed to stream story from CDN: {str(e)}")
@@ -717,6 +727,13 @@ async def play_story_file(conn, story_file, requested_language=None):
             await send_stt_message(conn, "Sorry, I couldn't access the story file.")
             return
         
+        # CRITICAL CHANGE: Download from CDN to local file first  
+        local_file_path = await download_cdn_file(cdn_url, conn)
+        if not local_file_path:
+            conn.logger.bind(tag=TAG).error(f"Failed to download CDN file: {cdn_url}")
+            await send_stt_message(conn, "Sorry, I couldn't download the story file.")
+            return
+        
         # Generate and send introduction (always in English)
         intro_text = get_story_intro(story_file, requested_language)
         await send_stt_message(conn, intro_text)
@@ -747,7 +764,7 @@ async def play_story_file(conn, story_file, requested_language=None):
                 sentence_id=conn.sentence_id,
                 sentence_type=SentenceType.MIDDLE,
                 content_type=ContentType.FILE,
-                content_file=cdn_url,  # CDN streaming URL
+                content_file=local_file_path,  # LOCAL FILE, NOT CDN URL!
             )
         )
         
@@ -760,7 +777,7 @@ async def play_story_file(conn, story_file, requested_language=None):
                 )
             )
         
-        conn.logger.bind(tag=TAG).info(f"Streaming story from CDN: {cdn_url}")
+        conn.logger.bind(tag=TAG).info(f"Streaming story from local cache: {local_file_path}")
         
     except Exception as e:
         conn.logger.bind(tag=TAG).error(f"Failed to stream story from CDN: {str(e)}")

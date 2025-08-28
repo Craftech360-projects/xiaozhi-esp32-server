@@ -16,6 +16,9 @@ import boto3
 from botocore.exceptions import ClientError
 import logging
 
+# CDN Download imports
+from core.utils.cdn_manager import download_cdn_file
+
 TAG = __name__
 
 MUSIC_CACHE = {}
@@ -528,6 +531,13 @@ async def play_multilingual_music(conn, selected_music: str, match_info: dict, o
             await send_stt_message(conn, "Sorry, I couldn't access the music file.")
             return
         
+        # CRITICAL CHANGE: Download from CDN to local file first
+        local_file_path = await download_cdn_file(cdn_url, conn)
+        if not local_file_path:
+            conn.logger.bind(tag=TAG).error(f"Failed to download CDN file: {cdn_url}")
+            await send_stt_message(conn, "Sorry, I couldn't download the music file.")
+            return
+        
         # Generate contextual introduction based on match info
         intro_text = generate_multilingual_intro(match_info, original_request)
         
@@ -559,7 +569,7 @@ async def play_multilingual_music(conn, selected_music: str, match_info: dict, o
                 sentence_id=conn.sentence_id,
                 sentence_type=SentenceType.MIDDLE,
                 content_type=ContentType.FILE,
-                content_file=cdn_url,  # CDN streaming URL
+                content_file=local_file_path,  # LOCAL FILE, NOT CDN URL!
             )
         )
         
@@ -572,7 +582,7 @@ async def play_multilingual_music(conn, selected_music: str, match_info: dict, o
                 )
             )
         
-        conn.logger.bind(tag=TAG).info(f"Streaming music from CDN: {cdn_url}")
+        conn.logger.bind(tag=TAG).info(f"Streaming music from local cache: {local_file_path}")
         
     except Exception as e:
         conn.logger.bind(tag=TAG).error(f"Failed to stream music from CDN: {str(e)}")
