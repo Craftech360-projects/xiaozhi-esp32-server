@@ -113,10 +113,24 @@ class ASRProviderBase(ABC):
             if len(asr_audio_task) > 20:  # Increased from 15 to 20 chunks (1.2 seconds)
                 logger.bind(tag=TAG).debug(f"Processing {len(asr_audio_task)} audio chunks")
                 await self.handle_voice_stop(conn, asr_audio_task)
+                # Reset rejection counter on successful processing
+                if hasattr(conn, 'audio_rejection_count'):
+                    conn.audio_rejection_count = 0
             else:
                 # Log when audio is rejected due to insufficient length
                 audio_duration_ms = len(asr_audio_task) * 60  # Approximately 60ms per chunk
                 logger.bind(tag=TAG).info(f"Audio rejected - insufficient length: {len(asr_audio_task)} chunks ({audio_duration_ms}ms), minimum required: 20 chunks (1200ms)")
+                
+                # Track consecutive rejections
+                if not hasattr(conn, 'audio_rejection_count'):
+                    conn.audio_rejection_count = 0
+                conn.audio_rejection_count += 1
+                
+                # Notify user after multiple rejections
+                if conn.audio_rejection_count >= 3:  # After 3 consecutive rejections
+                    logger.bind(tag=TAG).warning(f"Multiple audio rejections ({conn.audio_rejection_count}) - notifying user")
+                    await self.notify_user_audio_too_short(conn)
+                    conn.audio_rejection_count = 0  # Reset counter after notification
 
     # Handle voice stop
     async def handle_voice_stop(self, conn, asr_audio_task: List[bytes]):
@@ -251,6 +265,24 @@ class ASRProviderBase(ABC):
                 # Use custom module for reporting
                 await startToChat(conn, enhanced_text)
                 enqueue_asr_report(conn, enhanced_text, asr_audio_task)
+                
+                # Reset empty transcription counter on successful recognition
+                if hasattr(conn, 'empty_transcription_count'):
+                    conn.empty_transcription_count = 0
+            else:
+                # Handle empty transcription
+                logger.bind(tag=TAG).info("Empty transcription received from ASR")
+                
+                # Track consecutive empty transcriptions
+                if not hasattr(conn, 'empty_transcription_count'):
+                    conn.empty_transcription_count = 0
+                conn.empty_transcription_count += 1
+                
+                # Notify user after multiple empty transcriptions
+                if conn.empty_transcription_count >=3:  # After 3 consecutive empty transcriptions
+                    logger.bind(tag=TAG).warning(f"Multiple empty transcriptions ({conn.empty_transcription_count}) - notifying user")
+                    await self.notify_user_empty_transcription(conn)
+                    conn.empty_transcription_count = 0  # Reset counter after notification
 
         except Exception as e:
             logger.bind(tag=TAG).error(f"Failed to handle voice stop: {e}")
@@ -295,6 +327,65 @@ class ASRProviderBase(ABC):
         except Exception as e:
             logger.bind(tag=TAG).error(f"WAV conversion failed: {e}")
             return b""
+
+    async def notify_user_audio_too_short(self, conn):
+        """Notify user when audio is consistently too short"""
+        try:
+            message = "I'm having trouble hearing you clearly. Please try speaking a bit longer - at least 1-2 seconds."
+            await self._send_direct_audio_message(conn, message)
+            logger.bind(tag=TAG).info("Sent audio length guidance to user")
+        except Exception as e:
+            logger.bind(tag=TAG).error(f"Failed to notify user about audio length: {e}")
+
+    async def notify_user_empty_transcription(self, conn):
+        """Notify user when transcriptions are consistently empty"""
+        try:
+            message = "I can't hear you clearly. Can you speak a bit louder or closer to the microphone?"
+            await self._send_direct_audio_message(conn, message)
+            logger.bind(tag=TAG).info("Sent empty transcription guidance to user")
+        except Exception as e:
+            logger.bind(tag=TAG).error(f"Failed to notify user about empty transcription: {e}")
+
+    async def _send_direct_audio_message(self, conn, message):
+        """Send message directly to TTS queue without LLM processing"""
+        import uuid
+        from core.providers.tts.dto.dto import TTSMessageDTO, SentenceType, ContentType
+        
+        # Generate a unique sentence ID for this message
+        sentence_id = str(uuid.uuid4().hex)
+        
+        # Send FIRST message to start the TTS session
+        conn.tts.tts_text_queue.put(
+            TTSMessageDTO(
+                sentence_id=sentence_id,
+                sentence_type=SentenceType.FIRST,
+                content_type=ContentType.ACTION,
+            )
+        )
+        
+        # Send the actual message content
+        conn.tts.tts_text_queue.put(
+            TTSMessageDTO(
+                sentence_id=sentence_id,
+                sentence_type=SentenceType.MIDDLE,
+                content_type=ContentType.TEXT,
+                content_detail=message,
+            )
+        )
+        
+        # Send LAST message to end the TTS session
+        conn.tts.tts_text_queue.put(
+            TTSMessageDTO(
+                sentence_id=sentence_id,
+                sentence_type=SentenceType.LAST,
+                content_type=ContentType.TEXT,
+                content_detail="",
+            )
+        )
+        
+        # Set flags to ensure proper session management
+        conn.llm_finish_task = True
+        conn.sentence_id = sentence_id
 
     def stop_ws_connection(self):
         pass
