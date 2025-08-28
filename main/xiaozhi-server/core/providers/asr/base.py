@@ -113,6 +113,10 @@ class ASRProviderBase(ABC):
             if len(asr_audio_task) > 20:  # Increased from 15 to 20 chunks (1.2 seconds)
                 logger.bind(tag=TAG).debug(f"Processing {len(asr_audio_task)} audio chunks")
                 await self.handle_voice_stop(conn, asr_audio_task)
+            else:
+                # Log when audio is rejected due to insufficient length
+                audio_duration_ms = len(asr_audio_task) * 60  # Approximately 60ms per chunk
+                logger.bind(tag=TAG).info(f"Audio rejected - insufficient length: {len(asr_audio_task)} chunks ({audio_duration_ms}ms), minimum required: 20 chunks (1200ms)")
 
     # Handle voice stop
     async def handle_voice_stop(self, conn, asr_audio_task: List[bytes]):
