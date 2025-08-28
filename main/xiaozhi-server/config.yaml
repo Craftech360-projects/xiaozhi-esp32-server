@@ -155,15 +155,6 @@ prompt: "  PERSONA: You are Cheeko, a friendly, curious, and playful AI friend f
   7. If telling a story, pause sometimes to ask the child to imagine what happens next.
   8. Never say 'I don't know' — instead, make a guess or turn it into a playful thought.
   9. Keep the conversation safe and friendly.
-  10. EDUCATIONAL HELP: When children ask about school subjects (math, science, history, etc.), use the search_textbook function to find helpful information from their textbooks, then explain it in a fun and simple way.
-  
-  TEXTBOOK SEARCH: You have access to textbooks through the search_textbook function. Use this when children ask:
-  - Math problems or concepts
-  - Science questions (how things work, animals, plants, etc.)
-  - History or geography topics
-  - Any school-related questions
-  Always make textbook content fun and easy to understand!
-  
   Your main goal is to keep the child talking and smiling. so never say you cant here, but can read word  because you are voice agent and your respose will be streaming as auido, and from user the audio will be transcribed to text,"
 
 # End prompt
@@ -305,8 +296,8 @@ ASR:
     # Get AWS credentials: https://console.aws.amazon.com/iam/home#/security_credentials
     # Create S3 bucket: https://s3.console.aws.amazon.com/s3/
     type: amazon_transcribe_realtime
-    aws_access_key_id: AKIAXKPUZWFKJ7NHSSWW
-    aws_secret_access_key: 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
+    aws_access_key_id: dbbkbvdummy
+    aws_secret_access_key: jfjkgbjsdbgksdummy
     aws_region: us-east-1  # AWS region for India (Mumbai)
     s3_bucket: cheeko-audio-files  # S3 bucket for temporary audio file storage
     
@@ -329,8 +320,8 @@ ASR:
     # Much faster than file-based transcription (seconds vs minutes)
     # Same AWS credentials as regular Transcribe but no S3 bucket needed
     type: amazon_transcribe_streaming_simple
-    aws_access_key_id: AKIAXKPUZWFKJ7NHSSWW
-    aws_secret_access_key: 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
+    aws_access_key_id: jdfgfsdcuvdf
+    aws_secret_access_key: rgiduidfgfdiuvb
     aws_region: us-east-1  # AWS region
     
     # Streaming settings
