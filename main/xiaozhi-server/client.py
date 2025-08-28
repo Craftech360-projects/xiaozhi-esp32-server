@@ -758,8 +758,8 @@ class TestClient:
 
 if __name__ == "__main__":
     # You can control sequence logging from here
-    print(f"🔢 Sequence logging: {'ENABLED' if ENABLE_SEQUENCE_LOGGING else 'DISABLED'}")
-    print(f"📊 Log frequency: Every {LOG_SEQUENCE_EVERY_N_PACKETS} packets")
+    print(f"Sequence logging: {'ENABLED' if ENABLE_SEQUENCE_LOGGING else 'DISABLED'}")
+    print(f"Log frequency: Every {LOG_SEQUENCE_EVERY_N_PACKETS} packets")
     
     client = TestClient()
     try:

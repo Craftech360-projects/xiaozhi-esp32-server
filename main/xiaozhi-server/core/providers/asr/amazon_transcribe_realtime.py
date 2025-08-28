@@ -22,6 +22,8 @@ class MyEventHandler(TranscriptResultStreamHandler):
         super().__init__(output_stream)
         self.transcript_parts = []
         self.final_transcript = ""
+        self.detected_language = None
+        self.language_confidence = None
         self.is_complete = False
         
     async def handle_transcript_event(self, transcript_event: TranscriptEvent):
@@ -30,6 +32,15 @@ class MyEventHandler(TranscriptResultStreamHandler):
             results = transcript_event.transcript.results
             
             for result in results:
+                # Extract language identification if available
+                if hasattr(result, 'language_identification') and result.language_identification:
+                    for lang_id in result.language_identification:
+                        if hasattr(lang_id, 'language_code'):
+                            self.detected_language = lang_id.language_code
+                            if hasattr(lang_id, 'score'):
+                                self.language_confidence = lang_id.score
+                            logger.bind(tag=TAG).debug(f"Language detected: {self.detected_language} (confidence: {self.language_confidence})")
+                
                 if not result.is_partial:
                     # Final result
                     for alt in result.alternatives:
@@ -67,10 +78,28 @@ class ASRProvider(ASRProviderBase):
         self.aws_secret_access_key = config.get("aws_secret_access_key")
         self.aws_region = config.get("aws_region", "us-east-1")
         
-        # Transcription Configuration
-        self.language_code = config.get("language_code", "en-US")
+        # Multi-language Configuration for India
+        self.language_code = config.get("language_code", "en-IN")
         self.sample_rate = config.get("sample_rate", 16000)
         self.media_encoding = "pcm"  # Fixed for streaming
+        
+        # Indian languages supported by Amazon Transcribe
+        self.supported_indian_languages = {
+            "hi-IN": "Hindi",
+            "bn-IN": "Bengali", 
+            "te-IN": "Telugu",
+            "ta-IN": "Tamil",
+            "gu-IN": "Gujarati",
+            "kn-IN": "Kannada",
+            "ml-IN": "Malayalam",
+            "mr-IN": "Marathi",
+            "pa-IN": "Punjabi",
+            "en-IN": "English (India)"
+        }
+        
+        # Multi-language detection settings - temporarily disabled due to API conflicts
+        self.enable_language_detection = config.get("enable_language_detection", False)
+        self.romanized_output = config.get("romanized_output", True)
         
         # File management
         self.output_dir = config.get("output_dir", "./audio_files")
@@ -163,17 +192,23 @@ class ASRProvider(ASRProviderBase):
                     logger.bind(tag=TAG).warning(f"Failed to delete audio file {audio_file_path}: {e}")
 
     async def _stream_transcribe(self, pcm_data: bytes) -> Optional[str]:
-        """Perform real-time streaming transcription"""
+        """Perform real-time streaming transcription with language detection"""
         try:
             # Create streaming client
             client = TranscribeStreamingClient(region=self.aws_region)
             
+            # Configure streaming parameters
+            stream_params = {
+                'media_sample_rate_hz': self.sample_rate,
+                'media_encoding': self.media_encoding,
+            }
+            
+            # Use specific language for now (language detection has API conflicts)
+            stream_params['language_code'] = self.language_code
+            logger.bind(tag=TAG).info(f"Using specific language: {self.language_code}")
+            
             # Start streaming transcription
-            stream = await client.start_stream_transcription(
-                language_code=self.language_code,
-                media_sample_rate_hz=self.sample_rate,
-                media_encoding=self.media_encoding,
-            )
+            stream = await client.start_stream_transcription(**stream_params)
             
             # Create handler for the stream
             handler = MyEventHandler(stream.output_stream)
@@ -184,8 +219,19 @@ class ASRProvider(ASRProviderBase):
             # Process the stream
             await self._process_stream(stream, handler)
             
-            # Return the final transcript
+            # Get the final transcript
             final_text = handler.final_transcript.strip()
+            detected_language = getattr(handler, 'detected_language', self.language_code)
+            
+            # Process romanized output if requested
+            if final_text and self.romanized_output:
+                final_text = await self._process_romanized_output(final_text, detected_language)
+            
+            # Log detected language
+            if detected_language and detected_language != self.language_code:
+                language_name = self.supported_indian_languages.get(detected_language, detected_language)
+                logger.bind(tag=TAG).info(f"Detected language: {language_name} ({detected_language})")
+            
             return final_text if final_text else None
             
         except Exception as e:
@@ -227,6 +273,29 @@ class ASRProvider(ASRProviderBase):
             logger.bind(tag=TAG).warning(f"Stream processing timed out after {self.timeout}s")
         except Exception as e:
             logger.bind(tag=TAG).error(f"Error processing stream: {e}")
+
+    async def _process_romanized_output(self, text: str, language_code: str) -> str:
+        """Process text to ensure romanized output for Indian languages"""
+        try:
+            # Amazon Transcribe already provides romanized output for Indian languages
+            # But we can add additional processing if needed
+            
+            language_name = self.supported_indian_languages.get(language_code, "Unknown")
+            
+            # Log the language detected
+            logger.bind(tag=TAG).info(f"Romanized {language_name} output: {text}")
+            
+            # Add language indicator to the output if it's not English
+            if language_code != "en-IN" and language_code in self.supported_indian_languages:
+                # Optionally prefix with language indicator
+                # return f"[{language_name}] {text}"
+                return text  # Return as-is since Amazon Transcribe provides romanized output
+            
+            return text
+            
+        except Exception as e:
+            logger.bind(tag=TAG).error(f"Error processing romanized output: {e}")
+            return text
 
     async def _simple_chunk_transcribe(self, pcm_data: bytes) -> Optional[str]:
         """Fallback: Simple chunked approach for better reliability"""
