@@ -1273,6 +1273,10 @@ class ConnectionHandler:
         # Pre-buffer to store audio chunks before voice detection
         # This helps capture the beginning of speech that might be missed
         self.audio_pre_buffer = deque(maxlen=10)  # Store last 10 chunks (600ms) before voice detection
+        
+        # Audio recording timeout tracking
+        self.audio_recording_start_time = None  # When voice recording started
+        self.max_audio_recording_seconds = 10  # Maximum recording duration in seconds
 
         # LLM related variables
         self.llm_finish_task = True

@@ -91,11 +91,24 @@ class ASRProviderBase(ABC):
             # Add pre-buffered audio to the beginning of ASR audio
             conn.asr_audio = list(conn.audio_pre_buffer) + conn.asr_audio
             conn.audio_pre_buffer.clear()
+            # Mark the start of audio recording
+            conn.audio_recording_start_time = time.time()
         
         conn.asr_audio.append(audio)
         if not have_voice and not conn.client_have_voice:
             conn.asr_audio = conn.asr_audio[-10:]
             return
+        
+        # Check for maximum recording time limit (10 seconds)
+        # Check if we're actively recording (have audio in buffer) and exceed time limit
+        if (conn.audio_recording_start_time is not None 
+            and len(conn.asr_audio) > 0
+            and time.time() - conn.audio_recording_start_time >= conn.max_audio_recording_seconds):
+            logger.bind(tag=TAG).info(f"Audio recording exceeded maximum time limit of {conn.max_audio_recording_seconds} seconds, forcing stop")
+            # Force voice stop by setting client_voice_stop to True
+            conn.client_voice_stop = True
+            # Reset the recording start time
+            conn.audio_recording_start_time = None
 
         if conn.client_voice_stop:
             # Check if we just started listening - if so, skip this audio
@@ -104,11 +117,15 @@ class ASRProviderBase(ABC):
                 conn.just_started_listening = False
                 conn.asr_audio.clear()
                 conn.reset_vad_states()
+                # Reset audio recording timeout tracking
+                conn.audio_recording_start_time = None
                 return
                 
             asr_audio_task = conn.asr_audio.copy()
             conn.asr_audio.clear()
             conn.reset_vad_states()
+            # Reset audio recording timeout tracking
+            conn.audio_recording_start_time = None
 
             if len(asr_audio_task) > 20:  # Increased from 15 to 20 chunks (1.2 seconds)
                 logger.bind(tag=TAG).debug(f"Processing {len(asr_audio_task)} audio chunks")
