@@ -180,7 +180,7 @@ selected_module:
   # Automatic Speech Recognition module
   # FunASR: Multilingual (Chinese/English) - good general purpose
   # SherpaZipformerGigaspeechEN: English-only (RECOMMENDED for kids/English-only bots)
-  ASR: FunASR
+  ASR: AmazonTranscribeStreaming
   # Will call actual LLM adapter based on configuration name's type
   LLM: GroqLLM
   # Vision Language Large Model
@@ -298,6 +298,50 @@ ASR:
     output_dir: tmp/
    
     timeout: 60
+  
+  AmazonTranscribeASR:
+    # Amazon Transcribe Speech-to-Text Service
+    # AWS credentials and S3 bucket are required
+    # Get AWS credentials: https://console.aws.amazon.com/iam/home#/security_credentials
+    # Create S3 bucket: https://s3.console.aws.amazon.com/s3/
+    type: amazon_transcribe_realtime
+    aws_access_key_id: AKIAXKPUZWFKJ7NHSSWW
+    aws_secret_access_key: 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
+    aws_region: us-east-1  # AWS region for India (Mumbai)
+    s3_bucket: cheeko-audio-files  # S3 bucket for temporary audio file storage
+    
+    # Transcription settings
+    language_code: en-IN  # Language code for Indian English
+    sample_rate: 16000   # Audio sample rate (8000-48000)
+    media_format: wav    # Media format (wav, mp3, mp4, etc.)
+    
+    # Optional: Custom vocabulary and filters
+    # vocabulary_name: your-custom-vocabulary-name
+    # vocabulary_filter_name: your-vocabulary-filter-name
+    
+    # File management
+    output_dir: tmp/
+    s3_key_prefix: xiaozhi-audio/  # S3 key prefix for organized storage
+    timeout: 60  # Timeout in seconds for transcription job completion
+    
+  AmazonTranscribeStreaming:
+    # Amazon Transcribe Streaming - Real-time speech recognition
+    # Much faster than file-based transcription (seconds vs minutes)
+    # Same AWS credentials as regular Transcribe but no S3 bucket needed
+    type: amazon_transcribe_streaming_simple
+    aws_access_key_id: AKIAXKPUZWFKJ7NHSSWW
+    aws_secret_access_key: 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
+    aws_region: us-east-1  # AWS region
+    
+    # Streaming settings
+    language_code: en-IN  # Language code for Indian English
+    sample_rate: 16000   # Audio sample rate (8000, 16000, 22050, 44100, 48000)
+    media_encoding: pcm  # Audio encoding (pcm, ogg-opus, flac)
+    
+    # File management
+    output_dir: tmp/
+    timeout: 30  # Timeout in seconds for streaming transcription (much faster!)
+    
   FunASR:
     type: fun_local
     model_dir: models/SenseVoiceSmall
