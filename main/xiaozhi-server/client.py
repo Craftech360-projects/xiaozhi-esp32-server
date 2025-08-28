@@ -19,9 +19,9 @@ import opuslib
 
 # --- Configuration ---
 
-SERVER_IP = "192.168.1.2" # !!! UPDATE with your server's local IP address !!!
+SERVER_IP = "192.168.1.179" # !!! UPDATE with your server's local IP address !!!
 OTA_PORT = 8003
-MQTT_BROKER_HOST = "192.168.1.2"  # MQTT gateway IP
+MQTT_BROKER_HOST = "192.168.1.179"  # MQTT gateway IP
 
 
 MQTT_BROKER_PORT = 1883
@@ -59,7 +59,7 @@ def generate_mqtt_credentials(device_mac: str) -> Dict[str, str]:
     client_id = f"GID_test@@@{device_mac}@@@{uuid.uuid4()}"
     
     # Create username (base64 encoded JSON)
-    username_data = {"ip": "192.168.1.20"}  # Placeholder IP
+    username_data = {"ip": "192.168.1.1790"}  # Placeholder IP
     username = base64.b64encode(json.dumps(username_data).encode()).decode()
     
     # Create password (HMAC-SHA256) - must match gateway's logic

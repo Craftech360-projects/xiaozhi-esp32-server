@@ -91,6 +91,12 @@ async def send_tts_message(conn, state, text=None):
 
     # Send message to client
     await conn.websocket.send(json.dumps(message))
+    # await conn.websocket.send(json.dumps({
+    #     "type": "tts",
+    #     "state": "stop",
+    #     "session_id": conn.session_id
+    # }))
+
 
 
 async def send_stt_message(conn, text):
