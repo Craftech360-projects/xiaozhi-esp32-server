@@ -280,6 +280,9 @@ class VADProvider(VADProviderBase):
             True if voice activity is detected, False otherwise
         """
         try:
+            # Skip VAD processing if disabled for audio playback
+            if hasattr(self, 'vad_disabled_for_playback') and self.vad_disabled_for_playback:
+                return False  # Always return False during audio playback
             # Decode Opus packet to PCM
             pcm_frame = self.decoder.decode(opus_packet, 960)
             
@@ -289,10 +292,29 @@ class VADProvider(VADProviderBase):
             # Log VAD state for debugging (only log state changes)
             if not hasattr(self, '_last_logged_state') or self._last_logged_state != vad_state:
                 logger.bind(tag=TAG).info(f"VAD state: {vad_state.name}")
+                
+                # Start audio recording timer when first transitioning to SPEAKING (only if not already started)
+                if (vad_state == VADState.SPEAKING 
+                    and (not hasattr(conn, 'audio_recording_start_time') or conn.audio_recording_start_time is None)):
+                    conn.audio_recording_start_time = time.time()
+                    logger.bind(tag=TAG).info(f"Audio recording timer started - max duration: {conn.max_audio_recording_seconds}s")
+                
+                # Don't reset timer on brief QUIET transitions - only reset when session truly ends
+                
                 self._last_logged_state = vad_state
             
             # Update connection state based on VAD state
             current_have_voice = vad_state in [VADState.SPEAKING, VADState.STARTING]
+            
+            # Check for maximum recording time limit (10 seconds) during SPEAKING state
+            if (vad_state == VADState.SPEAKING and hasattr(conn, 'audio_recording_start_time') 
+                and conn.audio_recording_start_time is not None
+                and time.time() - conn.audio_recording_start_time >= conn.max_audio_recording_seconds):
+                logger.bind(tag=TAG).info(f"Audio recording exceeded maximum time limit of {conn.max_audio_recording_seconds} seconds, forcing stop")
+                # Force voice stop by setting client_voice_stop to True
+                conn.client_voice_stop = True
+                # Reset the recording start time
+                conn.audio_recording_start_time = None
             
             # Handle silence detection for sentence end
             if conn.client_have_voice and not current_have_voice:
@@ -301,6 +323,9 @@ class VADProvider(VADProviderBase):
                     if stop_duration >= self.silence_threshold_ms:
                         conn.client_voice_stop = True
                         logger.bind(tag=TAG).info(f"Voice stopped after {stop_duration}ms silence")
+                        # Reset audio recording timer when silence triggers ASR processing
+                        if hasattr(conn, 'audio_recording_start_time'):
+                            conn.audio_recording_start_time = None
                         
             if current_have_voice:
                 conn.client_have_voice = True

@@ -15,7 +15,7 @@ logger = setup_logging()
 class TTSProvider(TTSProviderBase):
     def __init__(self, config, delete_audio_file):
         super().__init__(config, delete_audio_file)
-        self.url = config.get("url", "ws://192.168.1.10:8092/paddlespeech/tts/streaming")
+        self.url = config.get("url", "ws://192.168.1.20:8092/paddlespeech/tts/streaming")
         self.protocol = config.get("protocol", "websocket")
         self.spk_id = config.get("spk_id", 0)
         self.sample_rate = config.get("sample_rate", 24000)

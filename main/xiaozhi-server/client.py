@@ -19,9 +19,9 @@ import opuslib
 
 # --- Configuration ---
 
-SERVER_IP = "192.168.1.107" # !!! UPDATE with your server's local IP address !!!
-OTA_PORT = 8002
-MQTT_BROKER_HOST = "192.168.1.107"  # MQTT gateway IP
+SERVER_IP = "192.168.1.111" # !!! UPDATE with your server's local IP address !!!
+OTA_PORT = 8003
+MQTT_BROKER_HOST = "192.168.1.111"  # MQTT gateway IP
 
 
 MQTT_BROKER_PORT = 1883
@@ -59,7 +59,7 @@ def generate_mqtt_credentials(device_mac: str) -> Dict[str, str]:
     client_id = f"GID_test@@@{device_mac}@@@{uuid.uuid4()}"
     
     # Create username (base64 encoded JSON)
-    username_data = {"ip": "192.168.1.10"}  # Placeholder IP
+    username_data = {"ip": "192.168.1.1790"}  # Placeholder IP
     username = base64.b64encode(json.dumps(username_data).encode()).decode()
     
     # Create password (HMAC-SHA256) - must match gateway's logic
@@ -403,10 +403,6 @@ class TestClient:
         mqtt_broker = mqtt_config.get("broker", MQTT_BROKER_HOST)
         mqtt_port = mqtt_config.get("port", MQTT_BROKER_PORT)
         
-        logger.info(f"📍 MQTT Config from OTA: {mqtt_config}")
-        logger.info(f"📍 Using MQTT Broker: {mqtt_broker}")
-        logger.info(f"📍 Using MQTT Port: {mqtt_port}")
-        logger.info(f"📍 MQTT Credentials: client_id={self.mqtt_credentials.get('client_id', 'NOT SET')}")
         logger.info(f"▶️ STEP 2: Connecting to MQTT Gateway at {mqtt_broker}:{mqtt_port}...")
         
         self.mqtt_client = mqtt_client.Client(
@@ -421,29 +417,16 @@ class TestClient:
         )
         
         try:
-            logger.info(f"🔄 Attempting connection to MQTT broker...")
-            logger.info(f"   Host: {mqtt_broker}")
-            logger.info(f"   Port: {mqtt_port}")
-            logger.info(f"   Client ID: {self.mqtt_credentials['client_id']}")
-            logger.info(f"   Username: {self.mqtt_credentials['username']}")
-            
+            logger.info(f"🔄 Connecting to {mqtt_broker}:{mqtt_port}...")
             self.mqtt_client.connect(mqtt_broker, mqtt_port, 60)
             self.mqtt_client.loop_start()
             
             # Wait a moment for connection to establish
             time.sleep(2)
             
-            # Check if connected
-            if self.mqtt_client.is_connected():
-                logger.info("✅ MQTT client is connected!")
-            else:
-                logger.warning("⚠️ MQTT client connection status unknown, waiting...")
-            
             return True
         except Exception as e:
             logger.error(f"❌ Failed to connect to MQTT Gateway: {e}")
-            logger.error(f"   Error type: {type(e).__name__}")
-            logger.error(f"   Broker: {mqtt_broker}:{mqtt_port}")
             return False
 
     def send_hello_and_get_session(self) -> bool:
@@ -775,8 +758,8 @@ class TestClient:
 
 if __name__ == "__main__":
     # You can control sequence logging from here
-    print(f"🔢 Sequence logging: {'ENABLED' if ENABLE_SEQUENCE_LOGGING else 'DISABLED'}")
-    print(f"📊 Log frequency: Every {LOG_SEQUENCE_EVERY_N_PACKETS} packets")
+    print(f"Sequence logging: {'ENABLED' if ENABLE_SEQUENCE_LOGGING else 'DISABLED'}")
+    print(f"Log frequency: Every {LOG_SEQUENCE_EVERY_N_PACKETS} packets")
     
     client = TestClient()
     try:

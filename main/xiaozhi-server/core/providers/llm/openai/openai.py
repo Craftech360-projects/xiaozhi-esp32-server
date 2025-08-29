@@ -1,5 +1,6 @@
 import httpx
 import openai
+import time
 from openai.types import CompletionUsage
 from config.logger import setup_logging
 from core.utils.util import check_model_key
@@ -15,6 +16,10 @@ class LLMProvider(LLMProviderBase):
     def __init__(self, config):
         self.model_name = config.get("model_name")
         self.api_key = config.get("api_key")
+        # Add debug logging to track which LLM instance is created
+        base_url = config.get("base_url", config.get("url", "unknown"))
+        key_preview = self.api_key[:20] + "..." if self.api_key and len(self.api_key) > 20 else self.api_key
+        logger.bind(tag=TAG).info(f"🤖 [LLM] Creating LLM instance: model={self.model_name}, base_url={base_url}, api_key={key_preview}")
         if "base_url" in config:
             self.base_url = config.get("base_url")
         else:
@@ -22,6 +27,12 @@ class LLMProvider(LLMProviderBase):
         # Add timeout configuration item, unit is seconds
         timeout = config.get("timeout", 300)
         self.timeout = int(timeout) if timeout else 300
+        
+        # Add retry configuration
+        max_retries = config.get("max_retries", 2)
+        self.max_retries = int(max_retries) if max_retries else 2
+        retry_delay = config.get("retry_delay", 1)
+        self.retry_delay = float(retry_delay) if retry_delay else 1.0
 
 
         param_defaults = {
@@ -52,57 +63,82 @@ class LLMProvider(LLMProviderBase):
         model_key_msg = check_model_key("LLM", self.api_key)
         if model_key_msg:
             logger.bind(tag=TAG).error(model_key_msg)
-        self.client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url, timeout=httpx.Timeout(self.timeout))
+        self.client = openai.OpenAI(
+            api_key=self.api_key, 
+            base_url=self.base_url, 
+            timeout=httpx.Timeout(self.timeout),
+            max_retries=self.max_retries
+        )
 
+    def _get_child_friendly_fallback(self, error):
+        """Generate simple child-friendly fallback message"""
+        return "I'm having a little trouble right now. Let's try talking again after some time!"
 
     def response(self, session_id, dialogue, **kwargs):
-        try:
-            responses = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=dialogue,
-                stream=True,
-                max_tokens=kwargs.get("max_tokens", self.max_tokens),
-                temperature=kwargs.get("temperature", self.temperature),
-                top_p=kwargs.get("top_p", self.top_p),
-                frequency_penalty=kwargs.get(
-                    "frequency_penalty", self.frequency_penalty
-                ),
-            )
+        # Retry logic for API calls
+        for attempt in range(self.max_retries):
+            try:
+                logger.bind(tag=TAG).info(f"🚀 [LLM] Using {self.base_url} with model {self.model_name} (attempt {attempt + 1}/{self.max_retries})")
+                
+                responses = self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=dialogue,
+                    stream=True,
+                    max_tokens=kwargs.get("max_tokens", self.max_tokens),
+                    temperature=kwargs.get("temperature", self.temperature),
+                    top_p=kwargs.get("top_p", self.top_p),
+                    frequency_penalty=kwargs.get(
+                        "frequency_penalty", self.frequency_penalty
+                    ),
+                )
 
-
-            is_active = True
-            for chunk in responses:
-                try:
-                    # Check if valid choice exists and content is not empty
-                    delta = (
-                        chunk.choices[0].delta
-                        if getattr(chunk, "choices", None)
-                        else None
-                    )
-                    content = delta.content if hasattr(delta, "content") else ""
-                except IndexError:
-                    content = ""
-                if content:
-                    # Handle case where tags span multiple chunks
-                    if "<think>" in content:
-                        is_active = False
-                        content = content.split("<think>")[0]
-                    if "</think>" in content:
-                        is_active = True
-                        content = content.split("</think>")[-1]
-                    if is_active:
-                        yield content
-
-
-        except Exception as e:
-            logger.bind(tag=TAG).error(f"Error in response generation: {e}")
-            # Ensure the error message is properly encoded
-            error_msg = str(e).encode('utf-8', errors='ignore').decode('utf-8')
-            yield f"[OpenAI Service Response Exception: {error_msg}]"
+                is_active = True
+                for chunk in responses:
+                    try:
+                        # Check if valid choice exists and content is not empty
+                        delta = (
+                            chunk.choices[0].delta
+                            if getattr(chunk, "choices", None)
+                            else None
+                        )
+                        content = delta.content if hasattr(delta, "content") else ""
+                    except IndexError:
+                        content = ""
+                    if content:
+                        # Handle case where tags span multiple chunks
+                        if "<think>" in content:
+                            is_active = False
+                            content = content.split("<think>")[0]
+                        if "</think>" in content:
+                            is_active = True
+                            content = content.split("</think>")[-1]
+                        if is_active:
+                            yield content
+                # If we get here, the request was successful, so break out of retry loop
+                break
+                
+            except Exception as e:
+                logger.bind(tag=TAG).warning(f"LLM request attempt {attempt + 1} failed: {e}")
+                
+                # If this was the last attempt, provide child-friendly fallback
+                if attempt == self.max_retries - 1:
+                    logger.bind(tag=TAG).error(f"All {self.max_retries} LLM attempts failed: {e}")
+                    
+                    # Generate child-friendly fallback message based on error type
+                    fallback_message = self._get_child_friendly_fallback(e)
+                    logger.bind(tag=TAG).info(f"Using fallback message for children: {fallback_message}")
+                    
+                    yield fallback_message
+                    return
+                
+                # Wait before retrying
+                logger.bind(tag=TAG).info(f"Retrying in {self.retry_delay} seconds...")
+                time.sleep(self.retry_delay)
 
 
     def response_with_functions(self, session_id, dialogue, functions=None):
         try:
+            logger.bind(tag=TAG).info(f"🔧 [LLM-FUNCTIONS] Using {self.base_url} with model {self.model_name}")
             stream = self.client.chat.completions.create(
                 model=self.model_name, messages=dialogue, stream=True, tools=functions
             )

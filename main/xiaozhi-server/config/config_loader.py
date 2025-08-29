@@ -66,31 +66,15 @@ def get_config_from_api(config):
         "secret": config["manager-api"].get("secret", ""),
     }
 
-    # Merge local server configuration with API configuration
-    # Local config takes priority for network settings, but preserve API settings for other fields
+    # Use local server configuration as priority
     if config.get("server"):
-        # Start with API server config if it exists
-        server_config = config_data.get("server", {})
-        
-        # Override only specific local settings
-        server_config.update({
-            "ip": config["server"].get("ip", "0.0.0.0"),
-            "port": config["server"].get("port", 8000),
-            "http_port": config["server"].get("http_port", 8003),
+        config_data["server"] = {
+            "ip": config["server"].get("ip", ""),
+            "port": config["server"].get("port", ""),
+            "http_port": config["server"].get("http_port", ""),
             "vision_explain": config["server"].get("vision_explain", ""),
-        })
-        
-        # Preserve auth_key from API if not in local config
-        if config["server"].get("auth_key"):
-            server_config["auth_key"] = config["server"]["auth_key"]
-        elif "auth_key" not in server_config:
-            server_config["auth_key"] = ""
-            
-        # Add mqtt_gateway if present in local config
-        if "mqtt_gateway" in config["server"]:
-            server_config["mqtt_gateway"] = config["server"]["mqtt_gateway"]
-            
-        config_data["server"] = server_config
+            "auth_key": config["server"].get("auth_key", ""),
+        }
 
     print("FINAL MERGED CONFIGURATION:")
     print("=" * 80)

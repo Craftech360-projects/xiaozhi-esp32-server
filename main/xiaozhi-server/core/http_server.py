@@ -3,6 +3,7 @@ from aiohttp import web
 from config.logger import setup_logging
 from core.api.ota_handler import OTAHandler
 from core.api.vision_handler import VisionHandler
+from core.api.cdn_handler import CDNHandler
 
 TAG = __name__
 
@@ -13,6 +14,7 @@ class SimpleHttpServer:
         self.logger = setup_logging()
         self.ota_handler = OTAHandler(config)
         self.vision_handler = VisionHandler(config)
+        self.cdn_handler = CDNHandler(config)
 
     def _get_websocket_url(self, local_ip: str, port: int) -> str:
         """Get websocket address
@@ -67,6 +69,19 @@ class SimpleHttpServer:
                              self.vision_handler.handle_post),
                     web.options("/mcp/vision/explain",
                                 self.vision_handler.handle_post),
+                ])
+
+                # Add CDN routes
+                self.logger.bind(tag=TAG).info("Adding CDN routes")
+                app.add_routes([
+                    web.get("/xiaozhi/cdn/status",
+                            self.cdn_handler.handle_get),
+                    web.post("/xiaozhi/cdn/url",
+                             self.cdn_handler.handle_post),
+                    web.options("/xiaozhi/cdn/status",
+                                self.cdn_handler.handle_options),
+                    web.options("/xiaozhi/cdn/url",
+                                self.cdn_handler.handle_options),
                 ])
 
                 # Run service

@@ -46,6 +46,9 @@ class VADProvider(VADProviderBase):
         
     def is_vad(self, conn, opus_packet):
         try:
+            # Skip VAD processing if disabled for audio playback
+            if hasattr(self, 'vad_disabled_for_playback') and self.vad_disabled_for_playback:
+                return False  # Always return False during audio playback
             pcm_frame = self.decoder.decode(opus_packet, 960)
             conn.client_audio_buffer.extend(
                 pcm_frame)  # Add new data to buffer
