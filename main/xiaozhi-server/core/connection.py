@@ -1309,6 +1309,45 @@ class ConnectionHandler:
         # Initialize prompt manager
         self.prompt_manager = PromptManager(config, self.logger)
 
+        # OpenAI Realtime API integration
+        self.realtime_handler = None
+        self.use_realtime_api = False
+        self._initialize_realtime_api()
+
+    def _initialize_realtime_api(self):
+        """Initialize OpenAI Realtime API if configured"""
+        try:
+            # Debug: Log LLM instance type
+            self.logger.bind(tag=TAG).info(f"🔍 LLM instance type: {type(self.llm)}")
+            self.logger.bind(tag=TAG).info(f"🔍 LLM instance: {self.llm}")
+            
+            # Check if we're using OpenAI Realtime provider
+            from core.providers.llm.openai_realtime.openai_realtime import OpenAIRealtimeProvider
+            
+            if isinstance(self.llm, OpenAIRealtimeProvider):
+                self.use_realtime_api = True
+                
+                # Import and initialize the Realtime handler
+                from core.handle.realtimeHandle import RealtimeHandler
+                self.realtime_handler = RealtimeHandler(
+                    config=self.config,
+                    websocket=self.websocket,
+                    device_id=self.device_id,
+                    session_id=self.session_id,
+                    connection=self  # Pass connection reference for state management
+                )
+                
+                self.logger.bind(tag=TAG).info("✅ OpenAI Realtime API mode enabled")
+            else:
+                self.use_realtime_api = False
+                self.logger.bind(tag=TAG).info(f"🔄 Using traditional ASR->LLM->TTS pipeline (LLM type: {type(self.llm).__name__})")
+                
+        except Exception as e:
+            self.use_realtime_api = False
+            self.logger.bind(tag=TAG).error(f"❌ Failed to initialize Realtime API: {e}")
+            import traceback
+            self.logger.bind(tag=TAG).error(f"Traceback: {traceback.format_exc()}")
+
     async def handle_connection(self, ws):
         try:
             # Get and validate headers
@@ -1350,6 +1389,12 @@ class ConnectionHandler:
             # Authentication passed, continue processing
             self.websocket = ws
             self.device_id = self.headers.get("device-id", None)
+
+            # Initialize OpenAI Realtime API if enabled
+            if self.use_realtime_api and self.realtime_handler:
+                self.realtime_handler.websocket = ws
+                self.realtime_handler.device_id = self.device_id
+                await self.realtime_handler.start()
 
             # Initialize activity timestamp
             self.last_activity_time = time.time() * 1000
@@ -1457,6 +1502,12 @@ class ConnectionHandler:
         if isinstance(message, str):
             await handleTextMessage(self, message)
         elif isinstance(message, bytes):
+            # Route audio through OpenAI Realtime API if enabled
+            if self.use_realtime_api and self.realtime_handler:
+                await self.realtime_handler.handle_audio_input(message)
+                return
+                
+            # Traditional pipeline processing
             if self.vad is None:
                 return
             if self.asr is None:
@@ -2197,6 +2248,15 @@ class ConnectionHandler:
                 except Exception as cleanup_error:
                     self.logger.bind(tag=TAG).error(
                         f"Error cleaning up tool handler: {cleanup_error}"
+                    )
+
+            # Clean up OpenAI Realtime API handler
+            if self.use_realtime_api and self.realtime_handler:
+                try:
+                    await self.realtime_handler.stop()
+                except Exception as cleanup_error:
+                    self.logger.bind(tag=TAG).error(
+                        f"Error cleaning up Realtime API handler: {cleanup_error}"
                     )
 
             # Trigger the stop event

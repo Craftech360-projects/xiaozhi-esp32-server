@@ -80,12 +80,22 @@ async def handleTextMessage(conn, message):
                         conn.just_woken_up = True
                         # Report plain text data (reuse ASR reporting function, but provide no audio data)
                         enqueue_asr_report(conn, "Hey, hello there", [])
-                        await startToChat(conn, "Hey, hello there")
+                        # Check if Realtime API is enabled and available
+                        if hasattr(conn, 'use_realtime_api') and conn.use_realtime_api and hasattr(conn, 'realtime_handler') and conn.realtime_handler:
+                            # Route text through Realtime API
+                            await conn.realtime_handler.handle_text_input("Hey, hello there")
+                        else:
+                            await startToChat(conn, "Hey, hello there")
                     else:
                         # Report plain text data (reuse ASR reporting function, but provide no audio data)
                         enqueue_asr_report(conn, original_text, [])
-                        # Otherwise, need LLM to respond to text content
-                        await startToChat(conn, original_text)
+                        # Check if Realtime API is enabled and available
+                        if hasattr(conn, 'use_realtime_api') and conn.use_realtime_api and hasattr(conn, 'realtime_handler') and conn.realtime_handler:
+                            # Route text through Realtime API
+                            await conn.realtime_handler.handle_text_input(original_text)
+                        else:
+                            # Otherwise, need LLM to respond to text content
+                            await startToChat(conn, original_text)
         elif msg_json["type"] == "iot":
             conn.logger.bind(tag=TAG).info(f"Received iot message: {message}")
             if "descriptors" in msg_json:

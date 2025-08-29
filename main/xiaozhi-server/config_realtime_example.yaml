@@ -1,0 +1,67 @@
+# OpenAI Realtime API Configuration Example
+# Add this to your config.yaml or data/.config.yaml file
+
+# OpenAI Realtime API settings
+openai_realtime:
+  # Enable/disable OpenAI Realtime API
+  enabled: true
+  
+  # OpenAI API key (required)
+  api_key: "your-openai-api-key-here"
+  
+  # Model to use (default: gpt-4o-realtime-preview)
+  model: "gpt-4o-realtime-preview"
+  
+  # Voice settings
+  voice: "alloy"  # Options: alloy, echo, fable, onyx, nova, shimmer
+  
+  # Session configuration
+  session:
+    # Instructions for the AI assistant
+    instructions: "You are a helpful AI assistant integrated with a smart speaker. Respond naturally and conversationally. Keep responses concise but friendly."
+    
+    # Temperature for response generation (0.0 to 1.0)
+    temperature: 0.8
+    
+    # Maximum tokens in response
+    max_response_output_tokens: 2048
+    
+    # Voice Activity Detection settings
+    vad:
+      # VAD threshold (0.0 to 1.0, higher = more sensitive)
+      threshold: 0.5
+      
+      # Padding before speech detection (milliseconds)
+      prefix_padding_ms: 300
+      
+      # Silence duration to end speech (milliseconds)
+      silence_duration_ms: 500
+    
+    # Function calling support (if you want to enable tools)
+    enable_functions: true
+
+# When using Realtime API, these traditional components are bypassed
+# But you can still configure fallback behavior
+realtime_fallback:
+  # Use traditional pipeline if Realtime API fails
+  use_fallback: true
+  
+  # Components to use in fallback mode
+  fallback_asr: "openai"
+  fallback_llm: "openai"  
+  fallback_tts: "edge"
+
+# Audio processing settings for Realtime API
+audio:
+  # Buffer size for audio processing
+  buffer_size: 4096
+  
+  # Audio chunk size for streaming
+  chunk_size: 1024
+  
+  # Timeout for audio operations (seconds)
+  timeout: 5
+
+# Example complete configuration structure:
+# Copy the openai_realtime section above into your main config.yaml
+# Make sure to set your actual OpenAI API key

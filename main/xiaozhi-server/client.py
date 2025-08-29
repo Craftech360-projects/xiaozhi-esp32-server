@@ -453,6 +453,8 @@ class TestClient:
                 udp_session_details = response
                 self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 self.udp_socket.settimeout(1.0)
+                # Set larger receive buffer for audio packets from Realtime API
+                self.udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 65536)  # 64KB buffer
                 ping_payload = f"ping:{udp_session_details['session_id']}".encode()
                 encrypted_ping = self.encrypt_packet(ping_payload)
                 server_udp_addr = (udp_session_details['udp']['server'], udp_session_details['udp']['port'])
@@ -540,7 +542,7 @@ class TestClient:
         
         while not stop_threads.is_set() and self.session_active:
             try:
-                data, addr = self.udp_socket.recvfrom(4096)
+                data, addr = self.udp_socket.recvfrom(65536)  # Increased buffer for large audio packets
                 if data and len(data) > 16:
                     header, encrypted = data[:16], data[16:]
                     
