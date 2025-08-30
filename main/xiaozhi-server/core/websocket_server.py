@@ -38,30 +38,56 @@ class WebSocketServer:
         server_config = self.config["server"]
         host = server_config.get("ip", "0.0.0.0")
         port = int(server_config.get("port", 8000))
+        
+        # WebSocket configuration for keep-alive (WebSocket-only mode)
+        websocket_config = server_config.get("websocket_config", {})
+        ping_interval = websocket_config.get("ping_interval", 30)
+        ping_timeout = websocket_config.get("ping_timeout", 10)
+        
+        self.logger.bind(tag=TAG).info(f"🌐 Starting WebSocket-only server on {host}:{port}")
+        self.logger.bind(tag=TAG).info(f"📡 MQTT Gateway: DISABLED - Using WebSocket only")
+        self.logger.bind(tag=TAG).info(f"💓 Keep-alive: ping_interval={ping_interval}s, ping_timeout={ping_timeout}s")
 
         async with websockets.serve(
-            self._handle_connection, host, port, process_request=self._http_response
+            self._handle_connection, 
+            host, 
+            port, 
+            process_request=self._http_response,
+            ping_interval=ping_interval,  # Send ping every N seconds
+            ping_timeout=ping_timeout,    # Wait N seconds for pong
+            close_timeout=10             # Close timeout
         ):
             await asyncio.Future()
 
     async def _handle_connection(self, websocket):
         """Handle new connection, create independent ConnectionHandler each time"""
-        # Pass current server instance when creating ConnectionHandler
-        handler = ConnectionHandler(
-            self.config,
-            self._vad,
-            self._asr,
-            self._llm,
-            self._memory,
-            self._intent,
-            self,  # Pass server instance
-        )
-
-        self.active_connections.add(handler)
+        client_address = f"{websocket.remote_address[0]}:{websocket.remote_address[1]}" if websocket.remote_address else "unknown"
+        self.logger.bind(tag=TAG).info(f"🔗 WebSocket client connected: {client_address}")
+        
+        # Add to active connections
+        self.active_connections.add(websocket)
+        
         try:
+            handler = ConnectionHandler(
+                self.config,
+                self._vad,
+                self._asr,
+                self._llm,
+                self._memory,
+                self._intent,
+                self,  # Pass server instance
+            )
+
             await handler.handle_connection(websocket)
+            
+        except websockets.exceptions.ConnectionClosed:
+            self.logger.bind(tag=TAG).info(f"🔌 WebSocket client disconnected: {client_address}")
+        except Exception as e:
+            self.logger.bind(tag=TAG).error(f"❌ WebSocket error with {client_address}: {e}")
         finally:
-            self.active_connections.discard(handler)
+            # Remove from active connections
+            self.active_connections.discard(websocket)
+            self.logger.bind(tag=TAG).debug(f"🧹 Cleaned up connection: {client_address}")
 
     async def _http_response(self, websocket, request_headers):
         # Check if it's a WebSocket upgrade request

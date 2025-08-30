@@ -121,6 +121,20 @@ class OpenAIRealtimeProvider(LLMProviderBase):
             # Configure session for optimal settings
             await self._configure_session()
             
+        elif event_type == "input_audio_buffer.speech_started":
+            # User started speaking
+            logger.bind(tag=TAG).info("🎤 User speech detected - started recording")
+            
+        elif event_type == "input_audio_buffer.speech_stopped":
+            # User stopped speaking
+            logger.bind(tag=TAG).info("🔇 User speech stopped - processing audio")
+            
+        elif event_type == "conversation.item.input_audio_transcription.completed":
+            # Input audio transcription completed (if enabled)
+            transcript = message.get("transcript", "")
+            if transcript:
+                logger.bind(tag=TAG).info(f"🗣️  User said: {transcript}")
+            
         elif event_type == "response.audio.delta":
             # Audio chunk received - buffer chunks for proper Opus encoding
             audio_data = base64.b64decode(message.get("delta", ""))
@@ -163,7 +177,17 @@ class OpenAIRealtimeProvider(LLMProviderBase):
         elif event_type == "response.text.delta":
             # Text transcript of response (for logging)
             text = message.get("delta", "")
-            logger.bind(tag=TAG).debug(f"Response text: {text}")
+            if text:
+                if not hasattr(self, 'current_response_text'):
+                    self.current_response_text = ""
+                self.current_response_text += text
+                logger.bind(tag=TAG).debug(f"Response text delta: {text}")
+        
+        elif event_type == "response.text.done":
+            # Complete text response received - log it
+            if hasattr(self, 'current_response_text') and self.current_response_text:
+                logger.bind(tag=TAG).info(f"🤖 LLM Response: {self.current_response_text}")
+                self.current_response_text = ""
             
         elif event_type == "error":
             error = message.get("error", {})
@@ -180,7 +204,7 @@ class OpenAIRealtimeProvider(LLMProviderBase):
                 "input_audio_format": "pcm16",
                 "output_audio_format": "pcm16",
                 "input_audio_transcription": {
-                    "model": "whisper-1"
+                    "model": "whisper-1"  # Enable input transcription for logging
                 },
                 "turn_detection": {
                     "type": "server_vad",

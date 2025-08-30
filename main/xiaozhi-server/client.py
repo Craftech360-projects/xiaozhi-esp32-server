@@ -16,6 +16,8 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 from queue import Queue, Empty
 import opuslib
+import websockets
+import asyncio
 
 # --- Configuration ---
 
@@ -97,6 +99,10 @@ class TestClient:
         self.p2p_topic = f"devices/p2p/{self.device_mac_formatted}"
         self.ota_config = {}
         self.websocket_url = None  # Will be set from OTA endpoint
+        self.websocket = None  # WebSocket connection object
+        self.websocket_connected = False  # WebSocket connection status
+        self.websocket_error = None  # WebSocket connection error
+        self.websocket_thread = None  # WebSocket thread
         self.udp_socket = None
         self.udp_listener_thread = None
         self.playback_thread = None
@@ -429,6 +435,207 @@ class TestClient:
             logger.error(f"❌ Failed to connect to MQTT Gateway: {e}")
             return False
 
+    def connect_websocket_direct(self) -> bool:
+        """Connects directly to WebSocket server, bypassing MQTT gateway."""
+        logger.info("▶️ STEP 2: Connecting directly to WebSocket server...")
+        
+        try:
+            # Use the websocket URL from OTA config
+            if not self.websocket_url:
+                logger.error("❌ No WebSocket URL available from OTA config")
+                return False
+            
+            # Add required query parameters for WebSocket connection
+            device_id = self.device_mac_formatted
+            client_id = self.mqtt_credentials["client_id"] if self.mqtt_credentials else f"ws_client_{device_id}"
+            
+            # Append query parameters to the WebSocket URL
+            separator = "&" if "?" in self.websocket_url else "?"
+            websocket_url_with_params = f"{self.websocket_url}{separator}device-id={device_id}&client-id={client_id}"
+            
+            logger.info(f"🔄 Connecting to WebSocket: {websocket_url_with_params}")
+            
+            # Run the WebSocket connection in a separate thread since it needs an event loop
+            self.websocket_connected = False
+            self.websocket_error = None
+            
+            def run_websocket():
+                try:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(self._websocket_connection_handler(websocket_url_with_params))
+                except Exception as e:
+                    self.websocket_error = str(e)
+                    logger.error(f"❌ WebSocket connection error: {e}")
+                finally:
+                    loop.close()
+            
+            self.websocket_thread = threading.Thread(target=run_websocket, daemon=True)
+            self.websocket_thread.start()
+            
+            # Wait for connection to establish (up to 10 seconds)
+            for _ in range(50):  # 50 * 0.2s = 10s timeout
+                if self.websocket_connected:
+                    logger.info("✅ WebSocket connection established")
+                    return True
+                if self.websocket_error:
+                    logger.error(f"❌ WebSocket connection failed: {self.websocket_error}")
+                    return False
+                time.sleep(0.2)
+            
+            logger.error("❌ WebSocket connection timeout")
+            return False
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to connect to WebSocket: {e}")
+            return False
+
+    async def _websocket_connection_handler(self, websocket_url):
+        """Handles the WebSocket connection and message processing."""
+        try:
+            async with websockets.connect(websocket_url) as websocket:
+                self.websocket = websocket
+                self.websocket_connected = True
+                
+                # Send initial hello message for WebSocket mode
+                hello_message = {
+                    "type": "hello", 
+                    "version": 3,
+                    "transport": "websocket",
+                    "audio_params": {
+                        "sample_rate": 16000,
+                        "channels": 1,
+                        "frame_duration": 20,
+                        "format": "opus"
+                    },
+                    "features": ["tts", "asr", "vad"]
+                }
+                
+                await websocket.send(json.dumps(hello_message))
+                logger.info("📤 Sent WebSocket hello message")
+                
+                # Listen for messages
+                async for message in websocket:
+                    try:
+                        # Check if message is binary data (audio) or text (JSON)
+                        if isinstance(message, bytes):
+                            # Binary message - likely audio data, decode and put in playback queue
+                            logger.debug(f"📥 Received binary audio data: {len(message)} bytes")
+                            await self._handle_binary_audio(message)
+                            continue
+                        else:
+                            # Text message - parse as JSON
+                            data = json.loads(message)
+                            logger.info(f"📥 Received WebSocket message: {data.get('type', 'unknown')}")
+                            await self._handle_websocket_message(data)
+                            logger.log("Check")
+                    except json.JSONDecodeError:
+                        logger.error(f"❌ Invalid JSON received: {message[:100]}...")  # Limit error message length
+                    except Exception as e:
+                        logger.error(f"❌ Error handling WebSocket message: {e}")
+                        
+        except Exception as e:
+            self.websocket_error = str(e)
+            self.websocket_connected = False
+            logger.error(f"❌ WebSocket connection handler error: {e}")
+
+    async def _handle_websocket_message(self, data):
+        """Handle incoming WebSocket messages."""
+        message_type = data.get("type")
+        
+        if message_type == "hello":
+            logger.info(f"📥 Hello response content: {data}")
+            # Handle hello response - check for transport mode
+            global udp_session_details  # Declare global at the beginning
+            
+            if data.get("transport") == "websocket":
+                # WebSocket-only mode - no UDP needed
+                logger.info("✅ WebSocket-only mode detected")
+                udp_session_details = data  # Store session details for compatibility
+                
+                # Create a dummy UDP socket for compatibility with existing code
+                self.udp_socket = "websocket"  # Flag to indicate WebSocket mode
+                
+                # Start the conversation flow
+                await self._start_websocket_conversation()
+                
+            elif "udp" in data:
+                # Traditional UDP mode
+                udp_session_details = data
+                self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                self.udp_socket.settimeout(1.0)
+                self.udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 65536)
+                
+                # Send UDP ping
+                ping_payload = f"ping:{udp_session_details['session_id']}".encode()
+                encrypted_ping = self.encrypt_packet(ping_payload)
+                server_udp_addr = (udp_session_details['udp']['server'], udp_session_details['udp']['port'])
+                
+                if encrypted_ping:
+                    self.udp_socket.sendto(encrypted_ping, server_udp_addr)
+                    logger.info(f"✅ UDP session established via WebSocket. Session ID: {udp_session_details['session_id']}")
+                    
+                    # Start the conversation flow
+                    await self._start_websocket_conversation()
+            else:
+                logger.warning(f"⚠️ Hello response missing transport details: {data}")
+        elif message_type == "tts":
+            # Handle TTS message - this means the server is working and sending audio
+            logger.info(f"📥 Received TTS message from server")
+            
+            # If we haven't established session yet, do it now
+            if not hasattr(self, 'udp_socket') or self.udp_socket is None:
+                logger.info("🔧 Auto-establishing WebSocket-only session from TTS message")
+                # global udp_session_details
+                udp_session_details = {
+                    "type": "hello",
+                    "transport": "websocket",
+                    "session_id": data.get("session_id", "websocket-session"),
+                    "audio_params": {
+                        "format": "opus",
+                        "sample_rate": 16000,
+                        "channels": 1,
+                        "frame_duration": 60
+                    }
+                }
+                self.udp_socket = "websocket"
+                logger.info("✅ WebSocket-only session auto-established")
+                
+        else:
+            logger.info(f"📥 Received WebSocket message: {message_type}")
+            logger.debug(f"📄 Message content: {data}")
+
+    async def _start_websocket_conversation(self):
+        """Start the conversation flow for WebSocket mode."""
+        # Send initial listen message
+        listen_payload = {
+            "type": "listen", 
+            "session_id": udp_session_details["session_id"], 
+            "state": "detect", 
+            "text": "hello baby"
+        }
+        await self.websocket.send(json.dumps(listen_payload))
+        logger.info("📤 Sent WebSocket listen message to trigger initial TTS")
+
+    async def _handle_binary_audio(self, audio_data):
+        """Handle incoming binary audio data over WebSocket."""
+        try:
+            # The audio data should be Opus encoded, decode it to PCM
+            if udp_session_details and "audio_params" in udp_session_details:
+                audio_params = udp_session_details["audio_params"]
+                decoder = opuslib.Decoder(audio_params["sample_rate"], audio_params["channels"])
+                
+                # Maximum frame size for Opus (120ms at 48kHz = 5760 samples)
+                max_frame_size = int(audio_params["sample_rate"] * 0.12)
+                
+                # Decode the Opus audio to PCM and put it in the playback queue
+                pcm_audio = decoder.decode(audio_data, max_frame_size)
+                self.audio_playback_queue.put(pcm_audio)
+                logger.debug(f"🎵 Decoded {len(audio_data)} bytes Opus to {len(pcm_audio)} bytes PCM")
+                
+        except Exception as e:
+            logger.error(f"❌ Error decoding WebSocket audio: {e}")
+
     def send_hello_and_get_session(self) -> bool:
         """Sends 'hello' message and waits for session details."""
         logger.info("▶️ STEP 3: Sending 'hello' and pinging UDP...")
@@ -642,10 +849,79 @@ class TestClient:
             
         logger.info("🔴 Recording thread finished completely.")
 
+    def _record_and_send_websocket_audio_thread(self):
+        """Thread to continuously record microphone audio and send it via WebSocket with automatic speech detection."""
+        logger.info("🎙️ Starting continuous recording with automatic speech detection...")
+        
+        p = pyaudio.PyAudio()
+        if udp_session_details and "audio_params" in udp_session_details:
+            audio_params = udp_session_details["audio_params"]
+        else:
+            # Fallback audio parameters
+            audio_params = {"sample_rate": 16000, "channels": 1, "frame_duration": 20}
+            
+        FORMAT, CHANNELS, RATE, FRAME_DURATION_MS = pyaudio.paInt16, audio_params["channels"], audio_params["sample_rate"], audio_params["frame_duration"]
+        SAMPLES_PER_FRAME = int(RATE * FRAME_DURATION_MS / 1000)
+        
+        try:
+            encoder = opuslib.Encoder(RATE, CHANNELS, opuslib.APPLICATION_VOIP)
+        except Exception as e:
+            logger.error(f"❌ Failed to create Opus encoder: {e}")
+            return # Exit thread if encoder fails
+        
+        stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=SAMPLES_PER_FRAME)
+        logger.info("🎙️ Microphone stream opened. Continuous recording active - just start speaking!")
+        
+        # Continuous recording loop - always listening
+        packets_sent = 0
+        last_log_time = time.time()
+        
+        while not stop_threads.is_set() and self.session_active:
+            try:
+                pcm_data = stream.read(SAMPLES_PER_FRAME, exception_on_overflow=False)
+                opus_data = encoder.encode(pcm_data, SAMPLES_PER_FRAME)
+                
+                # Send audio data via WebSocket continuously
+                if self.websocket and self.websocket_connected and opus_data:
+                    # Send binary audio data over WebSocket
+                    def send_audio():
+                        try:
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                            loop.run_until_complete(self.websocket.send(opus_data))
+                            loop.close()
+                        except Exception as e:
+                            logger.error(f"❌ Failed to send audio via WebSocket: {e}")
+                    
+                    threading.Thread(target=send_audio, daemon=True).start()
+                    packets_sent += 1
+                    
+                    if time.time() - last_log_time >= 5.0:  # Log every 5 seconds instead of every 1
+                        logger.debug(f"🎙️ Continuously sending audio... ({packets_sent} packets in last 5 seconds)")
+                        packets_sent = 0
+                        last_log_time = time.time()
+                        
+            except Exception as e:
+                logger.error(f"An error occurred in the continuous recording loop: {e}")
+                break
+
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+        logger.info("🔴 Continuous recording thread finished.")
+
     def trigger_conversation(self):
         """Starts the audio streaming threads and sends initial listen message."""
         if not self.udp_socket: return False
-        logger.info("▶️ STEP 4: Starting all streaming audio threads...")
+        
+        # Check if we're in WebSocket-only mode
+        websocket_only_mode = (self.udp_socket == "websocket")
+        
+        if websocket_only_mode:
+            logger.info("▶️ STEP 3: WebSocket-only mode - audio streaming handled via WebSocket")
+        else:
+            logger.info("▶️ STEP 3: Starting all streaming audio threads...")
+            
         global stop_threads, start_recording_event, stop_recording_event
         stop_threads.clear()
         # Initially, clear both events. The server's initial TTS will set start_recording_event.
@@ -653,17 +929,37 @@ class TestClient:
         stop_recording_event.clear() 
 
         self.playback_thread = threading.Thread(target=self._playback_thread, daemon=True)
-        self.udp_listener_thread = threading.Thread(target=self.listen_for_udp_audio, daemon=True)
-        self.audio_recording_thread = threading.Thread(target=self._record_and_send_audio_thread, daemon=True)
-        self.playback_thread.start(), self.udp_listener_thread.start(), self.audio_recording_thread.start()
+        self.playback_thread.start()
+        
+        if not websocket_only_mode:
+            # Only start UDP listener if not in WebSocket-only mode
+            self.udp_listener_thread = threading.Thread(target=self.listen_for_udp_audio, daemon=True)
+            self.udp_listener_thread.start()
+        
+        # Always start audio recording thread (needed for microphone input in both modes)
+        if websocket_only_mode:
+            self.audio_recording_thread = threading.Thread(target=self._record_and_send_websocket_audio_thread, daemon=True)
+        else:
+            self.audio_recording_thread = threading.Thread(target=self._record_and_send_audio_thread, daemon=True)
+        self.audio_recording_thread.start()
 
-        logger.info("▶️ STEP 5: Sending 'listen' message to trigger initial TTS from server...")
-        # The server's initial TTS will then trigger the client's recording.
-        listen_payload = {"type": "listen", "session_id": udp_session_details["session_id"], "state": "detect", "text": "hello baby"}
-        self.mqtt_client.publish("device-server", json.dumps(listen_payload))
-        logger.info("⏳ Test running. Press Spacebar to abort TTS or Ctrl+C to stop.")
+        # Check connection mode for sending listen message
+        if self.mqtt_client is not None:
+            # MQTT mode
+            logger.info("▶️ STEP 4: Sending 'listen' message via MQTT to trigger initial TTS from server...")
+            listen_payload = {"type": "listen", "session_id": udp_session_details["session_id"], "state": "detect", "text": "hello baby"}
+            self.mqtt_client.publish("device-server", json.dumps(listen_payload))
+        elif self.websocket is not None and self.websocket_connected:
+            # WebSocket mode - conversation already started in _start_websocket_conversation
+            logger.info("▶️ STEP 4: WebSocket conversation already initiated...")
+        else:
+            logger.error("❌ No connection available (neither MQTT nor WebSocket)")
+            return False
 
-        # Start a thread to monitor spacebar press
+        logger.info("🎙️ Automatic speech detection active - just start speaking!")
+        logger.info("🚫 Press Spacebar to abort TTS or Ctrl+C to stop.")
+
+        # Simple spacebar monitoring for TTS abort only
         def monitor_spacebar():
             while not stop_threads.is_set() and self.session_active:
                 if keyboard.is_pressed('space'):
@@ -672,11 +968,28 @@ class TestClient:
                         "type": "abort",
                         "session_id": udp_session_details["session_id"]
                     }
-                    self.mqtt_client.publish("device-server", json.dumps(abort_payload))
+                    
+                    # Send abort message through appropriate transport
+                    if self.mqtt_client is not None:
+                        self.mqtt_client.publish("device-server", json.dumps(abort_payload))
+                    elif self.websocket is not None and self.websocket_connected:
+                        # Send abort via WebSocket (need async wrapper)
+                        def send_websocket_abort():
+                            try:
+                                loop = asyncio.new_event_loop()
+                                asyncio.set_event_loop(loop)
+                                loop.run_until_complete(self.websocket.send(json.dumps(abort_payload)))
+                                loop.close()
+                            except Exception as e:
+                                logger.error(f"❌ Failed to send WebSocket abort: {e}")
+                        
+                        threading.Thread(target=send_websocket_abort, daemon=True).start()
+                    
                     logger.info(f"📤 Sent abort message: {abort_payload}")
                     # Wait for the key to be released to avoid multiple sends
                     while keyboard.is_pressed('space') and not stop_threads.is_set():
                         time.sleep(0.01)
+                        
                 time.sleep(0.01)
 
         spacebar_thread = threading.Thread(target=monitor_spacebar, daemon=True)
@@ -730,15 +1043,41 @@ class TestClient:
         if self.udp_listener_thread: self.udp_listener_thread.join(timeout=2)
         if self.udp_socket: self.udp_socket.close()
         
-        if self.mqtt_client and udp_session_details:
+        # Send goodbye message through appropriate transport
+        if udp_session_details:
             goodbye_payload = { "type": "goodbye", "session_id": udp_session_details.get("session_id") }
-            self.mqtt_client.publish("device-server", json.dumps(goodbye_payload))
-            logger.info("👋 Sent 'goodbye' message.")
+            
+            if self.mqtt_client:
+                self.mqtt_client.publish("device-server", json.dumps(goodbye_payload))
+                logger.info("👋 Sent 'goodbye' message via MQTT.")
+            elif self.websocket and self.websocket_connected:
+                # Send goodbye via WebSocket
+                def send_websocket_goodbye():
+                    try:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        loop.run_until_complete(self.websocket.send(json.dumps(goodbye_payload)))
+                        loop.close()
+                        logger.info("👋 Sent 'goodbye' message via WebSocket.")
+                    except Exception as e:
+                        logger.error(f"❌ Failed to send WebSocket goodbye: {e}")
+                
+                threading.Thread(target=send_websocket_goodbye, daemon=True).start()
+                time.sleep(0.5)  # Give it a moment to send
         
+        # Clean up MQTT connection
         if self.mqtt_client:
             self.mqtt_client.loop_stop()
             self.mqtt_client.disconnect()
             logger.info("🔌 MQTT Disconnected.")
+        
+        # Clean up WebSocket connection
+        if self.websocket_thread and self.websocket_thread.is_alive():
+            self.websocket_connected = False
+            self.websocket_thread.join(timeout=2)
+            if self.websocket_thread.is_alive():
+                logger.warning("WebSocket thread did not terminate gracefully.")
+            logger.info("🔌 WebSocket Disconnected.")
         logger.info("✅ Test finished.")
 
     def run_test(self):
@@ -750,11 +1089,40 @@ class TestClient:
             logger.info("🔢 Sequence tracking is DISABLED")
             
         if not self.get_ota_config(): return
-        if not self.connect_mqtt(): return
-        time.sleep(1) # Give MQTT a moment to connect and subscribe
-        if not self.send_hello_and_get_session():
-            self.cleanup()
-            return
+        
+        # Check if MQTT gateway is enabled in OTA config
+        mqtt_gateway = self.ota_config.get("mqtt_gateway", {})
+        mqtt_enabled = mqtt_gateway.get("enabled", True)  # Default to True for backward compatibility
+        
+        if mqtt_enabled:
+            logger.info("📡 MQTT Gateway: ENABLED - Using MQTT + UDP mode")
+            if not self.connect_mqtt(): return
+            time.sleep(1) # Give MQTT a moment to connect and subscribe
+            if not self.send_hello_and_get_session():
+                self.cleanup()
+                return
+        else:
+            logger.info("🌐 MQTT Gateway: DISABLED - Using WebSocket-only mode")
+            if not self.connect_websocket_direct():
+                self.cleanup()
+                return
+            
+            # For WebSocket mode, wait for session to be established
+            logger.info("⏳ Waiting for WebSocket session to be established...")
+            timeout = 10  # 10 second timeout
+            for i in range(timeout * 10):  # Check every 0.1 seconds
+                if self.udp_socket is not None:  # This includes both UDP socket and "websocket" flag
+                    if self.udp_socket == "websocket":
+                        logger.info("✅ WebSocket-only session established")
+                    else:
+                        logger.info("✅ UDP session established via WebSocket")
+                    break
+                time.sleep(0.1)
+            else:
+                logger.error("❌ Timeout waiting for session establishment")
+                self.cleanup()
+                return
+        
         self.trigger_conversation()
         self.cleanup()
 

@@ -1147,6 +1147,8 @@ import json
 import uuid
 import time
 import queue
+import secrets
+import struct
 import asyncio
 import threading
 import traceback
@@ -1402,8 +1404,25 @@ class ConnectionHandler:
             # Start timeout check task
             self.timeout_task = asyncio.create_task(self._check_timeout())
 
-            self.welcome_msg = self.config["xiaozhi"]
+            self.welcome_msg = self.config["xiaozhi"].copy()  # Make a copy to avoid modifying the original config
             self.welcome_msg["session_id"] = self.session_id
+            
+            # Generate UDP session encryption key and nonce for secure communication
+            if "udp" in self.welcome_msg:
+                # Generate a 32-byte (256-bit) AES key
+                udp_key = secrets.token_bytes(32)
+                self.welcome_msg["udp"]["key"] = udp_key.hex()
+                
+                # Generate a 16-byte nonce template with connection ID
+                # Format: packet_type(1) + flags(1) + payload_len(2) + connection_id(4) + timestamp(4) + sequence(4)
+                connection_id = secrets.randbelow(0xFFFFFFFF)  # Random 32-bit connection ID
+                nonce_template = struct.pack('>BBHIII', 0x01, 0x00, 0x0000, connection_id, 0x00000000, 0x00000000)
+                self.welcome_msg["udp"]["nonce"] = nonce_template.hex()
+                
+                self.logger.bind(tag=TAG).info(f"🔐 Generated UDP session key and nonce for session: {self.session_id}")
+            
+            # Debug: Log the welcome message that will be sent
+            self.logger.bind(tag=TAG).info(f"📤 Welcome message to be sent: {json.dumps(self.welcome_msg, indent=2)}")
 
             # Get differential configuration
             self._initialize_private_config()
