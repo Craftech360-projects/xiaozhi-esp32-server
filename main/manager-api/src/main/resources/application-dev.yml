@@ -18,9 +18,9 @@ spring:
       # password: cTefiuLmZSMqGpcQImUmBIsUBhNyUvrK
       driver-class-name: com.mysql.cj.jdbc.Driver
       # Railway MySQL Configuration - Updated for Railway database
-      url: jdbc:mysql://nozomi.proxy.rlwy.net:25037/railway?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&nullCatalogMeansCurrent=true&useSSL=true&allowPublicKeyRetrieval=true
+      url: jdbc:mysql://yamanote.proxy.rlwy.net:16958/railway?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&nullCatalogMeansCurrent=true&useSSL=true&allowPublicKeyRetrieval=true
       username: root
-      password: OcaVNLKcwNdyElfaeUPqvvfYZiiEHgdm
+      password: cTefiuLmZSMqGpcQImUmBIsUBhNyUvrK
 
       initial-size: 10
       max-active: 100
@@ -46,9 +46,9 @@ spring:
   data:
     redis:
       # Railway Redis Configuration
-      host: maglev.proxy.rlwy.net # Railway Redis服务器地址
-      port: 16780 # Railway Redis服务器连接端口
-      password: beVfOKcZjMUCBiZIQnvSMivhpSeijpKP # Railway Redis服务器连接密码
+      host: caboose.proxy.rlwy.net # Railway Redis服务器地址
+      port: 45879 # Railway Redis服务器连接端口
+      password: mJwoNsjrRcbAkElEWATNOxmqUNraCKIT # Railway Redis服务器连接密码
       username: default # Railway Redis用户名
       database: 0 # Redis数据库索引（默认为0）
       timeout: 30000ms # 连接超时时间（毫秒）- 增加超时时间
