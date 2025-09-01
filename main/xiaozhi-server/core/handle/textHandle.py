@@ -92,9 +92,11 @@ async def handleTextMessage(conn, message):
                         # Check if Realtime API is enabled and available
                         if hasattr(conn, 'use_realtime_api') and conn.use_realtime_api and hasattr(conn, 'realtime_handler') and conn.realtime_handler:
                             # Route text through Realtime API
+                            conn.logger.bind(tag=TAG).info(f"🚀 Routing text to OpenAI Realtime API: {original_text}")
                             await conn.realtime_handler.handle_text_input(original_text)
                         else:
                             # Otherwise, need LLM to respond to text content
+                            conn.logger.bind(tag=TAG).info(f"📝 Using traditional LLM pipeline for: {original_text}")
                             await startToChat(conn, original_text)
         elif msg_json["type"] == "iot":
             conn.logger.bind(tag=TAG).info(f"Received iot message: {message}")

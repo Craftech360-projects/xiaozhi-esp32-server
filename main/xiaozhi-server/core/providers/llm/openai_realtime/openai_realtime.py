@@ -138,9 +138,11 @@ class OpenAIRealtimeProvider(LLMProviderBase):
         elif event_type == "response.audio.delta":
             # Audio chunk received - buffer chunks for proper Opus encoding
             audio_data = base64.b64decode(message.get("delta", ""))
+            logger.bind(tag=TAG).info(f"🎵 Received audio delta: {len(audio_data)} bytes")
             
             if audio_data:
                 self.response_audio_buffer.extend(audio_data)
+                logger.bind(tag=TAG).info(f"🔊 Audio buffer size: {len(self.response_audio_buffer)} bytes")
                 
                 # Check if we have enough data for Opus encoding (60ms frames to match client expectations)
                 min_samples = 1440  # 60ms at 24kHz (24000 * 0.06 = 1440 samples)
@@ -149,14 +151,17 @@ class OpenAIRealtimeProvider(LLMProviderBase):
                     chunk_size = min_samples * 2
                     chunk_data = bytes(self.response_audio_buffer[:chunk_size])
                     self.response_audio_buffer = self.response_audio_buffer[chunk_size:]
+                    logger.bind(tag=TAG).info(f"📦 Processing audio chunk: {len(chunk_data)} bytes")
                     
                     # Convert PCM16 24kHz chunk to Opus packets for ESP32
                     opus_packets = self._convert_pcm_to_opus_packets(chunk_data)
                     if opus_packets:
                         # Send each packet individually for proper streaming
                         for packet in opus_packets:
-                            logger.bind(tag=TAG).debug(f"Queuing Opus packet: {len(packet)} bytes")
+                            logger.bind(tag=TAG).info(f"🎧 Queuing Opus packet: {len(packet)} bytes")
                             self.audio_output_queue.put(packet)
+                    else:
+                        logger.bind(tag=TAG).warning("⚠️ No Opus packets generated from PCM data")
             
         elif event_type == "response.audio.done":
             # Audio response complete - send any remaining buffered data

@@ -29,14 +29,13 @@ MQTT_BROKER_HOST = "192.168.1.179"  # MQTT gateway IP
 MQTT_BROKER_PORT = 1883
 # DEVICE_MAC is now dynamically generated for uniqueness
 PLAYBACK_BUFFER_MIN_FRAMES = 3  # Minimum frames to have in buffer to continue playback
-PLAYBACK_BUFFER_START_FRAMES = 16 # Number of frames to buffer before starting playback
+PLAYBACK_BUFFER_START_FRAMES = 1 # Number of frames to buffer before starting playback (minimal for testing)
 
 # --- NEW: Sequence tracking configuration ---
 ENABLE_SEQUENCE_LOGGING = True  # Set to False to disable sequence loggingdocker-compose logs -f appserver
 LOG_SEQUENCE_EVERY_N_PACKETS = 16  # Log every N packets instead of every packet
 
 # --- NEW: Timeout configurations ---
-TTS_TIMEOUT_SECONDS = 30  # Maximum time to wait for TTS audio
 BUFFER_TIMEOUT_SECONDS = 10  # Maximum time to wait for initial buffering
 KEEP_ALIVE_INTERVAL = 5  # Send keep-alive every N seconds
 
@@ -355,20 +354,30 @@ class TestClient:
                 logger.warning("⚠️ No websocket URL in OTA response, using fallback")
                 self.websocket_url = f"ws://{SERVER_IP}:8000/xiaozhi/v1/"
             
-            # Extract MQTT credentials from OTA response
-            mqtt_info = self.ota_config.get("mqtt", {})
-            if mqtt_info:
-                self.mqtt_credentials = {
-                    "client_id": mqtt_info.get("client_id"),
-                    "username": mqtt_info.get("username"),
-                    "password": mqtt_info.get("password")
-                }
-                logger.info(f"✅ Got MQTT credentials from OTA: {self.mqtt_credentials['client_id']}")
+            # Check if MQTT gateway is enabled
+            mqtt_gateway = self.ota_config.get("mqtt_gateway", {})
+            mqtt_enabled = mqtt_gateway.get("enabled", False)
+            logger.info(f"🔍 MQTT Gateway Status: {mqtt_enabled}")
+            
+            if mqtt_enabled:
+                # MQTT mode - extract MQTT credentials from OTA response
+                mqtt_info = self.ota_config.get("mqtt", {})
+                if mqtt_info:
+                    self.mqtt_credentials = {
+                        "client_id": mqtt_info.get("client_id"),
+                        "username": mqtt_info.get("username"),
+                        "password": mqtt_info.get("password")
+                    }
+                    logger.info(f"✅ Got MQTT credentials from OTA: {self.mqtt_credentials['client_id']}")
+                else:
+                    logger.warning("⚠️ No MQTT credentials in OTA response, generating locally as fallback")
+                    # Generate MQTT credentials locally as fallback
+                    self.mqtt_credentials = generate_mqtt_credentials(self.device_mac_formatted)
+                    logger.info(f"✅ Generated MQTT credentials locally: {self.mqtt_credentials['client_id']}")
             else:
-                logger.warning("⚠️ No MQTT credentials in OTA response, generating locally as fallback")
-                # Generate MQTT credentials locally as fallback
-                self.mqtt_credentials = generate_mqtt_credentials(self.device_mac_formatted)
-                logger.info(f"✅ Generated MQTT credentials locally: {self.mqtt_credentials['client_id']}")
+                # WebSocket-only mode - no MQTT credentials needed
+                self.mqtt_credentials = None
+                logger.info("🌐 MQTT Gateway: DISABLED - Using WebSocket-only mode")
             
             logger.info("✅ OTA config received successfully.")
 
@@ -520,7 +529,7 @@ class TestClient:
                         # Check if message is binary data (audio) or text (JSON)
                         if isinstance(message, bytes):
                             # Binary message - likely audio data, decode and put in playback queue
-                            logger.debug(f"📥 Received binary audio data: {len(message)} bytes")
+                            logger.info(f"📥 Received binary audio data: {len(message)} bytes")
                             await self._handle_binary_audio(message)
                             continue
                         else:
@@ -528,7 +537,6 @@ class TestClient:
                             data = json.loads(message)
                             logger.info(f"📥 Received WebSocket message: {data.get('type', 'unknown')}")
                             await self._handle_websocket_message(data)
-                            logger.log("Check")
                     except json.JSONDecodeError:
                         logger.error(f"❌ Invalid JSON received: {message[:100]}...")  # Limit error message length
                     except Exception as e:
@@ -620,6 +628,7 @@ class TestClient:
     async def _handle_binary_audio(self, audio_data):
         """Handle incoming binary audio data over WebSocket."""
         try:
+            logger.info(f"🎵 Processing binary audio: {len(audio_data)} bytes")
             # The audio data should be Opus encoded, decode it to PCM
             if udp_session_details and "audio_params" in udp_session_details:
                 audio_params = udp_session_details["audio_params"]
@@ -628,13 +637,43 @@ class TestClient:
                 # Maximum frame size for Opus (120ms at 48kHz = 5760 samples)
                 max_frame_size = int(audio_params["sample_rate"] * 0.12)
                 
-                # Decode the Opus audio to PCM and put it in the playback queue
+                # Decode the Opus audio to PCM and play directly
                 pcm_audio = decoder.decode(audio_data, max_frame_size)
-                self.audio_playback_queue.put(pcm_audio)
-                logger.debug(f"🎵 Decoded {len(audio_data)} bytes Opus to {len(pcm_audio)} bytes PCM")
+                logger.info(f"✅ Decoded {len(audio_data)} bytes Opus to {len(pcm_audio)} bytes PCM, playing directly")
+                
+                # Play audio directly without buffering
+                self._play_audio_directly(pcm_audio, audio_params)
                 
         except Exception as e:
             logger.error(f"❌ Error decoding WebSocket audio: {e}")
+
+    def _play_audio_directly(self, pcm_data, audio_params):
+        """Play PCM audio directly without buffering."""
+        try:
+            import pyaudio
+            
+            # Initialize PyAudio if not already done
+            if not hasattr(self, '_pyaudio'):
+                self._pyaudio = pyaudio.PyAudio()
+                
+            # Initialize audio stream if not already done
+            if not hasattr(self, '_audio_stream'):
+                self._audio_stream = self._pyaudio.open(
+                    format=pyaudio.paInt16,
+                    channels=audio_params["channels"],
+                    rate=audio_params["sample_rate"],
+                    output=True
+                )
+                logger.info(f"🔊 Direct audio stream opened: {audio_params['sample_rate']}Hz, {audio_params['channels']} channels")
+            
+            # Play the PCM data directly
+            self._audio_stream.write(pcm_data)
+            logger.info(f"🎵 Played {len(pcm_data)} bytes PCM directly")
+            
+        except Exception as e:
+            logger.error(f"❌ Error playing audio directly: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
 
     def send_hello_and_get_session(self) -> bool:
         """Sends 'hello' message and waits for session details."""
@@ -681,14 +720,35 @@ class TestClient:
 
     def _playback_thread(self):
         """Thread to play back incoming audio from the server with a robust jitter buffer."""
-        p = pyaudio.PyAudio()
-        audio_params = udp_session_details["audio_params"]
-        stream = p.open(format=p.get_format_from_width(2),
-                        channels=audio_params["channels"],
-                        rate=audio_params["sample_rate"],
-                        output=True)
-        
-        logger.info("🔊 Playback thread started.")
+        try:
+            logger.info("🎵 Initializing playback thread...")
+            p = pyaudio.PyAudio()
+            
+            # Wait for session details to be available
+            max_wait = 10  # seconds
+            wait_count = 0
+            while not udp_session_details and wait_count < max_wait * 10:
+                time.sleep(0.1)
+                wait_count += 1
+                
+            if not udp_session_details:
+                logger.error("❌ No session details available for playback thread")
+                return
+                
+            audio_params = udp_session_details["audio_params"]
+            logger.info(f"🔊 Audio params: {audio_params}")
+            
+            stream = p.open(format=p.get_format_from_width(2),
+                            channels=audio_params["channels"],
+                            rate=audio_params["sample_rate"],
+                            output=True)
+            
+            logger.info("✅ Playback thread started successfully!")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize playback thread: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return
         is_playing = False
         buffer_timeout_start = time.time()
 
@@ -996,22 +1056,9 @@ class TestClient:
         spacebar_thread.start()
 
         try:
-            # Keep running with better timeout handling
-            timeout_count = 0
+            # Keep running indefinitely until manual interruption
             while not stop_threads.is_set() and self.session_active:
                 time.sleep(1)
-                
-                # Check if we've been inactive for too long
-                if self.tts_active and time.time() - self.last_audio_received > TTS_TIMEOUT_SECONDS:
-                    logger.warning(f"⏰ No audio received for {TTS_TIMEOUT_SECONDS}s during TTS. Possible server issue.")
-                    timeout_count += 1
-                    if timeout_count >= 3:
-                        logger.error("❌ Too many timeouts. Stopping session.")
-                        self.session_active = False
-                        break
-                    else:
-                        logger.info("🔄 Attempting to recover by sending new listen message...")
-                        self.retry_conversation()
                         
         except KeyboardInterrupt:
             logger.info("Manual interruption detected. Cleaning up...")

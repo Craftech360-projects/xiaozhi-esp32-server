@@ -130,6 +130,7 @@ class RealtimeHandler:
             try:
                 # Check for audio from OpenAI (with timeout)
                 audio_data = self.provider.audio_output_queue.get(timeout=0.1)
+                logger.bind(tag=TAG).info(f"📥 Got audio from queue: {len(audio_data) if audio_data else 'None'} bytes")
                 
                 # Handle end of stream marker
                 if audio_data is None:
@@ -214,13 +215,23 @@ class RealtimeHandler:
             audio_data: Opus encoded audio for ESP32
         """
         try:
+            logger.bind(tag=TAG).info(f"🎵 Attempting to send audio packet: {len(audio_data)} bytes to WebSocket")
+            
+            # Check if WebSocket is still connected
+            if hasattr(self.websocket, 'closed') and self.websocket.closed:
+                logger.bind(tag=TAG).warning(f"⚠️ WebSocket is closed, cannot send audio packet")
+                return
+            elif not self.websocket:
+                logger.bind(tag=TAG).warning(f"⚠️ WebSocket is None, cannot send audio packet")
+                return
+            
             # Check if audio data is too large for UDP transmission
             max_udp_payload = 1400  # Safe UDP payload size (typical MTU is 1500)
             
             if len(audio_data) <= max_udp_payload:
                 # Small packet, send directly like traditional pipeline
                 await self.websocket.send(audio_data)
-                logger.bind(tag=TAG).debug(f"Sent audio packet: {len(audio_data)} bytes")
+                logger.bind(tag=TAG).info(f"✅ Sent audio packet: {len(audio_data)} bytes via WebSocket")
             else:
                 # Large chunk from Realtime API - split into smaller Opus-compatible packets
                 # This shouldn't happen often, but handle it gracefully
@@ -231,11 +242,14 @@ class RealtimeHandler:
                 for i in range(0, len(audio_data), packet_size):
                     packet = audio_data[i:i + packet_size]
                     await self.websocket.send(packet)
+                    logger.bind(tag=TAG).info(f"✅ Sent split audio packet: {len(packet)} bytes via WebSocket")
                     # Add timing delay similar to traditional pipeline (60ms frames)
                     await asyncio.sleep(0.06)
             
         except Exception as e:
-            logger.bind(tag=TAG).error(f"Error sending audio to device: {e}")
+            logger.bind(tag=TAG).error(f"❌ Error sending audio to device: {e}")
+            import traceback
+            logger.bind(tag=TAG).error(f"Traceback: {traceback.format_exc()}")
     
     async def _send_tts_message(self, state, text=None):
         """Send TTS status message to match traditional pipeline"""
@@ -257,15 +271,30 @@ class RealtimeHandler:
         Args:
             text: User text input
         """
+        logger.bind(tag=TAG).info(f"📨 Realtime handler received text: '{text}' (active: {self.is_active}, provider: {self.provider is not None})")
+        
+        # Wait for handler to become active (up to 5 seconds)
+        max_wait_time = 5.0
+        wait_start = time.time()
+        
+        while (not self.is_active or not self.provider) and (time.time() - wait_start) < max_wait_time:
+            logger.bind(tag=TAG).info(f"⏳ Waiting for Realtime handler to become ready... ({time.time() - wait_start:.1f}s)")
+            await asyncio.sleep(0.1)
+        
         if not self.is_active or not self.provider:
+            logger.bind(tag=TAG).warning(f"❌ Realtime handler not ready after {max_wait_time}s timeout - active: {self.is_active}, provider: {self.provider is not None}")
             return
         
         try:
             # Send text to OpenAI Realtime API
+            logger.bind(tag=TAG).info(f"📤 Sending text to OpenAI Realtime API: '{text}'")
             await self.provider._send_text_message(text)
+            logger.bind(tag=TAG).info(f"✅ Text sent successfully to OpenAI Realtime API")
             
         except Exception as e:
             logger.bind(tag=TAG).error(f"Error handling text input: {e}")
+            import traceback
+            logger.bind(tag=TAG).error(f"Traceback: {traceback.format_exc()}")
     
     async def stop(self):
         """Stop the Realtime API handler and clean up"""
