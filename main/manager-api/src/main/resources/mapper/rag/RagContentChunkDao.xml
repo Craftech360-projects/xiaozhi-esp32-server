@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="xiaozhi.modules.rag.dao.RagContentChunkDao">
+    
+    <!-- Result Map -->
+    <resultMap id="ragContentChunkResultMap" type="xiaozhi.modules.rag.entity.RagContentChunkEntity">
+        <id column="id" property="id"/>
+        <result column="textbook_id" property="textbookId"/>
+        <result column="chunk_text" property="chunkText"/>
+        <result column="chunk_index" property="chunkIndex"/>
+        <result column="page_number" property="pageNumber"/>
+        <result column="content_type" property="contentType"/>
+        <result column="difficulty_level" property="difficultyLevel"/>
+        <result column="importance_score" property="importanceScore"/>
+        <result column="vector_id" property="vectorId"/>
+        <result column="collection_name" property="collectionName"/>
+        <result column="metadata" property="metadata"/>
+        <result column="create_date" property="createDate"/>
+        <result column="update_date" property="updateDate"/>
+        <result column="creator" property="creator"/>
+    </resultMap>
+
+    <!-- Find chunks by textbook ID -->
+    <select id="findByTextbookId" resultMap="ragContentChunkResultMap">
+        SELECT *
+        FROM rag_content_chunks
+        WHERE textbook_id = #{textbookId}
+        ORDER BY chunk_index ASC
+    </select>
+
+    <!-- Find chunks by collection name -->
+    <select id="findByCollectionName" resultMap="ragContentChunkResultMap">
+        SELECT *
+        FROM rag_content_chunks
+        WHERE collection_name = #{collectionName}
+        ORDER BY create_date DESC
+    </select>
+
+    <!-- Find chunks by content type and difficulty -->
+    <select id="findByContentTypeAndDifficulty" resultMap="ragContentChunkResultMap">
+        SELECT *
+        FROM rag_content_chunks
+        WHERE content_type = #{contentType}
+        AND difficulty_level = #{difficultyLevel}
+        ORDER BY importance_score DESC
+    </select>
+
+    <!-- Search chunks by keywords (full-text search) -->
+    <select id="searchByKeywords" resultMap="ragContentChunkResultMap">
+        SELECT *
+        FROM rag_content_chunks
+        WHERE MATCH(chunk_text) AGAINST(#{keywords} IN NATURAL LANGUAGE MODE)
+        ORDER BY importance_score DESC
+        LIMIT 50
+    </select>
+
+    <!-- Get chunk statistics by textbook -->
+    <select id="getChunkStatsByTextbook" resultMap="ragContentChunkResultMap">
+        SELECT *
+        FROM rag_content_chunks
+        WHERE textbook_id = #{textbookId}
+        ORDER BY importance_score DESC
+    </select>
+
+    <!-- Find chunks by vector ID -->
+    <select id="findByVectorId" resultMap="ragContentChunkResultMap">
+        SELECT *
+        FROM rag_content_chunks
+        WHERE vector_id = #{vectorId}
+        LIMIT 1
+    </select>
+
+    <!-- Count chunks by difficulty level -->
+    <select id="countByDifficultyLevel" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM rag_content_chunks
+        WHERE difficulty_level = #{difficultyLevel}
+    </select>
+
+    <!-- Find top importance chunks -->
+    <select id="findTopImportanceChunks" resultMap="ragContentChunkResultMap">
+        SELECT *
+        FROM rag_content_chunks
+        <where>
+            <if test="subject != null and subject != ''">
+                AND EXISTS (
+                    SELECT 1 FROM rag_textbook_metadata rtm 
+                    WHERE rtm.id = rag_content_chunks.textbook_id 
+                    AND rtm.subject = #{subject}
+                )
+            </if>
+        </where>
+        ORDER BY importance_score DESC
+        LIMIT #{limit}
+    </select>
+
+</mapper>

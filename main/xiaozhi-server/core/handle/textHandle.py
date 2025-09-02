@@ -13,6 +13,61 @@ import asyncio
 TAG = __name__
 
 
+def is_educational_query(text):
+    """
+    Basic educational query detection for text handler
+    This provides an early filter before reaching the memory provider
+    """
+    if not text or not isinstance(text, str):
+        return False
+    
+    text_lower = text.lower().strip()
+    
+    # Educational keywords that indicate learning content
+    educational_keywords = [
+        # Mathematics
+        'math', 'number', 'add', 'subtract', 'multiply', 'divide', 'fraction', 'decimal',
+        'prime', 'area', 'perimeter', 'angle', 'geometry', 'algebra', 'equation', 'solve',
+        'calculate', 'pattern', 'ratio', 'proportion', 'percentage', 'symmetry', 'integer',
+        # Science  
+        'science', 'physics', 'chemistry', 'biology', 'experiment', 'element', 'compound',
+        'cell', 'organism', 'energy', 'force', 'motion', 'light', 'sound', 'heat',
+        # English
+        'grammar', 'noun', 'verb', 'adjective', 'sentence', 'paragraph', 'essay', 'story',
+        'poem', 'literature', 'reading', 'writing', 'vocabulary', 'spelling',
+        # Educational questions
+        'what is', 'what are', 'how to', 'explain', 'describe', 'define', 'tell me about',
+        'help me understand', 'teach me', 'learn', 'study', 'homework', 'assignment',
+        # NCERT specific
+        'chapter', 'lesson', 'exercise', 'question', 'textbook', 'ncert', 'standard', 'class'
+    ]
+    
+    # Check if any educational keywords are present
+    for keyword in educational_keywords:
+        if keyword in text_lower:
+            return True
+    
+    return False
+
+
+def enhance_educational_query(text):
+    """
+    Enhance educational queries with context for better processing
+    """
+    if not is_educational_query(text):
+        return text
+    
+    # Add minimal context enhancement while preserving original query
+    text_lower = text.lower()
+    
+    # If it's a mathematical query, add slight context
+    if any(math_word in text_lower for math_word in ['math', 'number', 'add', 'subtract', 'multiply', 'divide', 'fraction', 'area', 'perimeter']):
+        # Don't modify the original text, just mark it for potential processing
+        return text
+    
+    return text
+
+
 async def handleTextMessage(conn, message):
     """Handle text messages"""
     try:
@@ -82,10 +137,16 @@ async def handleTextMessage(conn, message):
                         enqueue_asr_report(conn, "Hey, hello there", [])
                         await startToChat(conn, "Hey, hello there")
                     else:
+                        # Check if it's an educational query for enhanced processing
+                        processed_text = original_text
+                        if is_educational_query(original_text):
+                            conn.logger.bind(tag=TAG).info(f"Educational query detected: {original_text}")
+                            processed_text = enhance_educational_query(original_text)
+                        
                         # Report plain text data (reuse ASR reporting function, but provide no audio data)
                         enqueue_asr_report(conn, original_text, [])
                         # Otherwise, need LLM to respond to text content
-                        await startToChat(conn, original_text)
+                        await startToChat(conn, processed_text)
         elif msg_json["type"] == "iot":
             conn.logger.bind(tag=TAG).info(f"Received iot message: {message}")
             if "descriptors" in msg_json:

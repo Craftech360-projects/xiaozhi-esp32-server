@@ -38,10 +38,14 @@ public class TextbookUploadDTO {
     @Schema(description = "Academic year/curriculum version", example = "2023-24")
     private String curriculumYear;
     
-    @Schema(description = "Chapter number (if processing single chapter)", example = "1")
+    @NotNull(message = "Chapter number is required")
+    @Min(value = 1, message = "Chapter number must be at least 1")
+    @Max(value = 20, message = "Chapter number must not exceed 20")
+    @Schema(description = "Chapter number", example = "1", required = true)
     private Integer chapterNumber;
     
-    @Schema(description = "Chapter title (if processing single chapter)", example = "Knowing Our Numbers")
+    @NotBlank(message = "Chapter title is required")
+    @Schema(description = "Chapter title", example = "Knowing Our Numbers", required = true)
     private String chapterTitle;
     
     @Schema(description = "Additional processing notes")

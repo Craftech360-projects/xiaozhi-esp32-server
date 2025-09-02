@@ -60,3 +60,20 @@ spring:
           max-idle: 8 # 连接池中的最大空闲连接
           min-idle: 0 # 连接池中的最小空闲连接
         shutdown-timeout: 100ms # 客户端优雅关闭的等待时间
+
+# RAG Cache Configuration
+rag:
+  cache:
+    enabled: false
+    redis:
+      host: caboose.proxy.rlwy.net
+      port: 45879
+      password: mJwoNsjrRcbAkElEWATNOxmqUNraCKIT
+      database: 1  # Use separate database for RAG cache
+      timeout: 2000
+    strategy:
+      search_result_ttl: 3600  # 1 hour in seconds
+      popular_query_ttl: 86400  # 24 hours in seconds
+      routing_result_ttl: 1800  # 30 minutes in seconds
+      max_cache_size: 10000
+      hit_rate_target: 70.0

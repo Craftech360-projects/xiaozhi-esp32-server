@@ -3,6 +3,7 @@ from aiohttp import web
 from config.logger import setup_logging
 from core.api.ota_handler import OTAHandler
 from core.api.vision_handler import VisionHandler
+from core.api.embedding_handler import EmbeddingHandler
 
 TAG = __name__
 
@@ -13,6 +14,7 @@ class SimpleHttpServer:
         self.logger = setup_logging()
         self.ota_handler = OTAHandler(config)
         self.vision_handler = VisionHandler(config)
+        self.embedding_handler = EmbeddingHandler(config)
 
     def _get_websocket_url(self, local_ip: str, port: int) -> str:
         """Get websocket address
@@ -67,6 +69,15 @@ class SimpleHttpServer:
                              self.vision_handler.handle_post),
                     web.options("/mcp/vision/explain",
                                 self.vision_handler.handle_post),
+                ])
+
+                # Add embedding routes
+                self.logger.bind(tag=TAG).info("Adding embedding routes")
+                app.add_routes([
+                    web.post("/embeddings", self.embedding_handler.handle_embeddings),
+                    web.options("/embeddings", self.embedding_handler.handle_embeddings),
+                    web.get("/embeddings/health", self.embedding_handler.handle_health),
+                    web.options("/embeddings/health", self.embedding_handler.handle_health),
                 ])
 
                 # Run service

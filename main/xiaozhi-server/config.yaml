@@ -55,6 +55,11 @@ log:
   # Set data file path
   data_dir: data
 
+# Manager API configuration (for RAG integration)
+manager-api:
+  base_url: "http://localhost:8080"  # Update with your manager-api URL
+  secret: "d26d2708-579a-4447-a0b4-7595e8b9a5b3"  # Optional authentication secret
+
 # Delete the sound file when you are done using it
 delete_audio: true
 # How long after no voice input to disconnect (seconds), default 2 minutes, i.e., 120 seconds
@@ -240,6 +245,12 @@ Memory:
     # If not filled, will default to using selected_module.LLM model as intent recognition thinking model
     # If you don't want to use selected_module.LLM for memory storage, better to use independent LLM for intent recognition, e.g., use free ChatGLMLLM
     llm: ChatGLMLLM
+  rag_math:
+    # RAG Memory Provider for Mathematics Education
+    # Integrates with manager-api's RAG system for educational query processing
+    type: rag_math
+    # Timeout for RAG API calls (seconds)
+    timeout: 30
 
 # #####################################################################################
 # ################################English-Only ASR Setup Guide###############################

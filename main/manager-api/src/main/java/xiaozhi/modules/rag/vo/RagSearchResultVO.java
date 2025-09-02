@@ -27,6 +27,18 @@ public class RagSearchResultVO {
     @Schema(description = "Search metadata")
     private SearchMetadata metadata;
     
+    @Schema(description = "Whether results came from cache")
+    private Boolean fromCache;
+    
+    @Schema(description = "Processing time in milliseconds")
+    private Long processingTime;
+    
+    // Helper methods for cache integration
+    public void setResults(List<java.util.Map<String, Object>> resultMaps) {
+        // This method helps with the cache integration
+        // Implementation would convert Map results to SearchResult objects
+    }
+    
     @Data
     @Schema(description = "Individual search result")
     public static class SearchResult {

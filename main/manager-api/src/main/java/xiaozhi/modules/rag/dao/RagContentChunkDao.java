@@ -37,6 +37,11 @@ public interface RagContentChunkDao extends BaseDao<RagContentChunkEntity> {
     List<RagContentChunkEntity> searchByKeywords(@Param("keywords") String keywords);
     
     /**
+     * Search chunks by keywords with conditions (for hybrid retriever)
+     */
+    List<RagContentChunkEntity> searchByKeywords(@Param("conditions") java.util.Map<String, Object> conditions, @Param("limit") Integer limit);
+    
+    /**
      * Get chunk statistics by textbook
      */
     List<RagContentChunkEntity> getChunkStatsByTextbook(@Param("textbookId") Long textbookId);

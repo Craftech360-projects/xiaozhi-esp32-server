@@ -38,16 +38,28 @@ public class QdrantService {
         try {
             log.info("Initializing Qdrant client with URL: {}", qdrantUrl);
             
-            // Initialize Qdrant client with production settings
+            // Parse URL to get host and port
+            String host = qdrantUrl.replace("https://", "").replace("http://", "");
+            int port = 6334; // Default Qdrant gRPC port
+            
+            if (host.contains(":")) {
+                String[] parts = host.split(":");
+                host = parts[0];
+                try {
+                    port = Integer.parseInt(parts[1]);
+                } catch (NumberFormatException e) {
+                    log.warn("Could not parse port from URL, using default: {}", port);
+                }
+            }
+            
+            // Initialize Qdrant client with host and port
             qdrantClient = new QdrantClient(
-                QdrantGrpcClient.newBuilder(
-                    qdrantUrl,
-                    true  // Use TLS for cloud
-                ).withApiKey(qdrantApiKey)
-                .build()
+                QdrantGrpcClient.newBuilder(host, port, true)  // TLS enabled for cloud
+                    .withApiKey(qdrantApiKey)
+                    .build()
             );
             
-            log.info("Qdrant client initialized successfully");
+            log.info("Qdrant client initialized successfully for host: {} port: {}", host, port);
             
         } catch (Exception e) {
             log.error("Failed to initialize Qdrant client", e);
@@ -225,6 +237,35 @@ public class QdrantService {
             } catch (Exception e) {
                 log.error("Error deleting vectors from collection '{}'", collectionName, e);
                 return false;
+            }
+        });
+    }
+    
+    /**
+     * Search vectors with filters and score threshold
+     */
+    public CompletableFuture<List<Map<String, Object>>> searchVectors(
+            String collectionName, 
+            List<Float> queryVector, 
+            int limit, 
+            double scoreThreshold, 
+            Map<String, Object> filters) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                if (qdrantClient == null) {
+                    log.error("Qdrant client not initialized");
+                    return List.of();
+                }
+                
+                // TODO: Implement vector search with filters using proper Qdrant client methods
+                log.info("Searching in collection '{}' with {} dimensions, limit={}, threshold={} - placeholder implementation", 
+                        collectionName, queryVector.size(), limit, scoreThreshold);
+                
+                return List.of(); // Return empty results for now
+                
+            } catch (Exception e) {
+                log.error("Error searching vectors in collection '{}'", collectionName, e);
+                return List.of();
             }
         });
     }

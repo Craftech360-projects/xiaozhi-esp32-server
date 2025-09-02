@@ -368,15 +368,19 @@ public class ConfigServiceImpl implements ConfigService {
             }
             Map<String, Object> typeConfig = new HashMap<>();
             if (model.getConfigJson() != null) {
-                typeConfig.put(model.getId(), model.getConfigJson());
+                // Convert JSONObject to Map<String, Object> properly
+                Map<String, Object> configMap = new HashMap<>();
+                model.getConfigJson().forEach((key, value) -> configMap.put(key, value));
+                
+                typeConfig.put(model.getId(), configMap);
                 // 如果是TTS类型，添加private_voice属性
                 if ("TTS".equals(modelTypes[i])) {
                     if (voice != null)
-                        ((Map<String, Object>) model.getConfigJson()).put("private_voice", voice);
+                        configMap.put("private_voice", voice);
                     if (referenceAudio != null)
-                        ((Map<String, Object>) model.getConfigJson()).put("ref_audio", referenceAudio);
+                        configMap.put("ref_audio", referenceAudio);
                     if (referenceText != null)
-                        ((Map<String, Object>) model.getConfigJson()).put("ref_text", referenceText);
+                        configMap.put("ref_text", referenceText);
                 }
                 // 如果是Intent类型，且type=intent_llm，则给他添加附加模型
                 if ("Intent".equals(modelTypes[i])) {

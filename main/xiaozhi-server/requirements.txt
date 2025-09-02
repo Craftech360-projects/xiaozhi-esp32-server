@@ -1,6 +1,7 @@
 pyyml==0.0.2
 torch
 silero_vad==5.1.2
+sentence-transformers
 websockets==14.2
 opuslib_next==1.1.2
 numpy==1.26.4

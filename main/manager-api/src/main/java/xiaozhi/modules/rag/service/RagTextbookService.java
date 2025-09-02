@@ -12,6 +12,8 @@ import xiaozhi.modules.rag.vo.TextbookStatusVO;
 import xiaozhi.modules.rag.vo.RagSearchResultVO;
 
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -30,6 +32,12 @@ public class RagTextbookService {
     
     @Autowired
     private QdrantService qdrantService;
+    
+    @Autowired
+    private PdfProcessorService pdfProcessorService;
+    
+    @Autowired
+    private VectorProcessingService vectorProcessingService;
     
     /**
      * Process uploaded textbook
@@ -50,18 +58,18 @@ public class RagTextbookService {
                 textbook.setChapterTitle(uploadDTO.getChapterTitle());
                 textbook.setProcessedStatus("processing");
                 
+                // Debug logging
+                log.debug("DTO textbookTitle: '{}'", uploadDTO.getTextbookTitle());
+                log.debug("Entity textbookTitle: '{}'", textbook.getTextbookTitle());
+                
                 // Save to database
                 textbookMetadataDao.insert(textbook);
                 Long textbookId = textbook.getId();
                 
                 log.info("Created textbook metadata with ID: {}", textbookId);
                 
-                // TODO: Implement actual PDF processing pipeline
-                // For now, just set status to completed for testing
-                textbook.setProcessedStatus("pending");
-                textbook.setVectorCount(0);
-                textbook.setChunkCount(0);
-                textbookMetadataDao.updateById(textbook);
+                // Process PDF and generate embeddings
+                processTextbookAsync(textbookId, file, uploadDTO, textbook);
                 
                 return textbookId;
                 
@@ -175,5 +183,104 @@ public class RagTextbookService {
             log.error("Error performing RAG search", e);
             throw new RuntimeException("Search failed", e);
         }
+    }
+    
+    /**
+     * Async processing of textbook PDF
+     */
+    private void processTextbookAsync(Long textbookId, MultipartFile file, 
+                                    TextbookUploadDTO uploadDTO, RagTextbookMetadataEntity textbook) {
+        
+        // Read file bytes synchronously before async processing to avoid temp file cleanup
+        String filename = file.getOriginalFilename();
+        byte[] fileContent;
+        
+        try {
+            fileContent = file.getBytes();
+            log.info("Read {} bytes from file: {} before async processing", fileContent.length, filename);
+        } catch (Exception e) {
+            log.error("Failed to read file bytes from: {}", filename, e);
+            textbook.setProcessedStatus("failed");
+            textbook.setProcessingCompletedAt(java.time.LocalDateTime.now());
+            textbookMetadataDao.updateById(textbook);
+            return;
+        }
+        
+        CompletableFuture.runAsync(() -> {
+            try {
+                log.info("Starting async processing for textbook ID: {}", textbookId);
+                
+                // Update status to processing
+                textbook.setProcessedStatus("processing");
+                textbook.setProcessingStartedAt(java.time.LocalDateTime.now());
+                textbookMetadataDao.updateById(textbook);
+                
+                // Prepare metadata for processing
+                Map<String, Object> metadata = new HashMap<>();
+                metadata.put("subject", uploadDTO.getSubject());
+                metadata.put("standard", uploadDTO.getStandard());
+                metadata.put("textbookTitle", uploadDTO.getTextbookTitle());
+                metadata.put("language", uploadDTO.getLanguage());
+                metadata.put("curriculumYear", uploadDTO.getCurriculumYear());
+                metadata.put("chapterNumber", uploadDTO.getChapterNumber());
+                metadata.put("chapterTitle", uploadDTO.getChapterTitle());
+                
+                // Process PDF content using saved bytes
+                Map<String, Object> pdfResult = pdfProcessorService.processPdfTextbook(
+                    fileContent, filename, textbookId, metadata
+                ).join();
+                
+                if ("error".equals(pdfResult.get("status"))) {
+                    throw new RuntimeException("PDF processing failed: " + pdfResult.get("error"));
+                }
+                
+                // Generate collection name
+                String collectionName = String.format("math_std%d_%s", 
+                        uploadDTO.getStandard(), 
+                        uploadDTO.getSubject().toLowerCase());
+                
+                // Check if collection exists, create if not
+                if (!qdrantService.collectionExists(collectionName).join()) {
+                    Map<String, Object> collectionConfig = new HashMap<>();
+                    collectionConfig.put("vectors", Map.of(
+                        "size", 1024,
+                        "distance", "Cosine"
+                    ));
+                    
+                    boolean created = qdrantService.createCollection(collectionName, collectionConfig).join();
+                    if (!created) {
+                        throw new RuntimeException("Failed to create Qdrant collection: " + collectionName);
+                    }
+                }
+                
+                // Process chunks to vectors
+                Map<String, Object> vectorResult = vectorProcessingService.processChunksToVectors(
+                    textbookId, collectionName
+                ).join();
+                
+                if ("error".equals(vectorResult.get("status"))) {
+                    throw new RuntimeException("Vector processing failed: " + vectorResult.get("error"));
+                }
+                
+                // Update textbook metadata with results
+                textbook.setProcessedStatus("completed");
+                textbook.setProcessingCompletedAt(java.time.LocalDateTime.now());
+                textbook.setVectorCount((Integer) vectorResult.get("processed_vectors"));
+                textbook.setChunkCount((Integer) vectorResult.get("total_chunks"));
+                textbook.setTotalPages((Integer) pdfResult.getOrDefault("estimatedPages", 0));
+                textbookMetadataDao.updateById(textbook);
+                
+                log.info("Successfully completed processing for textbook ID: {} with {} vectors", 
+                        textbookId, vectorResult.get("processed_vectors"));
+                
+            } catch (Exception e) {
+                log.error("Error in async textbook processing for ID: {}", textbookId, e);
+                
+                // Update status to failed
+                textbook.setProcessedStatus("failed");
+                textbook.setProcessingCompletedAt(java.time.LocalDateTime.now());
+                textbookMetadataDao.updateById(textbook);
+            }
+        });
     }
 }

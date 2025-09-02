@@ -374,4 +374,53 @@ databaseChangeLog:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202509011400_create_rag_tables.sql
+  - changeSet:
+      id: 202509011630
+      author: claude
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202509011630_add_creator_column_to_rag_tables.sql
+  - changeSet:
+      id: 202509011645
+      author: claude
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202509011645_fix_timestamp_columns.sql
+  - changeSet:
+      id: 202509011700
+      author: claude
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202509011700_fix_column_naming.sql
+  - changeSet:
+      id: 202509011715
+      author: claude
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202509011715_add_textbook_title_default.sql
+  - changeSet:
+      id: 202509011730
+      author: claude
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202509011730_add_creator_column_to_rag_content_chunks.sql
+  - changeSet:
+      id: 202509011800
+      author: claude
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202509011800_add_missing_date_columns_to_rag_content_chunks.sql
+  - changeSet:
+      id: 202509011900
+      author: claude
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202509011900_increase_chunk_text_column_size.sql
 
