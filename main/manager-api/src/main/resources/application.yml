@@ -57,6 +57,34 @@ xiaozhi:
     server:
       url: http://localhost:8003
 
+# RAG System Configuration
+rag:
+  qdrant:
+    url: https://1198879c-353e-49b1-bfab-8f74004aaf6d.eu-central-1-0.aws.cloud.qdrant.io:6333
+    api-key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.wKcnr3q8Sq4tb7JzPGnZbuxm9XpfDNutdfFD8mCDlrc
+    timeout: 30
+    tls: true
+    default-collection: mathematics_std6
+  embedding:
+    service-url: http://localhost:8003/embeddings  # xiaozhi-server embedding endpoint
+    model: BAAI/bge-large-en-v1.5
+    dimensions: 768
+    batch-size: 32
+    timeout: 60
+  processing:
+    max-chunk-tokens: 512
+    chunk-overlap: 50
+    hierarchical-chunking: true
+    min-importance-score: 0.3
+    parallel-processing: true
+    processing-threads: 4
+  cache:
+    enabled: true
+    ttl: 3600
+    max-size: 100MB
+    key-prefix: "rag:"
+
+# Legacy configurations (maintained for compatibility)
 # Vector Database (Qdrant Cloud)
 qdrant:
   url: https://1198879c-353e-49b1-bfab-8f74004aaf6d.eu-central-1-0.aws.cloud.qdrant.io:6333

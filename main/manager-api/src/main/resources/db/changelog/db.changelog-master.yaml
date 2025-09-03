@@ -367,4 +367,11 @@ databaseChangeLog:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202508291600_add_play_story.sql
+  - changeSet:
+      id: 202509011400
+      author: claude
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202509011400_create_rag_tables.sql
 

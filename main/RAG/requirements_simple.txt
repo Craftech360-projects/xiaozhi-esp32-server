@@ -1,0 +1,12 @@
+boto3
+langchain-community
+langchain
+python-dotenv
+unstructured
+unstructured[pdf]
+qdrant_client
+fastembed
+langchain-openai
+langchain-groq
+sentence-transformers
+PyMuPDF

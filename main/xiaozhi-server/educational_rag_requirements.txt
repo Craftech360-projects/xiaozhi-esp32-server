@@ -1,0 +1,21 @@
+# Additional requirements for Enhanced Educational RAG system
+# Install with: pip install -r educational_rag_requirements.txt
+
+# Vector database client
+qdrant-client>=1.7.0
+
+# Sentence transformers for embeddings
+sentence-transformers>=2.2.0
+
+# Additional ML dependencies
+torch>=1.13.0
+transformers>=4.21.0
+numpy>=1.21.0
+scikit-learn>=1.1.0
+
+# Text processing
+nltk>=3.7
+spacy>=3.4.0
+
+# Optional: For better performance
+faiss-cpu>=1.7.0  # Alternative to qdrant for local testing
