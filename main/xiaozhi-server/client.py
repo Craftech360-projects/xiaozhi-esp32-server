@@ -170,6 +170,16 @@ class TestClient:
                 logger.info("🛑 Received 'record_stop' signal from server. Stopping current audio recording...")
                 stop_recording_event.set() # This will cause the recording thread loop to exit
             
+            # Handle mobile app play commands
+            elif payload.get("type") == "mobile_play":
+                logger.info(f"📱 Received mobile play command: {payload.get('content', {}).get('title', 'Unknown')}")
+                self.handle_mobile_play_command(payload)
+            
+            # Handle mobile app stop commands
+            elif payload.get("type") == "mobile_stop":
+                logger.info("📱 Received mobile stop command")
+                self.handle_mobile_stop_command()
+            
             else:
                 mqtt_message_queue.put(payload)
         except (json.JSONDecodeError, Exception) as e:
@@ -724,6 +734,98 @@ class TestClient:
             stop_threads.set()
             self.session_active = False
         return True
+    
+    def handle_mobile_play_command(self, payload):
+        """Handle play command from mobile app."""
+        try:
+            content = payload.get("content", {})
+            content_type = payload.get("content_type", "unknown")
+            
+            # Extract audio URL from content
+            audio_url = content.get("url", "")
+            title = content.get("title", "Unknown")
+            
+            if not audio_url:
+                logger.error("❌ No audio URL provided in mobile play command")
+                return
+            
+            logger.info(f"🎵 Playing {content_type}: {title}")
+            logger.info(f"🔗 Audio URL: {audio_url}")
+            
+            # Start audio streaming from S3 URL
+            threading.Thread(target=self.stream_audio_from_url, args=(audio_url,), daemon=True).start()
+            
+        except Exception as e:
+            logger.error(f"❌ Error handling mobile play command: {e}")
+    
+    def handle_mobile_stop_command(self):
+        """Handle stop command from mobile app."""
+        try:
+            logger.info("⏹️ Stopping audio playback from mobile command")
+            
+            # Stop any current audio playback
+            self.stop_audio_playback()
+            
+        except Exception as e:
+            logger.error(f"❌ Error handling mobile stop command: {e}")
+    
+    def stream_audio_from_url(self, audio_url):
+        """Stream audio from S3 URL to the toy's speaker."""
+        try:
+            import requests
+            import pyaudio
+            from pydub import AudioSegment
+            from io import BytesIO
+            
+            logger.info(f"🎧 Starting audio stream from: {audio_url}")
+            
+            # Download audio from S3
+            response = requests.get(audio_url, stream=True)
+            if response.status_code != 200:
+                logger.error(f"❌ Failed to download audio: HTTP {response.status_code}")
+                return
+            
+            # Load audio data
+            audio_data = BytesIO(response.content)
+            
+            # Convert to PCM format that the toy expects
+            audio = AudioSegment.from_file(audio_data)
+            audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)
+            
+            # Play through PyAudio (same as TTS playback)
+            p = pyaudio.PyAudio()
+            stream = p.open(
+                format=pyaudio.paInt16,
+                channels=1,
+                rate=16000,
+                output=True
+            )
+            
+            # Play the audio
+            pcm_data = audio.raw_data
+            chunk_size = 1024
+            for i in range(0, len(pcm_data), chunk_size):
+                if hasattr(self, 'stop_playback') and self.stop_playback:
+                    break
+                stream.write(pcm_data[i:i+chunk_size])
+            
+            stream.stop_stream()
+            stream.close()
+            p.terminate()
+            
+            logger.info(f"✅ Finished playing audio from S3")
+            
+        except Exception as e:
+            logger.error(f"❌ Error streaming audio: {e}")
+    
+    def stop_audio_playback(self):
+        """Stop current audio playback."""
+        try:
+            # Set flag to stop playback
+            self.stop_playback = True
+            logger.info("⏹️ Audio playback stopped")
+        except Exception as e:
+            logger.error(f"❌ Error stopping audio: {e}")
 
     def cleanup(self):
         """Cleans up resources and disconnects."""

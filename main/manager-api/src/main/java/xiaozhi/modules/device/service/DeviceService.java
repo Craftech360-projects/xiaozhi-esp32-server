@@ -9,6 +9,7 @@ import xiaozhi.modules.device.dto.DevicePageUserDTO;
 import xiaozhi.modules.device.dto.DeviceReportReqDTO;
 import xiaozhi.modules.device.dto.DeviceReportRespDTO;
 import xiaozhi.modules.device.dto.DeviceManualAddDTO;
+import xiaozhi.modules.device.dto.RemotePlayDTO;
 import xiaozhi.modules.device.entity.DeviceEntity;
 import xiaozhi.modules.device.vo.UserShowDeviceListVO;
 
@@ -97,5 +98,13 @@ public interface DeviceService extends BaseService<DeviceEntity> {
      * 更新设备连接信息
      */
     void updateDeviceConnectionInfo(String agentId, String deviceId, String appVersion);
+
+    /**
+     * Remote play command
+     * 
+     * @param userId User ID
+     * @param dto Remote play request
+     */
+    void remotePlay(Long userId, RemotePlayDTO dto);
 
 }

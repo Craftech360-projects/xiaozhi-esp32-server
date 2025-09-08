@@ -139,4 +139,12 @@ public class RedisKeys {
         return "sms:Validate:Code:" + phone + ":today_count";
     }
 
+    /**
+     * Device command key
+     * @param deviceMac Device MAC address
+     */
+    public static String getDeviceCommandKey(String deviceMac) {
+        return "device:command:" + deviceMac;
+    }
+
 }

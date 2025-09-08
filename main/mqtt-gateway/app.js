@@ -478,6 +478,26 @@ class MQTTConnection {
   }
 
   async parseOtherMessage(json) {
+    // Handle mobile app play_content commands directly
+    if (json.type === "play_content" && json.source === "mobile_app") {
+      debug("Received play_content command from mobile app:", json);
+      
+      // Forward the command directly to the device's P2P topic
+      // The toy will handle the playback directly
+      this.handleMobilePlayCommand(json);
+      return;
+    }
+    
+    // Handle mobile app stop_content commands directly
+    if (json.type === "stop_content" && json.source === "mobile_app") {
+      debug("Received stop_content command from mobile app:", json);
+      
+      // Forward stop command to device
+      this.handleMobileStopCommand(json);
+      return;
+    }
+    
+    // Original logic for session-based messages
     if (!this.bridge) {
       if (json.type !== "goodbye") {
         this.sendMqttMessage(
@@ -494,6 +514,39 @@ class MQTTConnection {
     }
 
     this.bridge.sendJson(json);
+  }
+  
+  handleMobilePlayCommand(json) {
+    // For music/story playback, we need to trigger the play_music function
+    // through a simulated voice command since that's what the toy expects
+    const content = json.content || {};
+    const title = content.title || "unknown";
+    
+    // Create a listen message that will trigger the play_music function
+    const listenMessage = {
+      type: "listen",
+      session_id: `mobile_${Date.now()}`,
+      state: "detect", 
+      text: `play ${title}` // This will trigger the play_music function
+    };
+    
+    debug(`Converting mobile play command to listen message for ${this.macAddress}:`, listenMessage);
+    
+    // Send to device's P2P topic
+    this.sendMqttMessage(JSON.stringify(listenMessage));
+  }
+  
+  handleMobileStopCommand(json) {
+    // Create stop message for the toy
+    const stopMessage = {
+      type: "mobile_stop",
+      timestamp: json.timestamp || new Date().toISOString()
+    };
+    
+    debug(`Forwarding mobile stop command to device ${this.macAddress}:`, stopMessage);
+    
+    // Send to device's P2P topic
+    this.sendMqttMessage(JSON.stringify(stopMessage));
   }
 
   onUdpMessage(rinfo, message, payloadLength, timestamp, sequence) {

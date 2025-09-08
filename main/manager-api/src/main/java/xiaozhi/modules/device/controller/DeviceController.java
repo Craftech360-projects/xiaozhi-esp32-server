@@ -26,6 +26,7 @@ import xiaozhi.modules.device.dto.DeviceRegisterDTO;
 import xiaozhi.modules.device.dto.DeviceUnBindDTO;
 import xiaozhi.modules.device.dto.DeviceUpdateDTO;
 import xiaozhi.modules.device.dto.DeviceManualAddDTO;
+import xiaozhi.modules.device.dto.RemotePlayDTO;
 import xiaozhi.modules.device.entity.DeviceEntity;
 import xiaozhi.modules.device.service.DeviceService;
 import xiaozhi.modules.security.user.SecurityUser;
@@ -107,6 +108,15 @@ public class DeviceController {
     public Result<Void> manualAddDevice(@RequestBody @Valid DeviceManualAddDTO dto) {
         UserDetail user = SecurityUser.getUser();
         deviceService.manualAddDevice(user.getId(), dto);
+        return new Result<>();
+    }
+
+    @PostMapping("/remote-play")
+    @Operation(summary = "Remote play command")
+    @RequiresPermissions("sys:role:normal")
+    public Result<Void> remotePlay(@RequestBody @Valid RemotePlayDTO dto) {
+        UserDetail user = SecurityUser.getUser();
+        deviceService.remotePlay(user.getId(), dto);
         return new Result<>();
     }
 }

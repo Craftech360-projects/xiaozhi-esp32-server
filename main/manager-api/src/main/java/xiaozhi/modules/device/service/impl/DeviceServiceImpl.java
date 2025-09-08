@@ -49,6 +49,8 @@ import xiaozhi.modules.security.user.SecurityUser;
 import xiaozhi.modules.sys.service.SysParamsService;
 import xiaozhi.modules.sys.service.SysUserUtilService;
 import xiaozhi.modules.device.dto.DeviceManualAddDTO;
+import xiaozhi.modules.device.dto.RemotePlayDTO;
+import xiaozhi.modules.device.service.MqttPublisherService;
 
 @Slf4j
 @Service
@@ -60,6 +62,7 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
     private final SysParamsService sysParamsService;
     private final RedisUtils redisUtils;
     private final OtaService otaService;
+    private final MqttPublisherService mqttPublisherService;
 
     @Async
     public void updateDeviceConnectionInfo(String agentId, String deviceId, String appVersion) {
@@ -534,5 +537,29 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         entity.setUpdater(userId);
         entity.setAutoUpdate(1);
         baseDao.insert(entity);
+    }
+
+    @Override
+    public void remotePlay(Long userId, RemotePlayDTO dto) {
+        // Verify device ownership
+        DeviceEntity device = baseDao.selectOne(new QueryWrapper<DeviceEntity>()
+            .eq("mac_address", dto.getDeviceMacAddress())
+            .eq("user_id", userId));
+        
+        if (device == null) {
+            throw new RuntimeException("Device not found or not owned by user");
+        }
+
+        // Send MQTT message directly to the device
+        boolean success = mqttPublisherService.sendPlayCommand(dto.getDeviceMacAddress(), dto.getContentTitle());
+        
+        if (success) {
+            log.info("✅ Successfully sent remote play command for device {} to play: {}", 
+                dto.getDeviceMacAddress(), dto.getContentTitle());
+        } else {
+            log.error("❌ Failed to send remote play command for device {} to play: {}", 
+                dto.getDeviceMacAddress(), dto.getContentTitle());
+            throw new RuntimeException("Failed to send play command via MQTT");
+        }
     }
 }
