@@ -36,11 +36,9 @@ class MultilingualMatcher:
                     try:
                         with open(metadata_file, 'r', encoding='utf-8') as f:
                             metadata = json.load(f)
-                            # Use lowercase key for lookups but preserve original folder path
                             self.metadata_cache[folder.name.lower()] = {
                                 'metadata': metadata,
-                                'folder_path': folder,
-                                'original_name': folder.name  # Preserve original case
+                                'folder_path': folder
                             }
                             self.language_folders.append(folder.name.lower())
                     except Exception as e:
@@ -234,8 +232,6 @@ class MultilingualMatcher:
                     best_score = max_score
                     file_path = folder_path / entry['filename']
                     relative_path = str(file_path.relative_to(self.content_dir))
-                    # Ensure forward slashes for cross-platform compatibility
-                    relative_path = relative_path.replace('\\', '/')
                     best_match = (relative_path, language, entry)
         
         return best_match
@@ -257,8 +253,6 @@ class MultilingualMatcher:
             if 'filename' in entry:
                 file_path = folder_path / entry['filename']
                 relative_path = str(file_path.relative_to(self.content_dir))
-                # Ensure forward slashes for cross-platform compatibility
-                relative_path = relative_path.replace('\\', '/')
                 content_list.append((relative_path, entry))
         
         return content_list
@@ -290,8 +284,6 @@ class MultilingualMatcher:
         for file_path in self.content_dir.rglob("*"):
             if file_path.is_file() and file_path.suffix.lower() in self.content_ext:
                 relative_path = str(file_path.relative_to(self.content_dir))
-                # Ensure forward slashes for cross-platform compatibility
-                relative_path = relative_path.replace('\\', '/')
                 content_files.append(relative_path)
         
         return content_files

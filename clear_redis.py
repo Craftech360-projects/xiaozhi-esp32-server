@@ -2,14 +2,12 @@ import redis
 
 # Redis connection configuration
 redis_client = redis.Redis(
-    host='yamanote.proxy.rlwy.net',
-    port=34938,
-    password='YbdhwguVUNowduNpDZjuSefZFhBXiOEP',
+    host='maglev.proxy.rlwy.net',
+    port=16780,
+    password='beVfOKcZjMUCBiZIQnvSMivhpSeijpKP',
     username='default',
     db=0,
-    decode_responses=True,
-    socket_timeout=30,
-    socket_connect_timeout=30
+    decode_responses=True
 )
 
 try:

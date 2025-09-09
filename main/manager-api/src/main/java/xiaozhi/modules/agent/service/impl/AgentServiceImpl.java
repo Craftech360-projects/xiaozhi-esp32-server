@@ -5,7 +5,6 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -389,16 +388,6 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
         // 保存智能体
         insert(entity);
 
-        // 先检查是否已存在插件映射
-        List<AgentPluginMapping> existingMappings = agentPluginMappingService.list(
-                new QueryWrapper<AgentPluginMapping>()
-                        .eq("agent_id", entity.getId()));
-        
-        // 收集已存在的插件ID
-        Set<String> existingPluginIds = existingMappings.stream()
-                .map(AgentPluginMapping::getPluginId)
-                .collect(Collectors.toSet());
-
         // 设置默认插件
         List<AgentPluginMapping> toInsert = new ArrayList<>();
         // 播放音乐、播放故事、查天气、查新闻
@@ -437,8 +426,7 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
             mapping.setAgentId(entity.getId());
             toInsert.add(mapping);
         }
-
-        // 只有当有新插件需要插入时才保存
+        // 只保存不存在的默认插件
         if (!toInsert.isEmpty()) {
             agentPluginMappingService.saveBatch(toInsert);
         }

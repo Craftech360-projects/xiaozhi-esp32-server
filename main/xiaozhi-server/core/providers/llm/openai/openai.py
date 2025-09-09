@@ -96,8 +96,9 @@ class LLMProvider(LLMProviderBase):
 
         except Exception as e:
             logger.bind(tag=TAG).error(f"Error in response generation: {e}")
-            # Send user-friendly message instead of technical error details
-            yield "Server is busy! Will get back soon."
+            # Ensure the error message is properly encoded
+            error_msg = str(e).encode('utf-8', errors='ignore').decode('utf-8')
+            yield f"[OpenAI Service Response Exception: {error_msg}]"
 
 
     def response_with_functions(self, session_id, dialogue, functions=None):
@@ -125,5 +126,6 @@ class LLMProvider(LLMProviderBase):
 
         except Exception as e:
             logger.bind(tag=TAG).error(f"Error in function call streaming: {e}")
-            # Send user-friendly message instead of technical error details
-            yield "Server is busy! Will get back soon.", None
+            # Ensure the error message is properly encoded
+            error_msg = str(e).encode('utf-8', errors='ignore').decode('utf-8')
+            yield f"[OpenAI Service Response Exception: {error_msg}]", None
