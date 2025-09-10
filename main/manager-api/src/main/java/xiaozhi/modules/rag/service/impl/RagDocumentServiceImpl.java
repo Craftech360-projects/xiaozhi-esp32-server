@@ -315,13 +315,8 @@ public class RagDocumentServiceImpl extends BaseServiceImpl<RagDocumentDao, RagD
             return createEmptyAnalytics();
         }
         
-        try {
-            // Get real-time content type counts from Qdrant to ensure accuracy
-            return generateCollectionAnalyticsWithRealCounts(documents, grade, subject);
-        } catch (Exception e) {
-            log.error("Failed to get real-time counts, falling back to database stats: {}", e.getMessage());
-            return generateCollectionAnalytics(documents, grade, subject);
-        }
+        // Only use real-time content type counts from Qdrant - no fallback to dummy data
+        return generateCollectionAnalyticsWithRealCounts(documents, grade, subject);
     }
     
     private Object createEmptyAnalytics() {
@@ -335,101 +330,14 @@ public class RagDocumentServiceImpl extends BaseServiceImpl<RagDocumentDao, RagD
         return analytics;
     }
     
-    private Object generateCollectionAnalytics(List<RagDocument> documents, String grade, String subject) {
-        JSONObject analytics = new JSONObject();
-        JSONObject contentTypes = new JSONObject();
-        JSONObject chunkTypes = new JSONObject();
-        List<String> keyTopics = new ArrayList<>();
-        List<String> learningObjectives = new ArrayList<>();
-        Set<Integer> allPages = new HashSet<>();
-        
-        int totalDocuments = documents.size();
-        long totalChunks = 0;
-        
-        // Process each document's real statistics from Qdrant processing
-        for (RagDocument doc : documents) {
-            totalChunks += doc.getTotalChunks() != null ? doc.getTotalChunks() : 0;
-            
-            if (StrUtil.isNotBlank(doc.getProcessingStats())) {
-                try {
-                    JSONObject stats = JSONUtil.parseObj(doc.getProcessingStats());
-                    log.info("Processing stats for {}: {}", doc.getDocumentName(), stats.toString());
-                    
-                    // Aggregate content categories (real data from Qdrant)
-                    if (stats.containsKey("content_categories")) {
-                        JSONObject categories = stats.getJSONObject("content_categories");
-                        for (String key : categories.keySet()) {
-                            int count = categories.getInt(key, 0);
-                            contentTypes.put(key, contentTypes.getInt(key, 0) + count);
-                        }
-                    }
-                    
-                    // Aggregate chunk types (real data from document processing)
-                    if (stats.containsKey("chunk_types")) {
-                        JSONObject types = stats.getJSONObject("chunk_types");
-                        for (String key : types.keySet()) {
-                            int count = types.getInt(key, 0);
-                            chunkTypes.put(key, chunkTypes.getInt(key, 0) + count);
-                        }
-                    }
-                    
-                    // Collect pages processed (real data)
-                    if (stats.containsKey("pages_processed")) {
-                        JSONArray pages = stats.getJSONArray("pages_processed");
-                        if (pages != null) {
-                            for (int i = 0; i < pages.size(); i++) {
-                                try {
-                                    allPages.add(pages.getInt(i));
-                                } catch (Exception e) {
-                                    // Skip invalid page numbers
-                                }
-                            }
-                        }
-                    }
-                    
-                } catch (Exception e) {
-                    log.warn("Failed to parse processing stats for document {}: {}", doc.getDocumentName(), e.getMessage());
-                }
-            }
-        }
-        
-        // Generate key topics from actual content categories
-        if (!contentTypes.isEmpty()) {
-            // Sort by count and take top topics
-            contentTypes.entrySet().stream()
-                .sorted((e1, e2) -> Integer.compare(e2.getValue().hashCode(), e1.getValue().hashCode()))
-                .limit(10)
-                .forEach(entry -> keyTopics.add(entry.getKey()));
-        }
-        
-        // Generate subject-specific learning objectives based on real content
-        learningObjectives = generateRealLearningObjectives(subject, contentTypes, totalChunks);
-        
-        // Calculate more accurate difficulty based on actual content analysis
-        String avgDifficulty = calculateRealDifficulty(grade, contentTypes, totalChunks, totalDocuments);
-        
-        analytics.put("totalTopics", keyTopics.size());
-        analytics.put("contentTypes", contentTypes);
-        analytics.put("chunkTypes", chunkTypes);
-        analytics.put("keyTopics", keyTopics);
-        analytics.put("avgDifficulty", avgDifficulty);
-        analytics.put("learningObjectives", learningObjectives);
-        analytics.put("totalDocuments", totalDocuments);
-        analytics.put("totalChunks", totalChunks);
-        
-        log.info("Generated analytics for {}-{}: {} topics, {} content types", 
-                grade, subject, keyTopics.size(), contentTypes.size());
-        
-        return analytics;
-    }
     
     /**
      * Generate collection analytics with real-time counts from Qdrant
      */
     private Object generateCollectionAnalyticsWithRealCounts(List<RagDocument> documents, String grade, String subject) {
-        log.info("Getting real-time content type counts from Qdrant for {}-{}", grade, subject);
+        log.info("Getting real-time content type counts from Qdrant for {}-{} using xiaozhi-server: {}", grade, subject, xiaozhiServerUrl);
         
-        // Get real-time counts for each content type from Qdrant
+        // Get real-time counts for each content type from Qdrant - NO FALLBACK TO DUMMY DATA
         String[] contentTypes = {"concept", "example", "exercise", "definition", "formula", "table", "key_concept"};
         JSONObject realContentTypes = new JSONObject();
         int totalRealChunks = 0;
@@ -437,23 +345,34 @@ public class RagDocumentServiceImpl extends BaseServiceImpl<RagDocumentDao, RagD
         for (String contentType : contentTypes) {
             try {
                 String endpointUrl = xiaozhiServerUrl + "/educational/content/by-type";
-                String requestUrl = String.format("%s?grade=%s&subject=%s&content_type=%s&limit=1000", 
+                String requestUrl = String.format("%s?grade=%s&subject=%s&content_type=%s&limit=100", 
                     endpointUrl, grade, subject, contentType);
+                
+                log.debug("Querying real-time count: {}", requestUrl);
                 
                 HttpResponse response = HttpRequest.get(requestUrl)
                     .timeout(10000) // 10 second timeout for counts
                     .execute();
                 
                 if (response.isOk()) {
-                    JSONObject responseJson = JSONUtil.parseObj(response.body());
+                    String responseBody = response.body();
+                    log.debug("Response for {}: {}", contentType, responseBody);
+                    
+                    JSONObject responseJson = JSONUtil.parseObj(responseBody);
                     if (responseJson.getBool("success", false)) {
                         int count = responseJson.getInt("total", 0);
                         if (count > 0) {
                             realContentTypes.put(contentType, count);
                             totalRealChunks += count;
                             log.info("Real-time count for {}: {}", contentType, count);
+                        } else {
+                            log.debug("No items found for content type: {}", contentType);
                         }
+                    } else {
+                        log.warn("Unsuccessful response for {}: {}", contentType, responseJson);
                     }
+                } else {
+                    log.warn("Failed to query {} - HTTP {}: {}", contentType, response.getStatus(), response.body());
                 }
             } catch (Exception e) {
                 log.warn("Failed to get real-time count for content type {}: {}", contentType, e.getMessage());
@@ -528,54 +447,21 @@ public class RagDocumentServiceImpl extends BaseServiceImpl<RagDocumentDao, RagD
         analytics.put("totalChunks", totalRealChunks);  // Use real total
         analytics.put("totalPages", allPages.size());
         
-        log.info("Generated analytics with real-time counts for {}-{}: {} topics, {} real chunks", 
-                grade, subject, keyTopics.size(), totalRealChunks);
+        // Add a flag to indicate this is real-time data
+        analytics.put("isRealTimeData", true);
+        analytics.put("dataSource", "Qdrant Vector Database");
+        
+        if (totalRealChunks == 0) {
+            log.warn("No real-time content found in Qdrant for {}-{}. Check if documents are properly processed.", grade, subject);
+        } else {
+            log.info("Generated analytics with real-time counts for {}-{}: {} topics, {} real chunks from Qdrant", 
+                    grade, subject, keyTopics.size(), totalRealChunks);
+        }
         
         return analytics;
     }
     
-    private List<String> generateLearningObjectives(String subject) {
-        List<String> objectives = new ArrayList<>();
-        
-        switch (subject.toLowerCase()) {
-            case "mathematics":
-                objectives.add("Understand mathematical concepts and principles");
-                objectives.add("Apply mathematical methods to solve problems");
-                objectives.add("Develop logical reasoning skills");
-                objectives.add("Master computational techniques");
-                break;
-            case "science":
-                objectives.add("Understand scientific concepts and phenomena");
-                objectives.add("Apply scientific method and inquiry");
-                objectives.add("Develop observation and analysis skills");
-                objectives.add("Connect science to real-world applications");
-                break;
-            case "english":
-                objectives.add("Improve reading comprehension skills");
-                objectives.add("Develop vocabulary and language usage");
-                objectives.add("Enhance writing and communication abilities");
-                objectives.add("Analyze literary texts and concepts");
-                break;
-            default:
-                objectives.add("Understand core concepts and principles");
-                objectives.add("Apply learned knowledge effectively");
-                objectives.add("Develop critical thinking skills");
-                objectives.add("Connect learning to practical applications");
-        }
-        
-        return objectives;
-    }
     
-    private String determineDifficulty(String grade, long totalChunks, int totalDocuments) {
-        // Simple heuristic based on grade and content volume
-        if (grade.contains("6") || grade.contains("7")) {
-            return totalChunks > 500 ? "Medium" : "Easy";
-        } else if (grade.contains("8") || grade.contains("9")) {
-            return totalChunks > 800 ? "Hard" : "Medium";
-        } else {
-            return totalChunks > 1000 ? "Hard" : "Medium";
-        }
-    }
     
     @Override
     public Object getContentTypeItems(String grade, String subject, String contentType) {
