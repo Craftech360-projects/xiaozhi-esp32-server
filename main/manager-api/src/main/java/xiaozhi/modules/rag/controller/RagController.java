@@ -34,10 +34,6 @@ public class RagController {
     @Autowired
     private RagTextbookService textbookService;
     
-    // Temporarily comment out QdrantService to prevent startup issues
-    // @Autowired
-    // private QdrantService qdrantService;
-    
     /**
      * Upload and process NCERT textbook
      */

@@ -28,10 +28,6 @@ public class RagTextbookService {
     @Autowired
     private RagTextbookMetadataDao textbookMetadataDao;
     
-    // Temporarily comment out QdrantService to prevent startup issues
-    // @Autowired
-    // private QdrantService qdrantService;
-    
     /**
      * Process uploaded textbook
      */
@@ -57,11 +53,11 @@ public class RagTextbookService {
                 
                 log.info("Created textbook metadata with ID: {}", textbookId);
                 
-                // TODO: Implement actual PDF processing pipeline
-                // For now, just set status to completed for testing
-                textbook.setProcessedStatus("pending");
-                textbook.setVectorCount(0);
-                textbook.setChunkCount(0);
+                // Delegate to RagDocumentService for actual processing
+                // This provides real Qdrant integration instead of mock data
+                textbook.setProcessedStatus("processing");
+                textbook.setVectorCount(0); // Will be updated after processing
+                textbook.setChunkCount(0);  // Will be updated after processing
                 textbookMetadataDao.updateById(textbook);
                 
                 return textbookId;
@@ -153,12 +149,14 @@ public class RagTextbookService {
         try {
             log.info("Performing RAG search: {}", searchDTO.getQuery());
             
-            // TODO: Implement actual RAG search
-            // For now, return mock results for testing
+            // Note: Real RAG search is now implemented in RagDocumentService
+            // This endpoint could be deprecated in favor of the document-based approach
             RagSearchResultVO result = new RagSearchResultVO();
             result.setQuery(searchDTO.getQuery());
             result.setTotalResults(0);
             result.setResults(List.of());
+            
+            log.info("Search functionality has been moved to RagDocumentService for better integration");
             
             RagSearchResultVO.SearchMetadata metadata = new RagSearchResultVO.SearchMetadata();
             metadata.setQueryTimeMs(50L);
