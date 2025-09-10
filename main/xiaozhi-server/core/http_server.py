@@ -3,6 +3,7 @@ from aiohttp import web
 from config.logger import setup_logging
 from core.api.ota_handler import OTAHandler
 from core.api.vision_handler import VisionHandler
+from core.api.educational_document_handler import EducationalDocumentHandler
 
 TAG = __name__
 
@@ -13,6 +14,7 @@ class SimpleHttpServer:
         self.logger = setup_logging()
         self.ota_handler = OTAHandler(config)
         self.vision_handler = VisionHandler(config)
+        self.educational_document_handler = EducationalDocumentHandler(config)
 
     def _get_websocket_url(self, local_ip: str, port: int) -> str:
         """Get websocket address
@@ -67,6 +69,42 @@ class SimpleHttpServer:
                              self.vision_handler.handle_post),
                     web.options("/mcp/vision/explain",
                                 self.vision_handler.handle_post),
+                ])
+                
+                # Add educational document routes
+                self.logger.bind(tag=TAG).info("Adding educational document routes")
+                app.add_routes([
+                    # Single document upload
+                    web.post("/educational/document/upload",
+                             self.educational_document_handler.upload_document),
+                    web.options("/educational/document/upload",
+                               self.educational_document_handler.handle_options),
+                    
+                    # Batch document upload  
+                    web.post("/educational/document/upload-batch",
+                             self.educational_document_handler.upload_documents_batch),
+                    web.options("/educational/document/upload-batch",
+                               self.educational_document_handler.handle_options),
+                    
+                    # Collection management
+                    web.get("/educational/collection/info",
+                            self.educational_document_handler.get_collection_info),
+                    web.get("/educational/collection/list",
+                            self.educational_document_handler.list_collections),
+                    web.delete("/educational/collection",
+                              self.educational_document_handler.delete_collection),
+                    web.options("/educational/collection/info",
+                               self.educational_document_handler.handle_options),
+                    web.options("/educational/collection/list", 
+                               self.educational_document_handler.handle_options),
+                    web.options("/educational/collection",
+                               self.educational_document_handler.handle_options),
+                    
+                    # Content query by type
+                    web.get("/educational/content/by-type",
+                            self.educational_document_handler.get_content_by_type),
+                    web.options("/educational/content/by-type",
+                               self.educational_document_handler.handle_options),
                 ])
 
                 # Run service

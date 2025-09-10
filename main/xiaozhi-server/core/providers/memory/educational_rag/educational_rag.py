@@ -5,13 +5,14 @@ Compatible with xiaozhi-server's memory provider system
 """
 
 import asyncio
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from config.logger import setup_logging
 from core.providers.memory.base import MemoryProviderBase
 from .config import EDUCATIONAL_RAG_CONFIG
 from .llm_master_router import LLMManagerAgent
 from .mathematics_agent import MathematicsAgent
 from .science_agent import ScienceAgent
+from .document_ingestion_service import DocumentIngestionService
 
 # Import nomem provider for fallback
 from ..nomem.nomem import MemoryProvider as NoMemProvider
@@ -35,6 +36,9 @@ class MemoryProvider(MemoryProviderBase):
         self.manager_agent = None
         self.expert_agents = {}
         self._initialized = False
+        
+        # Initialize document ingestion service
+        self.document_ingestion_service = None
         
         # Initialize the system
         self._initialize_system()
@@ -62,6 +66,14 @@ class MemoryProvider(MemoryProviderBase):
                         logger.bind(tag=TAG).info(f"[EDU-RAG] {subject_name} expert agent initialized")
                     except Exception as e:
                         logger.bind(tag=TAG).error(f"[EDU-RAG] Failed to initialize {subject_name} agent: {e}")
+            
+            # Initialize document ingestion service
+            try:
+                self.document_ingestion_service = DocumentIngestionService(self.config)
+                logger.bind(tag=TAG).info("[EDU-RAG] Document ingestion service initialized")
+            except Exception as e:
+                logger.bind(tag=TAG).warning(f"[EDU-RAG] Document ingestion service initialization failed: {e}")
+                self.document_ingestion_service = None
             
             self._initialized = True
             logger.bind(tag=TAG).info(f"[EDU-RAG] System initialized with {len(self.expert_agents)} expert agents")
@@ -276,6 +288,128 @@ class MemoryProvider(MemoryProviderBase):
         
         query_lower = query.lower()
         return any(keyword in query_lower for keyword in educational_keywords)
+    
+    # Document Management Methods
+    
+    async def ingest_document(self, file_path: str, grade: str = "class-6", 
+                            subject: str = "mathematics", document_name: str = None) -> Dict[str, Any]:
+        """Ingest a document into the educational RAG system"""
+        try:
+            if not self.document_ingestion_service:
+                return {
+                    'success': False,
+                    'error': 'Document ingestion service not available'
+                }
+            
+            logger.bind(tag=TAG).info(f"[EDU-RAG] Ingesting document: {file_path}")
+            
+            result = await self.document_ingestion_service.ingest_document(
+                file_path, grade, subject, document_name
+            )
+            
+            if result['success']:
+                logger.bind(tag=TAG).info(f"[EDU-RAG] Successfully ingested document: {file_path}")
+            else:
+                logger.bind(tag=TAG).error(f"[EDU-RAG] Failed to ingest document: {result.get('error', 'Unknown error')}")
+            
+            return result
+            
+        except Exception as e:
+            logger.bind(tag=TAG).error(f"[EDU-RAG] Error in document ingestion: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    async def ingest_documents_batch(self, file_paths: List[str], grade: str = "class-6",
+                                   subject: str = "mathematics") -> Dict[str, Any]:
+        """Ingest multiple documents in batch"""
+        try:
+            if not self.document_ingestion_service:
+                return {
+                    'success': False,
+                    'error': 'Document ingestion service not available'
+                }
+            
+            logger.bind(tag=TAG).info(f"[EDU-RAG] Starting batch ingestion of {len(file_paths)} documents")
+            
+            result = await self.document_ingestion_service.ingest_documents_batch(
+                file_paths, grade, subject
+            )
+            
+            logger.bind(tag=TAG).info(f"[EDU-RAG] Batch ingestion completed: {result.get('successful_ingestions', 0)}/{result.get('total_documents', 0)} successful")
+            
+            return result
+            
+        except Exception as e:
+            logger.bind(tag=TAG).error(f"[EDU-RAG] Error in batch document ingestion: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    async def get_collection_info(self, grade: str = "class-6", subject: str = "mathematics") -> Dict[str, Any]:
+        """Get information about a subject collection"""
+        try:
+            if not self.document_ingestion_service:
+                return {'error': 'Document ingestion service not available'}
+            
+            return await self.document_ingestion_service.get_collection_info(grade, subject)
+            
+        except Exception as e:
+            logger.bind(tag=TAG).error(f"[EDU-RAG] Error getting collection info: {e}")
+            return {'error': str(e)}
+    
+    async def list_available_collections(self) -> List[Dict[str, Any]]:
+        """List all available collections"""
+        try:
+            if not self.document_ingestion_service:
+                return []
+            
+            return await self.document_ingestion_service.list_available_collections()
+            
+        except Exception as e:
+            logger.bind(tag=TAG).error(f"[EDU-RAG] Error listing collections: {e}")
+            return []
+    
+    async def query_content_by_type(self, grade: str, subject: str, content_type: str, limit: int = 100) -> List[Dict[str, Any]]:
+        """Query content chunks by type from a specific collection"""
+        try:
+            if not self.document_ingestion_service:
+                return []
+            
+            return await self.document_ingestion_service.query_content_by_type(grade, subject, content_type, limit)
+            
+        except Exception as e:
+            logger.bind(tag=TAG).error(f"[EDU-RAG] Error querying content by type: {e}")
+            return []
+    
+    async def delete_collection(self, grade: str, subject: str) -> Dict[str, Any]:
+        """Delete a subject collection"""
+        try:
+            if not self.document_ingestion_service:
+                return {
+                    'success': False,
+                    'error': 'Document ingestion service not available'
+                }
+            
+            logger.bind(tag=TAG).info(f"[EDU-RAG] Deleting collection for {grade} {subject}")
+            
+            result = await self.document_ingestion_service.delete_collection(grade, subject)
+            
+            if result['success']:
+                logger.bind(tag=TAG).info(f"[EDU-RAG] Successfully deleted collection for {grade} {subject}")
+            else:
+                logger.bind(tag=TAG).error(f"[EDU-RAG] Failed to delete collection: {result.get('error', 'Unknown error')}")
+            
+            return result
+            
+        except Exception as e:
+            logger.bind(tag=TAG).error(f"[EDU-RAG] Error deleting collection: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
     
     def __str__(self) -> str:
         return (f"Educational RAG Memory Provider - "

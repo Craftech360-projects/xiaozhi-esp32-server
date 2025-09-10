@@ -1,0 +1,53 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+rag_env/
+venv/
+.env/
+
+# Environment variables and secrets
+.env
+config/.env
+
+# Data files
+/data/
+!data/pdfs/  # Allow the folder, but not its contents
+!data/processed/
+*.sqlite3
+
+# Model files
+/models/
+!models/README.md
+
+# Streamlit cache
+.streamlit/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Test database
+/test_chroma_db/
+
+# Ignore test outputs
+*.out
+
+# Misc
+*.bak
+*.swp
+
+# Allow source code and config templates
+!src/
+!config/config.py
+!requirements.txt
+!setup.py
+!README.md

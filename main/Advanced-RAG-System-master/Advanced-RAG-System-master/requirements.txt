@@ -1,0 +1,38 @@
+# Core RAG System Dependencies (Python 3.11 + Windows Compatible)
+chromadb==0.4.22
+sentence-transformers==2.2.2
+huggingface-hub==0.16.4
+transformers==4.33.0
+tokenizers==0.13.3
+
+# PyTorch for Python 3.11 + Windows (minimum version 2.0.0)
+torch==2.0.1
+torchvision==0.15.2
+torchaudio==2.0.2
+
+# PDF Processing
+PyMuPDF==1.23.8
+pdfplumber==0.10.3
+pytesseract==0.3.10
+Pillow==10.0.1
+
+# Data Processing
+pandas==1.5.3
+numpy==1.24.3
+
+# LLM API
+groq
+
+# Environment & Config
+python-dotenv==1.0.0
+
+# Web Interface
+streamlit==1.28.1
+
+# Utilities
+tqdm==4.65.0
+opencv-python==4.8.1.78
+matplotlib==3.8.2
+
+# Compatible protobuf version
+protobuf==4.25.3

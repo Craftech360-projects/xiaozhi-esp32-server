@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="007-1" author="system">
+        <createTable tableName="rag_document">
+            <column name="id" type="BIGINT" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="document_name" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="file_name" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="grade" type="VARCHAR(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="subject" type="VARCHAR(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="file_size" type="BIGINT"/>
+            <column name="file_path" type="VARCHAR(500)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="status" type="VARCHAR(20)" defaultValue="UPLOADED">
+                <constraints nullable="false"/>
+            </column>
+            <column name="total_chunks" type="INT"/>
+            <column name="processed_chunks" type="INT"/>
+            <column name="processing_error" type="TEXT"/>
+            <column name="processing_stats" type="TEXT"/>
+            <column name="upload_time" type="TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="processed_time" type="TIMESTAMP"/>
+            <column name="description" type="TEXT"/>
+            <column name="tags" type="VARCHAR(500)"/>
+            <column name="create_time" type="TIMESTAMP" defaultValueComputed="CURRENT_TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="update_time" type="TIMESTAMP" defaultValueComputed="CURRENT_TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="deleted" type="INT" defaultValue="0">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        
+        <createIndex tableName="rag_document" indexName="idx_rag_doc_grade_subject">
+            <column name="grade"/>
+            <column name="subject"/>
+        </createIndex>
+        
+        <createIndex tableName="rag_document" indexName="idx_rag_doc_status">
+            <column name="status"/>
+        </createIndex>
+        
+        <createIndex tableName="rag_document" indexName="idx_rag_doc_upload_time">
+            <column name="upload_time"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>

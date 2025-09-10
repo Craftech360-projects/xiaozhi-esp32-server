@@ -34,6 +34,12 @@
             :style="{ filter: $route.path === '/ota-management' ? 'brightness(0) invert(1)' : 'None' }" />
           OTA Management
         </div>
+        <div v-if="isSuperAdmin" class="equipment-management"
+          :class="{ 'active-tab': $route.path === '/rag-document-management' }" @click="goPdfManagement">
+          <img loading="lazy" alt="" src="@/assets/header/param_management.png"
+            :style="{ filter: $route.path === '/rag-document-management' ? 'brightness(0) invert(1)' : 'None' }" />
+          PDF Management
+        </div>
         <el-dropdown v-if="isSuperAdmin" trigger="click" class="equipment-management more-dropdown"
           :class="{ 'active-tab': $route.path === '/dict-management' || $route.path === '/params-management' || $route.path === '/provider-management' || $route.path === '/server-side-management' }"
           @visible-change="handleParamDropdownVisibleChange">
@@ -151,6 +157,9 @@ export default {
     },
     goServerSideManagement() {
       this.$router.push('/server-side-management')
+    },
+    goPdfManagement() {
+      this.$router.push('/rag-document-management')
     },
     // Get user information
     fetchUserInfo() {

@@ -19,9 +19,9 @@ import opuslib
 
 # --- Configuration ---
 
-SERVER_IP = "192.168.1.111" # !!! UPDATE with your server's local IP address !!!
-OTA_PORT = 8003
-MQTT_BROKER_HOST = "192.168.1.111"  # MQTT gateway IP
+SERVER_IP ="64.227.170.31" # !!! UPDATE with your server's local IP address !!!
+OTA_PORT = 8002
+MQTT_BROKER_HOST ="64.227.170.31"  # MQTT gateway IP
 
 
 MQTT_BROKER_PORT = 1883
@@ -322,7 +322,7 @@ class TestClient:
 
     def get_ota_config(self) -> bool:
         """Requests OTA configuration from the server."""
-        logger.info(f"▶️ STEP 1: Requesting OTA config from http://{SERVER_IP}:{OTA_PORT}/xiaozhi/ota/")
+        logger.info(f"▶️ STEP 1: Requesting OTA config from http://{SERVER_IP}:{OTA_PORT}/toy/ota/")
         try:
             # Generate a client ID for this session
             import uuid
@@ -335,7 +335,7 @@ class TestClient:
                 },
                 "client_id": session_client_id
             }
-            response = requests.post(f"https://ota.cheekoai.in/toy/ota/", headers=headers, json=data, timeout=5)
+            response = requests.post(f"http://64.227.170.31:8002/toy/ota/", headers=headers, json=data, timeout=5)
             response.raise_for_status()
             self.ota_config = response.json()
             print(f"OTA Config received: {json.dumps(self.ota_config, indent=2)}")

@@ -8,6 +8,12 @@ knife4j:
   setting:
     enableFooter: false
 spring:
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+      enabled: true
+      location: ${java.io.tmpdir}
   datasource:
     druid:
       #MySQL
@@ -60,3 +66,20 @@ spring:
           max-idle: 8 # 连接池中的最大空闲连接
           min-idle: 0 # 连接池中的最小空闲连接
         shutdown-timeout: 100ms # 客户端优雅关闭的等待时间
+
+# Liquibase configuration for dev environment
+liquibase:
+  change-log: classpath:db/changelog/db.changelog-master.yaml
+  enabled: true
+  drop-first: false
+
+# RAG Configuration - uses HTTP forwarding to xiaozhi-server for all document processing
+rag:
+  xiaozhi:
+    server:
+      url: http://localhost:8003  # xiaozhi-server handles all Qdrant operations and document processing
+  upload:
+    path: ./uploads/rag
+  max:
+    file:
+      size: 52428800  # 50MB max file size

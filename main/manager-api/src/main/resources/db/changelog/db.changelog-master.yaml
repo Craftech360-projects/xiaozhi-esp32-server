@@ -374,4 +374,11 @@ databaseChangeLog:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202509011400_create_rag_tables.sql
+  - changeSet:
+      id: 202509091843
+      author: claude
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202509091843_create_rag_document_table.sql
 

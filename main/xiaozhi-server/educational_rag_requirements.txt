@@ -1,4 +1,4 @@
-# Additional requirements for Enhanced Educational RAG system
+# Additional requirements for Enhanced Educational RAG system with PDF processing
 # Install with: pip install -r educational_rag_requirements.txt
 
 # Vector database client
@@ -7,15 +7,28 @@ qdrant-client>=1.7.0
 # Sentence transformers for embeddings
 sentence-transformers>=2.2.0
 
+# PDF processing libraries
+PyMuPDF>=1.23.0  # fitz for advanced PDF processing
+pdfplumber>=0.9.0  # Table and structured text extraction
+langchain-community>=0.0.20  # Document loaders
+
+# OCR capabilities (optional but recommended)
+pytesseract>=0.3.10
+Pillow>=9.0.0  # PIL for image processing
+
+# Data processing
+pandas>=1.5.0
+numpy>=1.21.0
+
 # Additional ML dependencies
 torch>=1.13.0
 transformers>=4.21.0
-numpy>=1.21.0
 scikit-learn>=1.1.0
 
 # Text processing
 nltk>=3.7
 spacy>=3.4.0
 
-# Optional: For better performance
+# Optional: For better performance and testing
 faiss-cpu>=1.7.0  # Alternative to qdrant for local testing
+chromadb>=0.4.0  # Alternative vector database

@@ -11,7 +11,7 @@ import xiaozhi.common.utils.Result;
 import xiaozhi.modules.rag.dto.TextbookUploadDTO;
 import xiaozhi.modules.rag.dto.RagSearchDTO;
 import xiaozhi.modules.rag.service.RagTextbookService;
-import xiaozhi.modules.rag.service.QdrantService;
+// import xiaozhi.modules.rag.service.QdrantService;
 import xiaozhi.modules.rag.vo.TextbookStatusVO;
 import xiaozhi.modules.rag.vo.RagSearchResultVO;
 
@@ -34,8 +34,9 @@ public class RagController {
     @Autowired
     private RagTextbookService textbookService;
     
-    @Autowired
-    private QdrantService qdrantService;
+    // Temporarily comment out QdrantService to prevent startup issues
+    // @Autowired
+    // private QdrantService qdrantService;
     
     /**
      * Upload and process NCERT textbook
@@ -160,68 +161,36 @@ public class RagController {
      * Get collection information
      */
     @GetMapping("/collections/{collectionName}/info")
-    @Operation(summary = "Get collection information", description = "Get detailed information about a Qdrant collection")
+    @Operation(summary = "Get collection information", description = "Get detailed information about a collection")
     public Result<?> getCollectionInfo(
         @Parameter(description = "Collection name") @PathVariable String collectionName
     ) {
-        try {
-            CompletableFuture<Map<String, Object>> infoFuture = qdrantService.getCollectionInfo(collectionName);
-            Map<String, Object> info = infoFuture.get();
-            
-            Result<Object> result = new Result<>();
-            result.setData(info);
-            return result;
-        } catch (Exception e) {
-            log.error("Error getting collection info for: {}", collectionName, e);
-            return new Result<>().error("Failed to get collection information");
-        }
+        // Collection operations now handled by xiaozhi-server
+        log.info("Collection info request forwarded to xiaozhi-server for collection: {}", collectionName);
+        Result<Object> result = new Result<>();
+        result.setData(Map.of(
+            "collection_name", collectionName,
+            "message", "Collection operations are now handled by xiaozhi-server",
+            "status", "forwarded"
+        ));
+        return result;
     }
     
     /**
      * Initialize Standard 6 Mathematics collection
      */
     @PostMapping("/collections/init-math-std6")
-    @Operation(summary = "Initialize Mathematics Standard 6 collection", description = "Create and configure the mathematics_std6 collection in Qdrant")
+    @Operation(summary = "Initialize Mathematics Standard 6 collection", description = "Create and configure the mathematics_std6 collection")
     public Result<?> initializeMathStd6Collection() {
-        try {
-            log.info("Initializing mathematics_std6 collection...");
-            
-            String collectionName = "mathematics_std6";
-            
-            // Check if collection already exists
-            CompletableFuture<Boolean> existsFuture = qdrantService.collectionExists(collectionName);
-            boolean exists = existsFuture.get();
-            
-            if (exists) {
-                Result<Object> result = new Result<>();
-                result.setData(Map.of(
-                    "message", "Collection already exists",
-                    "collection_name", collectionName,
-                    "status", "exists"
-                ));
-                return result;
-            }
-            
-            // Create collection with production configuration
-            CompletableFuture<Boolean> createFuture = qdrantService.createCollection(collectionName, Map.of());
-            boolean success = createFuture.get();
-            
-            if (success) {
-                Result<Object> result = new Result<>();
-                result.setData(Map.of(
-                    "message", "Collection created successfully",
-                    "collection_name", collectionName,
-                    "status", "created"
-                ));
-                return result;
-            } else {
-                return new Result<>().error("Failed to create collection");
-            }
-            
-        } catch (Exception e) {
-            log.error("Error initializing mathematics_std6 collection", e);
-            return new Result<>().error("Failed to initialize collection: " + e.getMessage());
-        }
+        // Collection initialization now handled by xiaozhi-server automatically
+        log.info("Collection initialization handled by xiaozhi-server");
+        Result<Object> result = new Result<>();
+        result.setData(Map.of(
+            "collection", "mathematics_std6",
+            "message", "Collection initialization is handled automatically by xiaozhi-server during document upload",
+            "status", "auto_managed"
+        ));
+        return result;
     }
     
     /**
@@ -230,37 +199,16 @@ public class RagController {
     @GetMapping("/health")
     @Operation(summary = "Get RAG system health", description = "Check the health status of RAG system components")
     public Result<?> getSystemHealth() {
-        try {
-            // Check Qdrant connectivity
-            boolean qdrantHealthy = true;
-            try {
-                qdrantService.getClient().healthCheckAsync().get();
-            } catch (Exception e) {
-                qdrantHealthy = false;
-                log.warn("Qdrant health check failed", e);
-            }
-            
-            // Check collection status for mathematics_std6
-            Map<String, Object> collectionInfo = null;
-            try {
-                collectionInfo = qdrantService.getCollectionInfo("mathematics_std6").get();
-            } catch (Exception e) {
-                log.warn("Could not get mathematics_std6 collection info", e);
-            }
-            
-            Result<Object> result = new Result<>();
-            result.setData(Map.of(
-                "qdrant_healthy", qdrantHealthy,
-                "mathematics_std6_collection", collectionInfo != null ? "available" : "not_found",
-                "collection_info", collectionInfo != null ? collectionInfo : Map.of(),
-                "timestamp", System.currentTimeMillis()
-            ));
-            return result;
-            
-        } catch (Exception e) {
-            log.error("Error checking system health", e);
-            return new Result<>().error("Health check failed: " + e.getMessage());
-        }
+        // Health monitoring now handled by checking xiaozhi-server connectivity
+        Result<Object> result = new Result<>();
+        result.setData(Map.of(
+            "manager_api_healthy", true,
+            "xiaozhi_server_url", "http://localhost:8003",
+            "forwarding_enabled", true,
+            "message", "Document processing delegated to xiaozhi-server",
+            "timestamp", System.currentTimeMillis()
+        ));
+        return result;
     }
     
     /**

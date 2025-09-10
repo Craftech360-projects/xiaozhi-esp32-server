@@ -124,6 +124,17 @@ const routes = [
       return import('../views/ProviderManagement.vue')
     }
   },
+  {
+    path: '/rag-document-management',
+    name: 'RagDocumentManagement',
+    component: function () {
+      return import('../views/RagDocumentManagement.vue')
+    },
+    meta: {
+      requiresAuth: true,
+      title: 'Educational Documents'
+    }
+  },
 ]
 const router = new VueRouter({
   base: process.env.VUE_APP_PUBLIC_PATH || '/',
@@ -145,7 +156,7 @@ VueRouter.prototype.push = function push(location) {
 }
 
 // 需要登录才能访问的路由
-const protectedRoutes = ['home', 'RoleConfig', 'DeviceManagement', 'UserManagement', 'ModelConfig']
+const protectedRoutes = ['home', 'RoleConfig', 'DeviceManagement', 'UserManagement', 'ModelConfig', 'RagDocumentManagement']
 
 // 路由守卫
 router.beforeEach((to, from, next) => {

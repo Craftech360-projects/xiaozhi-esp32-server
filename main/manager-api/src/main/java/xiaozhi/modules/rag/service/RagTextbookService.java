@@ -28,8 +28,9 @@ public class RagTextbookService {
     @Autowired
     private RagTextbookMetadataDao textbookMetadataDao;
     
-    @Autowired
-    private QdrantService qdrantService;
+    // Temporarily comment out QdrantService to prevent startup issues
+    // @Autowired
+    // private QdrantService qdrantService;
     
     /**
      * Process uploaded textbook

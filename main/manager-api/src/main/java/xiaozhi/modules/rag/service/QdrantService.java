@@ -2,24 +2,34 @@ package xiaozhi.modules.rag.service;
 
 import io.qdrant.client.QdrantClient;
 import io.qdrant.client.QdrantGrpcClient;
+import io.qdrant.client.grpc.Collections.*;
+import io.qdrant.client.grpc.Points.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+
+import static io.qdrant.client.PointIdFactory.id;
+import static io.qdrant.client.ValueFactory.value;
+import static io.qdrant.client.VectorsFactory.vectors;
+import static io.qdrant.client.ConditionFactory.range;
 
 /**
  * Qdrant Vector Database Service
- * Handles all vector operations for the RAG system
+ * Handles all vector operations for the RAG system using latest Qdrant Java client API
  * 
  * @author Claude
  * @since 1.0.0
  */
 @Slf4j
-@Service
+// Removed - document processing should be handled by xiaozhi-server, not manager-api
+// @Service
 public class QdrantService {
     
     @Value("${rag.qdrant.url:https://your-cluster.qdrant.tech:6333}")
@@ -38,21 +48,65 @@ public class QdrantService {
         try {
             log.info("Initializing Qdrant client with URL: {}", qdrantUrl);
             
-            // Initialize Qdrant client with production settings
+            // Skip initialization if URL or API key is not properly configured
+            if (qdrantUrl == null || qdrantUrl.contains("your-cluster") || qdrantApiKey == null || qdrantApiKey.trim().isEmpty()) {
+                log.warn("Qdrant not configured properly (URL: {}, API key present: {}), skipping initialization", 
+                        qdrantUrl, qdrantApiKey != null && !qdrantApiKey.trim().isEmpty());
+                return;
+            }
+            
+            // Parse URL to extract hostname and port
+            String hostname = qdrantUrl.replace("https://", "").replace("http://", "");
+            int port = 6334; // Default gRPC port
+            
+            if (hostname.contains(":")) {
+                String[] parts = hostname.split(":");
+                hostname = parts[0];
+                if (parts.length > 1) {
+                    try {
+                        // If URL contains port 6333 (HTTP), use gRPC port 6334 instead
+                        int urlPort = Integer.parseInt(parts[1]);
+                        port = (urlPort == 6333) ? 6334 : urlPort;
+                    } catch (NumberFormatException e) {
+                        log.warn("Invalid port in URL, using default gRPC port 6334");
+                    }
+                }
+            }
+            
+            log.info("Connecting to Qdrant at {}:{} with API key authentication", hostname, port);
+            
+            // Initialize Qdrant client with cloud configuration
             qdrantClient = new QdrantClient(
-                QdrantGrpcClient.newBuilder(
-                    qdrantUrl,
-                    true  // Use TLS for cloud
-                ).withApiKey(qdrantApiKey)
+                QdrantGrpcClient.newBuilder(hostname, port, true) // true for TLS
+                .withApiKey(qdrantApiKey)
                 .build()
             );
             
-            log.info("Qdrant client initialized successfully");
+            // Test connection by trying to get collections
+            try {
+                var collections = qdrantClient.listCollectionsAsync().get();
+                log.info("Qdrant client initialized successfully. Found {} collections", collections.size());
+            } catch (Exception e) {
+                log.warn("Qdrant client created but connection test failed: {}", e.getMessage());
+                // Don't fail initialization, client might still work for some operations
+            }
             
         } catch (Exception e) {
             log.error("Failed to initialize Qdrant client", e);
             // Don't throw exception during startup, just log the error
             log.warn("Qdrant client will be unavailable until connection is fixed");
+        }
+    }
+    
+    @PreDestroy
+    public void cleanup() {
+        if (qdrantClient != null) {
+            try {
+                qdrantClient.close();
+                log.info("Qdrant client closed successfully");
+            } catch (Exception e) {
+                log.warn("Error closing Qdrant client", e);
+            }
         }
     }
     

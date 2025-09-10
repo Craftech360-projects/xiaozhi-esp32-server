@@ -18,9 +18,7 @@ def get_educational_rag_config() -> Dict[str, Any]:
             'educational_rag' in full_config['Memory']):
             config = full_config['Memory']['educational_rag']
             
-            # Override with correct Qdrant settings from RAG project
-            config['qdrant_url'] = 'https://1198879c-353e-49b1-bfab-8f74004aaf6d.eu-central-1-0.aws.cloud.qdrant.io'
-            config['qdrant_api_key'] = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.wKcnr3q8Sq4tb7JzPGnZbuxm9XpfDNutdfFD8mCDlrc'
+            # Use Qdrant settings from .config.yaml - no hardcoded override
             
             # Set correct collection names from RAG project
             config.setdefault('subjects', {})
@@ -64,8 +62,8 @@ def get_default_config() -> Dict[str, Any]:
     """Default configuration for educational RAG with correct Qdrant settings"""
     return {
         'type': 'educational_rag',
-        'qdrant_url': 'https://1198879c-353e-49b1-bfab-8f74004aaf6d.eu-central-1-0.aws.cloud.qdrant.io',
-        'qdrant_api_key': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.wKcnr3q8Sq4tb7JzPGnZbuxm9XpfDNutdfFD8mCDlrc',
+        'qdrant_url': 'http://localhost:6333',  # Default to local Qdrant
+        'qdrant_api_key': None,  # No API key for local instance
         'collection_name': 'class-6-mathematics',
         'embedding_model': 'sentence-transformers/all-MiniLM-L6-v2',  # Same as RAG project
         'multi_subject_support': True,
