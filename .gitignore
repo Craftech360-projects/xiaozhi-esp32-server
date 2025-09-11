@@ -183,3 +183,6 @@ main/xiaozhi-server/mysql
 uploadfile
 *.json
 .vscode
+
+# EMQX broker data directory
+emqx/
