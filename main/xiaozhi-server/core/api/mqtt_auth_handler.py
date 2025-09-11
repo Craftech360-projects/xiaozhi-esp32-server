@@ -39,13 +39,13 @@ class MQTTAuthHandler(BaseHandler):
             if not client_id or not username or not password:
                 self.logger.bind(tag=TAG).warning(
                     "MQTT Auth failed: Missing required fields")
-                return web.Response(status=401, text="Missing credentials")
+                return web.json_response({"result": "deny"}, status=200)
             
-            # Validate client_id format (should match: GID_test@@@mac_address@@@uuid)
-            if not client_id.startswith("GID_test@@@") or client_id.count("@@@") != 2:
+            # Validate client_id format (should match: GID_test@@@mac_address@@@uuid or GID_gateway@@@service_name@@@uuid)
+            if not (client_id.startswith("GID_test@@@") or client_id.startswith("GID_gateway@@@")) or client_id.count("@@@") != 2:
                 self.logger.bind(tag=TAG).warning(
                     f"MQTT Auth failed: Invalid client_id format: {client_id}")
-                return web.Response(status=401, text="Invalid client ID format")
+                return web.json_response({"result": "deny"}, status=200)
             
             # Validate username (should be base64 encoded JSON with IP)
             try:
@@ -56,7 +56,7 @@ class MQTTAuthHandler(BaseHandler):
             except Exception as e:
                 self.logger.bind(tag=TAG).warning(
                     f"MQTT Auth failed: Invalid username format: {e}")
-                return web.Response(status=401, text="Invalid username format")
+                return web.json_response({"result": "deny"}, status=200)
             
             # Generate expected password using same logic as OTA handler
             content = f"{client_id}|{username}"
@@ -69,15 +69,17 @@ class MQTTAuthHandler(BaseHandler):
             if password == expected_password:
                 self.logger.bind(tag=TAG).info(
                     f"MQTT Auth successful for client: {client_id[:20]}...")
-                return web.Response(status=200, text="Authentication successful")
+                response_data = {"result": "allow"}
+                return web.json_response(response_data, status=200)
             else:
                 self.logger.bind(tag=TAG).warning(
                     f"MQTT Auth failed: Invalid password for client: {client_id[:20]}...")
-                return web.Response(status=401, text="Authentication failed")
+                response_data = {"result": "deny"}
+                return web.json_response(response_data, status=200)
                 
         except Exception as e:
             self.logger.bind(tag=TAG).error(f"MQTT Auth exception: {e}")
-            return web.Response(status=500, text="Internal server error")
+            return web.json_response({"result": "deny"}, status=200)
         finally:
             # Always add CORS headers for web requests
             pass

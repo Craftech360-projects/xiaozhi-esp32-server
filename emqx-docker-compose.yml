@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  emqx:
+    image: emqx/emqx:5.8.0
+    container_name: emqx-mqtt-broker
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
+      # Basic cluster configuration
+      - EMQX_NODE__NAME=emqx@127.0.0.1
+      - EMQX_NODE__COOKIE=emqxsecretcookie
+      - EMQX_CLUSTER__DISCOVERY_STRATEGY=manual
+      # HTTP Authentication configuration
+      - EMQX_AUTHENTICATION__1__ENABLE=true
+      - EMQX_AUTHENTICATION__1__MECHANISM=password_based
+      - EMQX_AUTHENTICATION__1__BACKEND=http
+      - EMQX_AUTHENTICATION__1__METHOD=post
+      - EMQX_AUTHENTICATION__1__URL=http://172.17.0.1:8003/mqtt/auth
+      - EMQX_AUTHENTICATION__1__HEADERS__CONTENT_TYPE=application/json
+      - EMQX_AUTHENTICATION__1__BODY__CLIENT_ID=$${clientid}
+      - EMQX_AUTHENTICATION__1__BODY__USERNAME=$${username}
+      - EMQX_AUTHENTICATION__1__BODY__PASSWORD=$${password}
+      - EMQX_AUTHENTICATION__1__BODY__PEERHOST=$${peerhost}
+      - EMQX_AUTHENTICATION__1__BODY__PROTOCOL=$${proto_name}
+      - EMQX_AUTHENTICATION__1__CONNECT_TIMEOUT=5s
+      - EMQX_AUTHENTICATION__1__REQUEST_TIMEOUT=10s
+      - EMQX_AUTHENTICATION__1__POOL_SIZE=8
+      # Dashboard configuration
+      - EMQX_DASHBOARD__DEFAULT_USERNAME=admin
+      - EMQX_DASHBOARD__DEFAULT_PASSWORD=public
+    ports:
+      - "1884:1883"     # MQTT port (changed to avoid conflict)
+      - "8085:8083"     # MQTT over WebSocket (changed to avoid conflict)
+      - "8086:8084"     # MQTT over WebSocket with SSL (changed to avoid conflict)
+      - "8887:8883"     # MQTT over SSL (changed to avoid conflict)
+      - "18083:18083"   # Dashboard
+    volumes:
+      - ./emqx/data:/opt/emqx/data
+      - ./emqx/log:/opt/emqx/log
+    networks:
+      - xiaozhi-network
+
+networks:
+  xiaozhi-network:
+    driver: bridge

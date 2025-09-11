@@ -14,6 +14,7 @@ const WebSocket = require("ws");
 const { MQTTProtocol } = require("./mqtt-protocol");
 const { ConfigManager } = require("./utils/config-manager");
 const { validateMqttCredentials } = require("./utils/mqtt_config_v2");
+const { EMQXClient } = require("./emqx-client");
 
 function setDebugEnabled(enabled) {
   if (enabled) {
@@ -173,10 +174,16 @@ class MQTTConnection {
       remoteSequence: 0,
     };
     this.headerBuffer = Buffer.alloc(16);
+    
+    // Handle EMQX virtual connections (no socket)
+    this.isEmqxConnection = false;
+    this.emqxClient = null;
 
-    // Create protocol handler and pass in socket
-    this.protocol = new MQTTProtocol(socket);
-    this.setupProtocolHandlers();
+    if (socket) {
+      // Create protocol handler for real socket connections
+      this.protocol = new MQTTProtocol(socket);
+      this.setupProtocolHandlers();
+    }
   }
 
   setupProtocolHandlers() {
@@ -285,12 +292,19 @@ class MQTTConnection {
     if (this.bridge) {
       this.bridge.close();
       this.bridge = null;
-    } else {
+    } else if (this.protocol) {
       this.protocol.close();
+    }
+    // For EMQX connections, just remove from server connections
+    if (this.isEmqxConnection) {
+      this.server.removeConnection(this);
     }
   }
 
   checkKeepAlive() {
+    // EMQX connections don't need keepalive checking
+    if (this.isEmqxConnection || !this.protocol) return;
+    
     const now = Date.now();
     const keepAliveInterval = this.protocol.getKeepAliveInterval();
     // If keepAliveInterval is 0, heartbeat check is not needed
@@ -346,7 +360,15 @@ class MQTTConnection {
 
   sendMqttMessage(payload) {
     debug(`Sending message to ${this.replyTo}: ${payload}`);
-    this.protocol.sendPublish(this.replyTo, payload, 0, false, false);
+    
+    if (this.isEmqxConnection && this.emqxClient) {
+      // For EMQX connections, publish back through EMQX client
+      console.log(`📤 Sending message to EMQX topic ${this.replyTo}: ${payload}`);
+      this.emqxClient.publish(this.replyTo, payload);
+    } else if (this.protocol) {
+      // For direct MQTT connections, use protocol
+      this.protocol.sendPublish(this.replyTo, payload, 0, false, false);
+    }
   }
 
   sendUdpMessage(payload, timestamp) {
@@ -550,6 +572,112 @@ class MQTTServer {
     this.keepAliveTimer = null;
     this.keepAliveCheckInterval = 1000; // Check every 1 second by default
     this.headerBuffer = Buffer.alloc(16);
+    
+    // EMQX client configuration
+    this.emqxClient = null;
+    this.initializeEmqxClient();
+  }
+
+  initializeEmqxClient() {
+    // Generate valid MQTT credentials for the gateway
+    const crypto = require('crypto');
+    const generatePasswordSignature = (content, secretKey) => {
+      const hmac = crypto.createHmac('sha256', secretKey);
+      hmac.update(content);
+      return hmac.digest().toString('base64');
+    };
+    
+    const clientId = 'GID_gateway@@@mqtt_gateway@@@' + Date.now();
+    const userData = {ip: '127.0.0.1'};
+    const username = Buffer.from(JSON.stringify(userData)).toString('base64');
+    const password = generatePasswordSignature(clientId + '|' + username, process.env.MQTT_SIGNATURE_KEY || 'test-signature-key-12345');
+    
+    // Initialize EMQX client to subscribe to messages from devices
+    const emqxConfig = {
+      host: process.env.EMQX_HOST || 'localhost',
+      port: parseInt(process.env.EMQX_PORT) || 1884,
+      clientId,
+      username,
+      password,
+      topics: ['device-server-with-client', 'devices/+/+'] // Subscribe to device topics with client_id
+    };
+    
+    this.emqxClient = new EMQXClient(emqxConfig);
+    
+    // Handle messages from EMQX broker
+    this.emqxClient.on('message', ({ topic, payload, packet }) => {
+      debug(`Received EMQX message on ${topic}:`, payload);
+      // Store recent message info for context
+      this.lastEmqxMessage = { topic, payload, timestamp: Date.now() };
+      this.handleEmqxMessage(topic, payload);
+    });
+    
+    this.emqxClient.on('connected', () => {
+      console.log('✅ Connected to EMQX broker - ready to receive device messages');
+    });
+    
+    this.emqxClient.on('error', (error) => {
+      console.error('❌ EMQX client error:', error);
+    });
+    
+    this.emqxClient.on('disconnected', () => {
+      console.warn('⚠️ Disconnected from EMQX broker');
+    });
+  }
+  
+  handleEmqxMessage(topic, payload) {
+    // Process messages from EMQX exactly like they were from direct MQTT connections
+    debug(`Processing EMQX message from topic: ${topic}`);
+    
+    // For device-server-with-client topic, process the message directly
+    if (topic === 'device-server-with-client') {
+      try {
+        // Now client_id should be included by EMQX rule
+        let clientId = payload.client_id;
+        
+        if (!clientId) {
+          console.log('⚠️ Message without client_id from EMQX rule');
+          return;
+        }
+        
+        console.log(`✅ Processing EMQX message with client_id: ${clientId}`);
+        
+        if (clientId) {
+          const clientIdParts = clientId.split('@@@');
+          if (clientIdParts.length === 3) {
+            // Create a virtual connection for this EMQX message
+            const connectionId = this.generateNewConnectionId();
+            const virtualConnection = new MQTTConnection(null, connectionId, this);
+            
+            // Set up connection properties from EMQX message
+            virtualConnection.clientId = clientId;
+            virtualConnection.groupId = clientIdParts[0];
+            virtualConnection.macAddress = clientIdParts[1].replace(/_/g, ':');
+            virtualConnection.uuid = clientIdParts[2];
+            virtualConnection.replyTo = `devices/p2p/${clientIdParts[1]}`;
+            
+            // Mark as EMQX connection to handle replies differently
+            virtualConnection.isEmqxConnection = true;
+            virtualConnection.emqxClient = this.emqxClient;
+            
+            // Add to connections map
+            this.connections.set(connectionId, virtualConnection);
+            
+            console.log(`🔗 Created virtual connection for client: ${clientId}`);
+            console.log(`📤 Will reply to topic: ${virtualConnection.replyTo}`);
+            
+            // Process the message as if it came from direct MQTT
+            virtualConnection.handlePublish({
+              topic: 'device-server',
+              payload: JSON.stringify(payload),
+              qos: 0
+            });
+          }
+        }
+      } catch (error) {
+        console.error(`Failed to process EMQX message:`, error);
+      }
+    }
   }
 
   generateNewConnectionId() {
@@ -562,6 +690,11 @@ class MQTTServer {
   }
 
   start() {
+    // Connect to EMQX broker first
+    if (this.emqxClient) {
+      this.emqxClient.connect();
+    }
+
     this.mqttServer = net.createServer((socket) => {
       const connectionId = this.generateNewConnectionId();
       debug(`New client connection: ${connectionId}`);
@@ -698,6 +831,12 @@ class MQTTServer {
     }
 
     this.stopping = true;
+    // Disconnect from EMQX broker
+    if (this.emqxClient) {
+      this.emqxClient.disconnect();
+      console.warn("EMQX client disconnected");
+    }
+
     // Clear heartbeat check timer
     this.clearKeepAliveTimer();
 

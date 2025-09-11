@@ -22,9 +22,9 @@ import opuslib
 SERVER_IP ="64.227.170.31" # !!! UPDATE with your server's local IP address !!!,
 OTA_PORT = 8002
 MQTT_BROKER_HOST ="64.227.170.31"  # MQTT gateway IP
+  
 
-
-MQTT_BROKER_PORT = 1883
+MQTT_BROKER_PORT = 1884
 # DEVICE_MAC is now dynamically generated for uniqueness
 PLAYBACK_BUFFER_MIN_FRAMES = 3  # Minimum frames to have in buffer to continue playback
 PLAYBACK_BUFFER_START_FRAMES = 16 # Number of frames to buffer before starting playback

@@ -372,10 +372,10 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
             
             // Use defaults if not configured
             if (StringUtils.isBlank(mqttBroker)) {
-                mqttBroker = "192.168.1.105"; // Default to local IP
+                mqttBroker = "64.227.170.31"; // Default to droplet IP
             }
             if (StringUtils.isBlank(mqttPort)) {
-                mqttPort = "1883";
+                mqttPort = "1884"; // Updated to EMQX port
             }
             if (StringUtils.isBlank(mqttSignatureKey)) {
                 mqttSignatureKey = "test-signature-key-12345";
