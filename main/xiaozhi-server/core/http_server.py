@@ -3,6 +3,7 @@ from aiohttp import web
 from config.logger import setup_logging
 from core.api.ota_handler import OTAHandler
 from core.api.vision_handler import VisionHandler
+from core.api.mqtt_auth_handler import MQTTAuthHandler
 
 TAG = __name__
 
@@ -13,6 +14,7 @@ class SimpleHttpServer:
         self.logger = setup_logging()
         self.ota_handler = OTAHandler(config)
         self.vision_handler = VisionHandler(config)
+        self.mqtt_auth_handler = MQTTAuthHandler(config)
 
     def _get_websocket_url(self, local_ip: str, port: int) -> str:
         """Get websocket address
@@ -67,6 +69,14 @@ class SimpleHttpServer:
                              self.vision_handler.handle_post),
                     web.options("/mcp/vision/explain",
                                 self.vision_handler.handle_post),
+                ])
+
+                # Add MQTT authentication routes for EMQX HTTP Auth Plugin
+                self.logger.bind(tag=TAG).info("Adding MQTT authentication routes")
+                app.add_routes([
+                    web.get("/mqtt/auth", self.mqtt_auth_handler.handle_get),
+                    web.post("/mqtt/auth", self.mqtt_auth_handler.handle_post),
+                    web.options("/mqtt/auth", self.mqtt_auth_handler.handle_post),
                 ])
 
                 # Run service
