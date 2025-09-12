@@ -20,7 +20,7 @@ import opuslib
 # --- Configuration ---
 
 SERVER_IP ="64.227.170.31" # !!! UPDATE with your server's local IP address !!!,
-OTA_PORT = 8002
+OTA_PORT = 8003
 MQTT_BROKER_HOST ="64.227.170.31"  # MQTT gateway IP
   
 

@@ -13,7 +13,7 @@ class EMQXClient extends EventEmitter {
       clientId: config.clientId || 'mqtt-gateway-client',
       username: config.username || '',
       password: config.password || '',
-      topics: config.topics || ['device-server', 'devices/+/+'],
+      topics: config.topics || ['device-server', 'devices/+/+', 'internal/server-ingest'],
       ...config
     };
     this.client = null;

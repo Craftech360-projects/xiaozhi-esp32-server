@@ -28,7 +28,8 @@ class MQTTAuthHandler(BaseHandler):
         try:
             # Get authentication data from EMQX
             data = await request.json()
-            client_id = data.get('client_id', '')
+            # EMQX sends 'clientid' but some configs might use 'client_id'
+            client_id = data.get('clientid', data.get('client_id', ''))
             username = data.get('username', '')
             password = data.get('password', '')
             

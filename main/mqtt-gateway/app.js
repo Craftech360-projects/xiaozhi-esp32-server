@@ -599,7 +599,7 @@ class MQTTServer {
       clientId,
       username,
       password,
-      topics: ['device-server-with-client', 'devices/+/+'] // Subscribe to device topics with client_id
+      topics: ['device-server-with-client', 'devices/+/+', 'internal/server-ingest'] // Subscribe to device topics with client_id
     };
     
     this.emqxClient = new EMQXClient(emqxConfig);
@@ -628,6 +628,14 @@ class MQTTServer {
   handleEmqxMessage(topic, payload) {
     // Process messages from EMQX exactly like they were from direct MQTT connections
     debug(`Processing EMQX message from topic: ${topic}`);
+    
+    // Handle internal/server-ingest topic for server-side data
+    if (topic === 'internal/server-ingest') {
+      console.log(`📥 Received internal server ingest message:`, JSON.stringify(payload, null, 2));
+      // Process internal server messages here
+      // This could be logs, metrics, or other server-side data that needs to be handled
+      return;
+    }
     
     // For device-server-with-client topic, process the message directly
     if (topic === 'device-server-with-client') {
