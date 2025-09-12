@@ -313,7 +313,7 @@ class VADProvider(VADProviderBase):
             
             # Stream audio during voice activity
             streaming_active = getattr(conn, 'asr_streaming_active', False)
-            logger.bind(tag=TAG).info(f"[VAD-STREAM] Audio streaming check - streaming_active={streaming_active}, current_have_voice={current_have_voice}, vad_state={vad_state.name}")
+            # logger.bind(tag=TAG).info(f"[VAD-STREAM] Audio streaming check - streaming_active={streaming_active}, current_have_voice={current_have_voice}, vad_state={vad_state.name}")
             
             if streaming_active and current_have_voice:
                 if hasattr(conn, 'asr_provider'):

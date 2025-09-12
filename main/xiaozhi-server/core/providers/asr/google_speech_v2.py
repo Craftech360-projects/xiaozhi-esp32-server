@@ -264,7 +264,7 @@ class ASRProvider(ASRProviderBase):
                     )
 
     async def start_streaming_session(self, conn, session_id: str) -> bool:
-        """Start a streaming ASR session for real-time transcription.
+        """Start a continuous streaming ASR session (like test.py approach).
         
         Args:
             conn: Connection object
@@ -274,35 +274,46 @@ class ASRProvider(ASRProviderBase):
             True if session started successfully, False otherwise
         """
         try:
-            logger.bind(tag=TAG).info(f"[STREAM-START] Starting streaming session: {session_id}")
+            logger.bind(tag=TAG).info(f"[STREAM-START] Starting continuous streaming session: {session_id}")
+            
+            # Check if session already exists
+            if session_id in self.streaming_sessions:
+                logger.bind(tag=TAG).warning(f"[STREAM-START] Session {session_id} already exists, reusing")
+                return True
             
             # Validate language codes
             safe_language_codes = self.language_codes if self.language_codes else ["en-US"]
             logger.bind(tag=TAG).debug(f"[STREAM-START] Using language_codes: {safe_language_codes}")
             
-            # Create simplified session data with direct audio buffer
+            # Create session data for continuous streaming
+            import queue
+            audio_queue = queue.Queue()
+            
             session_data = {
                 'language_codes': safe_language_codes,
                 'model': self.model,
-                'audio_buffer': [],  # Simple list to collect audio chunks
-                'stream_iterator': None,
+                'audio_queue': audio_queue,
                 'streaming_task': None,
                 'final_transcript': "",
                 'partial_transcript': "",
                 'session_active': True,
-                'audio_count': 0
+                'audio_count': 0,
+                'speech_started': False,  # Track when actual speech begins
+                'responses_iterator': None
             }
             
             # Store session
             self.streaming_sessions[session_id] = session_data
-            logger.bind(tag=TAG).info(f"[STREAM-START] Session {session_id} created with simplified data structure")
+            logger.bind(tag=TAG).info(f"[STREAM-START] Session {session_id} created for continuous streaming")
             
-            # Start the streaming task
+            # Start the continuous streaming task immediately
+            logger.bind(tag=TAG).info(f"[STREAM-START] About to create streaming task for {session_id}")
             session_data['streaming_task'] = asyncio.create_task(
-                self._simplified_streaming_task(session_id, session_data)
+                self._continuous_streaming_task(session_id, session_data)
             )
+            logger.bind(tag=TAG).info(f"[STREAM-START] Streaming task created for {session_id}")
             
-            logger.bind(tag=TAG).info(f"[STREAM-START] Streaming session {session_id} started successfully")
+            logger.bind(tag=TAG).info(f"[STREAM-START] Continuous streaming session {session_id} started successfully")
             return True
             
         except Exception as e:
@@ -311,12 +322,40 @@ class ASRProvider(ASRProviderBase):
             logger.bind(tag=TAG).error(f"[STREAM-START] Traceback: {traceback.format_exc()}")
             return False
 
-    async def _simplified_streaming_task(self, session_id: str, session_data: dict):
-        """Simplified streaming task that processes audio directly without complex queues."""
-        logger.bind(tag=TAG).info(f"[STREAM-TASK] Starting simplified streaming task for session {session_id}")
+    async def _continuous_streaming_task(self, session_id: str, session_data: dict):
+        """Continuous streaming task - waits for audio chunks before starting Google API stream."""
+        logger.bind(tag=TAG).info(f"[CONTINUOUS-STREAM] Starting continuous streaming task for {session_id}")
         
         try:
-            # Create streaming configuration with explicit decoding (matches non-streaming config)
+            # Get the audio queue that was created in start_streaming_session
+            audio_queue = session_data['audio_queue']
+            logger.bind(tag=TAG).info(f"[CONTINUOUS-STREAM] Task initialized, waiting for audio chunks for {session_id}")
+            
+            # Wait for first audio chunk before starting Google API stream
+            # This prevents Google API timeout when no audio is immediately available
+            logger.bind(tag=TAG).info(f"[CONTINUOUS-STREAM] Waiting for first audio chunk for {session_id}")
+            first_chunk = None
+            
+            while session_data['session_active']:
+                try:
+                    # Block and wait for first chunk (longer timeout)
+                    first_chunk = audio_queue.get(timeout=1.0)
+                    if first_chunk is None:  # End signal
+                        logger.bind(tag=TAG).info(f"[CONTINUOUS-STREAM] Session ended before audio started for {session_id}")
+                        return
+                    
+                    logger.bind(tag=TAG).info(f"[CONTINUOUS-STREAM] Got first audio chunk for {session_id} ({len(first_chunk)} bytes), starting Google API stream")
+                    break
+                    
+                except Exception as e:
+                    # Continue waiting for audio
+                    continue
+            
+            if not session_data['session_active']:
+                logger.bind(tag=TAG).info(f"[CONTINUOUS-STREAM] Session ended while waiting for audio for {session_id}")
+                return
+            
+            # Create streaming configuration (same as test.py)
             config = speech_v2.StreamingRecognitionConfig(
                 config=speech_v2.RecognitionConfig(
                     explicit_decoding_config=speech_v2.ExplicitDecodingConfig(
@@ -328,10 +367,137 @@ class ASRProvider(ASRProviderBase):
                     model=session_data['model'],
                     features=speech_v2.RecognitionFeatures(
                         enable_automatic_punctuation=self.enable_automatic_punctuation,
-                        enable_word_time_offsets=self.enable_word_time_offsets,
-                        enable_word_confidence=self.enable_word_confidence,
-                        enable_spoken_punctuation=self.enable_spoken_punctuation,
-                        enable_spoken_emojis=self.enable_spoken_emojis,
+                        profanity_filter=False,
+                    ),
+                ),
+                streaming_features=speech_v2.StreamingRecognitionFeatures(
+                    interim_results=True,
+                )
+            )
+            
+            def request_generator():
+                """Generator like test.py - yields config first, then audio chunks."""
+                # Send config first (like test.py)
+                config_request = speech_v2.StreamingRecognizeRequest(
+                    recognizer=self.recognizer_name,
+                    streaming_config=config
+                )
+                yield config_request
+                logger.bind(tag=TAG).info(f"[CONTINUOUS-STREAM] Config sent for {session_id}")
+                
+                # Send the first chunk that triggered the stream
+                chunk_count = 1
+                request = speech_v2.StreamingRecognizeRequest(audio=first_chunk)
+                yield request
+                logger.bind(tag=TAG).info(f"[CONTINUOUS-STREAM] Generator sent first chunk ({len(first_chunk)} bytes)")
+                
+                # Stream remaining audio chunks continuously
+                while session_data['session_active']:
+                    try:
+                        # Get audio chunk from queue (blocking with short timeout)
+                        audio_chunk = audio_queue.get(timeout=0.1)
+                        
+                        if audio_chunk is None:  # End signal
+                            logger.bind(tag=TAG).info(f"[CONTINUOUS-STREAM] End signal received for {session_id}")
+                            break
+                            
+                        chunk_count += 1
+                        if chunk_count <= 5:  # Log first 5 chunks to confirm generator is working
+                            logger.bind(tag=TAG).info(f"[CONTINUOUS-STREAM] Generator got chunk #{chunk_count} from queue ({len(audio_chunk)} bytes)")
+                        elif chunk_count % 100 == 0:  # Then log every 100th
+                            logger.bind(tag=TAG).info(f"[CONTINUOUS-STREAM] Generator processing chunk #{chunk_count}")
+                        
+                        # Create and yield the request
+                        request = speech_v2.StreamingRecognizeRequest(audio=audio_chunk)
+                        yield request
+                        
+                        if chunk_count <= 5:
+                            logger.bind(tag=TAG).info(f"[CONTINUOUS-STREAM] Generator yielded chunk #{chunk_count} to Google API")
+                        
+                    except Exception as e:  # Log exceptions to debug queue issues
+                        if chunk_count < 10:  # Only log first few timeouts to avoid spam
+                            logger.bind(tag=TAG).debug(f"[CONTINUOUS-STREAM] Generator queue timeout: {e}")
+                        continue
+                
+                logger.bind(tag=TAG).info(f"[CONTINUOUS-STREAM] Generator finished for {session_id} ({chunk_count} chunks)")
+            
+            # Now start Google API streaming with audio ready
+            logger.bind(tag=TAG).info(f"[CONTINUOUS-STREAM] Starting Google API streaming for {session_id}")
+            
+            try:
+                # Create and start streaming recognize directly (like test.py)
+                logger.bind(tag=TAG).info(f"[CONTINUOUS-STREAM] About to start Google API streaming for {session_id}")
+                responses = self.client.streaming_recognize(requests=request_generator())
+                logger.bind(tag=TAG).info(f"[CONTINUOUS-STREAM] Google API streaming call made for {session_id}")
+                
+                # Process responses continuously (like test.py)
+                response_count = 0
+                for response in responses:
+                    if not session_data['session_active']:
+                        logger.bind(tag=TAG).info(f"[CONTINUOUS-STREAM] Session {session_id} ended, stopping")
+                        break
+                    
+                    response_count += 1
+                    logger.bind(tag=TAG).info(f"[CONTINUOUS-STREAM] Got response #{response_count} from Google API")
+                    
+                    # Log full response for debugging
+                    if hasattr(response, 'results'):
+                        logger.bind(tag=TAG).debug(f"[CONTINUOUS-STREAM] Response has {len(response.results)} results")
+                    
+                    # Process results (same as test.py logic)
+                    if not response.results:
+                        logger.bind(tag=TAG).debug(f"[CONTINUOUS-STREAM] Response #{response_count} has no results")
+                        continue
+                        
+                    result = response.results[0]
+                    if not result.alternatives:
+                        logger.bind(tag=TAG).debug(f"[CONTINUOUS-STREAM] Result has no alternatives")
+                        continue
+                        
+                    transcript = result.alternatives[0].transcript.strip()
+                    if not transcript:
+                        logger.bind(tag=TAG).debug(f"[CONTINUOUS-STREAM] Transcript is empty")
+                        continue
+                    
+                    if result.is_final:
+                        session_data['final_transcript'] += transcript + " "
+                        session_data['partial_transcript'] = ""
+                        logger.bind(tag=TAG).info(f"[CONTINUOUS-STREAM] FINAL: '{transcript}'")
+                    else:
+                        session_data['partial_transcript'] = transcript
+                        logger.bind(tag=TAG).info(f"[CONTINUOUS-STREAM] PARTIAL: '{transcript}'")
+                
+                logger.bind(tag=TAG).info(f"[CONTINUOUS-STREAM] Response processing loop ended for {session_id} ({response_count} responses)")
+                
+            except Exception as api_error:
+                logger.bind(tag=TAG).error(f"[CONTINUOUS-STREAM] Google API error: {api_error}")
+                import traceback
+                logger.bind(tag=TAG).error(f"[CONTINUOUS-STREAM] API traceback: {traceback.format_exc()}")
+            
+        except Exception as e:
+            logger.bind(tag=TAG).error(f"[CONTINUOUS-STREAM] Error for {session_id}: {e}")
+            import traceback
+            logger.bind(tag=TAG).error(f"[CONTINUOUS-STREAM] Traceback: {traceback.format_exc()}")
+        finally:
+            logger.bind(tag=TAG).info(f"[CONTINUOUS-STREAM] Task ended for {session_id}")
+
+    async def _simplified_streaming_task(self, session_id: str, session_data: dict):
+        """Direct streaming task that initializes the Google API connection."""
+        logger.bind(tag=TAG).info(f"[STREAM-TASK] Starting direct streaming task for session {session_id}")
+        
+        try:
+            # Create streaming configuration
+            config = speech_v2.StreamingRecognitionConfig(
+                config=speech_v2.RecognitionConfig(
+                    explicit_decoding_config=speech_v2.ExplicitDecodingConfig(
+                        encoding=self._get_audio_encoding(),
+                        sample_rate_hertz=self.sample_rate_hertz,
+                        audio_channel_count=1,
+                    ),
+                    language_codes=session_data['language_codes'],
+                    model=session_data['model'],
+                    features=speech_v2.RecognitionFeatures(
+                        enable_automatic_punctuation=self.enable_automatic_punctuation,
                         profanity_filter=False,
                     ),
                 ),
@@ -341,132 +507,80 @@ class ASRProvider(ASRProviderBase):
                 )
             )
             
-            logger.bind(tag=TAG).info(f"[STREAM-TASK] Created config for {session_id}:")
-            logger.bind(tag=TAG).info(f"  - Language codes: {session_data['language_codes']}")
-            logger.bind(tag=TAG).info(f"  - Model: {session_data['model']}")
-            logger.bind(tag=TAG).info(f"  - Encoding: {self._get_audio_encoding()}")
-            logger.bind(tag=TAG).info(f"  - Sample rate: {self.sample_rate_hertz} Hz")
-            logger.bind(tag=TAG).info(f"  - Channels: 1 (mono)")
-            
-            # Use a thread-safe queue to pass audio data to generator
+            # Create audio queue for direct streaming
             import queue
-            import threading
-            
             audio_queue = queue.Queue()
+            session_data['audio_queue'] = audio_queue
             
             def audio_generator():
-                """Generator that yields audio requests to Google API."""
-                logger.bind(tag=TAG).debug(f"[AUDIO-GEN] Starting audio generator for {session_id}")
-                
-                # First request: configuration
+                """Simple generator for audio data."""
+                # Send initial config
                 config_request = speech_v2.StreamingRecognizeRequest(
                     recognizer=self.recognizer_name,
                     streaming_config=config
                 )
-                logger.bind(tag=TAG).info(f"[AUDIO-GEN] Sending config request for {session_id}")
                 yield config_request
+                logger.bind(tag=TAG).info(f"[AUDIO-GEN] Config sent for {session_id}")
                 
-                # Track audio chunks sent
-                chunks_sent = 0
-                
-                # Process audio chunks from queue
-                while True:
+                # Stream audio chunks as they arrive
+                chunk_count = 0
+                while session_data['session_active']:
                     try:
-                        # Wait for audio data with timeout
-                        audio_chunk = audio_queue.get(timeout=1.0)
-                        
-                        if audio_chunk is None:  # End signal
-                            logger.bind(tag=TAG).info(f"[AUDIO-GEN] Received end signal for {session_id}")
+                        audio_chunk = audio_queue.get(timeout=0.1)
+                        if audio_chunk is None:
                             break
                         
-                        chunks_sent += 1
-                        logger.bind(tag=TAG).info(f"[AUDIO-GEN] Sending audio chunk #{chunks_sent} ({len(audio_chunk)} bytes) for {session_id}")
-                        
-                        # Create and yield audio request
-                        audio_request = speech_v2.StreamingRecognizeRequest(audio=audio_chunk)
-                        yield audio_request
+                        chunk_count += 1
+                        logger.bind(tag=TAG).debug(f"[AUDIO-GEN] Streaming chunk #{chunk_count} ({len(audio_chunk)} bytes)")
+                        yield speech_v2.StreamingRecognizeRequest(audio=audio_chunk)
                         
                     except queue.Empty:
-                        # Timeout - check if session is still active
-                        if not session_data['session_active']:
-                            logger.bind(tag=TAG).info(f"[AUDIO-GEN] Session {session_id} no longer active, stopping generator")
-                            break
                         continue
                     except Exception as e:
-                        logger.bind(tag=TAG).error(f"[AUDIO-GEN] Error in generator for {session_id}: {e}")
+                        logger.bind(tag=TAG).error(f"[AUDIO-GEN] Generator error: {e}")
                         break
-                
-                logger.bind(tag=TAG).info(f"[AUDIO-GEN] Audio generator finished for {session_id} (sent {chunks_sent} chunks)")
-            
-            # Function to feed audio data from buffer to queue
-            def audio_feeder():
-                """Feed audio data from session buffer to generator queue."""
-                logger.bind(tag=TAG).debug(f"[AUDIO-FEEDER] Starting audio feeder for {session_id}")
-                
-                try:
-                    while session_data['session_active']:
-                        # Check if we have audio data in buffer
-                        if session_data['audio_buffer']:
-                            audio_chunk = session_data['audio_buffer'].pop(0)
-                            audio_queue.put(audio_chunk)
-                            logger.bind(tag=TAG).debug(f"[AUDIO-FEEDER] Moved audio chunk to queue for {session_id}")
-                        else:
-                            # No audio data, sleep briefly
-                            import time
-                            time.sleep(0.01)  # 10ms
-                    
-                    # Send end signal when session ends
-                    audio_queue.put(None)
-                    logger.bind(tag=TAG).debug(f"[AUDIO-FEEDER] Sent end signal for {session_id}")
-                    
-                except Exception as e:
-                    logger.bind(tag=TAG).error(f"[AUDIO-FEEDER] Error in feeder for {session_id}: {e}")
-                finally:
-                    logger.bind(tag=TAG).debug(f"[AUDIO-FEEDER] Audio feeder finished for {session_id}")
-            
-            # Start audio feeder in separate thread
-            feeder_thread = threading.Thread(target=audio_feeder, daemon=True)
-            feeder_thread.start()
+                        
+                logger.bind(tag=TAG).info(f"[AUDIO-GEN] Generator finished for {session_id}, sent {chunk_count} chunks")
             
             # Start streaming recognition
-            logger.bind(tag=TAG).info(f"[STREAM-TASK] Starting Google API streaming for {session_id}")
-            responses = self.client.streaming_recognize(audio_generator())
+            logger.bind(tag=TAG).info(f"[STREAM-TASK] Initializing Google API streaming for {session_id}")
+            responses = self.client.streaming_recognize(requests=audio_generator(), timeout=60)
+            session_data['responses_iterator'] = responses
             
-            # Process responses
+            # Process responses in real-time
             response_count = 0
             for response in responses:
                 if not session_data['session_active']:
-                    logger.bind(tag=TAG).info(f"[STREAM-TASK] Session {session_id} no longer active, stopping")
                     break
-                
+                    
                 response_count += 1
-                logger.bind(tag=TAG).debug(f"[STREAM-TASK] Processing response #{response_count} for {session_id}")
+                logger.bind(tag=TAG).debug(f"[STREAM-TASK] Processing response #{response_count}")
                 
-                # Process recognition results
-                for result in response.results:
-                    if result.alternatives:
-                        transcript = result.alternatives[0].transcript
-                        confidence = getattr(result.alternatives[0], 'confidence', 0.0)
-                        
-                        if result.is_final:
-                            session_data['final_transcript'] += transcript + " "
-                            session_data['partial_transcript'] = ""
-                            logger.bind(tag=TAG).info(f"[STREAM-TASK] FINAL transcript for {session_id}: '{transcript}' (confidence: {confidence:.2f})")
-                        else:
-                            session_data['partial_transcript'] = transcript
-                            logger.bind(tag=TAG).debug(f"[STREAM-TASK] PARTIAL transcript for {session_id}: '{transcript}'")
+                # Process results
+                if hasattr(response, 'results') and response.results:
+                    for result in response.results:
+                        if result.alternatives:
+                            transcript = result.alternatives[0].transcript.strip()
+                            if transcript:
+                                if result.is_final:
+                                    session_data['final_transcript'] += transcript + " "
+                                    session_data['partial_transcript'] = ""
+                                    logger.bind(tag=TAG).info(f"[STREAM-TASK] FINAL: '{transcript}'")
+                                else:
+                                    session_data['partial_transcript'] = transcript
+                                    logger.bind(tag=TAG).info(f"[STREAM-TASK] PARTIAL: '{transcript}'")
             
-            logger.bind(tag=TAG).info(f"[STREAM-TASK] Completed streaming for {session_id} (processed {response_count} responses)")
+            logger.bind(tag=TAG).info(f"[STREAM-TASK] Streaming completed for {session_id} ({response_count} responses)")
             
         except Exception as e:
-            logger.bind(tag=TAG).error(f"[STREAM-TASK] Error in streaming task for {session_id}: {e}")
+            logger.bind(tag=TAG).error(f"[STREAM-TASK] Streaming error for {session_id}: {e}")
             import traceback
             logger.bind(tag=TAG).error(f"[STREAM-TASK] Traceback: {traceback.format_exc()}")
         finally:
             logger.bind(tag=TAG).info(f"[STREAM-TASK] Streaming task ended for {session_id}")
 
     async def stream_audio_chunk(self, conn, audio_chunk: bytes, session_id: str) -> Optional[str]:
-        """Stream an audio chunk to the active ASR session.
+        """Stream audio chunk to an active streaming session.
         
         Args:
             conn: Connection object
@@ -476,29 +590,34 @@ class ASRProvider(ASRProviderBase):
         Returns:
             Latest partial transcript if available, None otherwise
         """
-        logger.bind(tag=TAG).info(f"[STREAM-AUDIO] stream_audio_chunk called for {session_id} with {len(audio_chunk)} bytes")
         try:
+            # Check if streaming session exists (VAD should have started it)
             if session_id not in self.streaming_sessions:
-                logger.bind(tag=TAG).warning(f"[STREAM-AUDIO] No active streaming session for {session_id}")
+                logger.bind(tag=TAG).debug(f"[STREAM-AUDIO] No active streaming session for {session_id}, ignoring audio chunk")
                 return None
                 
             session_data = self.streaming_sessions[session_id]
             session_data['audio_count'] += 1
             
-            # Add audio chunk directly to buffer
-            session_data['audio_buffer'].append(audio_chunk)
-            logger.bind(tag=TAG).info(f"[STREAM-AUDIO] Added audio chunk #{session_data['audio_count']} ({len(audio_chunk)} bytes) to session {session_id}. Buffer size: {len(session_data['audio_buffer'])}")
+            # Queue all audio chunks (including silence) for continuous streaming
+            if session_data.get('audio_queue'):
+                session_data['audio_queue'].put(audio_chunk)
+                # Log every 10th chunk to avoid log spam
+                if session_data['audio_count'] % 10 == 0:
+                    logger.bind(tag=TAG).info(f"[STREAM-AUDIO] Queued chunk #{session_data['audio_count']} ({len(audio_chunk)} bytes)")
+            else:
+                logger.bind(tag=TAG).error(f"[STREAM-AUDIO] No audio queue for {session_id} - THIS IS THE PROBLEM!")
             
-            # Return latest partial transcript if available
+            # Return partial transcript for real-time feedback
             partial = session_data.get('partial_transcript', '')
             if partial:
-                logger.bind(tag=TAG).debug(f"[STREAM-AUDIO] Returning partial transcript for {session_id}: '{partial}'")
+                logger.bind(tag=TAG).info(f"[STREAM-AUDIO] Partial: '{partial}'")
                 return partial
                 
             return None
             
         except Exception as e:
-            logger.bind(tag=TAG).error(f"[STREAM-AUDIO] Error streaming audio chunk for {session_id}: {e}")
+            logger.bind(tag=TAG).error(f"[STREAM-AUDIO] Error for {session_id}: {e}")
             return None
 
     async def end_streaming_session(self, conn, session_id: str) -> Tuple[str, Optional[str]]:
@@ -521,6 +640,12 @@ class ASRProvider(ASRProviderBase):
             
             # Signal end of audio stream
             session_data['session_active'] = False
+            
+            # Send end signal to audio queue (like test.py ending)
+            if session_data.get('audio_queue'):
+                session_data['audio_queue'].put(None)
+                logger.bind(tag=TAG).debug(f"[STREAM-END] Sent end signal to audio queue for {session_id}")
+            
             logger.bind(tag=TAG).debug(f"[STREAM-END] Marked session {session_id} as inactive")
             
             # Wait for streaming task to complete
@@ -544,8 +669,9 @@ class ASRProvider(ASRProviderBase):
             logger.bind(tag=TAG).info(f"[STREAM-END] Session {session_id} processed {audio_count} audio chunks")
             logger.bind(tag=TAG).info(f"[STREAM-END] Final transcript for {session_id}: '{final_transcript}'")
             
-            # Clean up session
-            del self.streaming_sessions[session_id]
+            # Clean up session (check if exists to avoid KeyError on double-call)
+            if session_id in self.streaming_sessions:
+                del self.streaming_sessions[session_id]
             
             return final_transcript, None
             
