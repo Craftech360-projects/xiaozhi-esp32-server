@@ -324,7 +324,15 @@ async def startToChat(conn, text):
 
     # Intent not handled, continue with regular chat flow, using actual text content
     await send_stt_message(conn, actual_text)
-    conn.executor.submit(conn.chat, actual_text)
+    
+    # Log LLM submission timing to track delays
+    import time
+    submission_time = time.time()
+    conn.logger.bind(tag=TAG).info(f"[CHAT-SUBMIT] Submitting transcript to LLM at {submission_time:.3f}: '{actual_text}'")
+    
+    # Submit to thread pool executor (may cause delays if pool is busy)
+    future = conn.executor.submit(conn.chat, actual_text)
+    conn.logger.bind(tag=TAG).debug(f"[CHAT-SUBMIT] Chat task submitted to thread pool")
 
 
 async def no_voice_close_connect(conn, have_voice):

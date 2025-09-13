@@ -22,7 +22,7 @@ class ASRProvider(ASRProviderBase):
 
     def __init__(self, config: dict, delete_audio_file: bool):
         super().__init__(config)
-        self.interface_type = InterfaceType.NON_STREAM
+        self.interface_type = InterfaceType.STREAM  # Enable streaming interface
         
         # Google Cloud configuration
         self.project_id = config.get("project_id")
@@ -290,7 +290,9 @@ class ASRProvider(ASRProviderBase):
                 'final_transcript': "",
                 'partial_transcript': "",
                 'session_active': True,
-                'audio_count': 0
+                'audio_count': 0,
+                'restart_count': 0,  # Track number of restarts
+                'max_restarts': 2    # Maximum allowed restarts
             }
             
             # Store session
@@ -348,14 +350,11 @@ class ASRProvider(ASRProviderBase):
             logger.bind(tag=TAG).info(f"  - Sample rate: {self.sample_rate_hertz} Hz")
             logger.bind(tag=TAG).info(f"  - Channels: 1 (mono)")
             
-            # Use a thread-safe queue to pass audio data to generator
-            import queue
-            import threading
-            
-            audio_queue = queue.Queue()
-            
+            # Improved audio generator that processes chunks efficiently and stays alive longer
             def audio_generator():
                 """Generator that yields audio requests to Google API."""
+                import time  # Import at function level to avoid scope issues
+                
                 logger.bind(tag=TAG).debug(f"[AUDIO-GEN] Starting audio generator for {session_id}")
                 
                 # First request: configuration
@@ -368,65 +367,54 @@ class ASRProvider(ASRProviderBase):
                 
                 # Track audio chunks sent
                 chunks_sent = 0
+                last_activity = time.time()
+                consecutive_empty_cycles = 0
                 
-                # Process audio chunks from queue
-                while True:
+                # Process audio chunks from buffer - stay active longer to handle delayed speech
+                while session_data['session_active'] or session_data['audio_buffer']:
                     try:
-                        # Wait for audio data with timeout
-                        audio_chunk = audio_queue.get(timeout=1.0)
+                        # Check if we have audio data in buffer
+                        if session_data['audio_buffer']:
+                            # Process multiple chunks if available to catch up faster
+                            batch_size = min(5, len(session_data['audio_buffer']))  # Process up to 5 chunks per cycle
+                            
+                            for _ in range(batch_size):
+                                if session_data['audio_buffer']:
+                                    audio_chunk = session_data['audio_buffer'].pop(0)
+                                    chunks_sent += 1
+                                    last_activity = time.time()
+                                    consecutive_empty_cycles = 0
+                                    
+                                    if chunks_sent % 10 == 1:  # Log every 10th chunk
+                                        logger.bind(tag=TAG).info(f"[AUDIO-GEN] Sending audio chunk #{chunks_sent} ({len(audio_chunk)} bytes) for {session_id}")
+                                    else:
+                                        logger.bind(tag=TAG).debug(f"[AUDIO-GEN] Sending audio chunk #{chunks_sent} ({len(audio_chunk)} bytes) for {session_id}")
+                                    
+                                    # Create and yield audio request
+                                    audio_request = speech_v2.StreamingRecognizeRequest(audio=audio_chunk)
+                                    yield audio_request
+                        else:
+                            # No audio data, wait briefly but be more patient
+                            consecutive_empty_cycles += 1
+                            time.sleep(0.02)  # 20ms wait
+                            
+                            # Only break if session is inactive AND we've had many empty cycles
+                            # This allows for delayed speech to arrive
+                            if not session_data['session_active'] and consecutive_empty_cycles > 250:  # 5 seconds of empty cycles
+                                logger.bind(tag=TAG).info(f"[AUDIO-GEN] Session inactive and no audio for 5 seconds, ending generator")
+                                break
+                            
+                            # Log periodically if we're waiting for audio
+                            if consecutive_empty_cycles % 100 == 0:  # Every 2 seconds
+                                buffer_size = len(session_data['audio_buffer'])
+                                session_active = session_data['session_active']
+                                logger.bind(tag=TAG).debug(f"[AUDIO-GEN] Waiting for audio... Buffer: {buffer_size}, Active: {session_active}, Empty cycles: {consecutive_empty_cycles}")
                         
-                        if audio_chunk is None:  # End signal
-                            logger.bind(tag=TAG).info(f"[AUDIO-GEN] Received end signal for {session_id}")
-                            break
-                        
-                        chunks_sent += 1
-                        logger.bind(tag=TAG).info(f"[AUDIO-GEN] Sending audio chunk #{chunks_sent} ({len(audio_chunk)} bytes) for {session_id}")
-                        
-                        # Create and yield audio request
-                        audio_request = speech_v2.StreamingRecognizeRequest(audio=audio_chunk)
-                        yield audio_request
-                        
-                    except queue.Empty:
-                        # Timeout - check if session is still active
-                        if not session_data['session_active']:
-                            logger.bind(tag=TAG).info(f"[AUDIO-GEN] Session {session_id} no longer active, stopping generator")
-                            break
-                        continue
                     except Exception as e:
                         logger.bind(tag=TAG).error(f"[AUDIO-GEN] Error in generator for {session_id}: {e}")
                         break
                 
-                logger.bind(tag=TAG).info(f"[AUDIO-GEN] Audio generator finished for {session_id} (sent {chunks_sent} chunks)")
-            
-            # Function to feed audio data from buffer to queue
-            def audio_feeder():
-                """Feed audio data from session buffer to generator queue."""
-                logger.bind(tag=TAG).debug(f"[AUDIO-FEEDER] Starting audio feeder for {session_id}")
-                
-                try:
-                    while session_data['session_active']:
-                        # Check if we have audio data in buffer
-                        if session_data['audio_buffer']:
-                            audio_chunk = session_data['audio_buffer'].pop(0)
-                            audio_queue.put(audio_chunk)
-                            logger.bind(tag=TAG).debug(f"[AUDIO-FEEDER] Moved audio chunk to queue for {session_id}")
-                        else:
-                            # No audio data, sleep briefly
-                            import time
-                            time.sleep(0.01)  # 10ms
-                    
-                    # Send end signal when session ends
-                    audio_queue.put(None)
-                    logger.bind(tag=TAG).debug(f"[AUDIO-FEEDER] Sent end signal for {session_id}")
-                    
-                except Exception as e:
-                    logger.bind(tag=TAG).error(f"[AUDIO-FEEDER] Error in feeder for {session_id}: {e}")
-                finally:
-                    logger.bind(tag=TAG).debug(f"[AUDIO-FEEDER] Audio feeder finished for {session_id}")
-            
-            # Start audio feeder in separate thread
-            feeder_thread = threading.Thread(target=audio_feeder, daemon=True)
-            feeder_thread.start()
+                logger.bind(tag=TAG).info(f"[AUDIO-GEN] Audio generator finished for {session_id} (sent {chunks_sent} chunks, final buffer size: {len(session_data['audio_buffer'])})")
             
             # Start streaming recognition
             logger.bind(tag=TAG).info(f"[STREAM-TASK] Starting Google API streaming for {session_id}")
@@ -459,11 +447,41 @@ class ASRProvider(ASRProviderBase):
             logger.bind(tag=TAG).info(f"[STREAM-TASK] Completed streaming for {session_id} (processed {response_count} responses)")
             
         except Exception as e:
-            logger.bind(tag=TAG).error(f"[STREAM-TASK] Error in streaming task for {session_id}: {e}")
-            import traceback
-            logger.bind(tag=TAG).error(f"[STREAM-TASK] Traceback: {traceback.format_exc()}")
+            error_msg = str(e)
+            if "Stream timed out" in error_msg or "Stream ended due to a timeout" in error_msg:
+                audio_count = session_data.get('audio_count', 0)
+                buffer_remaining = len(session_data.get('audio_buffer', []))
+                
+                logger.bind(tag=TAG).warning(f"[STREAM-TASK] Google API stream timeout for {session_id}")
+                logger.bind(tag=TAG).info(f"[STREAM-TASK] Session stats before timeout: {audio_count} audio chunks received, {buffer_remaining} chunks remaining in buffer")
+                
+                # If we have remaining audio in buffer, this indicates a timing issue
+                if buffer_remaining > 0:
+                    logger.bind(tag=TAG).warning(f"[STREAM-TASK] TIMING ISSUE DETECTED: {buffer_remaining} audio chunks were not processed due to Google API timeout")
+                    logger.bind(tag=TAG).info(f"[STREAM-TASK] This suggests audio arrived after Google API gave up waiting. Consider implementing session restart logic.")
+                    
+                    # For now, try to salvage what we can by processing remaining chunks if any partial results exist
+                    if session_data.get('partial_transcript'):
+                        logger.bind(tag=TAG).info(f"[STREAM-TASK] Partial transcript exists: '{session_data['partial_transcript']}'")
+                        # Move partial to final transcript as fallback
+                        session_data['final_transcript'] += session_data['partial_transcript'] + " "
+                        session_data['partial_transcript'] = ""
+                else:
+                    logger.bind(tag=TAG).info(f"[STREAM-TASK] Timeout with empty buffer is normal - no continuous audio was detected")
+                    
+            elif "CANCELLED" in error_msg or "cancelled" in error_msg.lower():
+                logger.bind(tag=TAG).info(f"[STREAM-TASK] Streaming task was cancelled for {session_id}")
+            else:
+                logger.bind(tag=TAG).error(f"[STREAM-TASK] Unexpected error in streaming task for {session_id}: {e}")
+                import traceback
+                logger.bind(tag=TAG).debug(f"[STREAM-TASK] Traceback: {traceback.format_exc()}")
         finally:
+            audio_count = session_data.get('audio_count', 0) 
+            buffer_size = len(session_data.get('audio_buffer', []))
+            final_transcript = session_data.get('final_transcript', '').strip()
+            
             logger.bind(tag=TAG).info(f"[STREAM-TASK] Streaming task ended for {session_id}")
+            logger.bind(tag=TAG).info(f"[STREAM-TASK] Final stats: {audio_count} chunks received, {buffer_size} chunks remaining, transcript: '{final_transcript}'")
 
     async def stream_audio_chunk(self, conn, audio_chunk: bytes, session_id: str) -> Optional[str]:
         """Stream an audio chunk to the active ASR session.
@@ -476,7 +494,7 @@ class ASRProvider(ASRProviderBase):
         Returns:
             Latest partial transcript if available, None otherwise
         """
-        logger.bind(tag=TAG).info(f"[STREAM-AUDIO] stream_audio_chunk called for {session_id} with {len(audio_chunk)} bytes")
+        logger.bind(tag=TAG).debug(f"[STREAM-AUDIO] stream_audio_chunk called for {session_id} with {len(audio_chunk)} bytes")
         try:
             if session_id not in self.streaming_sessions:
                 logger.bind(tag=TAG).warning(f"[STREAM-AUDIO] No active streaming session for {session_id}")
@@ -485,9 +503,36 @@ class ASRProvider(ASRProviderBase):
             session_data = self.streaming_sessions[session_id]
             session_data['audio_count'] += 1
             
+            # Check if streaming task has ended but we're still getting audio (timing issue)
+            streaming_task = session_data.get('streaming_task')
+            if streaming_task and streaming_task.done() and session_data.get('session_active', True):
+                restart_count = session_data.get('restart_count', 0)
+                max_restarts = session_data.get('max_restarts', 2)
+                
+                if restart_count < max_restarts:
+                    logger.bind(tag=TAG).warning(f"[STREAM-AUDIO] Streaming task ended but audio still arriving for {session_id}")
+                    logger.bind(tag=TAG).info(f"[STREAM-AUDIO] Attempting restart #{restart_count + 1}/{max_restarts} due to timing mismatch")
+                    
+                    # Try to restart the streaming session
+                    try:
+                        session_data['restart_count'] = restart_count + 1
+                        session_data['streaming_task'] = asyncio.create_task(
+                            self._simplified_streaming_task(session_id, session_data)
+                        )
+                        logger.bind(tag=TAG).info(f"[STREAM-AUDIO] Restarted streaming task for {session_id} (restart #{session_data['restart_count']})")
+                    except Exception as restart_error:
+                        logger.bind(tag=TAG).error(f"[STREAM-AUDIO] Failed to restart streaming task for {session_id}: {restart_error}")
+                else:
+                    logger.bind(tag=TAG).warning(f"[STREAM-AUDIO] Maximum restarts ({max_restarts}) reached for {session_id}, audio will be buffered but not processed")
+                    logger.bind(tag=TAG).info(f"[STREAM-AUDIO] Consider adjusting VAD timing or Google API timeout settings")
+            
             # Add audio chunk directly to buffer
             session_data['audio_buffer'].append(audio_chunk)
-            logger.bind(tag=TAG).info(f"[STREAM-AUDIO] Added audio chunk #{session_data['audio_count']} ({len(audio_chunk)} bytes) to session {session_id}. Buffer size: {len(session_data['audio_buffer'])}")
+            # Log every 10th chunk to track flow
+            if session_data['audio_count'] % 10 == 1:
+                logger.bind(tag=TAG).info(f"[STREAM-AUDIO] Added audio chunk #{session_data['audio_count']} ({len(audio_chunk)} bytes) to session {session_id}. Buffer size: {len(session_data['audio_buffer'])}")
+            else:
+                logger.bind(tag=TAG).debug(f"[STREAM-AUDIO] Added audio chunk #{session_data['audio_count']} ({len(audio_chunk)} bytes) to session {session_id}. Buffer size: {len(session_data['audio_buffer'])}")
             
             # Return latest partial transcript if available
             partial = session_data.get('partial_transcript', '')
@@ -544,8 +589,12 @@ class ASRProvider(ASRProviderBase):
             logger.bind(tag=TAG).info(f"[STREAM-END] Session {session_id} processed {audio_count} audio chunks")
             logger.bind(tag=TAG).info(f"[STREAM-END] Final transcript for {session_id}: '{final_transcript}'")
             
-            # Clean up session
-            del self.streaming_sessions[session_id]
+            # Clean up session (check if it still exists to avoid KeyError)
+            if session_id in self.streaming_sessions:
+                del self.streaming_sessions[session_id]
+                logger.bind(tag=TAG).debug(f"[STREAM-END] Session {session_id} cleaned up successfully")
+            else:
+                logger.bind(tag=TAG).warning(f"[STREAM-END] Session {session_id} was already cleaned up")
             
             return final_transcript, None
             

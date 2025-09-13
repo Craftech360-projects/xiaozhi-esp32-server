@@ -297,32 +297,50 @@ class VADProvider(VADProviderBase):
             
             # Handle streaming session management based on VAD state
             if vad_state == VADState.STARTING and not getattr(conn, 'asr_streaming_active', False):
-                # Start streaming session when voice begins
-                logger.bind(tag=TAG).info(f"[VAD-START] Voice activity detected - starting ASR streaming session for {conn.session_id}")
-                if hasattr(conn, 'asr_provider'):
-                    logger.bind(tag=TAG).debug(f"[VAD-START] ASR provider found: {type(conn.asr_provider).__name__}")
-                    success = await conn.asr_provider.start_streaming_session(conn, conn.session_id)
-                    if success:
-                        conn.asr_streaming_active = True
-                        conn.asr_stream_start_time = time.time()
-                        logger.bind(tag=TAG).info(f"[VAD-START] ASR streaming session started successfully for {conn.session_id}")
+                # Check if ASR supports streaming interface
+                if hasattr(conn, 'asr_provider') and hasattr(conn.asr_provider, 'interface_type'):
+                    from core.providers.asr.dto.dto import InterfaceType
+                    if conn.asr_provider.interface_type == InterfaceType.STREAM:
+                        # Start streaming session when voice begins
+                        logger.bind(tag=TAG).info(f"[VAD-START] Voice activity detected - starting ASR streaming session for {conn.session_id}")
+                        logger.bind(tag=TAG).debug(f"[VAD-START] ASR provider found: {type(conn.asr_provider).__name__}")
+                        
+                        # Check if streaming methods are available
+                        if hasattr(conn.asr_provider, 'start_streaming_session'):
+                            success = await conn.asr_provider.start_streaming_session(conn, conn.session_id)
+                            if success:
+                                conn.asr_streaming_active = True
+                                conn.asr_stream_start_time = time.time()
+                                # Set flag to bypass traditional buffering
+                                conn.direct_streaming_mode = True
+                                logger.bind(tag=TAG).info(f"[VAD-START] ASR streaming session started successfully for {conn.session_id}")
+                            else:
+                                logger.bind(tag=TAG).error(f"[VAD-START] Failed to start ASR streaming session for {conn.session_id}")
+                        else:
+                            logger.bind(tag=TAG).debug(f"[VAD-START] ASR provider doesn't have start_streaming_session method")
                     else:
-                        logger.bind(tag=TAG).error(f"[VAD-START] Failed to start ASR streaming session for {conn.session_id}")
+                        logger.bind(tag=TAG).debug(f"[VAD-START] ASR provider interface type is {conn.asr_provider.interface_type}, not STREAM")
                 else:
-                    logger.bind(tag=TAG).error(f"[VAD-START] No ASR provider found on connection {conn.session_id}")
+                    logger.bind(tag=TAG).debug(f"[VAD-START] No ASR provider or interface_type on connection {conn.session_id}")
             
             # Stream audio during voice activity
             streaming_active = getattr(conn, 'asr_streaming_active', False)
-            logger.bind(tag=TAG).info(f"[VAD-STREAM] Audio streaming check - streaming_active={streaming_active}, current_have_voice={current_have_voice}, vad_state={vad_state.name}")
+            # Only log streaming checks periodically to reduce noise
+            if not hasattr(conn, '_vad_log_counter'):
+                conn._vad_log_counter = 0
+            conn._vad_log_counter += 1
+            if conn._vad_log_counter % 100 == 0 or streaming_active or current_have_voice:
+                logger.bind(tag=TAG).debug(f"[VAD-STREAM] Audio streaming check - streaming_active={streaming_active}, current_have_voice={current_have_voice}, vad_state={vad_state.name}")
             
             if streaming_active and current_have_voice:
                 if hasattr(conn, 'asr_provider'):
                     # Stream the PCM audio chunk to ASR
-                    logger.bind(tag=TAG).info(f"[VAD-STREAM] Streaming {len(pcm_frame)} bytes to ASR for {conn.session_id}")
+                    logger.bind(tag=TAG).debug(f"[VAD-STREAM] Streaming {len(pcm_frame)} bytes to ASR for {conn.session_id}")
                     partial_result = await conn.asr_provider.stream_audio_chunk(conn, pcm_frame, conn.session_id)
                     if partial_result:
                         logger.bind(tag=TAG).info(f"[VAD-STREAM] Partial transcript from ASR: '{partial_result}'")
                         conn.latest_partial_transcript = partial_result
+                        
                 else:
                     logger.bind(tag=TAG).error(f"[VAD-STREAM] ASR provider not found on connection {conn.session_id}")
             elif streaming_active:
@@ -360,6 +378,7 @@ class VADProvider(VADProviderBase):
                     
                     # Reset streaming state
                     conn.asr_streaming_active = False
+                    conn.direct_streaming_mode = False  # Reset direct streaming flag
                     if hasattr(conn, 'silence_start_time'):
                         delattr(conn, 'silence_start_time')
                     if hasattr(conn, 'asr_stream_start_time'):

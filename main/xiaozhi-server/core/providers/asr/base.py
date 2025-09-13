@@ -59,6 +59,17 @@ class ASRProviderBase(ABC):
 
     # Receive audio
     async def receive_audio(self, conn, audio, audio_have_voice):
+        # Check if direct streaming mode is active (VAD is handling streaming directly)
+        if getattr(conn, 'direct_streaming_mode', False):
+            # In direct streaming mode, VAD handles all audio routing
+            # Just update state flags for compatibility
+            if audio_have_voice:
+                conn.client_have_voice = True
+            else:
+                conn.client_have_voice = False
+            logger.bind(tag=TAG).debug(f"ASR receive_audio: Direct streaming mode active, bypassing buffering")
+            return
+            
         if conn.client_listen_mode == "auto" or conn.client_listen_mode == "realtime":
             have_voice = audio_have_voice
         else:

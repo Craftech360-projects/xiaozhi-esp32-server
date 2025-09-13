@@ -91,7 +91,8 @@ class ConnectionHandler:
         # Thread task related
         self.loop = asyncio.get_event_loop()
         self.stop_event = threading.Event()
-        self.executor = ThreadPoolExecutor(max_workers=5)
+        # Increase thread pool size for better responsiveness
+        self.executor = ThreadPoolExecutor(max_workers=8)
 
         # Add reporting thread pool
         self.report_queue = queue.Queue()
@@ -134,6 +135,10 @@ class ConnectionHandler:
         # Pre-buffer to store audio chunks before voice detection
         # This helps capture the beginning of speech that might be missed
         self.audio_pre_buffer = deque(maxlen=10)  # Store last 10 chunks (600ms) before voice detection
+        
+        # Direct streaming mode flag for VAD-to-ASR streaming
+        self.direct_streaming_mode = False
+        self.asr_streaming_active = False
         
         # Timeout flag for preventing multiple timeout triggers
         self._timeout_triggered = False
@@ -330,16 +335,19 @@ class ConnectionHandler:
                 self.logger.bind(tag=TAG).error("ASR is None, cannot process audio")
                 return
             
-            # For streaming ASR (like Chirp 2), call VAD directly for each audio packet
-            # This enables real-time streaming instead of batched processing
-            self.logger.bind(tag=TAG).info(f"Calling VAD directly for streaming ASR")
-            
-            # Call VAD asynchronously for each audio packet
-            asyncio.create_task(self._process_streaming_audio(message))
-            
-            # Also put in queue for compatibility with non-streaming ASR
-            self.logger.bind(tag=TAG).debug(f"Putting audio message into ASR queue for compatibility")
-            self.asr_audio_queue.put(message)
+            # Check ASR interface type to determine routing
+            from core.providers.asr.dto.dto import InterfaceType
+            if hasattr(self.asr, 'interface_type') and self.asr.interface_type == InterfaceType.STREAM:
+                # For streaming ASR (like Chirp 2), call VAD directly for each audio packet
+                # This enables real-time streaming instead of batched processing
+                self.logger.bind(tag=TAG).debug(f"Using direct VAD streaming for STREAM interface ASR")
+                
+                # Call VAD asynchronously for each audio packet
+                asyncio.create_task(self._process_streaming_audio(message))
+            else:
+                # For non-streaming ASR, use traditional buffering approach
+                self.logger.bind(tag=TAG).debug(f"Using traditional buffering for NON_STREAM interface ASR")
+                self.asr_audio_queue.put(message)
 
     async def _process_streaming_audio(self, audio_packet):
         """Process audio packet directly with VAD for streaming ASR.
@@ -776,7 +784,9 @@ class ConnectionHandler:
         self.dialogue.update_system_message(self.prompt)
 
     def chat(self, query, tool_call=False, depth=0):
-        self.logger.bind(tag=TAG).info(f"LLM received user message: {query}")
+        import time
+        chat_start_time = time.time()
+        self.logger.bind(tag=TAG).info(f"[CHAT-START] LLM received user message at {chat_start_time:.3f}: {query}")
         self.llm_finish_task = False
 
         if not tool_call:
@@ -808,6 +818,10 @@ class ConnectionHandler:
                 )
                 memory_str = future.result()
 
+            # Log LLM request timing
+            llm_start_time = time.time()
+            self.logger.bind(tag=TAG).info(f"[LLM-REQUEST] Starting LLM request at {llm_start_time:.3f}")
+            
             if self.intent_type == "function_call" and functions is not None:
                 # Use streaming interface that supports functions
                 llm_responses = self.llm.response_with_functions(
@@ -824,6 +838,10 @@ class ConnectionHandler:
                         memory_str, self.config.get("voiceprint", {})
                     ),
                 )
+            
+            # Log when LLM starts responding
+            llm_response_time = time.time()
+            self.logger.bind(tag=TAG).info(f"[LLM-RESPONSE] LLM started responding at {llm_response_time:.3f} (delay: {(llm_response_time - llm_start_time)*1000:.1f}ms)")
         except Exception as e:
             self.logger.bind(tag=TAG).error(
                 f"LLM processing error for '{query}': {e}")
