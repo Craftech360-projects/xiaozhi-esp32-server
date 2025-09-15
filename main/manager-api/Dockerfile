@@ -33,7 +33,7 @@ WORKDIR /app
 
 # Copy the built jar (adjust name if your artifactId/version differs)
 # You can also set this with a build arg if you like
-COPY --from=build /app/target/xiaozhi-esp32-api.jar /app/app.jar
+COPY --from=build /app/target/xiaozhi-esp32-api-*.jar /app/app.jar
 RUN chown -R appuser:appgroup /app
 
 USER appuser
