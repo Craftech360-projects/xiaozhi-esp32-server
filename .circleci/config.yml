@@ -1,57 +1,52 @@
 version: 2.1
 
-# Define reusable commands
+# Reusable commands
 commands:
-  setup_remote_docker:
-    description: "Setup remote Docker environment"
-    steps:
-      - setup_remote_docker:
-          docker_layer_caching: true
-
-  docker_login:
-    description: "Login to Docker registry"
+  dockerhub_login:
+    description: "Login to Docker registry (expects DOCKERHUB_USERNAME/DOCKERHUB_PASSWORD in context)"
     steps:
       - run:
           name: Login to Docker Hub
           command: |
-            echo $@Kiranvc2025 | docker login -u $kiranvc --password-stdin
+            if [ -z "${DOCKERHUB_USERNAME}" ] || [ -z "${DOCKERHUB_PASSWORD}" ]; then
+              echo "Docker Hub credentials not set. Please add DOCKERHUB_USERNAME/DOCKERHUB_PASSWORD to the context."
+              exit 1
+            fi
+            printf "%s" "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
 
-# Define executors
+# Executors
 executors:
   docker-executor:
     docker:
       - image: cimg/base:stable
     resource_class: large
 
-# Define jobs
+# Jobs
 jobs:
-  # Build XiaoZhi Server (Python)
   build-xiaozhi-server:
     executor: docker-executor
     steps:
       - checkout
-      - setup_remote_docker
-      - docker_login
+      - setup_remote_docker:
+          version: 20.10.24
+          docker_layer_caching: true
+      - dockerhub_login
       - run:
           name: Build XiaoZhi Server Docker Image
           command: |
-            # Set image tag based on branch
-            if [ "${CIRCLE_BRANCH}" == "main" ]; then
+            if [ "${CIRCLE_BRANCH}" = "main" ]; then
               TAG="latest"
             else
               TAG="${CIRCLE_BRANCH}-${CIRCLE_SHA1:0:7}"
             fi
-
             echo "Building xiaozhi-server:${TAG}"
 
-            # Build the image
             docker build \
               -f Dockerfile-server \
               -t xiaozhi/xiaozhi-server:${TAG} \
               -t xiaozhi/xiaozhi-server:${CIRCLE_SHA1:0:7} \
               .
 
-            # Push to registry
             docker push xiaozhi/xiaozhi-server:${TAG}
             docker push xiaozhi/xiaozhi-server:${CIRCLE_SHA1:0:7}
       - run:
@@ -64,33 +59,30 @@ jobs:
           paths:
             - server-image
 
-  # Build Manager API (Java Spring Boot)
   build-manager-api:
     executor: docker-executor
     steps:
       - checkout
-      - setup_remote_docker
-      - docker_login
+      - setup_remote_docker:
+          version: 20.10.24
+          docker_layer_caching: true
+      - dockerhub_login
       - run:
           name: Build Manager API Docker Image
           command: |
-            # Set image tag based on branch
-            if [ "${CIRCLE_BRANCH}" == "main" ]; then
+            if [ "${CIRCLE_BRANCH}" = "main" ]; then
               TAG="latest"
             else
               TAG="${CIRCLE_BRANCH}-${CIRCLE_SHA1:0:7}"
             fi
-
             echo "Building manager-api:${TAG}"
 
-            # Build the image
             docker build \
               -f main/manager-api/Dockerfile \
               -t xiaozhi/manager-api:${TAG} \
               -t xiaozhi/manager-api:${CIRCLE_SHA1:0:7} \
               main/manager-api
 
-            # Push to registry
             docker push xiaozhi/manager-api:${TAG}
             docker push xiaozhi/manager-api:${CIRCLE_SHA1:0:7}
       - run:
@@ -103,33 +95,30 @@ jobs:
           paths:
             - api-image
 
-  # Build Manager Web (Combined Vue.js + Java)
   build-manager-web:
     executor: docker-executor
     steps:
       - checkout
-      - setup_remote_docker
-      - docker_login
+      - setup_remote_docker:
+          version: 20.10.24
+          docker_layer_caching: true
+      - dockerhub_login
       - run:
           name: Build Manager Web Docker Image
           command: |
-            # Set image tag based on branch
-            if [ "${CIRCLE_BRANCH}" == "main" ]; then
+            if [ "${CIRCLE_BRANCH}" = "main" ]; then
               TAG="latest"
             else
               TAG="${CIRCLE_BRANCH}-${CIRCLE_SHA1:0:7}"
             fi
-
             echo "Building manager-web:${TAG}"
 
-            # Build the image
             docker build \
               -f Dockerfile-web \
               -t xiaozhi/manager-web:${TAG} \
               -t xiaozhi/manager-web:${CIRCLE_SHA1:0:7} \
               .
 
-            # Push to registry
             docker push xiaozhi/manager-web:${TAG}
             docker push xiaozhi/manager-web:${CIRCLE_SHA1:0:7}
       - run:
@@ -142,48 +131,45 @@ jobs:
           paths:
             - web-image
 
-  # Security scan for all images
   security-scan:
     executor: docker-executor
     steps:
       - checkout
-      - setup_remote_docker
+      - setup_remote_docker:
+          version: 20.10.24
+          docker_layer_caching: true
       - attach_workspace:
           at: /tmp/workspace
       - run:
           name: Install Trivy
           command: |
-            sudo apt-get update
-            sudo apt-get install wget apt-transport-https gnupg lsb-release
+            sudo apt-get update -y
+            sudo apt-get install -y wget apt-transport-https gnupg lsb-release
             wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
-            echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
-            sudo apt-get update
-            sudo apt-get install trivy
+            echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
+            sudo apt-get update -y
+            sudo apt-get install -y trivy
       - run:
           name: Scan Images for Vulnerabilities
           command: |
-            # Scan server image
             if [ -f /tmp/workspace/server-image ]; then
               SERVER_IMAGE=$(cat /tmp/workspace/server-image)
               echo "Scanning $SERVER_IMAGE"
-              trivy image --exit-code 0 --severity HIGH,CRITICAL $SERVER_IMAGE
+              trivy image --exit-code 0 --severity HIGH,CRITICAL "$SERVER_IMAGE"
             fi
 
-            # Scan API image
             if [ -f /tmp/workspace/api-image ]; then
               API_IMAGE=$(cat /tmp/workspace/api-image)
               echo "Scanning $API_IMAGE"
-              trivy image --exit-code 0 --severity HIGH,CRITICAL $API_IMAGE
+              trivy image --exit-code 0 --severity HIGH,CRITICAL "$API_IMAGE"
             fi
 
-            # Scan Web image
             if [ -f /tmp/workspace/web-image ]; then
               WEB_IMAGE=$(cat /tmp/workspace/web-image)
               echo "Scanning $WEB_IMAGE"
-              trivy image --exit-code 0 --severity HIGH,CRITICAL $WEB_IMAGE
+              trivy image --exit-code 0 --severity HIGH,CRITICAL "$WEB_IMAGE"
             fi
 
-  # Deploy to staging/production
   deploy:
     executor: docker-executor
     steps:
@@ -193,41 +179,20 @@ jobs:
       - run:
           name: Deploy to Environment
           command: |
-            # This is a placeholder for deployment logic
-            # You can customize this based on your deployment strategy
-
             echo "Deployment Environment: ${DEPLOY_ENV:-staging}"
 
-            if [ -f /tmp/workspace/server-image ]; then
-              SERVER_IMAGE=$(cat /tmp/workspace/server-image)
-              echo "Server Image: $SERVER_IMAGE"
-            fi
-
-            if [ -f /tmp/workspace/api-image ]; then
-              API_IMAGE=$(cat /tmp/workspace/api-image)
-              echo "API Image: $API_IMAGE"
-            fi
-
-            if [ -f /tmp/workspace/web-image ]; then
-              WEB_IMAGE=$(cat /tmp/workspace/web-image)
-              echo "Web Image: $WEB_IMAGE"
-            fi
-
-            # Example deployment commands (customize as needed):
-            # kubectl set image deployment/xiaozhi-server xiaozhi-server=$SERVER_IMAGE
-            # kubectl set image deployment/manager-api manager-api=$API_IMAGE
-            # kubectl set image deployment/manager-web manager-web=$WEB_IMAGE
+            [ -f /tmp/workspace/server-image ] && echo "Server Image: $(cat /tmp/workspace/server-image)"
+            [ -f /tmp/workspace/api-image ] && echo "API Image: $(cat /tmp/workspace/api-image)"
+            [ -f /tmp/workspace/web-image ] && echo "Web Image: $(cat /tmp/workspace/web-image)"
 
             echo "Deployment completed successfully!"
 
-# Define workflows
+# Workflows
 workflows:
   version: 2
 
-  # Build and deploy workflow
   build-and-deploy:
     jobs:
-      # Build all images in parallel
       - build-xiaozhi-server:
           context: docker-hub-creds
           filters:
@@ -258,7 +223,6 @@ workflows:
                 - /feature\/.*/
                 - /hotfix\/.*/
 
-      # Security scanning after builds complete
       - security-scan:
           requires:
             - build-xiaozhi-server
@@ -270,7 +234,6 @@ workflows:
                 - main
                 - develop
 
-      # Deploy to staging for develop branch
       - deploy:
           name: deploy-staging
           requires:
@@ -280,7 +243,6 @@ workflows:
               only: develop
           context: staging-deploy
 
-      # Deploy to production for main branch (requires manual approval)
       - hold-for-approval:
           type: approval
           requires:
@@ -298,11 +260,10 @@ workflows:
               only: main
           context: production-deploy
 
-  # Nightly security scan
   nightly-security-scan:
     triggers:
       - schedule:
-          cron: "0 2 * * *" # Run at 2 AM daily
+          cron: "0 2 * * *"
           filters:
             branches:
               only: main
