@@ -3,7 +3,7 @@ version: 2.1
 # Reusable commands
 commands:
   dockerhub_login:
-    description: "Login to Docker registry (expects DOCKERHUB_USERNAME/DOCKERHUB_PASSWORD in context)"
+    description: "Login to Docker registry (expects kiranvc/@Kiranvc2025 in context)"
     steps:
       - run:
           name: Login to Docker Hub
