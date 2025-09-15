@@ -8,11 +8,11 @@ commands:
       - run:
           name: Login to Docker Hub
           command: |
-            if [ -z "${kiranvc}" ] || [ -z "${@Kiranvc2025}" ]; then
-              echo "Docker Hub credentials not set. Please add kiranvc/@Kiranvc2025 to the context."
+            if [ -z "${DOCKERHUB_USERNAME}" ] || [ -z "${@DOCKERNAME_PASSWORD}" ]; then
+              echo "Docker Hub credentials not set. Please add DOCKERHUB_USERNAME/DOCKERNAME_PASSWORD to the context."
               exit 1
             fi
-            printf "%s" "$@Kiranvc2025" | docker login -u "$kiranvc" --password-stdin
+            printf "%s" "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
 
 # Executors
 executors:
@@ -285,7 +285,7 @@ workflows:
   nightly-security-scan:
     triggers:
       - schedule:
-          cron: "0 2 * * *"  # Run at 2 AM daily
+          cron: "0 2 * * *" # Run at 2 AM daily
           filters:
             branches:
               only: main
