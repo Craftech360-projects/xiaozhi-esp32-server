@@ -12,7 +12,7 @@ commands:
               echo "Docker Hub credentials not set. Please add DOCKERHUB_USERNAME/DOCKERHUB_PASSWORD to the context."
               exit 1
             fi
-            printf "%s" "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+            printf "%s" "$@Kiranvc2025" | docker login -u "$kiranvc" --password-stdin
 
 # Executors
 executors:
