@@ -58,11 +58,17 @@ jobs:
             echo "Artifacts in target/:"
             ls -la target/
 
-            # Find the main JAR (versioned) and copy it to a stable name
-            JAR_PATH="$(ls -1 target/xiaozhi-esp32-api-*.jar | head -n1)"
+            # Find the main JAR (try versioned first, then non-versioned)
+            JAR_PATH="$(ls -1 target/xiaozhi-esp32-api-*.jar 2>/dev/null | head -n1)"
             if [ -z "$JAR_PATH" ]; then
-              echo "Error: No JAR matching target/xiaozhi-esp32-api-*.jar"
-              exit 1
+              # Try non-versioned JAR name
+              JAR_PATH="target/xiaozhi-esp32-api.jar"
+              if [ ! -f "$JAR_PATH" ]; then
+                echo "Error: No JAR file found. Tried:"
+                echo "  - target/xiaozhi-esp32-api-*.jar"
+                echo "  - target/xiaozhi-esp32-api.jar"
+                exit 1
+              fi
             fi
             mkdir -p /tmp/workspace
             cp "$JAR_PATH" /tmp/workspace/xiaozhi-esp32-api.jar
