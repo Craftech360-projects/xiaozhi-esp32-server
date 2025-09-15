@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  xiaozhi-manager-api:
+    build: .
+    container_name: xiaozhi-manager-api
+    ports:
+      - "8002:8002"
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - JAVA_OPTS=-Xmx1g -Xms512m
+      # Database configuration (adjust as needed)
+      - SPRING_DATASOURCE_URL=jdbc:mysql://db:3306/xiaozhi?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=false&serverTimezone=GMT%2B8
+      - SPRING_DATASOURCE_USERNAME=xiaozhi
+      - SPRING_DATASOURCE_PASSWORD=xiaozhi123
+      # Redis configuration (adjust as needed)
+      - SPRING_REDIS_HOST=redis
+      - SPRING_REDIS_PORT=6379
+      - SPRING_REDIS_PASSWORD=
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+    networks:
+      - xiaozhi-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/toy/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Database service (MySQL)
+  db:
+    image: mysql:8.0
+    container_name: xiaozhi-mysql
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=root123
+      - MYSQL_DATABASE=xiaozhi
+      - MYSQL_USER=xiaozhi
+      - MYSQL_PASSWORD=xiaozhi123
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init:/docker-entrypoint-initdb.d
+    restart: unless-stopped
+    networks:
+      - xiaozhi-network
+    command: --default-authentication-plugin=mysql_native_password
+
+  # Redis service
+  redis:
+    image: redis:7-alpine
+    container_name: xiaozhi-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - xiaozhi-network
+
+volumes:
+  mysql_data:
+  redis_data:
+
+networks:
+  xiaozhi-network:
+    driver: bridge
