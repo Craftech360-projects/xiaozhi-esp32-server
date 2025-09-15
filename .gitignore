@@ -182,4 +182,8 @@ main/manager-web/.webpack_cache/
 main/xiaozhi-server/mysql
 uploadfile
 *.json
+# Allow essential package files for Node.js projects
+!package.json
+!package-lock.json
+!tsconfig.json
 .vscode

@@ -130,6 +130,7 @@ jobs:
       - checkout
       - restore_cache:
           keys:
+            - npm-gateway-deps-v1-{{ checksum "main/mqtt-gateway/package-lock.json" }}
             - npm-gateway-deps-v1-{{ checksum "main/mqtt-gateway/package.json" }}
             - npm-gateway-deps-v1-
       - run:
@@ -139,7 +140,14 @@ jobs:
             echo "Building MQTT Gateway..."
             cd main/mqtt-gateway
 
-            npm ci --omit=dev --no-audit --no-fund
+            # Use npm ci if package-lock.json exists, otherwise use npm install
+            if [ -f "package-lock.json" ]; then
+              echo "Using npm ci with existing package-lock.json"
+              npm ci --omit=dev --no-audit --no-fund
+            else
+              echo "No package-lock.json found, using npm install"
+              npm install --omit=dev --no-audit --no-fund
+            fi
 
             if [ ! -f "app.js" ]; then
               echo "Error: app.js not found!"
@@ -155,7 +163,7 @@ jobs:
       - save_cache:
           paths:
             - main/mqtt-gateway/node_modules
-          key: npm-gateway-deps-v1-{{ checksum "main/mqtt-gateway/package.json" }}
+          key: npm-gateway-deps-v1-{{ checksum "main/mqtt-gateway/package-lock.json" }}
       - persist_to_workspace:
           root: /tmp/workspace
           paths:
