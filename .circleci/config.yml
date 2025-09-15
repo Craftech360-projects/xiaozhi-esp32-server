@@ -48,8 +48,8 @@ jobs:
       - checkout
       - restore_cache:
           keys:
-            - maven-deps-{{ checksum "main/manager-api/pom.xml" }}
-            - maven-deps-
+            - maven-deps-v1-{{ checksum "main/manager-api/pom.xml" }}
+            - maven-deps-v1-
       - run:
           name: Build Manager API JAR
           command: |
@@ -77,7 +77,7 @@ jobs:
       - save_cache:
           paths:
             - ~/.m2
-          key: maven-deps-{{ checksum "main/manager-api/pom.xml" }}
+          key: maven-deps-v1-{{ checksum "main/manager-api/pom.xml" }}
       - run:
           name: Save Build Artifacts
           command: |
@@ -104,8 +104,9 @@ jobs:
       - checkout
       - restore_cache:
           keys:
-            - npm-deps-{{ checksum "main/manager-web/package-lock.json" }}
-            - npm-deps-
+            - npm-web-deps-v1-{{ checksum "main/manager-web/package-lock.json" }}
+            - npm-web-deps-v1-{{ checksum "main/manager-web/package.json" }}
+            - npm-web-deps-v1-
       - run:
           name: Build Manager Web
           command: |
@@ -130,7 +131,7 @@ jobs:
       - save_cache:
           paths:
             - main/manager-web/node_modules
-          key: npm-deps-{{ checksum "main/manager-web/package-lock.json" }}
+          key: npm-web-deps-v1-{{ checksum "main/manager-web/package-lock.json" }}
       - run:
           name: Save Build Artifacts
           command: |
@@ -156,10 +157,17 @@ jobs:
     executor: node-executor
     steps:
       - checkout
+      - run:
+          name: Debug - List mqtt-gateway files
+          command: |
+            echo "=== Listing main/mqtt-gateway directory ==="
+            ls -la main/mqtt-gateway/
+            echo "=== Checking for package files ==="
+            find main/mqtt-gateway -name "package*.json" -o -name "yarn.lock" -o -name "pnpm-lock.yaml"
       - restore_cache:
           keys:
-            - npm-gateway-deps-{{ checksum "main/mqtt-gateway/package-lock.json" }}
-            - npm-gateway-deps-
+            - npm-gateway-deps-v1-{{ checksum "main/mqtt-gateway/package.json" }}
+            - npm-gateway-deps-v1-
       - run:
           name: Build MQTT Gateway
           command: |
@@ -180,7 +188,7 @@ jobs:
       - save_cache:
           paths:
             - main/mqtt-gateway/node_modules
-          key: npm-gateway-deps-{{ checksum "main/mqtt-gateway/package-lock.json" }}
+          key: npm-gateway-deps-v1-{{ checksum "main/mqtt-gateway/package.json" }}
       - run:
           name: Save Build Artifacts
           command: |
