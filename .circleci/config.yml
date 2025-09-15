@@ -25,8 +25,13 @@ executors:
 
   node-executor:
     docker:
-      - image: cimg/node:18.20
+      - image: cimg/node:20.14
     resource_class: large
+    environment:
+      # Add retry logic for npm operations
+      NPM_CONFIG_RETRY: "3"
+      NPM_CONFIG_FETCH_RETRY_MINTIMEOUT: "2000"
+      NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT: "10000"
 
   java-executor:
     docker:
