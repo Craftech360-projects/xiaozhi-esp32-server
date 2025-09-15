@@ -3,13 +3,13 @@ version: 2.1
 # Reusable commands
 commands:
   dockerhub_login:
-    description: "Login to Docker registry (expects kiranvc/@Kiranvc2025 in context)"
+    description: "Login to Docker registry"
     steps:
       - run:
           name: Login to Docker Hub
           command: |
             if [ -z "${kiranvc}" ] || [ -z "${@Kiranvc2025}" ]; then
-              echo "Docker Hub credentials not set. Please add DOCKERHUB_USERNAME/DOCKERHUB_PASSWORD to the context."
+              echo "Docker Hub credentials not set. Please add kiranvc/@Kiranvc2025 to the context."
               exit 1
             fi
             printf "%s" "$@Kiranvc2025" | docker login -u "$kiranvc" --password-stdin
@@ -23,42 +23,7 @@ executors:
 
 # Jobs
 jobs:
-  build-xiaozhi-server:
-    executor: docker-executor
-    steps:
-      - checkout
-      - setup_remote_docker:
-          version: 20.10.24
-          docker_layer_caching: true
-      - dockerhub_login
-      - run:
-          name: Build XiaoZhi Server Docker Image
-          command: |
-            if [ "${CIRCLE_BRANCH}" = "main" ]; then
-              TAG="latest"
-            else
-              TAG="${CIRCLE_BRANCH}-${CIRCLE_SHA1:0:7}"
-            fi
-            echo "Building xiaozhi-server:${TAG}"
-
-            docker build \
-              -f Dockerfile-server \
-              -t xiaozhi/xiaozhi-server:${TAG} \
-              -t xiaozhi/xiaozhi-server:${CIRCLE_SHA1:0:7} \
-              .
-
-            docker push xiaozhi/xiaozhi-server:${TAG}
-            docker push xiaozhi/xiaozhi-server:${CIRCLE_SHA1:0:7}
-      - run:
-          name: Save Docker Image Info
-          command: |
-            mkdir -p /tmp/workspace
-            echo "xiaozhi/xiaozhi-server:${CIRCLE_SHA1:0:7}" > /tmp/workspace/server-image
-      - persist_to_workspace:
-          root: /tmp/workspace
-          paths:
-            - server-image
-
+  # Build Manager API (Java Spring Boot)
   build-manager-api:
     executor: docker-executor
     steps:
@@ -77,11 +42,12 @@ jobs:
             fi
             echo "Building manager-api:${TAG}"
 
+            # Build from the manager-api directory
+            cd main/manager-api
             docker build \
-              -f main/manager-api/Dockerfile \
               -t xiaozhi/manager-api:${TAG} \
               -t xiaozhi/manager-api:${CIRCLE_SHA1:0:7} \
-              main/manager-api
+              .
 
             docker push xiaozhi/manager-api:${TAG}
             docker push xiaozhi/manager-api:${CIRCLE_SHA1:0:7}
@@ -95,6 +61,7 @@ jobs:
           paths:
             - api-image
 
+  # Build Manager Web (Vue.js Frontend)
   build-manager-web:
     executor: docker-executor
     steps:
@@ -113,8 +80,9 @@ jobs:
             fi
             echo "Building manager-web:${TAG}"
 
+            # Build from the manager-web directory
+            cd main/manager-web
             docker build \
-              -f Dockerfile-web \
               -t xiaozhi/manager-web:${TAG} \
               -t xiaozhi/manager-web:${CIRCLE_SHA1:0:7} \
               .
@@ -131,6 +99,45 @@ jobs:
           paths:
             - web-image
 
+  # Build MQTT Gateway (Node.js Service)
+  build-mqtt-gateway:
+    executor: docker-executor
+    steps:
+      - checkout
+      - setup_remote_docker:
+          version: 20.10.24
+          docker_layer_caching: true
+      - dockerhub_login
+      - run:
+          name: Build MQTT Gateway Docker Image
+          command: |
+            if [ "${CIRCLE_BRANCH}" = "main" ]; then
+              TAG="latest"
+            else
+              TAG="${CIRCLE_BRANCH}-${CIRCLE_SHA1:0:7}"
+            fi
+            echo "Building mqtt-gateway:${TAG}"
+
+            # Build from the mqtt-gateway directory
+            cd main/mqtt-gateway
+            docker build \
+              -t xiaozhi/mqtt-gateway:${TAG} \
+              -t xiaozhi/mqtt-gateway:${CIRCLE_SHA1:0:7} \
+              .
+
+            docker push xiaozhi/mqtt-gateway:${TAG}
+            docker push xiaozhi/mqtt-gateway:${CIRCLE_SHA1:0:7}
+      - run:
+          name: Save Docker Image Info
+          command: |
+            mkdir -p /tmp/workspace
+            echo "xiaozhi/mqtt-gateway:${CIRCLE_SHA1:0:7}" > /tmp/workspace/gateway-image
+      - persist_to_workspace:
+          root: /tmp/workspace
+          paths:
+            - gateway-image
+
+  # Security scan for all images
   security-scan:
     executor: docker-executor
     steps:
@@ -152,24 +159,28 @@ jobs:
       - run:
           name: Scan Images for Vulnerabilities
           command: |
-            if [ -f /tmp/workspace/server-image ]; then
-              SERVER_IMAGE=$(cat /tmp/workspace/server-image)
-              echo "Scanning $SERVER_IMAGE"
-              trivy image --exit-code 0 --severity HIGH,CRITICAL "$SERVER_IMAGE"
-            fi
-
+            # Scan API image
             if [ -f /tmp/workspace/api-image ]; then
               API_IMAGE=$(cat /tmp/workspace/api-image)
               echo "Scanning $API_IMAGE"
               trivy image --exit-code 0 --severity HIGH,CRITICAL "$API_IMAGE"
             fi
 
+            # Scan Web image
             if [ -f /tmp/workspace/web-image ]; then
               WEB_IMAGE=$(cat /tmp/workspace/web-image)
               echo "Scanning $WEB_IMAGE"
               trivy image --exit-code 0 --severity HIGH,CRITICAL "$WEB_IMAGE"
             fi
 
+            # Scan Gateway image
+            if [ -f /tmp/workspace/gateway-image ]; then
+              GATEWAY_IMAGE=$(cat /tmp/workspace/gateway-image)
+              echo "Scanning $GATEWAY_IMAGE"
+              trivy image --exit-code 0 --severity HIGH,CRITICAL "$GATEWAY_IMAGE"
+            fi
+
+  # Deploy to staging/production
   deploy:
     executor: docker-executor
     steps:
@@ -181,9 +192,14 @@ jobs:
           command: |
             echo "Deployment Environment: ${DEPLOY_ENV:-staging}"
 
-            [ -f /tmp/workspace/server-image ] && echo "Server Image: $(cat /tmp/workspace/server-image)"
             [ -f /tmp/workspace/api-image ] && echo "API Image: $(cat /tmp/workspace/api-image)"
             [ -f /tmp/workspace/web-image ] && echo "Web Image: $(cat /tmp/workspace/web-image)"
+            [ -f /tmp/workspace/gateway-image ] && echo "Gateway Image: $(cat /tmp/workspace/gateway-image)"
+
+            # Example deployment commands (customize as needed):
+            # kubectl set image deployment/manager-api manager-api=$(cat /tmp/workspace/api-image)
+            # kubectl set image deployment/manager-web manager-web=$(cat /tmp/workspace/web-image)
+            # kubectl set image deployment/mqtt-gateway mqtt-gateway=$(cat /tmp/workspace/gateway-image)
 
             echo "Deployment completed successfully!"
 
@@ -191,18 +207,10 @@ jobs:
 workflows:
   version: 2
 
+  # Build and deploy workflow
   build-and-deploy:
     jobs:
-      - build-xiaozhi-server:
-          context: docker-hub-creds
-          filters:
-            branches:
-              only:
-                - main
-                - develop
-                - /feature\/.*/
-                - /hotfix\/.*/
-
+      # Build all three services in parallel
       - build-manager-api:
           context: docker-hub-creds
           filters:
@@ -223,17 +231,29 @@ workflows:
                 - /feature\/.*/
                 - /hotfix\/.*/
 
+      - build-mqtt-gateway:
+          context: docker-hub-creds
+          filters:
+            branches:
+              only:
+                - main
+                - develop
+                - /feature\/.*/
+                - /hotfix\/.*/
+
+      # Security scanning after builds complete
       - security-scan:
           requires:
-            - build-xiaozhi-server
             - build-manager-api
             - build-manager-web
+            - build-mqtt-gateway
           filters:
             branches:
               only:
                 - main
                 - develop
 
+      # Deploy to staging for develop branch
       - deploy:
           name: deploy-staging
           requires:
@@ -243,6 +263,7 @@ workflows:
               only: develop
           context: staging-deploy
 
+      # Deploy to production for main branch (requires manual approval)
       - hold-for-approval:
           type: approval
           requires:
@@ -260,10 +281,11 @@ workflows:
               only: main
           context: production-deploy
 
+  # Nightly security scan
   nightly-security-scan:
     triggers:
       - schedule:
-          cron: "0 2 * * *"
+          cron: "0 2 * * *"  # Run at 2 AM daily
           filters:
             branches:
               only: main
