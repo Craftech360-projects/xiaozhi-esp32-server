@@ -1,46 +1,51 @@
 # Node.js MQTT Gateway Docker Image
 FROM node:18-alpine AS production
 
-# Install curl for health checks
-RUN apk add --no-cache curl
+# Install curl (for health checks) and tini (clean PID1 signal handling)
+RUN apk add --no-cache curl tini
 
-# Create app user for security
-RUN addgroup -g 1001 -S appgroup && \
-    adduser -S appuser -G appgroup -u 1001
+# Create non-root user/group
+RUN addgroup -g 1001 -S appgroup && adduser -S appuser -G appgroup -u 1001
 
-# Set working directory
+# Workdir
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Copy only package files first for better layer caching
+COPY --chown=appuser:appgroup package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production --no-audit --no-fund
+# Install prod deps
+# Use --omit=dev (npm9+) instead of deprecated --only=production
+RUN npm ci --omit=dev --no-audit --no-fund
 
-# Copy application files
-COPY . .
+# Copy application source
+COPY --chown=appuser:appgroup . .
 
-# Create config directory if it doesn't exist
+# (Optional) ensure config dir exists
 RUN mkdir -p config
 
-# Change ownership of the app directory
-RUN chown -R appuser:appgroup /app
-
-# Switch to non-root user
+# Switch to non-root
 USER appuser
 
-# Expose ports
-EXPOSE 1883 8884
-
-# Environment variables with defaults
+# Environment
 ENV NODE_ENV=production
-ENV DEBUG=""
+# Expose a clear HTTP port (for health endpoint) separate from MQTT if needed
+ENV HTTP_PORT=8884
 ENV MQTT_PORT=1883
-ENV UDP_PORT=8884
+# If you actually have debug toggles, keep empty by default
+ENV DEBUG=""
 
-# Health check
+# Ports:
+# - MQTT over TCP (standard): 1883
+# - HTTP health endpoint: 8884
+EXPOSE 1883/tcp
+EXPOSE 8884/tcp
+
+# Health check (HTTP endpoint)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:8884/health || exit 1
+    CMD curl -fsS "http://127.0.0.1:${HTTP_PORT}/health" || exit 1
 
-# Start the application
+# Use tini for proper signal handling
+ENTRYPOINT ["/sbin/tini", "--"]
+
+# Start the app
 CMD ["node", "app.js"]
