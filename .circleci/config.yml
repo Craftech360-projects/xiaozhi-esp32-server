@@ -58,17 +58,20 @@ jobs:
             echo "Artifacts in target/:"
             ls -la target/
 
-            # Find the main JAR (try versioned first, then non-versioned)
-            JAR_PATH="$(ls -1 target/xiaozhi-esp32-api-*.jar 2>/dev/null | head -n1)"
-            if [ -z "$JAR_PATH" ]; then
-              # Try non-versioned JAR name
+            # Find the main JAR file
+            if [ -f "target/xiaozhi-esp32-api.jar" ]; then
               JAR_PATH="target/xiaozhi-esp32-api.jar"
-              if [ ! -f "$JAR_PATH" ]; then
-                echo "Error: No JAR file found. Tried:"
-                echo "  - target/xiaozhi-esp32-api-*.jar"
-                echo "  - target/xiaozhi-esp32-api.jar"
+              echo "Found JAR: $JAR_PATH"
+            else
+              # Try versioned pattern as fallback
+              JAR_PATH="$(find target -name 'xiaozhi-esp32-api-*.jar' -type f | head -n1)"
+              if [ -z "$JAR_PATH" ]; then
+                echo "Error: No JAR file found in target/"
+                echo "Expected: target/xiaozhi-esp32-api.jar"
+                echo "Or: target/xiaozhi-esp32-api-*.jar"
                 exit 1
               fi
+              echo "Found versioned JAR: $JAR_PATH"
             fi
             mkdir -p /tmp/workspace
             cp "$JAR_PATH" /tmp/workspace/xiaozhi-esp32-api.jar
