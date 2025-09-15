@@ -43,7 +43,7 @@ password = base64(hmac_sha256(secret_key, client_id + "|" + username))
 server:
   mqtt_gateway:
     enabled: true
-    broker: 192.168.1.111
+    broker: 139.59.5.142
     port: 1883
     udp_port: 8884
 ```
