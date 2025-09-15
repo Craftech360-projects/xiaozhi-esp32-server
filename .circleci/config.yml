@@ -21,43 +21,41 @@ executors:
 
 # Jobs
 jobs:
-  # Build Manager API (Java Spring Boot)
-  build-manager-api:
+  deploy:
+    parameters:
+      env:
+        type: string
+        default: "staging"
     executor: docker-executor
     steps:
       - checkout
-      - setup_remote_docker:
-          version: 20.10.24
-          docker_layer_caching: true
-      - dockerhub_login
+      - attach_workspace:
+          at: /tmp/workspace
       - run:
-          name: Build Manager API Docker Image
+          name: Deploy to Environment
           command: |
-            if [ "${CIRCLE_BRANCH}" = "main" ]; then
-              TAG="latest"
-            else
-              TAG="${CIRCLE_BRANCH}-${CIRCLE_SHA1:0:7}"
-            fi
-            echo "Building manager-api:${TAG}"
+            echo "Deployment Environment: << parameters.env >>"
 
-            # Build from the manager-api directory
-            cd main/manager-api
-            docker build \
-              -t xiaozhi/manager-api:${TAG} \
-              -t xiaozhi/manager-api:${CIRCLE_SHA1:0:7} \
-              .
+            [ -f /tmp/workspace/api-image ] && echo "API Image: $(cat /tmp/workspace/api-image)"
+            [ -f /tmp/workspace/web-image ] && echo "Web Image: $(cat /tmp/workspace/web-image)"
+            [ -f /tmp/workspace/gateway-image ] && echo "Gateway Image: $(cat /tmp/workspace/gateway-image)"
 
-            docker push xiaozhi/manager-api:${TAG}
-            docker push xiaozhi/manager-api:${CIRCLE_SHA1:0:7}
-      - run:
-          name: Save Docker Image Info
-          command: |
-            mkdir -p /tmp/workspace
-            echo "xiaozhi/manager-api:${CIRCLE_SHA1:0:7}" > /tmp/workspace/api-image
-      - persist_to_workspace:
-          root: /tmp/workspace
-          paths:
-            - api-image
+            # Example deployment commands:
+            # kubectl set image deployment/manager-api manager-api=$(cat /tmp/workspace/api-image)
+            # kubectl set image deployment/manager-web manager-web=$(cat /tmp/workspace/web-image)
+            # kubectl set image deployment/mqtt-gateway mqtt-gateway=$(cat /tmp/workspace/gateway-image)
+
+            echo "Deployment completed successfully!"
+
+      # - run:
+      #     name: Save Docker Image Info
+      #     command: |
+      #       mkdir -p /tmp/workspace
+      #       echo "xiaozhi/manager-api:${CIRCLE_SHA1:0:7}" > /tmp/workspace/api-image
+      # - persist_to_workspace:
+      #     root: /tmp/workspace
+      #     paths:
+      #       - api-image
 
   # Build Manager Web (Vue.js Frontend)
   build-manager-web:
