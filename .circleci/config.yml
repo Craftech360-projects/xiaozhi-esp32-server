@@ -338,12 +338,24 @@ jobs:
             # Copy ecosystem configuration
             scp ecosystem.config.js $SERVER_USER@$SERVER_HOST:$DEPLOY_PATH/
 
+            # Create backup of current deployment
+            ssh $SERVER_USER@$SERVER_HOST "
+              cd $DEPLOY_PATH
+              BACKUP_DIR=\"/opt/xiaozhi-esp32-server-backup-\$(date +%Y%m%d-%H%M%S)\"
+              if [ -d '/opt/xiaozhi-esp32-server' ]; then
+                echo 'Creating backup...'
+                sudo cp -r /opt/xiaozhi-esp32-server \$BACKUP_DIR
+                echo \"Backup created at: \$BACKUP_DIR\"
+              fi
+            "
+
             # Start/Restart services with PM2
             ssh $SERVER_USER@$SERVER_HOST "
               cd $DEPLOY_PATH
 
-              # Stop existing processes
-              pm2 delete ecosystem.config.js || echo 'No existing processes to delete'
+              # Stop existing processes gracefully
+              pm2 stop ecosystem.config.js || echo 'No existing processes to stop'
+              sleep 5
 
               # Start all services with environment-specific config
               pm2 start ecosystem.config.js --env $DEPLOY_ENV
@@ -353,10 +365,125 @@ jobs:
 
               # Show status
               pm2 list
-              pm2 logs --lines 20
+            "
+
+            # Health checks
+            echo "Performing health checks..."
+            sleep 10
+
+            # Check Manager API health
+            ssh $SERVER_USER@$SERVER_HOST "
+              for i in {1..30}; do
+                if curl -f http://localhost:8080/actuator/health > /dev/null 2>&1; then
+                  echo 'Manager API is healthy'
+                  break
+                elif [ \$i -eq 30 ]; then
+                  echo 'Manager API health check failed after 30 attempts'
+                  pm2 logs manager-api --lines 50
+                  exit 1
+                fi
+                echo \"Waiting for Manager API... attempt \$i/30\"
+                sleep 2
+              done
+            "
+
+            # Check Manager Web health
+            ssh $SERVER_USER@$SERVER_HOST "
+              for i in {1..15}; do
+                if curl -f http://localhost:8081/ > /dev/null 2>&1; then
+                  echo 'Manager Web is healthy'
+                  break
+                elif [ \$i -eq 15 ]; then
+                  echo 'Manager Web health check failed after 15 attempts'
+                  pm2 logs manager-web --lines 50
+                  exit 1
+                fi
+                echo \"Waiting for Manager Web... attempt \$i/15\"
+                sleep 2
+              done
+            "
+
+            # Check MQTT Gateway health
+            ssh $SERVER_USER@$SERVER_HOST "
+              for i in {1..15}; do
+                if curl -f http://localhost:8884/health > /dev/null 2>&1; then
+                  echo 'MQTT Gateway is healthy'
+                  break
+                elif [ \$i -eq 15 ]; then
+                  echo 'MQTT Gateway health check failed after 15 attempts'
+                  pm2 logs mqtt-gateway --lines 50
+                  exit 1
+                fi
+                echo \"Waiting for MQTT Gateway... attempt \$i/15\"
+                sleep 2
+              done
+            "
+
+            # Final status check
+            ssh $SERVER_USER@$SERVER_HOST "
+              pm2 list
+              echo 'All services deployed and healthy!'
             "
 
             echo "Deployment to $DEPLOY_ENV completed successfully!"
+
+  # Rollback job for emergency situations
+  rollback:
+    parameters:
+      env:
+        type: string
+        default: "staging"
+    executor: node-executor
+    steps:
+      - checkout
+      - add_ssh_keys:
+          fingerprints:
+            - # Add your server SSH key fingerprint here
+      - run:
+          name: Rollback to Previous Deployment
+          command: |
+            set -eo pipefail
+            DEPLOY_ENV="<< parameters.env >>"
+
+            # Set server details based on environment
+            if [ "$DEPLOY_ENV" = "production" ]; then
+              SERVER_HOST=${PROD_SERVER_HOST}
+              SERVER_USER=${PROD_SERVER_USER}
+            else
+              SERVER_HOST=${STAGING_SERVER_HOST}
+              SERVER_USER=${STAGING_SERVER_USER}
+            fi
+
+            echo "Rolling back deployment on: $SERVER_USER@$SERVER_HOST"
+
+            # Find the most recent backup
+            ssh $SERVER_USER@$SERVER_HOST "
+              BACKUP_DIR=\$(ls -td /opt/xiaozhi-esp32-server-backup-* 2>/dev/null | head -1)
+              if [ -z \"\$BACKUP_DIR\" ]; then
+                echo 'No backup found! Cannot rollback.'
+                exit 1
+              fi
+
+              echo \"Rolling back to: \$BACKUP_DIR\"
+
+              # Stop current services
+              pm2 stop ecosystem.config.js || echo 'No processes to stop'
+
+              # Remove current deployment
+              sudo rm -rf /opt/xiaozhi-esp32-server
+
+              # Restore from backup
+              sudo cp -r \$BACKUP_DIR /opt/xiaozhi-esp32-server
+              sudo chown -R $USER:$USER /opt/xiaozhi-esp32-server
+
+              # Start services from backup
+              cd /opt/xiaozhi-esp32-server
+              pm2 start ecosystem.config.js --env $DEPLOY_ENV
+              pm2 save
+
+              echo 'Rollback completed!'
+              pm2 list
+            "
 
 # ---------------------------
 # Workflows
