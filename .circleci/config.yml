@@ -4,18 +4,15 @@ version: 2.1
 # Reusable commands
 # ---------------------------
 commands:
-  dockerhub_login:
-    description: "Login to Docker registry"
+  install_pm2:
+    description: "Install PM2 and required dependencies"
     steps:
       - run:
-          name: Login to Docker Hub
+          name: Install PM2
           command: |
             set -eo pipefail
-            if [ -z "${DOCKERHUB_USERNAME}" ] || [ -z "${DOCKERHUB_PASSWORD}" ]; then
-              echo "Docker Hub credentials not set. Please add DOCKERHUB_USERNAME / DOCKERHUB_PASSWORD to the selected context."
-              exit 1
-            fi
-            echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+            sudo npm install -g pm2
+            sudo npm install -g serve
 
 # ---------------------------
 # Executors
@@ -27,196 +24,339 @@ executors:
     resource_class: large
 
 # ---------------------------
+# Executors
+# ---------------------------
+executors:
+  node-executor:
+    docker:
+      - image: cimg/node:18.20
+    resource_class: large
+
+  java-executor:
+    docker:
+      - image: cimg/openjdk:17.0
+    resource_class: large
+
+# ---------------------------
 # Jobs
 # ---------------------------
 jobs:
   # Build Manager API (Java Spring Boot)
   build-manager-api:
-    executor: docker-executor
+    executor: java-executor
     steps:
       - checkout
-      - setup_remote_docker:
-          version: 20.10.24
-          docker_layer_caching: true
-      - dockerhub_login
+      - restore_cache:
+          keys:
+            - maven-deps-{{ checksum "main/manager-api/pom.xml" }}
+            - maven-deps-
       - run:
-          name: Build Manager API Docker Image
+          name: Build Manager API JAR
           command: |
             set -eo pipefail
-            if [ "${CIRCLE_BRANCH}" = "main" ]; then
-              TAG="latest"
-            else
-              TAG="${CIRCLE_BRANCH}-${CIRCLE_SHA1:0:7}"
-            fi
-            echo "Building manager-api:${TAG}"
-
+            echo "Building Manager API JAR..."
             cd main/manager-api
-            docker build \
-              -t xiaozhi/manager-api:${TAG} \
-              -t xiaozhi/manager-api:${CIRCLE_SHA1:0:7} \
-              .
 
-            docker push xiaozhi/manager-api:${TAG}
-            docker push xiaozhi/manager-api:${CIRCLE_SHA1:0:7}
+            # Clean and compile
+            mvn clean compile
+
+            # Run tests (optional, remove if not needed)
+            # mvn test
+
+            # Package the JAR
+            mvn package -DskipTests
+
+            # Verify JAR was created
+            ls -la target/
+            if [ ! -f target/xiaozhi-esp32-api.jar ]; then
+              echo "Error: JAR file not found!"
+              exit 1
+            fi
+
+            echo "Manager API JAR built successfully"
+      - save_cache:
+          paths:
+            - ~/.m2
+          key: maven-deps-{{ checksum "main/manager-api/pom.xml" }}
       - run:
-          name: Save Docker Image Info
+          name: Save Build Artifacts
           command: |
             set -eo pipefail
             mkdir -p /tmp/workspace
-            echo "xiaozhi/manager-api:${CIRCLE_SHA1:0:7}" > /tmp/workspace/api-image
+
+            # Copy JAR file
+            cp main/manager-api/target/xiaozhi-esp32-api.jar /tmp/workspace/
+
+            # Create build info
+            echo "manager-api-${CIRCLE_SHA1:0:7}" > /tmp/workspace/api-build-info
+            echo "$(date)" > /tmp/workspace/api-build-date
       - persist_to_workspace:
           root: /tmp/workspace
           paths:
-            - api-image
+            - xiaozhi-esp32-api.jar
+            - api-build-info
+            - api-build-date
 
   # Build Manager Web (Vue.js Frontend)
   build-manager-web:
-    executor: docker-executor
+    executor: node-executor
     steps:
       - checkout
-      - setup_remote_docker:
-          version: 20.10.24
-          docker_layer_caching: true
-      - dockerhub_login
+      - restore_cache:
+          keys:
+            - npm-deps-{{ checksum "main/manager-web/package-lock.json" }}
+            - npm-deps-
       - run:
-          name: Build Manager Web Docker Image
+          name: Build Manager Web
           command: |
             set -eo pipefail
-            if [ "${CIRCLE_BRANCH}" = "main" ]; then
-              TAG="latest"
-            else
-              TAG="${CIRCLE_BRANCH}-${CIRCLE_SHA1:0:7}"
-            fi
-            echo "Building manager-web:${TAG}"
-
+            echo "Building Manager Web..."
             cd main/manager-web
-            docker build \
-              -t xiaozhi/manager-web:${TAG} \
-              -t xiaozhi/manager-web:${CIRCLE_SHA1:0:7} \
-              .
 
-            docker push xiaozhi/manager-web:${TAG}
-            docker push xiaozhi/manager-web:${CIRCLE_SHA1:0:7}
+            # Install dependencies
+            npm ci --legacy-peer-deps
+
+            # Build for production
+            npm run build
+
+            # Verify build output
+            ls -la dist/
+            if [ ! -d "dist" ]; then
+              echo "Error: Build output directory not found!"
+              exit 1
+            fi
+
+            echo "Manager Web built successfully"
+      - save_cache:
+          paths:
+            - main/manager-web/node_modules
+          key: npm-deps-{{ checksum "main/manager-web/package-lock.json" }}
       - run:
-          name: Save Docker Image Info
+          name: Save Build Artifacts
           command: |
             set -eo pipefail
             mkdir -p /tmp/workspace
-            echo "xiaozhi/manager-web:${CIRCLE_SHA1:0:7}" > /tmp/workspace/web-image
+
+            # Archive the build output
+            cd main/manager-web
+            tar -czf /tmp/workspace/manager-web-dist.tar.gz dist/
+
+            # Create build info
+            echo "manager-web-${CIRCLE_SHA1:0:7}" > /tmp/workspace/web-build-info
+            echo "$(date)" > /tmp/workspace/web-build-date
       - persist_to_workspace:
           root: /tmp/workspace
           paths:
-            - web-image
+            - manager-web-dist.tar.gz
+            - web-build-info
+            - web-build-date
 
   # Build MQTT Gateway (Node.js Service)
   build-mqtt-gateway:
-    executor: docker-executor
+    executor: node-executor
     steps:
       - checkout
-      - setup_remote_docker:
-          version: 20.10.24
-          docker_layer_caching: true
-      - dockerhub_login
+      - restore_cache:
+          keys:
+            - npm-gateway-deps-{{ checksum "main/mqtt-gateway/package-lock.json" }}
+            - npm-gateway-deps-
       - run:
-          name: Build MQTT Gateway Docker Image
+          name: Build MQTT Gateway
           command: |
             set -eo pipefail
-            if [ "${CIRCLE_BRANCH}" = "main" ]; then
-              TAG="latest"
-            else
-              TAG="${CIRCLE_BRANCH}-${CIRCLE_SHA1:0:7}"
-            fi
-            echo "Building mqtt-gateway:${TAG}"
-
+            echo "Building MQTT Gateway..."
             cd main/mqtt-gateway
-            docker build \
-              -t xiaozhi/mqtt-gateway:${TAG} \
-              -t xiaozhi/mqtt-gateway:${CIRCLE_SHA1:0:7} \
-              .
 
-            docker push xiaozhi/mqtt-gateway:${TAG}
-            docker push xiaozhi/mqtt-gateway:${CIRCLE_SHA1:0:7}
+            # Install production dependencies
+            npm ci --omit=dev --no-audit --no-fund
+
+            # Verify main application file exists
+            if [ ! -f "app.js" ]; then
+              echo "Error: Main application file (app.js) not found!"
+              exit 1
+            fi
+
+            echo "MQTT Gateway prepared successfully"
+      - save_cache:
+          paths:
+            - main/mqtt-gateway/node_modules
+          key: npm-gateway-deps-{{ checksum "main/mqtt-gateway/package-lock.json" }}
       - run:
-          name: Save Docker Image Info
+          name: Save Build Artifacts
           command: |
             set -eo pipefail
             mkdir -p /tmp/workspace
-            echo "xiaozhi/mqtt-gateway:${CIRCLE_SHA1:0:7}" > /tmp/workspace/gateway-image
+
+            # Archive the entire gateway directory
+            tar -czf /tmp/workspace/mqtt-gateway.tar.gz -C main mqtt-gateway/
+
+            # Create build info
+            echo "mqtt-gateway-${CIRCLE_SHA1:0:7}" > /tmp/workspace/gateway-build-info
+            echo "$(date)" > /tmp/workspace/gateway-build-date
       - persist_to_workspace:
           root: /tmp/workspace
           paths:
-            - gateway-image
+            - mqtt-gateway.tar.gz
+            - gateway-build-info
+            - gateway-build-date
 
-  # Security scan for images using Trivy
+  # Security scan for build artifacts
   security-scan:
     executor: docker-executor
     steps:
       - checkout
-      - setup_remote_docker:
-          version: 20.10.24
-          docker_layer_caching: true
       - attach_workspace:
           at: /tmp/workspace
       - run:
-          name: Install Trivy
+          name: Install Security Scan Tools
           command: |
             set -eo pipefail
+            # Install Trivy for vulnerability scanning
             sudo apt-get update -y
             sudo apt-get install -y wget apt-transport-https gnupg lsb-release
             wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
             echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
             sudo apt-get update -y
             sudo apt-get install -y trivy
+
+            # Install other security tools
+            sudo apt-get install -y clamav clamav-daemon
+            sudo freshclam || echo "ClamAV database update failed, continuing..."
       - run:
-          name: Scan Images for Vulnerabilities
+          name: Scan Build Artifacts
           command: |
             set -eo pipefail
+            echo "Running security scans on build artifacts..."
 
-            if [ -f /tmp/workspace/api-image ]; then
-              API_IMAGE=$(cat /tmp/workspace/api-image)
-              echo "Scanning $API_IMAGE"
-              trivy image --exit-code 0 --severity HIGH,CRITICAL "$API_IMAGE"
+            # Scan JAR file for vulnerabilities
+            if [ -f /tmp/workspace/xiaozhi-esp32-api.jar ]; then
+              echo "Scanning Manager API JAR..."
+              trivy fs --exit-code 0 --severity HIGH,CRITICAL /tmp/workspace/xiaozhi-esp32-api.jar
             fi
 
-            if [ -f /tmp/workspace/web-image ]; then
-              WEB_IMAGE=$(cat /tmp/workspace/web-image)
-              echo "Scanning $WEB_IMAGE"
-              trivy image --exit-code 0 --severity HIGH,CRITICAL "$WEB_IMAGE"
+            # Extract and scan web build
+            if [ -f /tmp/workspace/manager-web-dist.tar.gz ]; then
+              echo "Scanning Manager Web build..."
+              mkdir -p /tmp/web-scan
+              tar -xzf /tmp/workspace/manager-web-dist.tar.gz -C /tmp/web-scan
+              trivy fs --exit-code 0 --severity HIGH,CRITICAL /tmp/web-scan/
             fi
 
-            if [ -f /tmp/workspace/gateway-image ]; then
-              GATEWAY_IMAGE=$(cat /tmp/workspace/gateway-image)
-              echo "Scanning $GATEWAY_IMAGE"
-              trivy image --exit-code 0 --severity HIGH,CRITICAL "$GATEWAY_IMAGE"
+            # Extract and scan MQTT Gateway
+            if [ -f /tmp/workspace/mqtt-gateway.tar.gz ]; then
+              echo "Scanning MQTT Gateway..."
+              mkdir -p /tmp/gateway-scan
+              tar -xzf /tmp/workspace/mqtt-gateway.tar.gz -C /tmp/gateway-scan
+              trivy fs --exit-code 0 --severity HIGH,CRITICAL /tmp/gateway-scan/
             fi
 
-  # Parameterized Deploy
+            echo "Security scans completed successfully"
+
+  # PM2 Deployment
   deploy:
     parameters:
       env:
         type: string
         default: "staging"
-    executor: docker-executor
+    executor: node-executor
     steps:
       - checkout
       - attach_workspace:
           at: /tmp/workspace
       - run:
-          name: Deploy to Environment
+          name: Install PM2 and Dependencies
           command: |
             set -eo pipefail
-            echo "Deployment Environment: << parameters.env >>"
+            # Install PM2 globally
+            sudo npm install -g pm2
 
-            [ -f /tmp/workspace/api-image ] && echo "API Image: $(cat /tmp/workspace/api-image)"
-            [ -f /tmp/workspace/web-image ] && echo "Web Image: $(cat /tmp/workspace/web-image)"
-            [ -f /tmp/workspace/gateway-image ] && echo "Gateway Image: $(cat /tmp/workspace/gateway-image)"
+            # Install serve for static web hosting
+            sudo npm install -g serve
 
-            # Example deployment commands (customize as needed):
-            # kubectl set image deployment/manager-api manager-api=$(cat /tmp/workspace/api-image)
-            # kubectl set image deployment/manager-web manager-web=$(cat /tmp/workspace/web-image)
-            # kubectl set image deployment/mqtt-gateway mqtt-gateway=$(cat /tmp/workspace/gateway-image)
+            # Install Java 17 for manager-api
+            sudo apt-get update
+            sudo apt-get install -y openjdk-17-jdk
+      - add_ssh_keys:
+          fingerprints:
+            - # Add your server SSH key fingerprint here
+      - run:
+          name: Deploy to << parameters.env >> Environment
+          command: |
+            set -eo pipefail
+            DEPLOY_ENV="<< parameters.env >>"
+            echo "Deploying to: $DEPLOY_ENV"
 
-            echo "Deployment completed successfully!"
+            # Set server details based on environment
+            if [ "$DEPLOY_ENV" = "production" ]; then
+              SERVER_HOST=${PROD_SERVER_HOST}
+              SERVER_USER=${PROD_SERVER_USER}
+              DEPLOY_PATH="/opt/xiaozhi-esp32-server"
+            else
+              SERVER_HOST=${STAGING_SERVER_HOST}
+              SERVER_USER=${STAGING_SERVER_USER}
+              DEPLOY_PATH="/opt/xiaozhi-esp32-server"
+            fi
+
+            echo "Deploying to server: $SERVER_USER@$SERVER_HOST:$DEPLOY_PATH"
+
+            # Create deployment directory on server
+            ssh -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_HOST "
+              sudo mkdir -p $DEPLOY_PATH/main/{manager-api,manager-web,mqtt-gateway}
+              sudo mkdir -p /var/log/pm2
+              sudo chown -R $USER:$USER $DEPLOY_PATH
+              sudo chown -R $USER:$USER /var/log/pm2
+            "
+
+            # Deploy Manager API (Java JAR)
+            if [ -f /tmp/workspace/xiaozhi-esp32-api.jar ]; then
+              echo "Deploying Manager API..."
+              scp /tmp/workspace/xiaozhi-esp32-api.jar $SERVER_USER@$SERVER_HOST:$DEPLOY_PATH/main/manager-api/target/
+            fi
+
+            # Deploy Manager Web (Vue.js build)
+            if [ -f /tmp/workspace/manager-web-dist.tar.gz ]; then
+              echo "Deploying Manager Web..."
+              scp /tmp/workspace/manager-web-dist.tar.gz $SERVER_USER@$SERVER_HOST:/tmp/
+              ssh $SERVER_USER@$SERVER_HOST "
+                cd $DEPLOY_PATH/main/manager-web
+                tar -xzf /tmp/manager-web-dist.tar.gz
+                rm -f /tmp/manager-web-dist.tar.gz
+              "
+            fi
+
+            # Deploy MQTT Gateway (Node.js)
+            if [ -f /tmp/workspace/mqtt-gateway.tar.gz ]; then
+              echo "Deploying MQTT Gateway..."
+              scp /tmp/workspace/mqtt-gateway.tar.gz $SERVER_USER@$SERVER_HOST:/tmp/
+              ssh $SERVER_USER@$SERVER_HOST "
+                cd $DEPLOY_PATH/main
+                tar -xzf /tmp/mqtt-gateway.tar.gz
+                rm -f /tmp/mqtt-gateway.tar.gz
+              "
+            fi
+
+            # Copy ecosystem configuration
+            scp ecosystem.config.js $SERVER_USER@$SERVER_HOST:$DEPLOY_PATH/
+
+            # Start/Restart services with PM2
+            ssh $SERVER_USER@$SERVER_HOST "
+              cd $DEPLOY_PATH
+
+              # Stop existing processes
+              pm2 delete ecosystem.config.js || echo 'No existing processes to delete'
+
+              # Start all services with environment-specific config
+              pm2 start ecosystem.config.js --env $DEPLOY_ENV
+
+              # Save PM2 configuration
+              pm2 save
+
+              # Show status
+              pm2 list
+              pm2 logs --lines 20
+            "
+
+            echo "Deployment to $DEPLOY_ENV completed successfully!"
 
 # ---------------------------
 # Workflows
@@ -226,9 +366,8 @@ workflows:
 
   build-and-deploy:
     jobs:
-      # Build all three services (with context for Docker Hub creds)
+      # Build all three services in parallel
       - build-manager-api:
-          context: docker-hub-creds
           filters:
             branches:
               only:
@@ -238,7 +377,6 @@ workflows:
                 - "hotfix/.*"
 
       - build-manager-web:
-          context: docker-hub-creds
           filters:
             branches:
               only:
@@ -248,8 +386,6 @@ workflows:
                 - "hotfix/.*"
 
       - build-mqtt-gateway:
-          # context used for Docker Hub creds too
-          context: docker-hub-creds
           filters:
             branches:
               only:
@@ -272,13 +408,14 @@ workflows:
 
       # Deploy to staging for develop branch
       - deploy:
+          name: deploy-staging
+          env: "staging"
           requires:
             - security-scan
           filters:
             branches:
               only: develop
           context: staging-deploy
-          env: "staging"
 
       # Manual approval + production deploy for main branch
       - hold-for-approval:
@@ -290,13 +427,14 @@ workflows:
               only: main
 
       - deploy:
+          name: deploy-production
+          env: "production"
           requires:
             - hold-for-approval
           filters:
             branches:
               only: main
           context: production-deploy
-          env: "production"
 
   nightly-security-scan:
     triggers:
@@ -306,5 +444,11 @@ workflows:
             branches:
               only: main
     jobs:
+      - build-manager-api
+      - build-manager-web
+      - build-mqtt-gateway
       - security-scan:
-          context: docker-hub-creds
+          requires:
+            - build-manager-api
+            - build-manager-web
+            - build-mqtt-gateway
