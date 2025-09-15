@@ -15,7 +15,7 @@ commands:
             sudo npm install -g serve
 
 # ---------------------------
-# Executors
+# Executors (single block)
 # ---------------------------
 executors:
   docker-executor:
@@ -23,10 +23,6 @@ executors:
       - image: cimg/base:stable
     resource_class: large
 
-# ---------------------------
-# Executors
-# ---------------------------
-executors:
   node-executor:
     docker:
       - image: cimg/node:18.20
@@ -57,26 +53,27 @@ jobs:
             echo "Building Manager API JAR..."
             cd main/manager-api
 
-            # Clean and compile
-            mvn clean compile
+            mvn -B -q clean package -DskipTests
 
-            # Run tests (optional, remove if not needed)
-            # mvn test
-
-            # Package the JAR
-            mvn package -DskipTests
-
-            # Verify JAR was created
+            echo "Artifacts in target/:"
             ls -la target/
-            if [ ! -f target/xiaozhi-esp32-api.jar ]; then
-              echo "Error: JAR file not found!"
+
+            # Find the main JAR (versioned) and copy it to a stable name
+            JAR_PATH="$(ls -1 target/xiaozhi-esp32-api-*.jar | head -n1)"
+            if [ -z "$JAR_PATH" ]; then
+              echo "Error: No JAR matching target/xiaozhi-esp32-api-*.jar"
               exit 1
             fi
+            mkdir -p /tmp/workspace
+            cp "$JAR_PATH" /tmp/workspace/xiaozhi-esp32-api.jar
+            echo "manager-api-${CIRCLE_SHA1:0:7}" > /tmp/workspace/api-build-info
+            date -u +"%Y-%m-%dT%H:%M:%SZ" > /tmp/workspace/api-build-date
 
-            echo "Manager API JAR built successfully"
+            echo "Manager API JAR staged to workspace."
       - save_cache:
           paths:
             - ~/.m2
+<<<<<<< HEAD
           key: maven-deps-v1-{{ checksum "main/manager-api/pom.xml" }}
       - run:
           name: Save Build Artifacts
@@ -90,6 +87,9 @@ jobs:
             # Create build info
             echo "manager-api-${CIRCLE_SHA1:0:7}" > /tmp/workspace/api-build-info
             echo "$(date)" > /tmp/workspace/api-build-date
+=======
+          key: maven-deps-{{ checksum "main/manager-api/pom.xml" }}
+>>>>>>> 239d5f356174ba4e8c3f1adbc56ade215f80d973
       - persist_to_workspace:
           root: /tmp/workspace
           paths:
@@ -114,23 +114,24 @@ jobs:
             echo "Building Manager Web..."
             cd main/manager-web
 
-            # Install dependencies
             npm ci --legacy-peer-deps
-
-            # Build for production
             npm run build
 
-            # Verify build output
-            ls -la dist/
             if [ ! -d "dist" ]; then
-              echo "Error: Build output directory not found!"
+              echo "Error: dist/ not found after build!"
               exit 1
             fi
 
-            echo "Manager Web built successfully"
+            mkdir -p /tmp/workspace
+            tar -czf /tmp/workspace/manager-web-dist.tar.gz dist/
+            echo "manager-web-${CIRCLE_SHA1:0:7}" > /tmp/workspace/web-build-info
+            date -u +"%Y-%m-%dT%H:%M:%SZ" > /tmp/workspace/web-build-date
+
+            echo "Manager Web build archived."
       - save_cache:
           paths:
             - main/manager-web/node_modules
+<<<<<<< HEAD
           key: npm-web-deps-v1-{{ checksum "main/manager-web/package-lock.json" }}
       - run:
           name: Save Build Artifacts
@@ -145,6 +146,9 @@ jobs:
             # Create build info
             echo "manager-web-${CIRCLE_SHA1:0:7}" > /tmp/workspace/web-build-info
             echo "$(date)" > /tmp/workspace/web-build-date
+=======
+          key: npm-deps-{{ checksum "main/manager-web/package-lock.json" }}
+>>>>>>> 239d5f356174ba4e8c3f1adbc56ade215f80d973
       - persist_to_workspace:
           root: /tmp/workspace
           paths:
@@ -175,19 +179,23 @@ jobs:
             echo "Building MQTT Gateway..."
             cd main/mqtt-gateway
 
-            # Install production dependencies
             npm ci --omit=dev --no-audit --no-fund
 
-            # Verify main application file exists
             if [ ! -f "app.js" ]; then
-              echo "Error: Main application file (app.js) not found!"
+              echo "Error: app.js not found!"
               exit 1
             fi
 
-            echo "MQTT Gateway prepared successfully"
+            mkdir -p /tmp/workspace
+            tar -czf /tmp/workspace/mqtt-gateway.tar.gz -C ../ mqtt-gateway/
+            echo "mqtt-gateway-${CIRCLE_SHA1:0:7}" > /tmp/workspace/gateway-build-info
+            date -u +"%Y-%m-%dT%H:%M:%SZ" > /tmp/workspace/gateway-build-date
+
+            echo "MQTT Gateway archived."
       - save_cache:
           paths:
             - main/mqtt-gateway/node_modules
+<<<<<<< HEAD
           key: npm-gateway-deps-v1-{{ checksum "main/mqtt-gateway/package.json" }}
       - run:
           name: Save Build Artifacts
@@ -201,6 +209,9 @@ jobs:
             # Create build info
             echo "mqtt-gateway-${CIRCLE_SHA1:0:7}" > /tmp/workspace/gateway-build-info
             echo "$(date)" > /tmp/workspace/gateway-build-date
+=======
+          key: npm-gateway-deps-{{ checksum "main/mqtt-gateway/package-lock.json" }}
+>>>>>>> 239d5f356174ba4e8c3f1adbc56ade215f80d973
       - persist_to_workspace:
           root: /tmp/workspace
           paths:
@@ -219,46 +230,40 @@ jobs:
           name: Install Security Scan Tools
           command: |
             set -eo pipefail
-            # Install Trivy for vulnerability scanning
             sudo apt-get update -y
             sudo apt-get install -y wget apt-transport-https gnupg lsb-release
             wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
             echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
             sudo apt-get update -y
             sudo apt-get install -y trivy
-
-            # Install other security tools
             sudo apt-get install -y clamav clamav-daemon
-            sudo freshclam || echo "ClamAV database update failed, continuing..."
+            sudo freshclam || echo "ClamAV DB update failed, continuing..."
       - run:
           name: Scan Build Artifacts
           command: |
             set -eo pipefail
-            echo "Running security scans on build artifacts..."
+            echo "Running security scans..."
 
-            # Scan JAR file for vulnerabilities
             if [ -f /tmp/workspace/xiaozhi-esp32-api.jar ]; then
               echo "Scanning Manager API JAR..."
               trivy fs --exit-code 0 --severity HIGH,CRITICAL /tmp/workspace/xiaozhi-esp32-api.jar
             fi
 
-            # Extract and scan web build
             if [ -f /tmp/workspace/manager-web-dist.tar.gz ]; then
-              echo "Scanning Manager Web build..."
+              echo "Scanning Manager Web bundle..."
               mkdir -p /tmp/web-scan
               tar -xzf /tmp/workspace/manager-web-dist.tar.gz -C /tmp/web-scan
               trivy fs --exit-code 0 --severity HIGH,CRITICAL /tmp/web-scan/
             fi
 
-            # Extract and scan MQTT Gateway
             if [ -f /tmp/workspace/mqtt-gateway.tar.gz ]; then
-              echo "Scanning MQTT Gateway..."
+              echo "Scanning MQTT Gateway bundle..."
               mkdir -p /tmp/gateway-scan
               tar -xzf /tmp/workspace/mqtt-gateway.tar.gz -C /tmp/gateway-scan
               trivy fs --exit-code 0 --severity HIGH,CRITICAL /tmp/gateway-scan/
             fi
 
-            echo "Security scans completed successfully"
+            echo "Security scans complete."
 
   # PM2 Deployment
   deploy:
@@ -272,21 +277,16 @@ jobs:
       - attach_workspace:
           at: /tmp/workspace
       - run:
-          name: Install PM2 and Dependencies
+          name: Install PM2, Serve, Java
           command: |
             set -eo pipefail
-            # Install PM2 globally
-            sudo npm install -g pm2
-
-            # Install serve for static web hosting
-            sudo npm install -g serve
-
-            # Install Java 17 for manager-api
+            sudo npm install -g pm2 serve
             sudo apt-get update
             sudo apt-get install -y openjdk-17-jdk
-      - add_ssh_keys:
-          fingerprints:
-            - # Add your server SSH key fingerprint here
+      # Uncomment and replace with your actual fingerprint, or remove the whole step if using machine user keys
+      # - add_ssh_keys:
+      #     fingerprints:
+      #       - "SHA256:CHANGE_ME_WITH_YOUR_FINGERPRINT"
       - run:
           name: Deploy to << parameters.env >> Environment
           command: |
@@ -294,148 +294,134 @@ jobs:
             DEPLOY_ENV="<< parameters.env >>"
             echo "Deploying to: $DEPLOY_ENV"
 
-            # Set server details based on environment
             if [ "$DEPLOY_ENV" = "production" ]; then
-              SERVER_HOST=${PROD_SERVER_HOST}
-              SERVER_USER=${PROD_SERVER_USER}
+              SERVER_HOST="${PROD_SERVER_HOST}"
+              SERVER_USER="${PROD_SERVER_USER}"
               DEPLOY_PATH="/opt/xiaozhi-esp32-server"
             else
-              SERVER_HOST=${STAGING_SERVER_HOST}
-              SERVER_USER=${STAGING_SERVER_USER}
+              SERVER_HOST="${STAGING_SERVER_HOST}"
+              SERVER_USER="${STAGING_SERVER_USER}"
               DEPLOY_PATH="/opt/xiaozhi-esp32-server"
             fi
 
-            echo "Deploying to server: $SERVER_USER@$SERVER_HOST:$DEPLOY_PATH"
+            echo "Server: $SERVER_USER@$SERVER_HOST:$DEPLOY_PATH"
 
-            # Create deployment directory on server
-            ssh -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_HOST "
+            ssh -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_HOST" "
               sudo mkdir -p $DEPLOY_PATH/main/{manager-api,manager-web,mqtt-gateway}
               sudo mkdir -p /var/log/pm2
-              sudo chown -R $USER:$USER $DEPLOY_PATH
-              sudo chown -R $USER:$USER /var/log/pm2
+              sudo chown -R \$USER:\$USER $DEPLOY_PATH
+              sudo chown -R \$USER:\$USER /var/log/pm2
             "
 
-            # Deploy Manager API (Java JAR)
+            # Manager API
             if [ -f /tmp/workspace/xiaozhi-esp32-api.jar ]; then
-              echo "Deploying Manager API..."
-              scp /tmp/workspace/xiaozhi-esp32-api.jar $SERVER_USER@$SERVER_HOST:$DEPLOY_PATH/main/manager-api/target/
+              echo "Uploading Manager API JAR..."
+              ssh "$SERVER_USER@$SERVER_HOST" "mkdir -p $DEPLOY_PATH/main/manager-api/target"
+              scp /tmp/workspace/xiaozhi-esp32-api.jar "$SERVER_USER@$SERVER_HOST:$DEPLOY_PATH/main/manager-api/target/"
             fi
 
-            # Deploy Manager Web (Vue.js build)
+            # Manager Web
             if [ -f /tmp/workspace/manager-web-dist.tar.gz ]; then
-              echo "Deploying Manager Web..."
-              scp /tmp/workspace/manager-web-dist.tar.gz $SERVER_USER@$SERVER_HOST:/tmp/
-              ssh $SERVER_USER@$SERVER_HOST "
+              echo "Uploading Manager Web bundle..."
+              scp /tmp/workspace/manager-web-dist.tar.gz "$SERVER_USER@$SERVER_HOST:/tmp/"
+              ssh "$SERVER_USER@$SERVER_HOST" "
+                mkdir -p $DEPLOY_PATH/main/manager-web
                 cd $DEPLOY_PATH/main/manager-web
                 tar -xzf /tmp/manager-web-dist.tar.gz
                 rm -f /tmp/manager-web-dist.tar.gz
               "
             fi
 
-            # Deploy MQTT Gateway (Node.js)
+            # MQTT Gateway
             if [ -f /tmp/workspace/mqtt-gateway.tar.gz ]; then
-              echo "Deploying MQTT Gateway..."
-              scp /tmp/workspace/mqtt-gateway.tar.gz $SERVER_USER@$SERVER_HOST:/tmp/
-              ssh $SERVER_USER@$SERVER_HOST "
+              echo "Uploading MQTT Gateway bundle..."
+              scp /tmp/workspace/mqtt-gateway.tar.gz "$SERVER_USER@$SERVER_HOST:/tmp/"
+              ssh "$SERVER_USER@$SERVER_HOST" "
                 cd $DEPLOY_PATH/main
                 tar -xzf /tmp/mqtt-gateway.tar.gz
                 rm -f /tmp/mqtt-gateway.tar.gz
               "
             fi
 
-            # Copy ecosystem configuration
-            scp ecosystem.config.js $SERVER_USER@$SERVER_HOST:$DEPLOY_PATH/
+            # Ecosystem config
+            scp ecosystem.config.js "$SERVER_USER@$SERVER_HOST:$DEPLOY_PATH/"
 
-            # Create backup of current deployment
-            ssh $SERVER_USER@$SERVER_HOST "
+            # Backup current deployment
+            ssh "$SERVER_USER@$SERVER_HOST" "
               cd $DEPLOY_PATH
               BACKUP_DIR=\"/opt/xiaozhi-esp32-server-backup-\$(date +%Y%m%d-%H%M%S)\"
               if [ -d '/opt/xiaozhi-esp32-server' ]; then
                 echo 'Creating backup...'
-                sudo cp -r /opt/xiaozhi-esp32-server \$BACKUP_DIR
+                sudo cp -r /opt/xiaozhi-esp32-server \"\$BACKUP_DIR\"
                 echo \"Backup created at: \$BACKUP_DIR\"
               fi
             "
 
-            # Start/Restart services with PM2
-            ssh $SERVER_USER@$SERVER_HOST "
+            # PM2 start/restart
+            ssh "$SERVER_USER@$SERVER_HOST" "
               cd $DEPLOY_PATH
-
-              # Stop existing processes gracefully
               pm2 stop ecosystem.config.js || echo 'No existing processes to stop'
               sleep 5
-
-              # Start all services with environment-specific config
               pm2 start ecosystem.config.js --env $DEPLOY_ENV
-
-              # Save PM2 configuration
               pm2 save
-
-              # Show status
               pm2 list
             "
 
-            # Health checks
-            echo "Performing health checks..."
+            echo "Health checks..."
             sleep 10
 
-            # Check Manager API health
-            ssh $SERVER_USER@$SERVER_HOST "
+            # API health
+            ssh "$SERVER_USER@$SERVER_HOST" "
               for i in {1..30}; do
-                if curl -f http://localhost:8080/actuator/health > /dev/null 2>&1; then
-                  echo 'Manager API is healthy'
+                if curl -f http://localhost:8080/actuator/health >/dev/null 2>&1; then
+                  echo 'Manager API healthy'
                   break
                 elif [ \$i -eq 30 ]; then
-                  echo 'Manager API health check failed after 30 attempts'
+                  echo 'Manager API health check failed'
                   pm2 logs manager-api --lines 50
                   exit 1
                 fi
-                echo \"Waiting for Manager API... attempt \$i/30\"
+                echo \"Waiting for Manager API... (\$i/30)\"
                 sleep 2
               done
             "
 
-            # Check Manager Web health
-            ssh $SERVER_USER@$SERVER_HOST "
+            # Web health
+            ssh "$SERVER_USER@$SERVER_HOST" "
               for i in {1..15}; do
-                if curl -f http://localhost:8081/ > /dev/null 2>&1; then
-                  echo 'Manager Web is healthy'
+                if curl -f http://localhost:8081/ >/dev/null 2>&1; then
+                  echo 'Manager Web healthy'
                   break
                 elif [ \$i -eq 15 ]; then
-                  echo 'Manager Web health check failed after 15 attempts'
+                  echo 'Manager Web health check failed'
                   pm2 logs manager-web --lines 50
                   exit 1
                 fi
-                echo \"Waiting for Manager Web... attempt \$i/15\"
+                echo \"Waiting for Manager Web... (\$i/15)\"
                 sleep 2
               done
             "
 
-            # Check MQTT Gateway health
-            ssh $SERVER_USER@$SERVER_HOST "
+            # MQTT health
+            ssh "$SERVER_USER@$SERVER_HOST" "
               for i in {1..15}; do
-                if curl -f http://localhost:8884/health > /dev/null 2>&1; then
-                  echo 'MQTT Gateway is healthy'
+                if curl -f http://localhost:8884/health >/dev/null 2>&1; then
+                  echo 'MQTT Gateway healthy'
                   break
                 elif [ \$i -eq 15 ]; then
-                  echo 'MQTT Gateway health check failed after 15 attempts'
+                  echo 'MQTT Gateway health check failed'
                   pm2 logs mqtt-gateway --lines 50
                   exit 1
                 fi
-                echo \"Waiting for MQTT Gateway... attempt \$i/15\"
+                echo \"Waiting for MQTT Gateway... (\$i/15)\"
                 sleep 2
               done
             "
 
-            # Final status check
-            ssh $SERVER_USER@$SERVER_HOST "
-              pm2 list
-              echo 'All services deployed and healthy!'
-            "
+            ssh "$SERVER_USER@$SERVER_HOST" "pm2 list && echo 'All services deployed and healthy!'"
+            echo "Deployment to $DEPLOY_ENV completed."
 
-            echo "Deployment to $DEPLOY_ENV completed successfully!"
-
-  # Rollback job for emergency situations
+  # Rollback job
   rollback:
     parameters:
       env:
@@ -444,53 +430,42 @@ jobs:
     executor: node-executor
     steps:
       - checkout
-      - add_ssh_keys:
-          fingerprints:
-            - # Add your server SSH key fingerprint here
+      # - add_ssh_keys:
+      #     fingerprints:
+      #       - "SHA256:CHANGE_ME_WITH_YOUR_FINGERPRINT"
       - run:
           name: Rollback to Previous Deployment
           command: |
             set -eo pipefail
             DEPLOY_ENV="<< parameters.env >>"
 
-            # Set server details based on environment
             if [ "$DEPLOY_ENV" = "production" ]; then
-              SERVER_HOST=${PROD_SERVER_HOST}
-              SERVER_USER=${PROD_SERVER_USER}
+              SERVER_HOST="${PROD_SERVER_HOST}"
+              SERVER_USER="${PROD_SERVER_USER}"
             else
-              SERVER_HOST=${STAGING_SERVER_HOST}
-              SERVER_USER=${STAGING_SERVER_USER}
+              SERVER_HOST="${STAGING_SERVER_HOST}"
+              SERVER_USER="${STAGING_SERVER_USER}"
             fi
 
-            echo "Rolling back deployment on: $SERVER_USER@$SERVER_HOST"
+            echo "Rolling back on $SERVER_USER@$SERVER_HOST"
 
-            # Find the most recent backup
-            ssh $SERVER_USER@$SERVER_HOST "
+            ssh "$SERVER_USER@$SERVER_HOST" "
               BACKUP_DIR=\$(ls -td /opt/xiaozhi-esp32-server-backup-* 2>/dev/null | head -1)
               if [ -z \"\$BACKUP_DIR\" ]; then
                 echo 'No backup found! Cannot rollback.'
                 exit 1
               fi
 
-              echo \"Rolling back to: \$BACKUP_DIR\"
-
-              # Stop current services
+              echo \"Rollback to: \$BACKUP_DIR\"
               pm2 stop ecosystem.config.js || echo 'No processes to stop'
-
-              # Remove current deployment
               sudo rm -rf /opt/xiaozhi-esp32-server
-
-              # Restore from backup
-              sudo cp -r \$BACKUP_DIR /opt/xiaozhi-esp32-server
-              sudo chown -R $USER:$USER /opt/xiaozhi-esp32-server
-
-              # Start services from backup
+              sudo cp -r \"\$BACKUP_DIR\" /opt/xiaozhi-esp32-server
+              sudo chown -R \$USER:\$USER /opt/xiaozhi-esp32-server
               cd /opt/xiaozhi-esp32-server
               pm2 start ecosystem.config.js --env $DEPLOY_ENV
               pm2 save
-
-              echo 'Rollback completed!'
               pm2 list
+              echo 'Rollback completed.'
             "
 
 # ---------------------------
@@ -501,7 +476,6 @@ workflows:
 
   build-and-deploy:
     jobs:
-      # Build all three services in parallel
       - build-manager-api:
           filters:
             branches:
@@ -529,7 +503,6 @@ workflows:
                 - "feature/.*"
                 - "hotfix/.*"
 
-      # Security scanning after builds complete
       - security-scan:
           requires:
             - build-manager-api
@@ -541,9 +514,8 @@ workflows:
                 - main
                 - develop
 
-      # Deploy to staging for develop branch
+      # Deploy to staging (no 'name:' key; pass param directly)
       - deploy:
-          name: deploy-staging
           env: "staging"
           requires:
             - security-scan
@@ -552,7 +524,7 @@ workflows:
               only: develop
           context: staging-deploy
 
-      # Manual approval + production deploy for main branch
+      # Approval then production deploy
       - hold-for-approval:
           type: approval
           requires:
@@ -562,7 +534,6 @@ workflows:
               only: main
 
       - deploy:
-          name: deploy-production
           env: "production"
           requires:
             - hold-for-approval
