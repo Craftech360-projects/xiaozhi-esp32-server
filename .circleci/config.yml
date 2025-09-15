@@ -58,20 +58,29 @@ jobs:
             echo "Artifacts in target/:"
             ls -la target/
 
-            # Find the main JAR file
+            # Find the main JAR file - check multiple possible names
+            JAR_PATH=""
+
+            # Primary check: exact finalName match
             if [ -f "target/xiaozhi-esp32-api.jar" ]; then
               JAR_PATH="target/xiaozhi-esp32-api.jar"
-              echo "Found JAR: $JAR_PATH"
+              echo "Found JAR (finalName): $JAR_PATH"
+            # Secondary check: versioned JAR
+            elif [ -f "target/xiaozhi-esp32-api-0.0.1.jar" ]; then
+              JAR_PATH="target/xiaozhi-esp32-api-0.0.1.jar"
+              echo "Found JAR (versioned): $JAR_PATH"
             else
-              # Try versioned pattern as fallback
-              JAR_PATH="$(find target -name 'xiaozhi-esp32-api-*.jar' -type f | head -n1)"
+              # Fallback: find any matching JAR
+              echo "Searching for any xiaozhi-esp32-api JAR files..."
+              find target -name "*.jar" -type f
+              JAR_PATH="$(find target -name 'xiaozhi-esp32-api*.jar' -type f | head -n1)"
               if [ -z "$JAR_PATH" ]; then
-                echo "Error: No JAR file found in target/"
-                echo "Expected: target/xiaozhi-esp32-api.jar"
-                echo "Or: target/xiaozhi-esp32-api-*.jar"
+                echo "Error: No xiaozhi-esp32-api JAR file found in target/"
+                echo "Available files:"
+                find target -name "*.jar" -type f || echo "No JAR files found"
                 exit 1
               fi
-              echo "Found versioned JAR: $JAR_PATH"
+              echo "Found JAR (pattern match): $JAR_PATH"
             fi
             mkdir -p /tmp/workspace
             cp "$JAR_PATH" /tmp/workspace/xiaozhi-esp32-api.jar
