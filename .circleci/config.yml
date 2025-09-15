@@ -73,23 +73,7 @@ jobs:
       - save_cache:
           paths:
             - ~/.m2
-<<<<<<< HEAD
           key: maven-deps-v1-{{ checksum "main/manager-api/pom.xml" }}
-      - run:
-          name: Save Build Artifacts
-          command: |
-            set -eo pipefail
-            mkdir -p /tmp/workspace
-
-            # Copy JAR file
-            cp main/manager-api/target/xiaozhi-esp32-api.jar /tmp/workspace/
-
-            # Create build info
-            echo "manager-api-${CIRCLE_SHA1:0:7}" > /tmp/workspace/api-build-info
-            echo "$(date)" > /tmp/workspace/api-build-date
-=======
-          key: maven-deps-{{ checksum "main/manager-api/pom.xml" }}
->>>>>>> 239d5f356174ba4e8c3f1adbc56ade215f80d973
       - persist_to_workspace:
           root: /tmp/workspace
           paths:
@@ -131,24 +115,7 @@ jobs:
       - save_cache:
           paths:
             - main/manager-web/node_modules
-<<<<<<< HEAD
           key: npm-web-deps-v1-{{ checksum "main/manager-web/package-lock.json" }}
-      - run:
-          name: Save Build Artifacts
-          command: |
-            set -eo pipefail
-            mkdir -p /tmp/workspace
-
-            # Archive the build output
-            cd main/manager-web
-            tar -czf /tmp/workspace/manager-web-dist.tar.gz dist/
-
-            # Create build info
-            echo "manager-web-${CIRCLE_SHA1:0:7}" > /tmp/workspace/web-build-info
-            echo "$(date)" > /tmp/workspace/web-build-date
-=======
-          key: npm-deps-{{ checksum "main/manager-web/package-lock.json" }}
->>>>>>> 239d5f356174ba4e8c3f1adbc56ade215f80d973
       - persist_to_workspace:
           root: /tmp/workspace
           paths:
@@ -161,13 +128,6 @@ jobs:
     executor: node-executor
     steps:
       - checkout
-      - run:
-          name: Debug - List mqtt-gateway files
-          command: |
-            echo "=== Listing main/mqtt-gateway directory ==="
-            ls -la main/mqtt-gateway/
-            echo "=== Checking for package files ==="
-            find main/mqtt-gateway -name "package*.json" -o -name "yarn.lock" -o -name "pnpm-lock.yaml"
       - restore_cache:
           keys:
             - npm-gateway-deps-v1-{{ checksum "main/mqtt-gateway/package.json" }}
@@ -195,23 +155,7 @@ jobs:
       - save_cache:
           paths:
             - main/mqtt-gateway/node_modules
-<<<<<<< HEAD
           key: npm-gateway-deps-v1-{{ checksum "main/mqtt-gateway/package.json" }}
-      - run:
-          name: Save Build Artifacts
-          command: |
-            set -eo pipefail
-            mkdir -p /tmp/workspace
-
-            # Archive the entire gateway directory
-            tar -czf /tmp/workspace/mqtt-gateway.tar.gz -C main mqtt-gateway/
-
-            # Create build info
-            echo "mqtt-gateway-${CIRCLE_SHA1:0:7}" > /tmp/workspace/gateway-build-info
-            echo "$(date)" > /tmp/workspace/gateway-build-date
-=======
-          key: npm-gateway-deps-{{ checksum "main/mqtt-gateway/package-lock.json" }}
->>>>>>> 239d5f356174ba4e8c3f1adbc56ade215f80d973
       - persist_to_workspace:
           root: /tmp/workspace
           paths:
