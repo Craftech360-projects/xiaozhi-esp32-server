@@ -359,11 +359,14 @@ jobs:
 
             echo "Building and deploying ${SVC} to ${AZURE_USER}@${AZURE_HOST} env=${ENV_NAME}"
 
-            # Copy JAR to build context
+            # Create a simple Dockerfile for deployment (bypass multi-stage build)
+            printf 'FROM eclipse-temurin:17-jre-alpine\\n\\n# Install curl for health checks\\nRUN apk add --no-cache curl\\n\\n# Create non-root user\\nRUN addgroup -g 1001 -S appgroup \\\\\\n    && adduser  -S appuser -G appgroup -u 1001\\n\\nWORKDIR /app\\n\\n# Copy the pre-built JAR\\nCOPY app.jar /app/app.jar\\nRUN chown -R appuser:appgroup /app\\n\\nUSER appuser\\n\\n# Ports & env\\nEXPOSE 8002\\n\\n# Prefer JAVA_TOOL_OPTIONS so JVM auto-picks it up\\nENV JAVA_TOOL_OPTIONS=\"-Xms256m -Xmx512m\"\\nENV SPRING_PROFILES_ACTIVE=prod\\n\\n# Healthcheck\\nHEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \\\\\\n    CMD curl -fsS http://127.0.0.1:8002/toy/actuator/health || exit 1\\n\\n# Run app\\nENTRYPOINT [\"java\",\"-jar\",\"/app/app.jar\"]\\n' > "${DIR}/Dockerfile.deploy"
+
+            # Copy pre-built JAR to build context
             cp "/tmp/workspace/${SVC}.jar" "${DIR}/app.jar"
 
-            # Build Docker image
-            docker build -t "${SVC}:${CIRCLE_SHA1:0:7}" "${DIR}"
+            # Build Docker image using deployment Dockerfile
+            docker build -f "${DIR}/Dockerfile.deploy" -t "${SVC}:${CIRCLE_SHA1:0:7}" "${DIR}"
 
             # Save and upload Docker image (simpler approach)
             docker save "${SVC}:${CIRCLE_SHA1:0:7}" | gzip > "/tmp/${SVC}-image.tar.gz"
