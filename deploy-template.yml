@@ -1,0 +1,115 @@
+# Azure DevOps Deployment Template
+parameters:
+- name: environment
+  type: string
+- name: resourceGroup
+  type: string
+
+steps:
+- task: DownloadBuildArtifacts@0
+  inputs:
+    buildType: 'current'
+    downloadType: 'all'
+    downloadPath: '$(System.ArtifactsDirectory)'
+
+# Deploy Manager API (Java)
+- task: AzureWebApp@1
+  displayName: 'Deploy Manager API'
+  inputs:
+    azureSubscription: '$(azureServiceConnection)'
+    appType: 'webAppLinux'
+    appName: 'xiaozhi-${{ parameters.environment }}-manager-api'
+    package: '$(System.ArtifactsDirectory)/manager-api-jar/xiaozhi-esp32-api.jar'
+    runtimeStack: 'JAVA|17-java17'
+    appSettings: |
+      -SPRING_PROFILES_ACTIVE ${{ parameters.environment }}
+      -SERVER_PORT 8080
+      -JAVA_OPTS "-Xms512m -Xmx1g"
+
+# Deploy Manager Web (Vue.js)
+- task: AzureWebApp@1
+  displayName: 'Deploy Manager Web'
+  inputs:
+    azureSubscription: '$(azureServiceConnection)'
+    appType: 'webAppLinux'
+    appName: 'xiaozhi-${{ parameters.environment }}-manager-web'
+    package: '$(System.ArtifactsDirectory)/manager-web-dist/manager-web.zip'
+    runtimeStack: 'NODE|18-lts'
+    appSettings: |
+      -NODE_ENV ${{ parameters.environment }}
+      -PORT 8081
+    startUpCommand: 'npx serve -s . -l 8081'
+
+# Deploy MQTT Gateway (Node.js)
+- task: AzureWebApp@1
+  displayName: 'Deploy MQTT Gateway'
+  inputs:
+    azureSubscription: '$(azureServiceConnection)'
+    appType: 'webAppLinux'
+    appName: 'xiaozhi-${{ parameters.environment }}-mqtt-gateway'
+    package: '$(System.ArtifactsDirectory)/mqtt-gateway-app/mqtt-gateway.zip'
+    runtimeStack: 'NODE|18-lts'
+    appSettings: |
+      -NODE_ENV ${{ parameters.environment }}
+      -MQTT_PORT 1883
+      -HTTP_PORT 8884
+      -PORT 8884
+    startUpCommand: 'node app.js'
+
+# Health Checks
+- script: |
+    echo "Waiting for services to start..."
+    sleep 30
+
+    # Manager API Health Check
+    API_URL="https://xiaozhi-${{ parameters.environment }}-manager-api.azurewebsites.net"
+    for i in {1..30}; do
+      if curl -f "$API_URL/actuator/health" >/dev/null 2>&1; then
+        echo "✓ Manager API is healthy"
+        break
+      elif [ $i -eq 30 ]; then
+        echo "✗ Manager API health check failed"
+        exit 1
+      fi
+      echo "Waiting for Manager API... ($i/30)"
+      sleep 2
+    done
+
+    # Manager Web Health Check
+    WEB_URL="https://xiaozhi-${{ parameters.environment }}-manager-web.azurewebsites.net"
+    for i in {1..15}; do
+      if curl -f "$WEB_URL" >/dev/null 2>&1; then
+        echo "✓ Manager Web is accessible"
+        break
+      elif [ $i -eq 15 ]; then
+        echo "✗ Manager Web health check failed"
+        exit 1
+      fi
+      echo "Waiting for Manager Web... ($i/15)"
+      sleep 2
+    done
+
+    # MQTT Gateway Health Check
+    GATEWAY_URL="https://xiaozhi-${{ parameters.environment }}-mqtt-gateway.azurewebsites.net"
+    for i in {1..15}; do
+      if curl -f "$GATEWAY_URL/health" >/dev/null 2>&1; then
+        echo "✓ MQTT Gateway is healthy"
+        break
+      elif [ $i -eq 15 ]; then
+        echo "✗ MQTT Gateway health check failed"
+        exit 1
+      fi
+      echo "Waiting for MQTT Gateway... ($i/15)"
+      sleep 2
+    done
+
+    echo "All services deployed and healthy!"
+  displayName: 'Health Checks'
+
+- script: |
+    echo "=== Deployment Summary ==="
+    echo "Environment: ${{ parameters.environment }}"
+    echo "Manager API: https://xiaozhi-${{ parameters.environment }}-manager-api.azurewebsites.net"
+    echo "Manager Web: https://xiaozhi-${{ parameters.environment }}-manager-web.azurewebsites.net"
+    echo "MQTT Gateway: https://xiaozhi-${{ parameters.environment }}-mqtt-gateway.azurewebsites.net"
+  displayName: 'Deployment Summary'

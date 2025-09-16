@@ -1,0 +1,176 @@
+# ADD THESE SECTIONS TO YOUR EXISTING .circleci/config.yml
+
+# 1. Add to the top after version: 2.1
+orbs:
+  azure-cli: circleci/azure-cli@2.0.0
+
+# 2. Add this command to your existing commands section
+commands:
+  # ... your existing commands ...
+
+  azure_login:
+    description: "Login to Azure CLI"
+    steps:
+      - run:
+          name: Install and Configure Azure CLI
+          command: |
+            set -eo pipefail
+            curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+            az login --service-principal \
+              --username $AZURE_CLIENT_ID \
+              --password $AZURE_CLIENT_SECRET \
+              --tenant $AZURE_TENANT_ID
+
+# 3. Add this new job to your jobs section
+jobs:
+  # ... your existing jobs ...
+
+  deploy-to-azure:
+    parameters:
+      env:
+        type: string
+        default: "staging"
+    executor: node-executor
+    steps:
+      - checkout
+      - attach_workspace:
+          at: /tmp/workspace
+      - azure_login
+
+      # Deploy all three components to Azure
+      - run:
+          name: Deploy to Azure App Services
+          command: |
+            set -eo pipefail
+            DEPLOY_ENV="<< parameters.env >>"
+
+            echo "Deploying to Azure environment: $DEPLOY_ENV"
+
+            # Deploy Manager API
+            if [ -f /tmp/workspace/xiaozhi-esp32-api.jar ]; then
+              echo "Deploying Manager API..."
+              az webapp deploy \
+                --resource-group "xiaozhi-${DEPLOY_ENV}-rg" \
+                --name "xiaozhi-${DEPLOY_ENV}-manager-api" \
+                --src-path /tmp/workspace/xiaozhi-esp32-api.jar \
+                --type jar
+            fi
+
+            # Deploy Manager Web
+            if [ -f /tmp/workspace/manager-web-dist.tar.gz ]; then
+              echo "Deploying Manager Web..."
+              mkdir -p /tmp/web-deploy
+              tar -xzf /tmp/workspace/manager-web-dist.tar.gz -C /tmp/web-deploy
+              cd /tmp/web-deploy && zip -r ../manager-web.zip .
+
+              az webapp deploy \
+                --resource-group "xiaozhi-${DEPLOY_ENV}-rg" \
+                --name "xiaozhi-${DEPLOY_ENV}-manager-web" \
+                --src-path /tmp/manager-web.zip \
+                --type zip
+            fi
+
+            # Deploy MQTT Gateway
+            if [ -f /tmp/workspace/mqtt-gateway.tar.gz ]; then
+              echo "Deploying MQTT Gateway..."
+              mkdir -p /tmp/gateway-deploy
+              tar -xzf /tmp/workspace/mqtt-gateway.tar.gz -C /tmp/gateway-deploy
+              cd /tmp/gateway-deploy/mqtt-gateway && zip -r /tmp/mqtt-gateway.zip .
+
+              az webapp deploy \
+                --resource-group "xiaozhi-${DEPLOY_ENV}-rg" \
+                --name "xiaozhi-${DEPLOY_ENV}-mqtt-gateway" \
+                --src-path /tmp/mqtt-gateway.zip \
+                --type zip
+            fi
+
+            echo "Azure deployment completed!"
+
+# 4. Update your workflows section to include Azure deployment
+workflows:
+  version: 2
+
+  build-and-deploy:
+    jobs:
+      # Your existing jobs remain the same
+      - build-manager-api:
+          filters: &all-branches
+            branches:
+              only:
+                - main
+                - develop
+                - "feature/.*"
+                - "hotfix/.*"
+
+      - build-manager-web:
+          filters: *all-branches
+
+      - build-mqtt-gateway:
+          filters: *all-branches
+
+      - security-scan:
+          requires:
+            - build-manager-api
+            - build-manager-web
+            - build-mqtt-gateway
+          filters: &deploy-branches
+            branches:
+              only:
+                - main
+                - develop
+
+      # AZURE DEPLOYMENTS (ADD THESE)
+      - deploy-to-azure:
+          name: deploy-azure-staging
+          env: "staging"
+          requires:
+            - security-scan
+          filters:
+            branches:
+              only: develop
+          context: azure-staging
+
+      - hold-for-azure-prod:
+          type: approval
+          requires:
+            - security-scan
+          filters:
+            branches:
+              only: main
+
+      - deploy-to-azure:
+          name: deploy-azure-production
+          env: "production"
+          requires:
+            - hold-for-azure-prod
+          filters:
+            branches:
+              only: main
+          context: azure-production
+
+      # Your existing deploy jobs can run in parallel with Azure
+      - deploy:
+          env: "staging"
+          requires:
+            - security-scan
+          filters:
+            branches:
+              only: develop
+          context: staging-deploy
+
+      - hold-for-approval:
+          type: approval
+          requires:
+            - security-scan
+          filters:
+            branches:
+              only: main
+
+      - deploy:
+          env: "production"
+          requires:
+            - hold-for-approval
+          filters:
+            branches:
+              only: main
+          context: production-deploy

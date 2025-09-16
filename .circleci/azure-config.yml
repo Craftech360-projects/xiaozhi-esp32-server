@@ -1,0 +1,298 @@
+version: 2.1
+
+# Add Azure orb for easy Azure CLI commands
+orbs:
+  azure-cli: circleci/azure-cli@2.0.0
+  azure-web-apps: circleci/azure-web-apps@0.0.2
+
+# ---------------------------
+# Add Azure-specific commands to your existing ones
+# ---------------------------
+commands:
+  install_azure_cli:
+    description: "Install Azure CLI and login"
+    steps:
+      - run:
+          name: Install Azure CLI
+          command: |
+            curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+      - run:
+          name: Azure Login
+          command: |
+            az login --service-principal \
+              --username $AZURE_CLIENT_ID \
+              --password $AZURE_CLIENT_SECRET \
+              --tenant $AZURE_TENANT_ID
+
+# ---------------------------
+# Add Azure deployment jobs
+# ---------------------------
+jobs:
+  # ... your existing jobs ...
+
+  # Deploy to Azure App Services
+  deploy-azure:
+    parameters:
+      env:
+        type: string
+        default: "staging"
+    executor: node-executor
+    steps:
+      - checkout
+      - attach_workspace:
+          at: /tmp/workspace
+      - install_azure_cli
+
+      # Deploy Manager API (Java)
+      - run:
+          name: Deploy Manager API to Azure
+          command: |
+            set -eo pipefail
+            DEPLOY_ENV="<< parameters.env >>"
+
+            if [ -f /tmp/workspace/xiaozhi-esp32-api.jar ]; then
+              echo "Deploying Manager API to Azure..."
+              az webapp deploy \
+                --resource-group "xiaozhi-${DEPLOY_ENV}-rg" \
+                --name "xiaozhi-${DEPLOY_ENV}-manager-api" \
+                --src-path /tmp/workspace/xiaozhi-esp32-api.jar \
+                --type jar
+
+              # Configure app settings
+              az webapp config appsettings set \
+                --resource-group "xiaozhi-${DEPLOY_ENV}-rg" \
+                --name "xiaozhi-${DEPLOY_ENV}-manager-api" \
+                --settings \
+                  SPRING_PROFILES_ACTIVE="${DEPLOY_ENV}" \
+                  SERVER_PORT=8080 \
+                  JAVA_OPTS="-Xms512m -Xmx1g"
+            fi
+
+      # Deploy Manager Web (Vue.js)
+      - run:
+          name: Deploy Manager Web to Azure
+          command: |
+            set -eo pipefail
+            DEPLOY_ENV="<< parameters.env >>"
+
+            if [ -f /tmp/workspace/manager-web-dist.tar.gz ]; then
+              echo "Deploying Manager Web to Azure..."
+
+              # Extract and prepare
+              mkdir -p /tmp/web-deploy
+              tar -xzf /tmp/workspace/manager-web-dist.tar.gz -C /tmp/web-deploy
+              cd /tmp/web-deploy
+              zip -r ../manager-web.zip .
+
+              az webapp deploy \
+                --resource-group "xiaozhi-${DEPLOY_ENV}-rg" \
+                --name "xiaozhi-${DEPLOY_ENV}-manager-web" \
+                --src-path /tmp/manager-web.zip \
+                --type zip
+
+              # Configure app settings
+              az webapp config appsettings set \
+                --resource-group "xiaozhi-${DEPLOY_ENV}-rg" \
+                --name "xiaozhi-${DEPLOY_ENV}-manager-web" \
+                --settings \
+                  NODE_ENV="${DEPLOY_ENV}" \
+                  PORT=8081
+
+              # Set startup command
+              az webapp config set \
+                --resource-group "xiaozhi-${DEPLOY_ENV}-rg" \
+                --name "xiaozhi-${DEPLOY_ENV}-manager-web" \
+                --startup-file "npx serve -s . -l 8081"
+            fi
+
+      # Deploy MQTT Gateway (Node.js)
+      - run:
+          name: Deploy MQTT Gateway to Azure
+          command: |
+            set -eo pipefail
+            DEPLOY_ENV="<< parameters.env >>"
+
+            if [ -f /tmp/workspace/mqtt-gateway.tar.gz ]; then
+              echo "Deploying MQTT Gateway to Azure..."
+
+              # Extract and prepare
+              mkdir -p /tmp/gateway-deploy
+              tar -xzf /tmp/workspace/mqtt-gateway.tar.gz -C /tmp/gateway-deploy
+              cd /tmp/gateway-deploy/mqtt-gateway
+              zip -r /tmp/mqtt-gateway.zip .
+
+              az webapp deploy \
+                --resource-group "xiaozhi-${DEPLOY_ENV}-rg" \
+                --name "xiaozhi-${DEPLOY_ENV}-mqtt-gateway" \
+                --src-path /tmp/mqtt-gateway.zip \
+                --type zip
+
+              # Configure app settings
+              az webapp config appsettings set \
+                --resource-group "xiaozhi-${DEPLOY_ENV}-rg" \
+                --name "xiaozhi-${DEPLOY_ENV}-mqtt-gateway" \
+                --settings \
+                  NODE_ENV="${DEPLOY_ENV}" \
+                  MQTT_PORT=1883 \
+                  HTTP_PORT=8884 \
+                  PORT=8884
+
+              # Set startup command
+              az webapp config set \
+                --resource-group "xiaozhi-${DEPLOY_ENV}-rg" \
+                --name "xiaozhi-${DEPLOY_ENV}-mqtt-gateway" \
+                --startup-file "node app.js"
+            fi
+
+      # Health checks
+      - run:
+          name: Azure Health Checks
+          command: |
+            set -eo pipefail
+            DEPLOY_ENV="<< parameters.env >>"
+            echo "Performing health checks for Azure deployment..."
+            sleep 30
+
+            # Manager API health
+            for i in {1..30}; do
+              if curl -f "https://xiaozhi-${DEPLOY_ENV}-manager-api.azurewebsites.net/actuator/health" >/dev/null 2>&1; then
+                echo "✓ Manager API (Azure) is healthy"
+                break
+              elif [ $i -eq 30 ]; then
+                echo "✗ Manager API (Azure) health check failed"
+                az webapp log tail --resource-group "xiaozhi-${DEPLOY_ENV}-rg" --name "xiaozhi-${DEPLOY_ENV}-manager-api"
+                exit 1
+              fi
+              echo "Waiting for Manager API (Azure)... ($i/30)"
+              sleep 2
+            done
+
+            # Manager Web health
+            for i in {1..15}; do
+              if curl -f "https://xiaozhi-${DEPLOY_ENV}-manager-web.azurewebsites.net" >/dev/null 2>&1; then
+                echo "✓ Manager Web (Azure) is accessible"
+                break
+              elif [ $i -eq 15 ]; then
+                echo "✗ Manager Web (Azure) health check failed"
+                exit 1
+              fi
+              echo "Waiting for Manager Web (Azure)... ($i/15)"
+              sleep 2
+            done
+
+            # MQTT Gateway health
+            for i in {1..15}; do
+              if curl -f "https://xiaozhi-${DEPLOY_ENV}-mqtt-gateway.azurewebsites.net/health" >/dev/null 2>&1; then
+                echo "✓ MQTT Gateway (Azure) is healthy"
+                break
+              elif [ $i -eq 15 ]; then
+                echo "✗ MQTT Gateway (Azure) health check failed"
+                exit 1
+              fi
+              echo "Waiting for MQTT Gateway (Azure)... ($i/15)"
+              sleep 2
+            done
+
+            echo "All Azure services deployed and healthy!"
+
+  # Create infrastructure (run once)
+  create-azure-infrastructure:
+    executor: docker-executor
+    steps:
+      - checkout
+      - install_azure_cli
+      - run:
+          name: Create Azure Infrastructure
+          command: |
+            set -eo pipefail
+            DEPLOY_ENV="${CIRCLE_BRANCH##*/}"
+
+            # Create resource group
+            az group create --name "xiaozhi-${DEPLOY_ENV}-rg" --location "East US"
+
+            # Deploy infrastructure using Bicep
+            az deployment group create \
+              --resource-group "xiaozhi-${DEPLOY_ENV}-rg" \
+              --template-file azure-infrastructure.bicep \
+              --parameters environment="${DEPLOY_ENV}" \
+              --parameters appName="xiaozhi"
+
+# ---------------------------
+# Updated Workflows
+# ---------------------------
+workflows:
+  version: 2
+
+  # Your existing workflow with Azure deployment added
+  build-and-deploy:
+    jobs:
+      # Your existing build jobs
+      - build-manager-api:
+          filters: &filter-all-branches
+            branches:
+              only:
+                - main
+                - develop
+                - "feature/.*"
+                - "hotfix/.*"
+
+      - build-manager-web:
+          filters: *filter-all-branches
+
+      - build-mqtt-gateway:
+          filters: *filter-all-branches
+
+      - security-scan:
+          requires:
+            - build-manager-api
+            - build-manager-web
+            - build-mqtt-gateway
+          filters: &filter-deploy-branches
+            branches:
+              only:
+                - main
+                - develop
+
+      # Deploy to Azure staging
+      - deploy-azure:
+          name: deploy-azure-staging
+          env: "staging"
+          requires:
+            - security-scan
+          filters:
+            branches:
+              only: develop
+          context:
+            - staging-deploy
+            - azure-staging
+
+      # Deploy to Azure production (with approval)
+      - hold-for-azure-prod:
+          type: approval
+          requires:
+            - security-scan
+          filters:
+            branches:
+              only: main
+
+      - deploy-azure:
+          name: deploy-azure-production
+          env: "production"
+          requires:
+            - hold-for-azure-prod
+          filters:
+            branches:
+              only: main
+          context:
+            - production-deploy
+            - azure-production
+
+  # Infrastructure creation workflow (manual trigger)
+  create-infrastructure:
+    jobs:
+      - create-azure-infrastructure:
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /^infrastructure-.*/

@@ -1,0 +1,238 @@
+# Azure DevOps Pipeline for xiaozhi-esp32-server
+trigger:
+  branches:
+    include:
+    - main
+    - develop
+    - feature/*
+    - hotfix/*
+
+variables:
+  # Azure Service Connection (configure in Azure DevOps)
+  azureServiceConnection: 'xiaozhi-azure-connection'
+
+  # Environment-specific variables
+  ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/main') }}:
+    environment: 'prod'
+    resourceGroup: 'xiaozhi-prod-rg'
+  ${{ elseif eq(variables['Build.SourceBranch'], 'refs/heads/develop') }}:
+    environment: 'staging'
+    resourceGroup: 'xiaozhi-staging-rg'
+  ${{ else }}:
+    environment: 'dev'
+    resourceGroup: 'xiaozhi-dev-rg'
+
+  # App names
+  managerApiName: 'xiaozhi-$(environment)-manager-api'
+  managerWebName: 'xiaozhi-$(environment)-manager-web'
+  mqttGatewayName: 'xiaozhi-$(environment)-mqtt-gateway'
+
+stages:
+- stage: Build
+  displayName: 'Build Applications'
+  jobs:
+
+  # Build Manager API (Java)
+  - job: BuildManagerAPI
+    displayName: 'Build Manager API'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: JavaToolInstaller@0
+      inputs:
+        versionSpec: '17'
+        jdkArchitectureOption: 'x64'
+        jdkSourceOption: 'PreInstalled'
+
+    - task: Cache@2
+      inputs:
+        key: 'maven | "$(Agent.OS)" | main/manager-api/pom.xml'
+        restoreKeys: |
+          maven | "$(Agent.OS)"
+          maven
+        path: $(HOME)/.m2/repository
+      displayName: 'Cache Maven dependencies'
+
+    - script: |
+        cd main/manager-api
+        mvn clean package -DskipTests
+      displayName: 'Build JAR'
+
+    - task: PublishBuildArtifacts@1
+      inputs:
+        pathToPublish: 'main/manager-api/target/xiaozhi-esp32-api.jar'
+        artifactName: 'manager-api-jar'
+
+    - script: |
+        cd main/manager-api
+        mvn test
+      displayName: 'Run Tests'
+      continueOnError: true
+
+  # Build Manager Web (Vue.js)
+  - job: BuildManagerWeb
+    displayName: 'Build Manager Web'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '18.x'
+
+    - task: Cache@2
+      inputs:
+        key: 'npm | "$(Agent.OS)" | main/manager-web/package-lock.json'
+        restoreKeys: |
+          npm | "$(Agent.OS)"
+        path: main/manager-web/node_modules
+      displayName: 'Cache npm dependencies'
+
+    - script: |
+        cd main/manager-web
+        npm ci --legacy-peer-deps
+        npm run build
+      displayName: 'Build Vue.js App'
+
+    - task: ArchiveFiles@2
+      inputs:
+        rootFolderOrFile: 'main/manager-web/dist'
+        includeRootFolder: false
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/manager-web.zip'
+
+    - task: PublishBuildArtifacts@1
+      inputs:
+        pathToPublish: '$(Build.ArtifactStagingDirectory)/manager-web.zip'
+        artifactName: 'manager-web-dist'
+
+  # Build MQTT Gateway (Node.js)
+  - job: BuildMQTTGateway
+    displayName: 'Build MQTT Gateway'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '18.x'
+
+    - task: Cache@2
+      inputs:
+        key: 'npm | "$(Agent.OS)" | main/mqtt-gateway/package-lock.json'
+        restoreKeys: |
+          npm | "$(Agent.OS)"
+        path: main/mqtt-gateway/node_modules
+      displayName: 'Cache npm dependencies'
+
+    - script: |
+        cd main/mqtt-gateway
+        npm install --omit=dev
+      displayName: 'Install Dependencies'
+
+    - task: ArchiveFiles@2
+      inputs:
+        rootFolderOrFile: 'main/mqtt-gateway'
+        includeRootFolder: false
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/mqtt-gateway.zip'
+
+    - task: PublishBuildArtifacts@1
+      inputs:
+        pathToPublish: '$(Build.ArtifactStagingDirectory)/mqtt-gateway.zip'
+        artifactName: 'mqtt-gateway-app'
+
+- stage: SecurityScan
+  displayName: 'Security Scanning'
+  dependsOn: Build
+  condition: succeeded()
+  jobs:
+  - job: SecurityScan
+    displayName: 'Run Security Scans'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: DownloadBuildArtifacts@0
+      inputs:
+        buildType: 'current'
+        downloadType: 'all'
+        downloadPath: '$(System.ArtifactsDirectory)'
+
+    # Install Trivy
+    - script: |
+        sudo apt-get update
+        sudo apt-get install wget apt-transport-https gnupg lsb-release
+        wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+        echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
+        sudo apt-get update
+        sudo apt-get install trivy
+      displayName: 'Install Security Tools'
+
+    # Scan artifacts
+    - script: |
+        echo "Scanning Manager API JAR..."
+        trivy fs --exit-code 0 --severity HIGH,CRITICAL $(System.ArtifactsDirectory)/manager-api-jar/
+
+        echo "Scanning Manager Web..."
+        unzip $(System.ArtifactsDirectory)/manager-web-dist/manager-web.zip -d /tmp/web-scan
+        trivy fs --exit-code 0 --severity HIGH,CRITICAL /tmp/web-scan/
+
+        echo "Scanning MQTT Gateway..."
+        unzip $(System.ArtifactsDirectory)/mqtt-gateway-app/mqtt-gateway.zip -d /tmp/gateway-scan
+        trivy fs --exit-code 0 --severity HIGH,CRITICAL /tmp/gateway-scan/
+      displayName: 'Run Security Scans'
+
+- stage: DeployDev
+  displayName: 'Deploy to Development'
+  dependsOn: SecurityScan
+  condition: and(succeeded(), or(eq(variables['Build.SourceBranch'], 'refs/heads/feature/*'), eq(variables['Build.SourceBranch'], 'refs/heads/hotfix/*')))
+  jobs:
+  - deployment: DeployToDev
+    displayName: 'Deploy to Development'
+    environment: 'development'
+    pool:
+      vmImage: 'ubuntu-latest'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - template: deploy-template.yml
+            parameters:
+              environment: 'dev'
+              resourceGroup: 'xiaozhi-dev-rg'
+
+- stage: DeployStaging
+  displayName: 'Deploy to Staging'
+  dependsOn: SecurityScan
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/develop'))
+  jobs:
+  - deployment: DeployToStaging
+    displayName: 'Deploy to Staging'
+    environment: 'staging'
+    pool:
+      vmImage: 'ubuntu-latest'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - template: deploy-template.yml
+            parameters:
+              environment: 'staging'
+              resourceGroup: 'xiaozhi-staging-rg'
+
+- stage: DeployProduction
+  displayName: 'Deploy to Production'
+  dependsOn: SecurityScan
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+  - deployment: DeployToProduction
+    displayName: 'Deploy to Production'
+    environment: 'production'
+    pool:
+      vmImage: 'ubuntu-latest'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - template: deploy-template.yml
+            parameters:
+              environment: 'prod'
+              resourceGroup: 'xiaozhi-prod-rg'
