@@ -238,7 +238,7 @@ jobs:
               fi
 
               # Write PM2 ecosystem with correct environment variables
-              cat > ${AZURE_DEPLOY_PATH}/${SVC}-pm2.config.js << 'EOFPM2'
+              cat > ${AZURE_DEPLOY_PATH}/${SVC}-pm2.config.js \<< 'EOFPM2'
               module.exports = {
                 apps: [{
                   name: "${SVC}",
