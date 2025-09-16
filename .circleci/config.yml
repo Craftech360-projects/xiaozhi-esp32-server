@@ -280,25 +280,25 @@ workflows:
 
   mqtt-gateway-pipeline:
     jobs:
+      # Run on ALL branches
       - build_node_service:
           service_name: "mqtt-gateway"
           service_path: "main/mqtt-gateway"
-          filters:
-            branches:
-              only:
-                - main
-                - develop
-                - /feature\/.*/
-                - /hotfix\/.*/
+          # no filters = all branches
+
       - test_node_service:
           service_name: "mqtt-gateway"
           service_path: "main/mqtt-gateway"
           entry_file: "app.js"
           requires: [build_node_service]
+          # no filters = all branches
+
       - security_scan_bundle:
           service_name: "mqtt-gateway"
           requires: [build_node_service]
-      # Deploy to staging on develop
+          # no filters = all branches
+
+      # Deploy to staging only on develop
       - deploy_node_pm2_azure:
           context: "azure-mqtt-gateway"
           service_name: "mqtt-gateway"
@@ -313,7 +313,8 @@ workflows:
           filters:
             branches:
               only: develop
-      # Deploy to production on main
+
+      # Deploy to production only on main
       - deploy_node_pm2_azure:
           context: "azure-mqtt-gateway"
           service_name: "mqtt-gateway"
