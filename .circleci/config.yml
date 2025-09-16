@@ -18,6 +18,19 @@ executors:
       - image: cimg/base:stable
     resource_class: large
 
+  maven-executor:
+    docker:
+      - image: cimg/openjdk:17.0
+    resource_class: large
+    environment:
+      MAVEN_OPTS: -Xmx1024m
+      MAVEN_CLI_OPTS: "--batch-mode --errors --fail-at-end --show-version"
+
+  docker-executor:
+    docker:
+      - image: cimg/base:stable
+    resource_class: large
+
 # =========================
 # Jobs
 # =========================
@@ -163,6 +176,224 @@ jobs:
             tar -xzf "$ART" -C "/tmp/${SVC}-scan"
             trivy fs --exit-code 0 --severity HIGH,CRITICAL "/tmp/${SVC}-scan/"
             echo "✅ Trivy scan passed for $SVC"
+
+  # Build Java service with Maven (compiles and packages JAR)
+  build_java_service:
+    parameters:
+      service_name: { type: string }
+      service_path: { type: string } # e.g. "main/manager-api"
+    executor: maven-executor
+    steps:
+      - checkout
+      - run:
+          name: Skip if service folder missing
+          command: |
+            set -eo pipefail
+            if [ ! -d "<< parameters.service_path >>" ]; then
+              echo "Folder '<< parameters.service_path >>' not found on this branch; skipping build."
+              circleci step halt
+            fi
+      - restore_cache:
+          keys:
+            - maven-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/pom.xml" }}
+            - maven-<< parameters.service_name >>-v1-
+      - run:
+          name: Install dependencies and build JAR
+          command: |
+            set -eo pipefail
+            SVC="<< parameters.service_name >>"
+            DIR="<< parameters.service_path >>"
+
+            cd "$DIR"
+
+            # Download dependencies
+            mvn $MAVEN_CLI_OPTS dependency:go-offline
+
+            # Compile and package (skip tests for build job)
+            mvn $MAVEN_CLI_OPTS clean package -DskipTests
+
+            ls -la target/
+
+            # Archive the JAR
+            mkdir -p /tmp/workspace
+            cp target/*.jar "/tmp/workspace/${SVC}.jar"
+            echo "${SVC}-${CIRCLE_SHA1:0:7}" > "/tmp/workspace/${SVC}-build-info"
+            date -u +"%Y-%m-%dT%H:%M:%SZ" > "/tmp/workspace/${SVC}-build-date"
+            echo "✅ ${SVC} JAR built and archived"
+      - save_cache:
+          paths:
+            - ~/.m2
+          key: maven-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/pom.xml" }}
+      - persist_to_workspace:
+          root: /tmp/workspace
+          paths:
+            - << parameters.service_name >>.jar
+            - << parameters.service_name >>-build-info
+            - << parameters.service_name >>-build-date
+
+  # Test Java service with Maven
+  test_java_service:
+    parameters:
+      service_name: { type: string }
+      service_path: { type: string }
+    executor: maven-executor
+    steps:
+      - checkout
+      - run:
+          name: Skip if service folder missing
+          command: |
+            set -eo pipefail
+            if [ ! -d "<< parameters.service_path >>" ]; then
+              echo "Folder '<< parameters.service_path >>' not found on this branch; skipping tests."
+              circleci step halt
+            fi
+      - restore_cache:
+          keys:
+            - maven-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/pom.xml" }}
+            - maven-<< parameters.service_name >>-v1-
+      - run:
+          name: Run Maven tests
+          command: |
+            set -eo pipefail
+            DIR="<< parameters.service_path >>"
+
+            cd "$DIR"
+
+            # Download dependencies if not cached
+            mvn $MAVEN_CLI_OPTS dependency:go-offline
+
+            # Run tests
+            mvn $MAVEN_CLI_OPTS test
+
+            echo "✅ Tests completed for << parameters.service_name >>"
+      - store_test_results:
+          path: << parameters.service_path >>/target/surefire-reports
+      - store_artifacts:
+          path: << parameters.service_path >>/target/surefire-reports
+
+  # Trivy scan for Java JAR
+  security_scan_jar:
+    parameters:
+      service_name: { type: string }
+    executor: base-executor
+    steps:
+      - attach_workspace:
+          at: /tmp/workspace
+      - run:
+          name: Skip if artifact missing
+          command: |
+            set -eo pipefail
+            ART="/tmp/workspace/<< parameters.service_name >>.jar"
+            if [ ! -f "$ART" ]; then
+              echo "Artifact $ART not found (likely skipped earlier); halting scan."
+              circleci step halt
+            fi
+      - run:
+          name: Install Trivy
+          command: |
+            set -eo pipefail
+            sudo apt-get update -y
+            sudo apt-get install -y wget apt-transport-https gnupg lsb-release
+            wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+            echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
+            sudo apt-get update -y
+            sudo apt-get install -y trivy
+      - run:
+          name: Scan JAR file
+          command: |
+            set -eo pipefail
+            SVC="<< parameters.service_name >>"
+            ART="/tmp/workspace/${SVC}.jar"
+
+            trivy fs --exit-code 0 --severity HIGH,CRITICAL "$ART"
+            echo "✅ Trivy scan passed for $SVC JAR"
+
+  # Deploy Java service to Azure VM with Docker and PM2
+  deploy_java_docker_azure:
+    parameters:
+      service_name: { type: string }
+      service_path: { type: string }
+      env: { type: string, default: "staging" } # staging|production
+      http_port: { type: integer, default: 8002 }
+    executor: docker-executor
+    steps:
+      - checkout
+      - attach_workspace:
+          at: /tmp/workspace
+      - add_ssh_keys:
+          fingerprints:
+            - "SHA256:VlAMfJstRWT1o3ZLc7LT00HxvqwqVsAR+F5X1ZSaXh0" # Azure VM key
+      - run:
+          name: Skip deploy if artifact missing
+          command: |
+            set -eo pipefail
+            if [ ! -f "/tmp/workspace/<< parameters.service_name >>.jar" ]; then
+              echo "Artifact missing; skipping deploy."
+              circleci step halt
+            fi
+      - setup_remote_docker:
+          version: 20.10.14
+      - run:
+          name: Build and deploy Docker image to Azure VM
+          command: |
+            set -eo pipefail
+
+            SVC="<< parameters.service_name >>"
+            DIR="<< parameters.service_path >>"
+            ENV_NAME="<< parameters.env >>"
+            HTTP_PORT="<< parameters.http_port >>"
+
+            : "${AZURE_HOST:?Set AZURE_HOST in CircleCI context}"
+            : "${AZURE_USER:?Set AZURE_USER in CircleCI context}"
+            : "${AZURE_DEPLOY_PATH:?Set AZURE_DEPLOY_PATH in CircleCI context}"
+
+            echo "Building and deploying ${SVC} to ${AZURE_USER}@${AZURE_HOST} env=${ENV_NAME}"
+
+            # Copy JAR to build context
+            cp "/tmp/workspace/${SVC}.jar" "${DIR}/app.jar"
+
+            # Build Docker image
+            docker build -t "${SVC}:${CIRCLE_SHA1:0:7}" "${DIR}"
+
+            # Save and upload Docker image
+            docker save "${SVC}:${CIRCLE_SHA1:0:7}" | gzip > "/tmp/${SVC}-image.tar.gz"
+            scp -o StrictHostKeyChecking=no "/tmp/${SVC}-image.tar.gz" "${AZURE_USER}@${AZURE_HOST}:/tmp/"
+
+            # Deploy on Azure VM
+            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
+              set -eo pipefail
+
+              # Load Docker image
+              docker load < /tmp/${SVC}-image.tar.gz
+              rm -f /tmp/${SVC}-image.tar.gz
+
+              # Stop and remove existing container
+              docker stop ${SVC} || true
+              docker rm ${SVC} || true
+
+              # Run new container
+              docker run -d \\
+                --name ${SVC} \\
+                --restart unless-stopped \\
+                -p ${HTTP_PORT}:8002 \\
+                -e SPRING_PROFILES_ACTIVE=${ENV_NAME} \\
+                ${SVC}:${CIRCLE_SHA1:0:7}
+
+              # Health check
+              echo 'Starting health check for ${SVC}...'
+              for i in \$(seq 1 30); do
+                if curl -fsS http://127.0.0.1:${HTTP_PORT}/toy/actuator/health >/dev/null 2>&1; then
+                  echo 'SUCCESS: ${SVC} healthy on port ${HTTP_PORT}'
+                  exit 0
+                fi
+                echo \"Health check attempt \$i/30 - waiting for http://127.0.0.1:${HTTP_PORT}/toy/actuator/health\"
+                sleep 2
+              done
+
+              echo 'ERROR: Health check failed after 60 seconds'
+              docker logs ${SVC} --tail 30
+              exit 1
+            "
 
   # PM2 deploy over SSH to Azure VM
   deploy_node_pm2_azure:
@@ -348,6 +579,65 @@ workflows:
           requires:
             - test_node_service
             - security_scan_bundle
+          filters:
+            branches:
+              ignore:
+                - develop
+                - main
+
+  manager-api-pipeline:
+    jobs:
+      # These run on ALL branches (no filters)
+      - build_java_service:
+          service_name: "manager-api"
+          service_path: "main/manager-api"
+
+      - test_java_service:
+          service_name: "manager-api"
+          service_path: "main/manager-api"
+          requires: [build_java_service]
+
+      - security_scan_jar:
+          service_name: "manager-api"
+          requires: [build_java_service]
+
+      # Deploy on specific branches
+      - deploy_java_docker_azure:
+          context: "azure-manager-api"
+          service_name: "manager-api"
+          service_path: "main/manager-api"
+          env: "staging"
+          http_port: 8002
+          requires:
+            - test_java_service
+            - security_scan_jar
+          filters:
+            branches:
+              only: develop
+
+      - deploy_java_docker_azure:
+          context: "azure-manager-api"
+          service_name: "manager-api"
+          service_path: "main/manager-api"
+          env: "production"
+          http_port: 8002
+          requires:
+            - test_java_service
+            - security_scan_jar
+          filters:
+            branches:
+              only: main
+
+      # Deploy dev environment for all other branches
+      - deploy_java_docker_azure:
+          context: "azure-manager-api"
+          service_name: "manager-api"
+          service_path: "main/manager-api"
+          env: "development"
+          http_port: 8003
+          requires:
+            - test_java_service
+            - security_scan_jar
           filters:
             branches:
               ignore:
