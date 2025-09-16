@@ -238,46 +238,46 @@ jobs:
               fi
 
               # Write PM2 ecosystem with correct environment variables
-              cat > ${AZURE_DEPLOY_PATH}/${SVC}-pm2.config.js \<< 'EOFPM2'
+              cat > \${AZURE_DEPLOY_PATH}/\${SVC}-pm2.config.js << EOFPM2
               module.exports = {
                 apps: [{
-                  name: "${SVC}",
-                  script: "${ENTRY}",
-                  cwd: "${AZURE_DEPLOY_PATH}/main/${SVC}",
+                  name: '\${SVC}',
+                  script: '\${ENTRY}',
+                  cwd: '\${AZURE_DEPLOY_PATH}/main/\${SVC}',
                   instances: 1,
-                  interpreter: "node",
+                  interpreter: 'node',
                   autorestart: true,
                   watch: false,
-                  max_memory_restart: "512M",
+                  max_memory_restart: '512M',
                   env: {
-                    NODE_ENV: "development",
-                    MQTT_PORT: ${MQTT_PORT},
-                    HTTP_PORT: ${HTTP_PORT},
-                    PORT: ${HTTP_PORT},
-                    DEBUG: ""
+                    NODE_ENV: 'development',
+                    MQTT_PORT: \${MQTT_PORT},
+                    HTTP_PORT: \${HTTP_PORT},
+                    PORT: \${HTTP_PORT},
+                    DEBUG: ''
                   },
                   env_staging: {
-                    NODE_ENV: "staging",
-                    MQTT_PORT: ${MQTT_PORT},
-                    HTTP_PORT: ${HTTP_PORT},
-                    PORT: ${HTTP_PORT},
-                    DEBUG: ""
+                    NODE_ENV: 'staging',
+                    MQTT_PORT: \${MQTT_PORT},
+                    HTTP_PORT: \${HTTP_PORT},
+                    PORT: \${HTTP_PORT},
+                    DEBUG: ''
                   },
                   env_production: {
-                    NODE_ENV: "production",
-                    MQTT_PORT: ${MQTT_PORT},
-                    HTTP_PORT: ${HTTP_PORT},
-                    PORT: ${HTTP_PORT},
-                    DEBUG: ""
+                    NODE_ENV: 'production',
+                    MQTT_PORT: \${MQTT_PORT},
+                    HTTP_PORT: \${HTTP_PORT},
+                    PORT: \${HTTP_PORT},
+                    DEBUG: ''
                   },
-                  error_file: "/var/log/pm2/${SVC}-error.log",
-                  out_file: "/var/log/pm2/${SVC}-out.log",
-                  log_file: "/var/log/pm2/${SVC}-combined.log",
+                  error_file: '/var/log/pm2/\${SVC}-error.log',
+                  out_file: '/var/log/pm2/\${SVC}-out.log',
+                  log_file: '/var/log/pm2/\${SVC}-combined.log',
                   time: true,
-                  log_date_format: "YYYY-MM-DD HH:mm:ss Z"
+                  log_date_format: 'YYYY-MM-DD HH:mm:ss Z'
                 }]
               }
-              EOFPM2
+EOFPM2
 
               if pm2 describe "${SVC}" >/dev/null 2>&1; then
                 pm2 reload ${AZURE_DEPLOY_PATH}/${SVC}-pm2.config.js --env "${ENV_NAME}"
@@ -368,7 +368,7 @@ workflows:
           service_path: "main/mqtt-gateway"
           entry_file: "app.js"
           env: "development"
-          http_port: 8885
+          http_port: 8884
           mqtt_port: 1884
           requires:
             - test_node_service
