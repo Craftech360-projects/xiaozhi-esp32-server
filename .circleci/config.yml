@@ -360,7 +360,38 @@ jobs:
             echo "Building and deploying ${SVC} to ${AZURE_USER}@${AZURE_HOST} env=${ENV_NAME}"
 
             # Create a simple Dockerfile for deployment (bypass multi-stage build)
-            printf 'FROM eclipse-temurin:17-jre-alpine\\n\\n# Install curl for health checks\\nRUN apk add --no-cache curl\\n\\n# Create non-root user\\nRUN addgroup -g 1001 -S appgroup \\\\\\n    && adduser  -S appuser -G appgroup -u 1001\\n\\nWORKDIR /app\\n\\n# Copy the pre-built JAR\\nCOPY app.jar /app/app.jar\\nRUN chown -R appuser:appgroup /app\\n\\nUSER appuser\\n\\n# Ports & env\\nEXPOSE 8002\\n\\n# Prefer JAVA_TOOL_OPTIONS so JVM auto-picks it up\\nENV JAVA_TOOL_OPTIONS=\"-Xms256m -Xmx512m\"\\nENV SPRING_PROFILES_ACTIVE=prod\\n\\n# Healthcheck\\nHEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \\\\\\n    CMD curl -fsS http://127.0.0.1:8002/toy/actuator/health || exit 1\\n\\n# Run app\\nENTRYPOINT [\"java\",\"-jar\",\"/app/app.jar\"]\\n' > "${DIR}/Dockerfile.deploy"
+            cat > "\${DIR}/Dockerfile.deploy" \<\< 'DOCKERFILE_EOF'
+            FROM eclipse-temurin:17-jre-alpine
+
+            # Install curl for health checks
+            RUN apk add --no-cache curl
+
+            # Create non-root user
+            RUN addgroup -g 1001 -S appgroup \\
+                && adduser  -S appuser -G appgroup -u 1001
+
+            WORKDIR /app
+
+            # Copy the pre-built JAR
+            COPY app.jar /app/app.jar
+            RUN chown -R appuser:appgroup /app
+
+            USER appuser
+
+            # Ports & env
+            EXPOSE 8002
+
+            # Prefer JAVA_TOOL_OPTIONS so JVM auto-picks it up
+            ENV JAVA_TOOL_OPTIONS="-Xms256m -Xmx512m"
+            ENV SPRING_PROFILES_ACTIVE=prod
+
+            # Healthcheck
+            HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \\
+                CMD curl -fsS http://127.0.0.1:8002/toy/actuator/health || exit 1
+
+            # Run app
+            ENTRYPOINT ["java","-jar","/app/app.jar"]
+            DOCKERFILE_EOF
 
             # Copy pre-built JAR to build context
             cp "/tmp/workspace/${SVC}.jar" "${DIR}/app.jar"
