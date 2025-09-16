@@ -365,45 +365,41 @@ jobs:
             # Build Docker image
             docker build -t "${SVC}:${CIRCLE_SHA1:0:7}" "${DIR}"
 
-            # Save and upload Docker image
-            docker save "${SVC}:${CIRCLE_SHA1:0:7}" | gzip > "/tmp/${SVC}-image.tar.gz"
-            scp -o StrictHostKeyChecking=no "/tmp/${SVC}-image.tar.gz" "${AZURE_USER}@${AZURE_HOST}:/tmp/"
+            # Set up Docker context for remote deployment
+            export DOCKER_HOST="ssh://${AZURE_USER}@${AZURE_HOST}"
 
-            # Deploy on Azure VM
-            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
-              set -eo pipefail
+            # Stop and remove existing container on remote
+            docker stop ${SVC} || true
+            docker rm ${SVC} || true
 
-              # Load Docker image
-              docker load < /tmp/${SVC}-image.tar.gz
-              rm -f /tmp/${SVC}-image.tar.gz
+            # Tag image for remote deployment
+            docker tag "${SVC}:${CIRCLE_SHA1:0:7}" "${SVC}:latest"
 
-              # Stop and remove existing container
-              docker stop ${SVC} || true
-              docker rm ${SVC} || true
+            # Push image to remote Docker daemon
+            docker save "${SVC}:${CIRCLE_SHA1:0:7}" | docker load
 
-              # Run new container
-              docker run -d \\
-                --name ${SVC} \\
-                --restart unless-stopped \\
-                -p ${HTTP_PORT}:8002 \\
-                -e SPRING_PROFILES_ACTIVE=${ENV_NAME} \\
-                ${SVC}:${CIRCLE_SHA1:0:7}
+            # Run new container on remote
+            docker run -d \\
+              --name ${SVC} \\
+              --restart unless-stopped \\
+              -p ${HTTP_PORT}:8002 \\
+              -e SPRING_PROFILES_ACTIVE=${ENV_NAME} \\
+              "${SVC}:${CIRCLE_SHA1:0:7}"
 
-              # Health check
-              echo 'Starting health check for ${SVC}...'
-              for i in \$(seq 1 30); do
-                if curl -fsS http://127.0.0.1:${HTTP_PORT}/toy/actuator/health >/dev/null 2>&1; then
-                  echo 'SUCCESS: ${SVC} healthy on port ${HTTP_PORT}'
-                  exit 0
-                fi
-                echo \"Health check attempt \$i/30 - waiting for http://127.0.0.1:${HTTP_PORT}/toy/actuator/health\"
-                sleep 2
-              done
+            # Health check
+            echo 'Starting health check for ${SVC}...'
+            for i in $(seq 1 30); do
+              if ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "curl -fsS http://127.0.0.1:${HTTP_PORT}/toy/actuator/health" >/dev/null 2>&1; then
+                echo "SUCCESS: ${SVC} healthy on port ${HTTP_PORT}"
+                exit 0
+              fi
+              echo "Health check attempt $i/30 - waiting for http://127.0.0.1:${HTTP_PORT}/toy/actuator/health"
+              sleep 2
+            done
 
-              echo 'ERROR: Health check failed after 60 seconds'
-              docker logs ${SVC} --tail 30
-              exit 1
-            "
+            echo "ERROR: Health check failed after 60 seconds"
+            docker logs ${SVC} --tail 30
+            exit 1
 
   # PM2 deploy over SSH to Azure VM
   deploy_node_pm2_azure:
