@@ -331,8 +331,7 @@ jobs:
               echo "Artifact missing; skipping deploy."
               circleci step halt
             fi
-      - setup_remote_docker:
-          version: 20.10.14
+      - setup_remote_docker
       - run:
           name: Build and deploy Docker image to Azure VM
           command: |
