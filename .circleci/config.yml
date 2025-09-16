@@ -237,8 +237,8 @@ jobs:
                 npm install --omit=dev --no-audit --no-fund
               fi
 
-              # Write PM2 ecosystem (escaped heredoc for CircleCI)
-              cat > ${AZURE_DEPLOY_PATH}/${SVC}-pm2.config.js \<<EOF
+              # Write PM2 ecosystem with correct environment variables
+              cat > ${AZURE_DEPLOY_PATH}/${SVC}-pm2.config.js << 'EOFPM2'
               module.exports = {
                 apps: [{
                   name: "${SVC}",
@@ -253,18 +253,21 @@ jobs:
                     NODE_ENV: "development",
                     MQTT_PORT: ${MQTT_PORT},
                     HTTP_PORT: ${HTTP_PORT},
+                    PORT: ${HTTP_PORT},
                     DEBUG: ""
                   },
                   env_staging: {
                     NODE_ENV: "staging",
                     MQTT_PORT: ${MQTT_PORT},
                     HTTP_PORT: ${HTTP_PORT},
+                    PORT: ${HTTP_PORT},
                     DEBUG: ""
                   },
                   env_production: {
                     NODE_ENV: "production",
                     MQTT_PORT: ${MQTT_PORT},
                     HTTP_PORT: ${HTTP_PORT},
+                    PORT: ${HTTP_PORT},
                     DEBUG: ""
                   },
                   error_file: "/var/log/pm2/${SVC}-error.log",
@@ -274,7 +277,7 @@ jobs:
                   log_date_format: "YYYY-MM-DD HH:mm:ss Z"
                 }]
               }
-              EOF
+              EOFPM2
 
               if pm2 describe "${SVC}" >/dev/null 2>&1; then
                 pm2 reload ${AZURE_DEPLOY_PATH}/${SVC}-pm2.config.js --env "${ENV_NAME}"
