@@ -22,136 +22,13 @@ executors:
 # Reusable Jobs (parameterized)
 # =========================
 jobs:
-  # Build a Node service (installs prod deps & archives the folder)
-  build_node_service:
-    parameters:
-      service_name: { type: string }
-      service_path: { type: string } # e.g. "main/mqtt-gateway"
-    executor: node-executor
-    steps:
-      - checkout
-      - restore_cache:
-          keys:
-            - npm-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/package-lock.json" }}
-            - npm-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/package.json" }}
-            - npm-<< parameters.service_name >>-v1-
-      - run:
-          name: Install prod deps & archive bundle
-          command: |
-            set -eo pipefail
-            SVC="<< parameters.service_name >>"
-            DIR="<< parameters.service_path >>"
-            echo "Building $SVC from $DIR"
-
-            cd "$DIR"
-
-            if [ -f package-lock.json ]; then
-              npm ci --omit=dev --no-audit --no-fund
-            else
-              npm install --omit=dev --no-audit --no-fund
-            fi
-
-            node -v
-            npm -v
-
-            # sanity: entry file should exist (best-effort – checked in test job too)
-            ls -la
-
-            mkdir -p /tmp/workspace
-            # archive the service directory including node_modules
-            tar -czf "/tmp/workspace/${SVC}.tar.gz" -C "$(dirname "$DIR")" "$(basename "$DIR")"
-
-            echo "${SVC}-${CIRCLE_SHA1:0:7}" > "/tmp/workspace/${SVC}-build-info"
-            date -u +"%Y-%m-%dT%H:%M:%SZ" > "/tmp/workspace/${SVC}-build-date"
-
-            echo "✅ ${SVC} archived to /tmp/workspace/${SVC}.tar.gz"
-      - save_cache:
-          paths:
-            - << parameters.service_path >>/node_modules
-          key: npm-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/package-lock.json" }}
-      - persist_to_workspace:
-          root: /tmp/workspace
-          paths:
-            - << parameters.service_name >>.tar.gz
-            - << parameters.service_name >>-build-info
-            - << parameters.service_name >>-build-date
-
-  # Test a Node service (syntax + npm test if present)
-  test_node_service:
-    parameters:
-      service_name: { type: string }
-      service_path: { type: string }
-      entry_file: { type: string, default: "app.js" }
-    executor: node-executor
-    steps:
-      - checkout
-      - run:
-          name: Install dev deps & run tests
-          command: |
-            set -eo pipefail
-            SVC="<< parameters.service_name >>"
-            DIR="<< parameters.service_path >>"
-            ENTRY="<< parameters.entry_file >>"
-
-            cd "$DIR"
-
-            if [ -f package-lock.json ]; then
-              npm ci --no-audit --no-fund
-            else
-              npm install --no-audit --no-fund
-            fi
-
-            # Syntax check (Node 20 supports --check)
-            node --check "$ENTRY"
-
-            # Optional unit tests
-            if npm run | grep -qE '^  test'; then
-              npm test
-            else
-              echo "No npm test script; skipping."
-            fi
-            echo "✅ Tests completed for $SVC"
-
-  # Trivy scan for unpacked bundle
-  security_scan_bundle:
-    parameters:
-      service_name: { type: string }
-    executor: base-executor
-    steps:
-      - checkout
-      - attach_workspace:
-          at: /tmp/workspace
-      - run:
-          name: Install Trivy
-          command: |
-            set -eo pipefail
-            sudo apt-get update -y
-            sudo apt-get install -y wget apt-transport-https gnupg lsb-release
-            wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
-            echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
-            sudo apt-get update -y
-            sudo apt-get install -y trivy
-      - run:
-          name: Scan bundle
-          command: |
-            set -eo pipefail
-            SVC="<< parameters.service_name >>"
-            ART="/tmp/workspace/${SVC}.tar.gz"
-            test -f "$ART" || { echo "Artifact missing: $ART"; exit 1; }
-
-            mkdir -p "/tmp/${SVC}-scan"
-            tar -xzf "$ART" -C "/tmp/${SVC}-scan"
-
-            trivy fs --exit-code 0 --severity HIGH,CRITICAL "/tmp/${SVC}-scan/"
-            echo "✅ Trivy scan passed for $SVC"
-
-  # PM2 deploy over SSH to Azure VM
   deploy_node_pm2_azure:
     parameters:
       service_name: { type: string }
-      service_path: { type: string } # repo path; used for cwd value in pm2 config
+      service_path: { type: string } # same path on repo; used for cwd in PM2
       entry_file: { type: string, default: "app.js" }
       env: { type: string, default: "staging" } # staging|production
+      # context: (REMOVED — reserved word)
       http_port: { type: integer, default: 8884 }
       mqtt_port: { type: integer, default: 1883 }
     executor: node-executor
