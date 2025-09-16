@@ -320,7 +320,7 @@ workflows:
           service_name: "mqtt-gateway"
           requires: [build_node_service]
 
-      # Deploy on specific branches only
+      # Deploy on all branches (environment based on branch)
       - deploy_node_pm2_azure:
           context: "azure-mqtt-gateway"
           service_name: "mqtt-gateway"
@@ -350,3 +350,21 @@ workflows:
           filters:
             branches:
               only: main
+
+      # Deploy dev environment for all other branches
+      - deploy_node_pm2_azure:
+          context: "azure-mqtt-gateway"
+          service_name: "mqtt-gateway"
+          service_path: "main/mqtt-gateway"
+          entry_file: "app.js"
+          env: "development"
+          http_port: 8885
+          mqtt_port: 1884
+          requires:
+            - test_node_service
+            - security_scan_bundle
+          filters:
+            branches:
+              ignore:
+                - develop
+                - main

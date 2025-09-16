@@ -5,6 +5,7 @@
 require("dotenv").config();
 
 const net = require("net");
+const http = require("http");
 const debugModule = require("debug");
 const debug = debugModule("mqtt-server");
 const crypto = require("crypto");
@@ -545,6 +546,7 @@ class MQTTServer {
   constructor() {
     this.mqttPort = parseInt(process.env.MQTT_PORT) || 1883;
     this.udpPort = parseInt(process.env.UDP_PORT) || this.mqttPort;
+    this.httpPort = parseInt(process.env.HTTP_PORT) || 8884;
     this.publicIp = process.env.PUBLIC_IP || "broker.emqx.io";
     this.connections = new Map(); // clientId -> MQTTConnection
     this.keepAliveTimer = null;
@@ -562,6 +564,26 @@ class MQTTServer {
   }
 
   start() {
+    // Start HTTP server for health checks
+    this.httpServer = http.createServer((req, res) => {
+      if (req.url === '/health') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          status: 'healthy',
+          timestamp: new Date().toISOString(),
+          connections: this.connections.size,
+          uptime: process.uptime()
+        }));
+      } else {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Not Found');
+      }
+    });
+
+    this.httpServer.listen(this.httpPort, "0.0.0.0", () => {
+      console.warn(`HTTP server listening on port ${this.httpPort} (health check endpoint: /health)`);
+    });
+
     this.mqttServer = net.createServer((socket) => {
       const connectionId = this.generateNewConnectionId();
       debug(`New client connection: ${connectionId}`);
@@ -716,6 +738,13 @@ class MQTTServer {
       this.udpServer.close();
       this.udpServer = null;
       console.warn("UDP server stopped");
+    }
+
+    // Close HTTP server
+    if (this.httpServer) {
+      this.httpServer.close();
+      this.httpServer = null;
+      console.warn("HTTP server stopped");
     }
 
     // Close MQTT server
