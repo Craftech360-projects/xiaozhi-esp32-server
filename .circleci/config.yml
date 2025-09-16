@@ -43,27 +43,28 @@ jobs:
             DIR="<< parameters.service_path >>"
             echo "Building $SVC from $DIR"
 
-            cd "$DIR"
+            # Compute absolute paths BEFORE changing directories
+            ABS_DIR="$(cd "$(dirname "$DIR")" && pwd)"
+            BASE="$(basename "$DIR")"
 
+            # Install production deps inside the service dir
+            pushd "$ABS_DIR/$BASE" >/dev/null
             if [ -f package-lock.json ]; then
               npm ci --omit=dev --no-audit --no-fund
             else
               npm install --omit=dev --no-audit --no-fund
             fi
-
             node -v
             npm -v
-
-            # sanity: list files
             ls -la
+            popd >/dev/null
 
+            # Archive the service directory including node_modules (robust to PWD)
             mkdir -p /tmp/workspace
-            # archive the service directory including node_modules
-            tar -czf "/tmp/workspace/${SVC}.tar.gz" -C "$(dirname "$DIR")" "$(basename "$DIR")"
+            tar -czf "/tmp/workspace/${SVC}.tar.gz" -C "$ABS_DIR" "$BASE"
 
             echo "${SVC}-${CIRCLE_SHA1:0:7}" > "/tmp/workspace/${SVC}-build-info"
             date -u +"%Y-%m-%dT%H:%M:%SZ" > "/tmp/workspace/${SVC}-build-date"
-
             echo "✅ ${SVC} archived to /tmp/workspace/${SVC}.tar.gz"
       - save_cache:
           paths:
@@ -93,15 +94,14 @@ jobs:
             DIR="<< parameters.service_path >>"
             ENTRY="<< parameters.entry_file >>"
 
-            cd "$DIR"
-
+            pushd "$DIR" >/dev/null
             if [ -f package-lock.json ]; then
               npm ci --no-audit --no-fund
             else
               npm install --no-audit --no-fund
             fi
 
-            # Syntax check (Node 20 supports --check)
+            # Syntax check
             node --check "$ENTRY"
 
             # Optional unit tests
@@ -110,6 +110,7 @@ jobs:
             else
               echo "No npm test script; skipping."
             fi
+            popd >/dev/null
             echo "✅ Tests completed for $SVC"
 
   # Trivy scan for unpacked bundle
@@ -118,7 +119,6 @@ jobs:
       service_name: { type: string }
     executor: base-executor
     steps:
-      - checkout
       - attach_workspace:
           at: /tmp/workspace
       - run:
@@ -156,12 +156,11 @@ jobs:
       mqtt_port: { type: integer, default: 1883 }
     executor: node-executor
     steps:
-      - checkout
       - attach_workspace:
           at: /tmp/workspace
       - add_ssh_keys:
           fingerprints:
-            - "SHA256:ahYOf9ht0RgB6WUzFgCZqc3H4t6YcJTQFp+wrHrWShY"
+            - "SHA256:ahYOf9ht0RgB6WUzFgCZqc3H4t6YcJTQFp+wrHrWShY" # replace if your fingerprint differs
       - run:
           name: Deploy to Azure VM with PM2
           command: |
@@ -284,19 +283,16 @@ workflows:
       - build_node_service:
           service_name: "mqtt-gateway"
           service_path: "main/mqtt-gateway"
-          # no filters = all branches
 
       - test_node_service:
           service_name: "mqtt-gateway"
           service_path: "main/mqtt-gateway"
           entry_file: "app.js"
           requires: [build_node_service]
-          # no filters = all branches
 
       - security_scan_bundle:
           service_name: "mqtt-gateway"
           requires: [build_node_service]
-          # no filters = all branches
 
       # Deploy to staging only on develop
       - deploy_node_pm2_azure:
