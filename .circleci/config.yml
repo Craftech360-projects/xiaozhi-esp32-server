@@ -163,7 +163,7 @@ jobs:
           at: /tmp/workspace
       - add_ssh_keys:
           fingerprints:
-            - "SHA256:ahYOf9ht0RgB6WUzFgCZqc3H4t6YcJTQFp+wrHrWShY" # replace if yours differs
+            - "SHA256:af9ht0RgB6WUzFgCZqc3H4t6YcJTQFp+wrHrWShYhYO" # updated fingerprint
       - run:
           name: Deploy to Azure VM with PM2
           command: |
