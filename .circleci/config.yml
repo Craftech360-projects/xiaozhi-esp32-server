@@ -294,14 +294,14 @@ jobs:
 
               for i in \$(seq 1 30); do
                 if curl -fsS http://127.0.0.1:${HTTP_PORT}/health >/dev/null 2>&1; then
-                  echo '✓ ${SVC} healthy on port ${HTTP_PORT}'
+                  echo 'SUCCESS: ${SVC} healthy on port ${HTTP_PORT}'
                   exit 0
                 fi
                 echo \"Health check attempt \$i/30 - waiting for http://127.0.0.1:${HTTP_PORT}/health\"
                 sleep 2
               done
 
-              echo '❌ Health check failed after 60 seconds'
+              echo 'ERROR: Health check failed after 60 seconds'
               pm2 status
               pm2 logs '${SVC}' --lines 30
               exit 1
