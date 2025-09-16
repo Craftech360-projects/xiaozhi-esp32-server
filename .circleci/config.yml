@@ -203,6 +203,9 @@ jobs:
             : "${AZURE_USER:?Set AZURE_USER in CircleCI context}"
             : "${AZURE_DEPLOY_PATH:?Set AZURE_DEPLOY_PATH in CircleCI context}"
 
+            echo "Debug: AZURE_DEPLOY_PATH=\${AZURE_DEPLOY_PATH}"
+            echo "Debug: SVC=\${SVC}"
+
             ART="/tmp/workspace/${SVC}.tar.gz"
 
             echo "Deploying ${SVC} to ${AZURE_USER}@${AZURE_HOST} env=${ENV_NAME}"
@@ -226,10 +229,19 @@ jobs:
             # Unpack + install + PM2 start/reload
             ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
               set -eo pipefail
-              cd ${AZURE_DEPLOY_PATH}/main
-              tar -xzf /tmp/${SVC}.tar.gz
-              rm -f /tmp/${SVC}.tar.gz
-              cd ${AZURE_DEPLOY_PATH}/main/${SVC}
+              echo \"Debug on remote: AZURE_DEPLOY_PATH=\$AZURE_DEPLOY_PATH\"
+              echo \"Debug on remote: SVC=\$SVC\"
+              AZURE_DEPLOY_PATH=\"${AZURE_DEPLOY_PATH}\"
+              SVC=\"${SVC}\"
+              ENTRY=\"${ENTRY}\"
+              MQTT_PORT=\"${MQTT_PORT}\"
+              HTTP_PORT=\"${HTTP_PORT}\"
+              ENV_NAME=\"${ENV_NAME}\"
+              echo \"Debug after assignment: AZURE_DEPLOY_PATH=\$AZURE_DEPLOY_PATH\"
+              cd \$AZURE_DEPLOY_PATH/main
+              tar -xzf /tmp/\$SVC.tar.gz
+              rm -f /tmp/\$SVC.tar.gz
+              cd \$AZURE_DEPLOY_PATH/main/\$SVC
 
               if [ -f package-lock.json ]; then
                 npm ci --omit=dev --no-audit --no-fund
@@ -238,13 +250,14 @@ jobs:
               fi
 
               # Write PM2 ecosystem with correct environment variables
-              CONFIG_FILE=\"\${AZURE_DEPLOY_PATH}/\${SVC}-pm2.config.js\"
-              printf 'module.exports = {\\n  apps: [{\\n    name: \"%s\",\\n    script: \"%s\",\\n    cwd: \"%s/main/%s\",\\n    instances: 1,\\n    interpreter: \"node\",\\n    autorestart: true,\\n    watch: false,\\n    max_memory_restart: \"512M\",\\n    env: {\\n      NODE_ENV: \"development\",\\n      MQTT_PORT: %s,\\n      HTTP_PORT: %s,\\n      PORT: %s,\\n      DEBUG: \"\"\\n    },\\n    env_staging: {\\n      NODE_ENV: \"staging\",\\n      MQTT_PORT: %s,\\n      HTTP_PORT: %s,\\n      PORT: %s,\\n      DEBUG: \"\"\\n    },\\n    env_production: {\\n      NODE_ENV: \"production\",\\n      MQTT_PORT: %s,\\n      HTTP_PORT: %s,\\n      PORT: %s,\\n      DEBUG: \"\"\\n    },\\n    error_file: \"/var/log/pm2/%s-error.log\",\\n    out_file: \"/var/log/pm2/%s-out.log\",\\n    log_file: \"/var/log/pm2/%s-combined.log\",\\n    time: true,\\n    log_date_format: \"YYYY-MM-DD HH:mm:ss Z\"\\n  }]\\n}\\n' \"\${SVC}\" \"\${ENTRY}\" \"\${AZURE_DEPLOY_PATH}\" \"\${SVC}\" \"\${MQTT_PORT}\" \"\${HTTP_PORT}\" \"\${HTTP_PORT}\" \"\${MQTT_PORT}\" \"\${HTTP_PORT}\" \"\${HTTP_PORT}\" \"\${MQTT_PORT}\" \"\${HTTP_PORT}\" \"\${HTTP_PORT}\" \"\${SVC}\" \"\${SVC}\" \"\${SVC}\" > \"\$CONFIG_FILE\"
+              CONFIG_FILE=\"\$AZURE_DEPLOY_PATH/\$SVC-pm2.config.js\"
+              echo \"Debug: CONFIG_FILE=\$CONFIG_FILE\"
+              printf 'module.exports = {\\n  apps: [{\\n    name: \"%s\",\\n    script: \"%s\",\\n    cwd: \"%s/main/%s\",\\n    instances: 1,\\n    interpreter: \"node\",\\n    autorestart: true,\\n    watch: false,\\n    max_memory_restart: \"512M\",\\n    env: {\\n      NODE_ENV: \"development\",\\n      MQTT_PORT: %s,\\n      HTTP_PORT: %s,\\n      PORT: %s,\\n      DEBUG: \"\"\\n    },\\n    env_staging: {\\n      NODE_ENV: \"staging\",\\n      MQTT_PORT: %s,\\n      HTTP_PORT: %s,\\n      PORT: %s,\\n      DEBUG: \"\"\\n    },\\n    env_production: {\\n      NODE_ENV: \"production\",\\n      MQTT_PORT: %s,\\n      HTTP_PORT: %s,\\n      PORT: %s,\\n      DEBUG: \"\"\\n    },\\n    error_file: \"/var/log/pm2/%s-error.log\",\\n    out_file: \"/var/log/pm2/%s-out.log\",\\n    log_file: \"/var/log/pm2/%s-combined.log\",\\n    time: true,\\n    log_date_format: \"YYYY-MM-DD HH:mm:ss Z\"\\n  }]\\n}\\n' \"\$SVC\" \"\$ENTRY\" \"\$AZURE_DEPLOY_PATH\" \"\$SVC\" \"\$MQTT_PORT\" \"\$HTTP_PORT\" \"\$HTTP_PORT\" \"\$MQTT_PORT\" \"\$HTTP_PORT\" \"\$HTTP_PORT\" \"\$MQTT_PORT\" \"\$HTTP_PORT\" \"\$HTTP_PORT\" \"\$SVC\" \"\$SVC\" \"\$SVC\" > \"\$CONFIG_FILE\"
 
-              if pm2 describe "${SVC}" >/dev/null 2>&1; then
-                pm2 reload \"\$CONFIG_FILE\" --env "${ENV_NAME}"
+              if pm2 describe \"\$SVC\" >/dev/null 2>&1; then
+                pm2 reload \"\$CONFIG_FILE\" --env \"\$ENV_NAME\"
               else
-                pm2 start  \"\$CONFIG_FILE\" --env "${ENV_NAME}"
+                pm2 start  \"\$CONFIG_FILE\" --env \"\$ENV_NAME\"
               fi
               pm2 save
             "
