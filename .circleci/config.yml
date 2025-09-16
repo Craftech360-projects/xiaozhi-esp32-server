@@ -238,7 +238,7 @@ jobs:
               fi
 
               # Write PM2 ecosystem with correct environment variables
-              cat > \${AZURE_DEPLOY_PATH}/\${SVC}-pm2.config.js \<< 'EOFPM2'
+              cat > \${AZURE_DEPLOY_PATH}/\${SVC}-pm2.config.js \<\< 'EOF'
               module.exports = {
                 apps: [{
                   name: \"\${SVC}\",
@@ -277,7 +277,7 @@ jobs:
                   log_date_format: \"YYYY-MM-DD HH:mm:ss Z\"
                 }]
               }
-              EOFPM2
+              EOF
 
               if pm2 describe "${SVC}" >/dev/null 2>&1; then
                 pm2 reload ${AZURE_DEPLOY_PATH}/${SVC}-pm2.config.js --env "${ENV_NAME}"
