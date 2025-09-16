@@ -1,208 +1,125 @@
 version: 2.1
 
-# ---------------------------
-# Reusable commands
-# ---------------------------
-commands:
-  install_pm2:
-    description: "Install PM2 and required dependencies"
-    steps:
-      - run:
-          name: Install PM2
-          command: |
-            set -eo pipefail
-            sudo npm install -g pm2
-            sudo npm install -g serve
-
-# ---------------------------
-# Executors (single block)
-# ---------------------------
+# =========================
+# Executors
+# =========================
 executors:
-  docker-executor:
-    docker:
-      - image: cimg/base:stable
-    resource_class: large
-
   node-executor:
     docker:
       - image: cimg/node:20.14
     resource_class: large
     environment:
-      # Add retry logic for npm operations
       NPM_CONFIG_RETRY: "3"
       NPM_CONFIG_FETCH_RETRY_MINTIMEOUT: "2000"
       NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT: "10000"
 
-  java-executor:
+  base-executor:
     docker:
-      - image: cimg/openjdk:17.0
+      - image: cimg/base:stable
     resource_class: large
 
-# ---------------------------
-# Jobs
-# ---------------------------
+# =========================
+# Reusable Jobs (parameterized)
+# =========================
 jobs:
-  # Build Manager API (Java Spring Boot)
-  build-manager-api:
-    executor: java-executor
-    steps:
-      - checkout
-      - restore_cache:
-          keys:
-            - maven-deps-v1-{{ checksum "main/manager-api/pom.xml" }}
-            - maven-deps-v1-
-      - run:
-          name: Build Manager API JAR
-          command: |
-            set -eo pipefail
-            echo "Building Manager API JAR..."
-            cd main/manager-api
-
-            mvn -B -q clean package -DskipTests
-
-            echo "Artifacts in target/:"
-            ls -la target/
-
-            # Find the main JAR file - check multiple possible names
-            JAR_PATH=""
-
-            # Primary check: exact finalName match
-            if [ -f "target/xiaozhi-esp32-api.jar" ]; then
-              JAR_PATH="target/xiaozhi-esp32-api.jar"
-              echo "Found JAR (finalName): $JAR_PATH"
-            # Secondary check: versioned JAR
-            elif [ -f "target/xiaozhi-esp32-api-0.0.1.jar" ]; then
-              JAR_PATH="target/xiaozhi-esp32-api-0.0.1.jar"
-              echo "Found JAR (versioned): $JAR_PATH"
-            else
-              # Fallback: find any matching JAR
-              echo "Searching for any xiaozhi-esp32-api JAR files..."
-              find target -name "*.jar" -type f
-              JAR_PATH="$(find target -name 'xiaozhi-esp32-api*.jar' -type f | head -n1)"
-              if [ -z "$JAR_PATH" ]; then
-                echo "Error: No xiaozhi-esp32-api JAR file found in target/"
-                echo "Available files:"
-                find target -name "*.jar" -type f || echo "No JAR files found"
-                exit 1
-              fi
-              echo "Found JAR (pattern match): $JAR_PATH"
-            fi
-            mkdir -p /tmp/workspace
-            cp "$JAR_PATH" /tmp/workspace/xiaozhi-esp32-api.jar
-            echo "manager-api-${CIRCLE_SHA1:0:7}" > /tmp/workspace/api-build-info
-            date -u +"%Y-%m-%dT%H:%M:%SZ" > /tmp/workspace/api-build-date
-
-            echo "Manager API JAR staged to workspace."
-      - save_cache:
-          paths:
-            - ~/.m2
-          key: maven-deps-v1-{{ checksum "main/manager-api/pom.xml" }}
-      - persist_to_workspace:
-          root: /tmp/workspace
-          paths:
-            - xiaozhi-esp32-api.jar
-            - api-build-info
-            - api-build-date
-
-  # Build Manager Web (Vue.js Frontend)
-  build-manager-web:
+  # Build a Node service (installs prod deps & archives the folder)
+  build_node_service:
+    parameters:
+      service_name: { type: string }
+      service_path: { type: string } # e.g. "main/mqtt-gateway"
     executor: node-executor
     steps:
       - checkout
       - restore_cache:
           keys:
-            - npm-web-deps-v1-{{ checksum "main/manager-web/package-lock.json" }}
-            - npm-web-deps-v1-{{ checksum "main/manager-web/package.json" }}
-            - npm-web-deps-v1-
+            - npm-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/package-lock.json" }}
+            - npm-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/package.json" }}
+            - npm-<< parameters.service_name >>-v1-
       - run:
-          name: Build Manager Web
+          name: Install prod deps & archive bundle
           command: |
             set -eo pipefail
-            echo "Building Manager Web..."
-            cd main/manager-web
+            SVC="<< parameters.service_name >>"
+            DIR="<< parameters.service_path >>"
+            echo "Building $SVC from $DIR"
 
-            npm ci --legacy-peer-deps
-            npm run build
+            cd "$DIR"
 
-            if [ ! -d "dist" ]; then
-              echo "Error: dist/ not found after build!"
-              exit 1
-            fi
-
-            mkdir -p /tmp/workspace
-            tar -czf /tmp/workspace/manager-web-dist.tar.gz dist/
-            echo "manager-web-${CIRCLE_SHA1:0:7}" > /tmp/workspace/web-build-info
-            date -u +"%Y-%m-%dT%H:%M:%SZ" > /tmp/workspace/web-build-date
-
-            echo "Manager Web build archived."
-      - save_cache:
-          paths:
-            - main/manager-web/node_modules
-          key: npm-web-deps-v1-{{ checksum "main/manager-web/package-lock.json" }}
-      - persist_to_workspace:
-          root: /tmp/workspace
-          paths:
-            - manager-web-dist.tar.gz
-            - web-build-info
-            - web-build-date
-
-  # Build MQTT Gateway (Node.js Service)
-  build-mqtt-gateway:
-    executor: node-executor
-    steps:
-      - checkout
-      - restore_cache:
-          keys:
-            - npm-gateway-deps-v1-{{ checksum "main/mqtt-gateway/package-lock.json" }}
-            - npm-gateway-deps-v1-{{ checksum "main/mqtt-gateway/package.json" }}
-            - npm-gateway-deps-v1-
-      - run:
-          name: Build MQTT Gateway
-          command: |
-            set -eo pipefail
-            echo "Building MQTT Gateway..."
-            cd main/mqtt-gateway
-
-            # Use npm ci if package-lock.json exists, otherwise use npm install
-            if [ -f "package-lock.json" ]; then
-              echo "Using npm ci with existing package-lock.json"
+            if [ -f package-lock.json ]; then
               npm ci --omit=dev --no-audit --no-fund
             else
-              echo "No package-lock.json found, using npm install"
               npm install --omit=dev --no-audit --no-fund
             fi
 
-            if [ ! -f "app.js" ]; then
-              echo "Error: app.js not found!"
-              exit 1
-            fi
+            node -v
+            npm -v
 
             mkdir -p /tmp/workspace
-            tar -czf /tmp/workspace/mqtt-gateway.tar.gz -C ../ mqtt-gateway/
-            echo "mqtt-gateway-${CIRCLE_SHA1:0:7}" > /tmp/workspace/gateway-build-info
-            date -u +"%Y-%m-%dT%H:%M:%SZ" > /tmp/workspace/gateway-build-date
+            # archive the service directory including node_modules
+            tar -czf "/tmp/workspace/${SVC}.tar.gz" -C "$(dirname "$DIR")" "$(basename "$DIR")"
 
-            echo "MQTT Gateway archived."
+            echo "${SVC}-${CIRCLE_SHA1:0:7}" > "/tmp/workspace/${SVC}-build-info"
+            date -u +"%Y-%m-%dT%H:%M:%SZ" > "/tmp/workspace/${SVC}-build-date"
+
+            echo "✅ ${SVC} archived to /tmp/workspace/${SVC}.tar.gz"
       - save_cache:
           paths:
-            - main/mqtt-gateway/node_modules
-          key: npm-gateway-deps-v1-{{ checksum "main/mqtt-gateway/package-lock.json" }}
+            - << parameters.service_path >>/node_modules
+          key: npm-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/package-lock.json" }}
       - persist_to_workspace:
           root: /tmp/workspace
           paths:
-            - mqtt-gateway.tar.gz
-            - gateway-build-info
-            - gateway-build-date
+            - << parameters.service_name >>.tar.gz
+            - << parameters.service_name >>-build-info
+            - << parameters.service_name >>-build-date
 
-  # Security scan for build artifacts
-  security-scan:
-    executor: docker-executor
+  # Test a Node service (syntax + npm test if present)
+  test_node_service:
+    parameters:
+      service_name: { type: string }
+      service_path: { type: string }
+      entry_file: { type: string, default: "app.js" }
+    executor: node-executor
+    steps:
+      - checkout
+      - run:
+          name: Install dev deps & run tests
+          command: |
+            set -eo pipefail
+            SVC="<< parameters.service_name >>"
+            DIR="<< parameters.service_path >>"
+            ENTRY="<< parameters.entry_file >>"
+
+            cd "$DIR"
+
+            if [ -f package-lock.json ]; then
+              npm ci --no-audit --no-fund
+            else
+              npm install --no-audit --no-fund
+            fi
+
+            # Syntax check
+            node --check "$ENTRY"
+
+            # Optional unit tests
+            if npm run | grep -qE '^  test'; then
+              npm test
+            else
+              echo "No npm test script; skipping."
+            fi
+            echo "✅ Tests completed for $SVC"
+
+  # Trivy scan for unpacked bundle
+  security_scan_bundle:
+    parameters:
+      service_name: { type: string }
+    executor: base-executor
     steps:
       - checkout
       - attach_workspace:
           at: /tmp/workspace
       - run:
-          name: Install Security Scan Tools
+          name: Install Trivy
           command: |
             set -eo pipefail
             sudo apt-get update -y
@@ -211,325 +128,205 @@ jobs:
             echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
             sudo apt-get update -y
             sudo apt-get install -y trivy
-            sudo apt-get install -y clamav clamav-daemon
-            sudo freshclam || echo "ClamAV DB update failed, continuing..."
       - run:
-          name: Scan Build Artifacts
+          name: Scan bundle
           command: |
             set -eo pipefail
-            echo "Running security scans..."
+            SVC="<< parameters.service_name >>"
+            ART="/tmp/workspace/${SVC}.tar.gz"
+            test -f "$ART" || { echo "Artifact missing: $ART"; exit 1; }
 
-            if [ -f /tmp/workspace/xiaozhi-esp32-api.jar ]; then
-              echo "Scanning Manager API JAR..."
-              trivy fs --exit-code 0 --severity HIGH,CRITICAL /tmp/workspace/xiaozhi-esp32-api.jar
-            fi
+            mkdir -p "/tmp/${SVC}-scan"
+            tar -xzf "$ART" -C "/tmp/${SVC}-scan"
 
-            if [ -f /tmp/workspace/manager-web-dist.tar.gz ]; then
-              echo "Scanning Manager Web bundle..."
-              mkdir -p /tmp/web-scan
-              tar -xzf /tmp/workspace/manager-web-dist.tar.gz -C /tmp/web-scan
-              trivy fs --exit-code 0 --severity HIGH,CRITICAL /tmp/web-scan/
-            fi
+            trivy fs --exit-code 0 --severity HIGH,CRITICAL "/tmp/${SVC}-scan/"
+            echo "✅ Trivy scan passed for $SVC"
 
-            if [ -f /tmp/workspace/mqtt-gateway.tar.gz ]; then
-              echo "Scanning MQTT Gateway bundle..."
-              mkdir -p /tmp/gateway-scan
-              tar -xzf /tmp/workspace/mqtt-gateway.tar.gz -C /tmp/gateway-scan
-              trivy fs --exit-code 0 --severity HIGH,CRITICAL /tmp/gateway-scan/
-            fi
-
-            echo "Security scans complete."
-
-  # PM2 Deployment
-  deploy:
+  # PM2 deploy over SSH to Azure VM
+  deploy_node_pm2_azure:
     parameters:
-      env:
-        type: string
-        default: "staging"
+      service_name: { type: string }
+      service_path: { type: string } # same path on repo; used for cwd in PM2
+      entry_file: { type: string, default: "app.js" }
+      env: { type: string, default: "staging" } # staging|production
+      context: { type: string, default: "azure-mqtt-gateway" }
+      http_port: { type: integer, default: 8884 }
+      mqtt_port: { type: integer, default: 1883 }
     executor: node-executor
     steps:
       - checkout
       - attach_workspace:
           at: /tmp/workspace
+      - add_ssh_keys:
+          fingerprints:
+            - "SHA256:REPLACE_WITH_YOUR_SSH_FP"
       - run:
-          name: Install PM2, Serve, Java
+          name: Deploy to Azure VM with PM2
           command: |
             set -eo pipefail
-            sudo npm install -g pm2 serve
-            sudo apt-get update
-            sudo apt-get install -y openjdk-17-jdk
-      # Uncomment and replace with your actual fingerprint, or remove the whole step if using machine user keys
-      # - add_ssh_keys:
-      #     fingerprints:
-      #       - "SHA256:CHANGE_ME_WITH_YOUR_FINGERPRINT"
-      - run:
-          name: Deploy to << parameters.env >> Environment
-          command: |
-            set -eo pipefail
-            DEPLOY_ENV="<< parameters.env >>"
-            echo "Deploying to: $DEPLOY_ENV"
 
-            if [ "$DEPLOY_ENV" = "production" ]; then
-              SERVER_HOST="${PROD_SERVER_HOST}"
-              SERVER_USER="${PROD_SERVER_USER}"
-              DEPLOY_PATH="/opt/xiaozhi-esp32-server"
-            else
-              SERVER_HOST="${STAGING_SERVER_HOST}"
-              SERVER_USER="${STAGING_SERVER_USER}"
-              DEPLOY_PATH="/opt/xiaozhi-esp32-server"
-            fi
+            SVC="<< parameters.service_name >>"
+            ENTRY="<< parameters.entry_file >>"
+            ENV_NAME="<< parameters.env >>"
+            HTTP_PORT="<< parameters.http_port >>"
+            MQTT_PORT="<< parameters.mqtt_port >>"
 
-            echo "Server: $SERVER_USER@$SERVER_HOST:$DEPLOY_PATH"
+            : "${AZURE_HOST:?Set AZURE_HOST in CircleCI context}"
+            : "${AZURE_USER:?Set AZURE_USER in CircleCI context}"
+            : "${AZURE_DEPLOY_PATH:?Set AZURE_DEPLOY_PATH in CircleCI context}"
 
-            ssh -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_HOST" "
-              sudo mkdir -p $DEPLOY_PATH/main/{manager-api,manager-web,mqtt-gateway}
-              sudo mkdir -p /var/log/pm2
-              sudo chown -R \$USER:\$USER $DEPLOY_PATH
-              sudo chown -R \$USER:\$USER /var/log/pm2
-            "
+            ART="/tmp/workspace/${SVC}.tar.gz"
+            test -f "$ART" || { echo "Artifact missing: $ART"; exit 1; }
 
-            # Manager API
-            if [ -f /tmp/workspace/xiaozhi-esp32-api.jar ]; then
-              echo "Uploading Manager API JAR..."
-              ssh "$SERVER_USER@$SERVER_HOST" "mkdir -p $DEPLOY_PATH/main/manager-api/target"
-              scp /tmp/workspace/xiaozhi-esp32-api.jar "$SERVER_USER@$SERVER_HOST:$DEPLOY_PATH/main/manager-api/target/"
-            fi
+            echo "Deploying ${SVC} to ${AZURE_USER}@${AZURE_HOST} env=${ENV_NAME}"
+            echo "Deploy root: ${AZURE_DEPLOY_PATH}"
 
-            # Manager Web
-            if [ -f /tmp/workspace/manager-web-dist.tar.gz ]; then
-              echo "Uploading Manager Web bundle..."
-              scp /tmp/workspace/manager-web-dist.tar.gz "$SERVER_USER@$SERVER_HOST:/tmp/"
-              ssh "$SERVER_USER@$SERVER_HOST" "
-                mkdir -p $DEPLOY_PATH/main/manager-web
-                cd $DEPLOY_PATH/main/manager-web
-                tar -xzf /tmp/manager-web-dist.tar.gz
-                rm -f /tmp/manager-web-dist.tar.gz
-              "
-            fi
-
-            # MQTT Gateway
-            if [ -f /tmp/workspace/mqtt-gateway.tar.gz ]; then
-              echo "Uploading MQTT Gateway bundle..."
-              scp /tmp/workspace/mqtt-gateway.tar.gz "$SERVER_USER@$SERVER_HOST:/tmp/"
-              ssh "$SERVER_USER@$SERVER_HOST" "
-                cd $DEPLOY_PATH/main
-                tar -xzf /tmp/mqtt-gateway.tar.gz
-                rm -f /tmp/mqtt-gateway.tar.gz
-              "
-            fi
-
-            # Ecosystem config
-            scp ecosystem.config.js "$SERVER_USER@$SERVER_HOST:$DEPLOY_PATH/"
-
-            # Backup current deployment
-            ssh "$SERVER_USER@$SERVER_HOST" "
-              cd $DEPLOY_PATH
-              BACKUP_DIR=\"/opt/xiaozhi-esp32-server-backup-\$(date +%Y%m%d-%H%M%S)\"
-              if [ -d '/opt/xiaozhi-esp32-server' ]; then
-                echo 'Creating backup...'
-                sudo cp -r /opt/xiaozhi-esp32-server \"\$BACKUP_DIR\"
-                echo \"Backup created at: \$BACKUP_DIR\"
+            # Ensure VM ready & pm2 installed
+            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
+              set -eo pipefail
+              mkdir -p ${AZURE_DEPLOY_PATH}/main/${SVC}
+              mkdir -p /var/log/pm2
+              if ! command -v pm2 >/dev/null 2>&1; then
+                curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs
+                sudo npm install -g pm2
               fi
+              sudo chown -R \$USER:\$USER ${AZURE_DEPLOY_PATH} /var/log/pm2
             "
 
-            # PM2 start/restart
-            ssh "$SERVER_USER@$SERVER_HOST" "
-              cd $DEPLOY_PATH
-              pm2 stop ecosystem.config.js || echo 'No existing processes to stop'
-              sleep 5
-              pm2 start ecosystem.config.js --env $DEPLOY_ENV
-              pm2 save
-              pm2 list
-            "
+            # Upload
+            scp -o StrictHostKeyChecking=no "$ART" "${AZURE_USER}@${AZURE_HOST}:/tmp/${SVC}.tar.gz"
 
-            echo "Health checks..."
-            sleep 10
+            # Unpack + install && PM2 start/reload
+            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
+              set -eo pipefail
+              cd ${AZURE_DEPLOY_PATH}/main
+              tar -xzf /tmp/${SVC}.tar.gz
+              rm -f /tmp/${SVC}.tar.gz
+              cd ${AZURE_DEPLOY_PATH}/main/${SVC}
 
-            # API health
-            ssh "$SERVER_USER@$SERVER_HOST" "
-              for i in {1..30}; do
-                if curl -f http://localhost:8080/actuator/health >/dev/null 2>&1; then
-                  echo 'Manager API healthy'
-                  break
-                elif [ \$i -eq 30 ]; then
-                  echo 'Manager API health check failed'
-                  pm2 logs manager-api --lines 50
-                  exit 1
-                fi
-                echo \"Waiting for Manager API... (\$i/30)\"
-                sleep 2
-              done
-            "
-
-            # Web health
-            ssh "$SERVER_USER@$SERVER_HOST" "
-              for i in {1..15}; do
-                if curl -f http://localhost:8081/ >/dev/null 2>&1; then
-                  echo 'Manager Web healthy'
-                  break
-                elif [ \$i -eq 15 ]; then
-                  echo 'Manager Web health check failed'
-                  pm2 logs manager-web --lines 50
-                  exit 1
-                fi
-                echo \"Waiting for Manager Web... (\$i/15)\"
-                sleep 2
-              done
-            "
-
-            # MQTT health
-            ssh "$SERVER_USER@$SERVER_HOST" "
-              for i in {1..15}; do
-                if curl -f http://localhost:8884/health >/dev/null 2>&1; then
-                  echo 'MQTT Gateway healthy'
-                  break
-                elif [ \$i -eq 15 ]; then
-                  echo 'MQTT Gateway health check failed'
-                  pm2 logs mqtt-gateway --lines 50
-                  exit 1
-                fi
-                echo \"Waiting for MQTT Gateway... (\$i/15)\"
-                sleep 2
-              done
-            "
-
-            ssh "$SERVER_USER@$SERVER_HOST" "pm2 list && echo 'All services deployed and healthy!'"
-            echo "Deployment to $DEPLOY_ENV completed."
-
-  # Rollback job
-  rollback:
-    parameters:
-      env:
-        type: string
-        default: "staging"
-    executor: node-executor
-    steps:
-      - checkout
-      # - add_ssh_keys:
-      #     fingerprints:
-      #       - "SHA256:CHANGE_ME_WITH_YOUR_FINGERPRINT"
-      - run:
-          name: Rollback to Previous Deployment
-          command: |
-            set -eo pipefail
-            DEPLOY_ENV="<< parameters.env >>"
-
-            if [ "$DEPLOY_ENV" = "production" ]; then
-              SERVER_HOST="${PROD_SERVER_HOST}"
-              SERVER_USER="${PROD_SERVER_USER}"
-            else
-              SERVER_HOST="${STAGING_SERVER_HOST}"
-              SERVER_USER="${STAGING_SERVER_USER}"
-            fi
-
-            echo "Rolling back on $SERVER_USER@$SERVER_HOST"
-
-            ssh "$SERVER_USER@$SERVER_HOST" "
-              BACKUP_DIR=\$(ls -td /opt/xiaozhi-esp32-server-backup-* 2>/dev/null | head -1)
-              if [ -z \"\$BACKUP_DIR\" ]; then
-                echo 'No backup found! Cannot rollback.'
-                exit 1
+              if [ -f package-lock.json ]; then
+                npm ci --omit=dev --no-audit --no-fund
+              else
+                npm install --omit=dev --no-audit --no-fund
               fi
 
-              echo \"Rollback to: \$BACKUP_DIR\"
-              pm2 stop ecosystem.config.js || echo 'No processes to stop'
-              sudo rm -rf /opt/xiaozhi-esp32-server
-              sudo cp -r \"\$BACKUP_DIR\" /opt/xiaozhi-esp32-server
-              sudo chown -R \$USER:\$USER /opt/xiaozhi-esp32-server
-              cd /opt/xiaozhi-esp32-server
-              pm2 start ecosystem.config.js --env $DEPLOY_ENV
+              cat > ${AZURE_DEPLOY_PATH}/${SVC}-pm2.config.js <<'EOF'
+              module.exports = {
+                apps: [{
+                  name: "<< parameters.service_name >>",
+                  script: "<< parameters.entry_file >>",
+                  cwd: "/opt/xiaozhi-esp32-server/main/<< parameters.service_name >>",
+                  instances: 1,
+                  interpreter: "node",
+                  autorestart: true,
+                  watch: false,
+                  max_memory_restart: "512M",
+                  env: {
+                    NODE_ENV: "development",
+                    MQTT_PORT: << parameters.mqtt_port >>,
+                    HTTP_PORT: << parameters.http_port >>,
+                    DEBUG: ""
+                  },
+                  env_staging: {
+                    NODE_ENV: "staging",
+                    MQTT_PORT: << parameters.mqtt_port >>,
+                    HTTP_PORT: << parameters.http_port >>,
+                    DEBUG: ""
+                  },
+                  env_production: {
+                    NODE_ENV: "production",
+                    MQTT_PORT: << parameters.mqtt_port >>,
+                    HTTP_PORT: << parameters.http_port >>,
+                    DEBUG: ""
+                  },
+                  error_file: "/var/log/pm2/<< parameters.service_name >>-error.log",
+                  out_file: "/var/log/pm2/<< parameters.service_name >>-out.log",
+                  log_file: "/var/log/pm2/<< parameters.service_name >>-combined.log",
+                  time: true,
+                  log_date_format: "YYYY-MM-DD HH:mm:ss Z"
+                }]
+              }
+              EOF
+
+              if pm2 describe "<< parameters.service_name >>" >/dev/null 2>&1; then
+                pm2 reload ${AZURE_DEPLOY_PATH}/<< parameters.service_name >>-pm2.config.js --env "<< parameters.env >>"
+              else
+                pm2 start  ${AZURE_DEPLOY_PATH}/<< parameters.service_name >>-pm2.config.js --env "<< parameters.env >>"
+              fi
               pm2 save
-              pm2 list
-              echo 'Rollback completed.'
             "
 
-# ---------------------------
+            # Health check
+            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
+              for i in \$(seq 1 20); do
+                if curl -fsS http://127.0.0.1:${HTTP_PORT}/health >/dev/null; then
+                  echo '✓ << parameters.service_name >> healthy'
+                  exit 0
+                fi
+                echo \"waiting for health... (\$i/20)\"
+                sleep 3
+              done
+              echo 'Health check failed' && pm2 logs "<< parameters.service_name >>" --lines 50 && exit 1
+            "
+
+# =========================
 # Workflows
-# ---------------------------
+# =========================
 workflows:
   version: 2
 
-  build-and-deploy:
+  # Current: mqtt-gateway only
+  mqtt-gateway-pipeline:
     jobs:
-      - build-manager-api:
+      - build_node_service:
+          service_name: "mqtt-gateway"
+          service_path: "main/mqtt-gateway"
           filters:
             branches:
               only:
                 - main
                 - develop
-                - "feature/.*"
-                - "hotfix/.*"
+                - /feature\/.*/
+                - /hotfix\/.*/
 
-      - build-manager-web:
-          filters:
-            branches:
-              only:
-                - main
-                - develop
-                - "feature/.*"
-                - "hotfix/.*"
+      - test_node_service:
+          service_name: "mqtt-gateway"
+          service_path: "main/mqtt-gateway"
+          entry_file: "app.js"
+          requires: [build_node_service]
 
-      - build-mqtt-gateway:
-          filters:
-            branches:
-              only:
-                - main
-                - develop
-                - "feature/.*"
-                - "hotfix/.*"
+      - security_scan_bundle:
+          service_name: "mqtt-gateway"
+          requires: [build_node_service]
 
-      - security-scan:
-          requires:
-            - build-manager-api
-            - build-manager-web
-            - build-mqtt-gateway
-          filters:
-            branches:
-              only:
-                - main
-                - develop
-
-      # Deploy to staging (no 'name:' key; pass param directly)
-      - deploy:
+      # Deploy to staging on develop
+      - deploy_node_pm2_azure:
+          context: "azure-mqtt-gateway"
+          service_name: "mqtt-gateway"
+          service_path: "main/mqtt-gateway"
+          entry_file: "app.js"
           env: "staging"
+          http_port: 8884
+          mqtt_port: 1883
           requires:
-            - security-scan
+            - test_node_service
+            - security_scan_bundle
           filters:
             branches:
               only: develop
-          context: staging-deploy
 
-      # Approval then production deploy
-      - hold-for-approval:
-          type: approval
-          requires:
-            - security-scan
-          filters:
-            branches:
-              only: main
-
-      - deploy:
+      # Deploy to production on main
+      - deploy_node_pm2_azure:
+          context: "azure-mqtt-gateway"
+          service_name: "mqtt-gateway"
+          service_path: "main/mqtt-gateway"
+          entry_file: "app.js"
           env: "production"
+          http_port: 8884
+          mqtt_port: 1883
           requires:
-            - hold-for-approval
+            - test_node_service
+            - security_scan_bundle
           filters:
             branches:
               only: main
-          context: production-deploy
-
-  nightly-security-scan:
-    triggers:
-      - schedule:
-          cron: "0 2 * * *" # Run at 2 AM daily
-          filters:
-            branches:
-              only: main
-    jobs:
-      - build-manager-api
-      - build-manager-web
-      - build-mqtt-gateway
-      - security-scan:
-          requires:
-            - build-manager-api
-            - build-manager-web
-            - build-mqtt-gateway
