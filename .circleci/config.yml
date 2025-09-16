@@ -342,9 +342,20 @@ jobs:
             ENV_NAME="<< parameters.env >>"
             HTTP_PORT="<< parameters.http_port >>"
 
-            : "${AZURE_HOST:?Set AZURE_HOST in CircleCI context}"
-            : "${AZURE_USER:?Set AZURE_USER in CircleCI context}"
-            : "${AZURE_DEPLOY_PATH:?Set AZURE_DEPLOY_PATH in CircleCI context}"
+            # Check required environment variables
+            if [ -z "${AZURE_HOST:-}" ]; then
+              echo "ERROR: AZURE_HOST not set in CircleCI context 'azure-mqtt-gateway'"
+              echo "Please set AZURE_HOST, AZURE_USER, and AZURE_DEPLOY_PATH in CircleCI project settings"
+              exit 1
+            fi
+            if [ -z "${AZURE_USER:-}" ]; then
+              echo "ERROR: AZURE_USER not set in CircleCI context 'azure-mqtt-gateway'"
+              exit 1
+            fi
+            if [ -z "${AZURE_DEPLOY_PATH:-}" ]; then
+              echo "ERROR: AZURE_DEPLOY_PATH not set in CircleCI context 'azure-mqtt-gateway'"
+              exit 1
+            fi
 
             echo "Building and deploying ${SVC} to ${AZURE_USER}@${AZURE_HOST} env=${ENV_NAME}"
 
@@ -602,7 +613,7 @@ workflows:
 
       # Deploy on specific branches
       - deploy_java_docker_azure:
-          context: "azure-manager-api"
+          context: "azure-mqtt-gateway"
           service_name: "manager-api"
           service_path: "main/manager-api"
           env: "staging"
@@ -615,7 +626,7 @@ workflows:
               only: develop
 
       - deploy_java_docker_azure:
-          context: "azure-manager-api"
+          context: "azure-mqtt-gateway"
           service_name: "manager-api"
           service_path: "main/manager-api"
           env: "production"
@@ -629,7 +640,7 @@ workflows:
 
       # Deploy dev environment for all other branches
       - deploy_java_docker_azure:
-          context: "azure-manager-api"
+          context: "azure-mqtt-gateway"
           service_name: "manager-api"
           service_path: "main/manager-api"
           env: "development"
