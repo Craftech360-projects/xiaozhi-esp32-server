@@ -359,8 +359,13 @@ jobs:
 
             echo "Building and deploying ${SVC} to ${AZURE_USER}@${AZURE_HOST} env=${ENV_NAME}"
 
+            # Ensure service directory exists and copy JAR first
+            ls -la "${DIR}" || { echo "ERROR: Service directory ${DIR} not found"; exit 1; }
+            cp "/tmp/workspace/${SVC}.jar" "${DIR}/app.jar"
+            ls -la "${DIR}/app.jar" || { echo "ERROR: Failed to copy JAR to ${DIR}/app.jar"; exit 1; }
+
             # Create a simple Dockerfile for deployment (bypass multi-stage build)
-            cat > "\${DIR}/Dockerfile.deploy" \<\< 'DOCKERFILE_EOF'
+            cat > "${DIR}/Dockerfile.deploy" \<\< 'DOCKERFILE_EOF'
             FROM eclipse-temurin:17-jre-alpine
 
             # Install curl for health checks
@@ -393,8 +398,10 @@ jobs:
             ENTRYPOINT ["java","-jar","/app/app.jar"]
             DOCKERFILE_EOF
 
-            # Copy pre-built JAR to build context
-            cp "/tmp/workspace/${SVC}.jar" "${DIR}/app.jar"
+            # Verify Dockerfile was created
+            ls -la "${DIR}/Dockerfile.deploy" || { echo "ERROR: Failed to create Dockerfile.deploy"; exit 1; }
+            echo "Created Dockerfile.deploy:"
+            cat "${DIR}/Dockerfile.deploy"
 
             # Build Docker image using deployment Dockerfile
             docker build -f "${DIR}/Dockerfile.deploy" -t "${SVC}:${CIRCLE_SHA1:0:7}" "${DIR}"
