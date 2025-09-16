@@ -179,7 +179,7 @@ jobs:
           at: /tmp/workspace
       - add_ssh_keys:
           fingerprints:
-            - "SHA256:ahYOf9ht0RgB6WUzFgCZqc3H4t6YcJTQFp+wrHrWShY" # <-- your VM key
+            - "SHA256:VlAMfJstRWT1o3ZLc7LT00HxvqwqVsAR+F5X1ZSaXh0" # Azure VM key
       - run:
           name: Skip deploy if artifact missing
           command: |
