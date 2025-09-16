@@ -19,66 +19,102 @@ executors:
     resource_class: large
 
 # =========================
-# Reusable Jobs (parameterized)
+# Jobs
 # =========================
 jobs:
   # Build a Node service (installs prod deps & archives the folder)
-build_node_service:
-  parameters:
-    service_name: { type: string }
-    service_path: { type: string } # e.g. "main/mqtt-gateway"
-  executor: node-executor
-  steps:
-    - checkout
-    - restore_cache:
-        keys:
-          - npm-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/package-lock.json" }}
-          - npm-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/package.json" }}
-          - npm-<< parameters.service_name >>-v1-
-    - run:
-        name: Install prod deps & archive bundle (robust paths)
-        command: |
-          set -eo pipefail
-          SVC="<< parameters.service_name >>"
-          DIR="<< parameters.service_path >>"
-          echo "Building $SVC from $DIR"
+  build_node_service:
+    parameters:
+      service_name: { type: string }
+      service_path: { type: string } # e.g. "main/mqtt-gateway"
+    executor: node-executor
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - npm-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/package-lock.json" }}
+            - npm-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/package.json" }}
+            - npm-<< parameters.service_name >>-v1-
+      - run:
+          name: Install prod deps & archive bundle (robust paths)
+          command: |
+            set -eo pipefail
+            SVC="<< parameters.service_name >>"
+            DIR="<< parameters.service_path >>"
+            echo "Building $SVC from $DIR"
 
-          # Compute absolute paths BEFORE changing directories
-          ABS_DIR="$(cd "$(dirname "$DIR")" && pwd)"
-          BASE="$(basename "$DIR")"
-          echo "ABS_DIR=$ABS_DIR"
-          echo "BASE=$BASE"
-          test -d "$ABS_DIR/$BASE" || { echo "Missing $ABS_DIR/$BASE"; exit 1; }
+            # Compute absolute paths BEFORE changing directories
+            ABS_DIR="$(cd "$(dirname "$DIR")" && pwd)"
+            BASE="$(basename "$DIR")"
+            echo "ABS_DIR=$ABS_DIR"
+            echo "BASE=$BASE"
+            test -d "$ABS_DIR/$BASE" || { echo "Missing $ABS_DIR/$BASE"; exit 1; }
 
-          # Install production deps inside the service dir
-          pushd "$ABS_DIR/$BASE" >/dev/null
-          if [ -f package-lock.json ]; then
-            npm ci --omit=dev --no-audit --no-fund
-          else
-            npm install --omit=dev --no-audit --no-fund
-          fi
-          node -v
-          npm -v
-          ls -la
-          popd >/dev/null
+            # Install production deps inside the service dir
+            pushd "$ABS_DIR/$BASE" >/dev/null
+            if [ -f package-lock.json ]; then
+              npm ci --omit=dev --no-audit --no-fund
+            else
+              npm install --omit=dev --no-audit --no-fund
+            fi
+            node -v
+            npm -v
+            ls -la
+            popd >/dev/null
 
-          # Archive from the parent directory, so the tar contains "$BASE/..."
-          mkdir -p /tmp/workspace
-          tar -czf "/tmp/workspace/${SVC}.tar.gz" -C "$ABS_DIR" "$BASE"
+            # Archive from the parent directory, so the tar contains "$BASE/..."
+            mkdir -p /tmp/workspace
+            tar -czf "/tmp/workspace/${SVC}.tar.gz" -C "$ABS_DIR" "$BASE"
 
-          echo "${SVC}-${CIRCLE_SHA1:0:7}" > "/tmp/workspace/${SVC}-build-info"
-          date -u +"%Y-%m-%dT%H:%M:%SZ" > "/tmp/workspace/${SVC}-build-date"
-          echo "✅ ${SVC} archived to /tmp/workspace/${SVC}.tar.gz"
-    - save_cache:
-        paths:
-          - << parameters.service_path >>/node_modules
-        key: npm-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/package-lock.json" }}
-    - persist_to_workspace:
-        root: /tmp/workspace
-        paths:
-          - << parameters.service_name >>.tar.gz
-          - << parameters.service_name >>-build-info
-          - << parameters.service_name >>-build-date
+            echo "${SVC}-${CIRCLE_SHA1:0:7}" > "/tmp/workspace/${SVC}-build-info"
+            date -u +"%Y-%m-%dT%H:%M:%SZ" > "/tmp/workspace/${SVC}-build-date"
+            echo "✅ ${SVC} archived to /tmp/workspace/${SVC}.tar.gz"
+      - save_cache:
+          paths:
+            - << parameters.service_path >>/node_modules
+          key: npm-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/package-lock.json" }}
+      - persist_to_workspace:
+          root: /tmp/workspace
+          paths:
+            - << parameters.service_name >>.tar.gz
+            - << parameters.service_name >>-build-info
+            - << parameters.service_name >>-build-date
+
+  # Test a Node service (syntax + npm test if present)
+  test_node_service:
+    parameters:
+      service_name: { type: string }
+      service_path: { type: string }
+      entry_file: { type: string, default: "app.js" }
+    executor: node-executor
+    steps:
+      - checkout
+      - run:
+          name: Install dev deps & run tests
+          command: |
+            set -eo pipefail
+            SVC="<< parameters.service_name >>"
+            DIR="<< parameters.service_path >>"
+            ENTRY="<< parameters.entry_file >>"
+
+            pushd "$DIR" >/dev/null
+            if [ -f package-lock.json ]; then
+              npm ci --no-audit --no-fund
+            else
+              npm install --no-audit --no-fund
+            fi
+
+            # Syntax check
+            node --check "$ENTRY"
+
+            # Optional unit tests
+            if npm run | grep -qE '^  test'; then
+              npm test
+            else
+              echo "No npm test script; skipping."
+            fi
+            popd >/dev/null
+            echo "✅ Tests completed for $SVC"
 
   # Trivy scan for unpacked bundle
   security_scan_bundle:
@@ -127,7 +163,7 @@ build_node_service:
           at: /tmp/workspace
       - add_ssh_keys:
           fingerprints:
-            - "SHA256:ahYOf9ht0RgB6WUzFgCZqc3H4t6YcJTQFp+wrHrWShY" # replace if your fingerprint differs
+            - "SHA256:ahYOf9ht0RgB6WUzFgCZqc3H4t6YcJTQFp+wrHrWShY" # replace if yours differs
       - run:
           name: Deploy to Azure VM with PM2
           command: |
@@ -246,7 +282,6 @@ workflows:
 
   mqtt-gateway-pipeline:
     jobs:
-      # Run on ALL branches
       - build_node_service:
           service_name: "mqtt-gateway"
           service_path: "main/mqtt-gateway"
