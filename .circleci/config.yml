@@ -365,41 +365,79 @@ jobs:
             # Build Docker image
             docker build -t "${SVC}:${CIRCLE_SHA1:0:7}" "${DIR}"
 
-            # Set up Docker context for remote deployment
-            export DOCKER_HOST="ssh://${AZURE_USER}@${AZURE_HOST}"
+            # Save and upload Docker image (simpler approach)
+            docker save "${SVC}:${CIRCLE_SHA1:0:7}" | gzip > "/tmp/${SVC}-image.tar.gz"
+            scp -o StrictHostKeyChecking=no "/tmp/${SVC}-image.tar.gz" "${AZURE_USER}@${AZURE_HOST}:/tmp/"
 
-            # Stop and remove existing container on remote
-            docker stop ${SVC} || true
-            docker rm ${SVC} || true
+            # Deploy on Azure VM
+            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
+              set -eo pipefail
 
-            # Tag image for remote deployment
-            docker tag "${SVC}:${CIRCLE_SHA1:0:7}" "${SVC}:latest"
-
-            # Push image to remote Docker daemon
-            docker save "${SVC}:${CIRCLE_SHA1:0:7}" | docker load
-
-            # Run new container on remote
-            docker run -d \\
-              --name ${SVC} \\
-              --restart unless-stopped \\
-              -p ${HTTP_PORT}:8002 \\
-              -e SPRING_PROFILES_ACTIVE=${ENV_NAME} \\
-              "${SVC}:${CIRCLE_SHA1:0:7}"
-
-            # Health check
-            echo 'Starting health check for ${SVC}...'
-            for i in $(seq 1 30); do
-              if ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "curl -fsS http://127.0.0.1:${HTTP_PORT}/toy/actuator/health" >/dev/null 2>&1; then
-                echo "SUCCESS: ${SVC} healthy on port ${HTTP_PORT}"
-                exit 0
+              # Ensure Docker is available (install if needed)
+              if ! command -v docker >/dev/null 2>&1; then
+                echo 'Installing Docker...'
+                curl -fsSL https://get.docker.com -o get-docker.sh
+                sudo sh get-docker.sh
+                sudo usermod -aG docker \$USER
+                sudo systemctl enable docker
+                sudo systemctl start docker
+                rm -f get-docker.sh
+                # Need to logout/login for group changes, so use sudo for now
               fi
-              echo "Health check attempt $i/30 - waiting for http://127.0.0.1:${HTTP_PORT}/toy/actuator/health"
-              sleep 2
-            done
 
-            echo "ERROR: Health check failed after 60 seconds"
-            docker logs ${SVC} --tail 30
-            exit 1
+              # Load Docker image
+              if groups | grep -q docker; then
+                docker load < /tmp/${SVC}-image.tar.gz
+              else
+                sudo docker load < /tmp/${SVC}-image.tar.gz
+              fi
+              rm -f /tmp/${SVC}-image.tar.gz
+
+              # Stop and remove existing container
+              if groups | grep -q docker; then
+                docker stop ${SVC} || true
+                docker rm ${SVC} || true
+              else
+                sudo docker stop ${SVC} || true
+                sudo docker rm ${SVC} || true
+              fi
+
+              # Run new container
+              if groups | grep -q docker; then
+                docker run -d \\
+                  --name ${SVC} \\
+                  --restart unless-stopped \\
+                  -p ${HTTP_PORT}:8002 \\
+                  -e SPRING_PROFILES_ACTIVE=${ENV_NAME} \\
+                  ${SVC}:${CIRCLE_SHA1:0:7}
+              else
+                sudo docker run -d \\
+                  --name ${SVC} \\
+                  --restart unless-stopped \\
+                  -p ${HTTP_PORT}:8002 \\
+                  -e SPRING_PROFILES_ACTIVE=${ENV_NAME} \\
+                  ${SVC}:${CIRCLE_SHA1:0:7}
+              fi
+
+              # Health check
+              echo 'Starting health check for ${SVC}...'
+              for i in \$(seq 1 30); do
+                if curl -fsS http://127.0.0.1:${HTTP_PORT}/toy/actuator/health >/dev/null 2>&1; then
+                  echo 'SUCCESS: ${SVC} healthy on port ${HTTP_PORT}'
+                  exit 0
+                fi
+                echo \"Health check attempt \$i/30 - waiting for http://127.0.0.1:${HTTP_PORT}/toy/actuator/health\"
+                sleep 2
+              done
+
+              echo 'ERROR: Health check failed after 60 seconds'
+              if groups | grep -q docker; then
+                docker logs ${SVC} --tail 30
+              else
+                sudo docker logs ${SVC} --tail 30
+              fi
+              exit 1
+            "
 
   # PM2 deploy over SSH to Azure VM
   deploy_node_pm2_azure:
