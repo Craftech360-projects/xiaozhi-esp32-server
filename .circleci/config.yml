@@ -284,17 +284,24 @@ jobs:
               pm2 save
             "
 
-            # Health check
+            # Health check with better error handling
             ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
-              for i in \$(seq 1 20); do
-                if curl -fsS http://127.0.0.1:${HTTP_PORT}/health >/dev/null; then
-                  echo '✓ ${SVC} healthy'
+              echo 'Starting health check for ${SVC}...'
+              pm2 describe '${SVC}' || echo 'PM2 process not found'
+
+              for i in \$(seq 1 30); do
+                if curl -fsS http://127.0.0.1:${HTTP_PORT}/health >/dev/null 2>&1; then
+                  echo '✓ ${SVC} healthy on port ${HTTP_PORT}'
                   exit 0
                 fi
-                echo \"waiting for health... (\$i/20)\"
-                sleep 3
+                echo \"Health check attempt \$i/30 - waiting for http://127.0.0.1:${HTTP_PORT}/health\"
+                sleep 2
               done
-              echo 'Health check failed' && pm2 logs '${SVC}' --lines 50 && exit 1
+
+              echo '❌ Health check failed after 60 seconds'
+              pm2 status
+              pm2 logs '${SVC}' --lines 30
+              exit 1
             "
 
 # =========================
