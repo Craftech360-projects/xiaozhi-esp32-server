@@ -865,7 +865,7 @@ jobs:
             # Step 5: Deploy LiveKit server
             ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" '
               sudo mkdir -p /etc/livekit
-              sudo bash -c "cat > /etc/livekit/livekit.yaml << EOF
+              sudo tee /etc/livekit/livekit.yaml > /dev/null << "LIVEKIT_EOF"
 port: 7880
 bind_addresses:
   - 0.0.0.0
@@ -886,7 +886,7 @@ turn:
 logging:
   level: info
   json: false
-EOF"
+LIVEKIT_EOF
               sudo docker stop livekit-server || true
               sudo docker rm livekit-server || true
               sudo docker run -d --name livekit-server --restart unless-stopped -p 7880:7880 -p 7881:7881 -p 50000-60000:50000-60000/udp -v /etc/livekit:/etc/livekit:ro livekit/livekit-server --config /etc/livekit/livekit.yaml
