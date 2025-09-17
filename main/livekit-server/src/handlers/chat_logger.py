@@ -8,11 +8,33 @@ from livekit.agents import (
     SpeechCreatedEvent,
     NOT_GIVEN,
 )
+from ..utils.audio_state_manager import audio_state_manager
 
 logger = logging.getLogger("chat_logger")
 
 class ChatEventHandler:
     """Event handler for chat logging and data channel communication"""
+
+    # Store assistant reference for abort handling
+    _assistant_instance = None
+
+    @staticmethod
+    def set_assistant(assistant):
+        """Set the assistant instance for abort handling"""
+        ChatEventHandler._assistant_instance = assistant
+
+    @staticmethod
+    async def _handle_abort_playback(session, ctx):
+        """Handle abort playback signal from MQTT gateway"""
+        try:
+            if ChatEventHandler._assistant_instance and hasattr(ChatEventHandler._assistant_instance, 'stop_audio'):
+                # Call the existing stop_audio function
+                result = await ChatEventHandler._assistant_instance.stop_audio(ctx)
+                logger.info(f"🛑 Abort signal processed: {result}")
+            else:
+                logger.warning("🛑 Could not access assistant's stop_audio method for abort signal")
+        except Exception as e:
+            logger.error(f"🛑 Error handling abort playback: {e}")
 
     @staticmethod
     def setup_session_handlers(session, ctx):
@@ -32,6 +54,16 @@ class ChatEventHandler:
         @session.on("agent_state_changed")
         def _on_agent_state_changed(ev: AgentStateChangedEvent):
             logger.info(f"Agent state changed: {ev}")
+
+            # Check if this state change should be suppressed due to music playback
+            should_suppress = audio_state_manager.should_suppress_agent_state_change(
+                ev.old_state, ev.new_state
+            )
+
+            if should_suppress:
+                logger.info(f"🎵 Suppressing agent state change from {ev.old_state} to {ev.new_state} - music is playing")
+                return
+
             payload = json.dumps({
                 "type": "agent_state_changed",
                 "data": ev.dict()
@@ -58,3 +90,21 @@ class ChatEventHandler:
             })
             asyncio.create_task(ctx.room.local_participant.publish_data(payload.encode("utf-8"), reliable=True))
             logger.info("Sent speech_created via data channel")
+
+        # Add data channel message handler for abort signals
+        @ctx.room.on("data_received")
+        def _on_data_received(data_packet):
+            try:
+                # Decode the data
+                message_str = data_packet.data.decode('utf-8')
+                message = json.loads(message_str)
+
+                logger.info(f"📨 Received data channel message: {message.get('type', 'unknown')}")
+
+                # Handle abort playback message from MQTT gateway
+                if message.get('type') == 'abort_playback':
+                    logger.info("🛑 Processing abort playback signal from MQTT gateway")
+                    asyncio.create_task(ChatEventHandler._handle_abort_playback(session, ctx))
+
+            except Exception as e:
+                logger.error(f"Error processing data channel message: {e}")

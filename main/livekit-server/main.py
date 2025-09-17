@@ -23,7 +23,8 @@ from src.handlers.chat_logger import ChatEventHandler
 from src.utils.helpers import UsageManager
 from src.services.music_service import MusicService
 from src.services.story_service import StoryService
-from src.services.minimal_audio_player import MinimalAudioPlayer
+from src.services.foreground_audio_player import ForegroundAudioPlayer
+from src.services.unified_audio_player import UnifiedAudioPlayer
 
 logger = logging.getLogger("agent")
 
@@ -45,7 +46,7 @@ async def entrypoint(ctx: JobContext):
     stt = ProviderFactory.create_stt(groq_config)
     tts = ProviderFactory.create_tts(groq_config)
     # Disable turn detection to avoid timeout issues
-    # turn_detection = ProviderFactory.create_turn_detection()
+    turn_detection = ProviderFactory.create_turn_detection()
     vad = ctx.proc.userdata["vad"]
 
     # Set up voice AI pipeline
@@ -53,12 +54,23 @@ async def entrypoint(ctx: JobContext):
         llm=llm,
         stt=stt,
         tts=tts,
-        # turn_detection=turn_detection,  # Disabled to avoid timeout
+        turn_detection=turn_detection,  # Disabled to avoid timeout
         vad=vad,
         preemptive_generation=agent_config['preemptive_generation'],
     )
 
-    # Setup event handlers
+    # Initialize music and story services FIRST
+    music_service = MusicService()
+    story_service = StoryService()
+    audio_player = ForegroundAudioPlayer()
+    unified_audio_player = UnifiedAudioPlayer()
+
+    # Create agent and inject services
+    assistant = Assistant()
+    assistant.set_services(music_service, story_service, audio_player, unified_audio_player)
+
+    # Setup event handlers and pass assistant reference for abort handling
+    ChatEventHandler.set_assistant(assistant)
     ChatEventHandler.setup_session_handlers(session, ctx)
 
     # Setup usage tracking
@@ -71,23 +83,20 @@ async def entrypoint(ctx: JobContext):
 
     ctx.add_shutdown_callback(log_usage)
 
-    # Initialize music and story services
-    music_service = MusicService()
-    story_service = StoryService()
-    audio_player = MinimalAudioPlayer()
-
     logger.info("Initializing music and story services...")
     try:
         music_initialized = await music_service.initialize()
         story_initialized = await story_service.initialize()
 
         if music_initialized:
-            logger.info(f"Music service initialized with {len(music_service.get_all_languages())} languages")
+            languages = await music_service.get_all_languages()
+            logger.info(f"Music service initialized with {len(languages)} languages")
         else:
             logger.warning("Music service initialization failed")
 
         if story_initialized:
-            logger.info(f"Story service initialized with {len(story_service.get_all_categories())} categories")
+            categories = await story_service.get_all_categories()
+            logger.info(f"Story service initialized with {len(categories)} categories")
         else:
             logger.warning("Story service initialization failed")
 
@@ -109,10 +118,6 @@ async def entrypoint(ctx: JobContext):
     else:
         logger.info("Noise cancellation disabled by configuration")
 
-    # Create agent and inject services
-    assistant = Assistant()
-    assistant.set_services(music_service, story_service, audio_player)
-
     # Start agent session
     await session.start(
         agent=assistant,
@@ -120,13 +125,16 @@ async def entrypoint(ctx: JobContext):
         room_input_options=room_options,
     )
 
-    # Set up music/story integration with context
+    # Set up music/story integration with session and context
     try:
-        # Pass context to the minimal audio player for room access
+        # Pass session and context to both audio players
+        audio_player.set_session(session)
         audio_player.set_context(ctx)
-        logger.info("Minimal audio player integrated with context")
+        unified_audio_player.set_session(session)
+        unified_audio_player.set_context(ctx)
+        logger.info("Audio players integrated with session and context")
     except Exception as e:
-        logger.warning(f"Failed to integrate audio player with context: {e}")
+        logger.warning(f"Failed to integrate audio players with session/context: {e}")
 
     await ctx.connect()
 

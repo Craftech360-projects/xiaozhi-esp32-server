@@ -26,44 +26,20 @@ class StoryService:
         self.semantic_search = SemanticSearchService()
 
     async def initialize(self) -> bool:
-        """Initialize story service by loading metadata"""
+        """Initialize story service using only Qdrant cloud API"""
         try:
-            stories_base_path = Path("src/stories")
-
-            if stories_base_path.exists():
-                total_stories = 0
-                for category_folder in stories_base_path.iterdir():
-                    if category_folder.is_dir():
-                        metadata_file = category_folder / "metadata.json"
-                        if metadata_file.exists():
-                            try:
-                                with open(metadata_file, 'r', encoding='utf-8') as f:
-                                    category_metadata = json.load(f)
-                                    self.metadata[category_folder.name] = category_metadata
-
-                                    if isinstance(category_metadata, list):
-                                        story_count = len(category_metadata)
-                                    else:
-                                        story_count = len(category_metadata.get('stories', []))
-
-                                    total_stories += story_count
-                                    logger.info(f"Loaded {story_count} stories from {category_folder.name}")
-                            except Exception as e:
-                                logger.error(f"Error loading metadata from {metadata_file}: {e}")
-
-                logger.info(f"Loaded total of {total_stories} stories from {len(self.metadata)} categories")
-
-                # Initialize semantic search with story metadata
-                try:
-                    await self.semantic_search.initialize(story_metadata=self.metadata)
-                    logger.info("Semantic search initialized for stories")
-                except Exception as e:
-                    logger.warning(f"Semantic search initialization failed: {e}")
-
-                self.is_initialized = True
-                return True
-            else:
-                logger.warning("Stories folder not found at src/stories")
+            # Initialize semantic search without local metadata
+            try:
+                initialized = await self.semantic_search.initialize()
+                if initialized:
+                    logger.info("✅ Story service initialized with Qdrant cloud API")
+                    self.is_initialized = True
+                    return True
+                else:
+                    logger.warning("⚠️ Qdrant initialization failed, story service will be limited")
+                    return False
+            except Exception as e:
+                logger.error(f"Failed to initialize Qdrant semantic search: {e}")
                 return False
 
         except Exception as e:
@@ -81,12 +57,12 @@ class StoryService:
             return f"{self.s3_base_url}/{encoded_path}"
 
     async def search_stories(self, query: str, category: Optional[str] = None) -> List[Dict]:
-        """Search for stories using semantic search"""
+        """Search for stories using Qdrant cloud API"""
         if not self.is_initialized:
             return []
 
-        # Use semantic search service
-        search_results = await self.semantic_search.search_stories(query, self.metadata, category, limit=5)
+        # Use semantic search service with Qdrant cloud (no local metadata needed)
+        search_results = await self.semantic_search.search_stories(query, category, limit=5)
 
         # Convert search results to expected format
         results = []
@@ -101,13 +77,13 @@ class StoryService:
 
         return results
 
-    def get_random_story(self, category: Optional[str] = None) -> Optional[Dict]:
-        """Get a random story using semantic search service"""
-        if not self.is_initialized or not self.metadata:
+    async def get_random_story(self, category: Optional[str] = None) -> Optional[Dict]:
+        """Get a random story using Qdrant cloud API"""
+        if not self.is_initialized:
             return None
 
-        # Use semantic search service to get random story
-        result = self.semantic_search.get_random_item(self.metadata, category)
+        # Use semantic search service to get random story from Qdrant cloud
+        result = await self.semantic_search.get_random_story(category)
 
         if result:
             return {
@@ -119,6 +95,9 @@ class StoryService:
 
         return None
 
-    def get_all_categories(self) -> List[str]:
-        """Get list of all available story categories"""
-        return sorted(list(self.metadata.keys()))
+    async def get_all_categories(self) -> List[str]:
+        """Get list of all available story categories from Qdrant cloud"""
+        if not self.is_initialized:
+            return []
+
+        return await self.semantic_search.get_available_categories()

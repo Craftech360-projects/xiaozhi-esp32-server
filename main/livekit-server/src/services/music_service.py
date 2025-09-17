@@ -26,40 +26,20 @@ class MusicService:
         self.semantic_search = SemanticSearchService()
 
     async def initialize(self) -> bool:
-        """Initialize music service by loading metadata"""
+        """Initialize music service using only Qdrant cloud API"""
         try:
-            music_base_path = Path("src/music")
-
-            if music_base_path.exists():
-                total_songs = 0
-                for language_folder in music_base_path.iterdir():
-                    if language_folder.is_dir():
-                        metadata_file = language_folder / "metadata.json"
-                        if metadata_file.exists():
-                            try:
-                                with open(metadata_file, 'r', encoding='utf-8') as f:
-                                    language_metadata = json.load(f)
-                                    self.metadata[language_folder.name] = language_metadata
-
-                                    song_count = len(language_metadata)
-                                    total_songs += song_count
-                                    logger.info(f"Loaded {song_count} songs from {language_folder.name}")
-                            except Exception as e:
-                                logger.error(f"Error loading metadata from {metadata_file}: {e}")
-
-                logger.info(f"Loaded total of {total_songs} songs from {len(self.metadata)} languages")
-
-                # Initialize semantic search with music metadata
-                try:
-                    await self.semantic_search.initialize(music_metadata=self.metadata)
-                    logger.info("Semantic search initialized for music")
-                except Exception as e:
-                    logger.warning(f"Semantic search initialization failed: {e}")
-
-                self.is_initialized = True
-                return True
-            else:
-                logger.warning("Music folder not found at src/music")
+            # Initialize semantic search without local metadata - purely cloud-based
+            try:
+                initialized = await self.semantic_search.initialize()
+                if initialized:
+                    logger.info("✅ Music service initialized with Qdrant cloud API (no local metadata)")
+                    self.is_initialized = True
+                    return True
+                else:
+                    logger.warning("⚠️ Qdrant initialization failed, music service unavailable")
+                    return False
+            except Exception as e:
+                logger.error(f"Failed to initialize Qdrant semantic search: {e}")
                 return False
 
         except Exception as e:
@@ -77,12 +57,12 @@ class MusicService:
             return f"{self.s3_base_url}/{encoded_path}"
 
     async def search_songs(self, query: str, language: Optional[str] = None) -> List[Dict]:
-        """Search for songs using semantic search"""
+        """Search for songs using Qdrant cloud API directly"""
         if not self.is_initialized:
             return []
 
-        # Use semantic search service
-        search_results = await self.semantic_search.search_music(query, self.metadata, language, limit=5)
+        # Use semantic search service with cloud-only search
+        search_results = await self.semantic_search.search_music(query, language, limit=5)
 
         # Convert search results to expected format
         results = []
@@ -97,13 +77,13 @@ class MusicService:
 
         return results
 
-    def get_random_song(self, language: Optional[str] = None) -> Optional[Dict]:
-        """Get a random song using semantic search service"""
-        if not self.is_initialized or not self.metadata:
+    async def get_random_song(self, language: Optional[str] = None) -> Optional[Dict]:
+        """Get a random song using Qdrant cloud API"""
+        if not self.is_initialized:
             return None
 
-        # Use semantic search service to get random song
-        result = self.semantic_search.get_random_item(self.metadata, language)
+        # Use semantic search service to get random song from cloud
+        result = await self.semantic_search.get_random_music(language)
 
         if result:
             return {
@@ -115,6 +95,9 @@ class MusicService:
 
         return None
 
-    def get_all_languages(self) -> List[str]:
-        """Get list of all available music languages"""
-        return sorted(list(self.metadata.keys()))
+    async def get_all_languages(self) -> List[str]:
+        """Get list of all available music languages from Qdrant cloud"""
+        if not self.is_initialized:
+            return []
+
+        return await self.semantic_search.get_available_languages()
