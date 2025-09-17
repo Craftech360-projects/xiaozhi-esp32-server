@@ -862,8 +862,9 @@ jobs:
               fi
             '
 
-            # Step 5: Deploy LiveKit server
+            # Step 5: Deploy LiveKit server (with timeout)
             ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" '
+              echo "Creating LiveKit configuration..."
               sudo mkdir -p /etc/livekit
               echo "port: 7880" | sudo tee /etc/livekit/livekit.yaml > /dev/null
               echo "bind_addresses:" | sudo tee -a /etc/livekit/livekit.yaml > /dev/null
@@ -880,10 +881,25 @@ jobs:
               echo "room:" | sudo tee -a /etc/livekit/livekit.yaml > /dev/null
               echo "  auto_create: true" | sudo tee -a /etc/livekit/livekit.yaml > /dev/null
               echo "  enable_recording: false" | sudo tee -a /etc/livekit/livekit.yaml > /dev/null
-              sudo docker stop livekit-server || true
-              sudo docker rm livekit-server || true
+
+              echo "Stopping existing LiveKit containers..."
+              sudo docker stop livekit-server || echo "No container to stop"
+              sudo docker rm livekit-server || echo "No container to remove"
+
+              echo "Starting LiveKit server container..."
               sudo docker run -d --name livekit-server --restart unless-stopped -p 7880:7880 -p 7881:7881 -p 50000-60000:50000-60000/udp -v /etc/livekit:/etc/livekit:ro livekit/livekit-server --config /etc/livekit/livekit.yaml
-              sleep 10
+
+              echo "Waiting for LiveKit to initialize (max 30 seconds)..."
+              for i in $(seq 1 6); do
+                if sudo docker ps | grep -q livekit-server; then
+                  echo "LiveKit container is running after $((i*5)) seconds"
+                  break
+                fi
+                echo "Waiting... attempt $i/6"
+                sleep 5
+              done
+
+              echo "LiveKit deployment completed"
             '
 
             # Step 6: Configure firewall and permissions
