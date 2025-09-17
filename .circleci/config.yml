@@ -899,6 +899,102 @@ jobs:
                 echo 'Redis setup completed'
               fi
 
+              # Install Docker if needed (for LiveKit server)
+              if ! command -v docker >/dev/null 2>&1; then
+                echo 'Installing Docker for LiveKit server...'
+                curl -fsSL https://get.docker.com -o get-docker.sh
+                sudo sh get-docker.sh
+                sudo usermod -aG docker \$USER
+                sudo systemctl enable docker
+                sudo systemctl start docker
+                rm -f get-docker.sh
+
+                # Wait for Docker to be ready
+                sleep 5
+              else
+                echo 'Docker already installed, ensuring it is running...'
+                sudo systemctl start docker || true
+                sudo systemctl enable docker || true
+              fi
+
+              # Deploy LiveKit server
+              echo 'Setting up LiveKit server...'
+
+              # Create LiveKit config directory
+              sudo mkdir -p /etc/livekit
+
+              # Create LiveKit server configuration
+              sudo tee /etc/livekit/livekit.yaml > /dev/null <<EOL
+port: 7880
+bind_addresses:
+  - 0.0.0.0
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 60000
+  use_external_ip: true
+redis:
+  address: localhost:6379
+keys:
+  devkey: secret
+room:
+  auto_create: true
+  enable_recording: false
+turn:
+  enabled: false
+logging:
+  level: info
+  json: false
+EOL
+
+              # Stop existing LiveKit server if running
+              if groups | grep -q docker; then
+                docker stop livekit-server || true
+                docker rm livekit-server || true
+              else
+                sudo docker stop livekit-server || true
+                sudo docker rm livekit-server || true
+              fi
+
+              # Start LiveKit server with Docker
+              echo 'Starting LiveKit server...'
+              if groups | grep -q docker; then
+                docker run -d \\
+                  --name livekit-server \\
+                  --restart unless-stopped \\
+                  -p 7880:7880 \\
+                  -p 7881:7881 \\
+                  -p 50000-60000:50000-60000/udp \\
+                  -v /etc/livekit:/etc/livekit:ro \\
+                  livekit/livekit-server \\
+                  --config /etc/livekit/livekit.yaml
+              else
+                sudo docker run -d \\
+                  --name livekit-server \\
+                  --restart unless-stopped \\
+                  -p 7880:7880 \\
+                  -p 7881:7881 \\
+                  -p 50000-60000:50000-60000/udp \\
+                  -v /etc/livekit:/etc/livekit:ro \\
+                  livekit/livekit-server \\
+                  --config /etc/livekit/livekit.yaml
+              fi
+
+              # Wait for LiveKit server to start
+              echo 'Waiting for LiveKit server to initialize...'
+              sleep 10
+
+              # Verify LiveKit server is running
+              if groups | grep -q docker; then
+                docker ps | grep livekit-server || echo 'LiveKit server container not found'
+                docker logs livekit-server --tail 10 || echo 'Could not get LiveKit logs'
+              else
+                sudo docker ps | grep livekit-server || echo 'LiveKit server container not found'
+                sudo docker logs livekit-server --tail 10 || echo 'Could not get LiveKit logs'
+              fi
+
+              echo 'LiveKit server setup completed'
+
               # Open required ports in firewall for external access
               echo 'Opening firewall ports for external access...'
 
@@ -909,6 +1005,11 @@ jobs:
               sudo ufw allow 8001/tcp || echo 'UFW rule for 8001 failed'
               sudo ufw allow 8002/tcp || echo 'UFW rule for 8002 failed'
               sudo ufw allow 8886/tcp || echo 'UFW rule for 8886 failed'
+
+              # Allow LiveKit server ports
+              sudo ufw allow 7880/tcp || echo 'UFW rule for LiveKit WebSocket failed'
+              sudo ufw allow 7881/tcp || echo 'UFW rule for LiveKit RTC TCP failed'
+              sudo ufw allow 50000:60000/udp || echo 'UFW rule for LiveKit RTC UDP range failed'
 
               # Check if UFW is already enabled before enabling it
               if ! sudo ufw status | grep -q 'Status: active'; then
@@ -1043,6 +1144,22 @@ jobs:
               if curl -fsS --connect-timeout 10 --max-time 15 http://127.0.0.1:\$HTTP_PORT/ >/dev/null 2>&1 || \\
                  curl -fsS --connect-timeout 10 --max-time 15 http://127.0.0.1:\$HTTP_PORT/toy/ >/dev/null 2>&1; then
                 echo 'SUCCESS: '\$SVC' HTTP server is responding'
+
+                # Also check LiveKit server health
+                echo 'Checking LiveKit server health...'
+                if curl -fsS --connect-timeout 5 --max-time 10 http://127.0.0.1:7880/ >/dev/null 2>&1; then
+                  echo 'SUCCESS: LiveKit server is also responding'
+                else
+                  echo 'WARNING: LiveKit server not responding, checking Docker status...'
+                  if groups | grep -q docker; then
+                    docker ps | grep livekit-server || echo 'LiveKit container not running'
+                    docker logs livekit-server --tail 5 || echo 'Could not get LiveKit logs'
+                  else
+                    sudo docker ps | grep livekit-server || echo 'LiveKit container not running'
+                    sudo docker logs livekit-server --tail 5 || echo 'Could not get LiveKit logs'
+                  fi
+                fi
+
                 exit 0
               fi
 
