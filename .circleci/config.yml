@@ -808,221 +808,105 @@ jobs:
 
             echo "Deploying ${SVC} JAR to ${AZURE_USER}@${AZURE_HOST} env=${ENV_NAME}"
 
-            # Ensure VM ready & Java installed
-            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
-              set -eo pipefail
-              mkdir -p ${AZURE_DEPLOY_PATH}/main/${SVC}
-              mkdir -p /var/log/pm2
-
-              # Install Java 17 if needed (manager-api is compiled with Java 17)
-              if ! java -version 2>&1 | grep -q '17\\.'; then
-                echo 'Installing Java 17...'
+            # Step 1: Setup directories and Java
+            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" '
+              mkdir -p '${AZURE_DEPLOY_PATH}'/main/'${SVC}' /var/log/pm2
+              if ! java -version 2>&1 | grep -q "17\."; then
                 sudo apt-get update -y
                 sudo apt-get install -y openjdk-17-jre-headless openjdk-17-jdk-headless
-
-                # Set Java 17 as default
                 sudo update-alternatives --install /usr/bin/java java /usr/lib/jvm/java-17-openjdk-amd64/bin/java 100
                 sudo update-alternatives --set java /usr/lib/jvm/java-17-openjdk-amd64/bin/java
-
-                # Set JAVA_HOME
-                export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-                echo 'export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64' >> ~/.bashrc
-                echo 'export PATH=\$JAVA_HOME/bin:\$PATH' >> ~/.bashrc
-
-                echo 'Java version after installation:'
-                java -version
-                echo 'JAVA_HOME: '\$JAVA_HOME
-              else
-                echo 'Java 17 already installed:'
-                java -version
-                export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+                echo "export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64" >> ~/.bashrc
               fi
+              export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+            '
 
-              # Install PM2 if needed
+            # Step 2: Install PM2
+            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" '
               if ! command -v pm2 >/dev/null 2>&1; then
-                curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs
+                curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+                sudo apt-get install -y nodejs
                 sudo npm install -g pm2
               fi
+            '
 
-              # Install and configure MySQL if needed (for Java services)
+            # Step 3: Setup MySQL
+            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" '
               if ! command -v mysql >/dev/null 2>&1; then
-                echo 'Installing MySQL server...'
-                sudo apt-get update -y
-
-                # Pre-configure MySQL installation to avoid interactive prompts
-                echo 'mysql-server mysql-server/root_password password rootpassword123' | sudo debconf-set-selections
-                echo 'mysql-server mysql-server/root_password_again password rootpassword123' | sudo debconf-set-selections
-
+                echo "mysql-server mysql-server/root_password password rootpassword123" | sudo debconf-set-selections
+                echo "mysql-server mysql-server/root_password_again password rootpassword123" | sudo debconf-set-selections
                 sudo apt-get install -y mysql-server mysql-client
-
-                # Start MySQL service
-                sudo systemctl start mysql
-                sudo systemctl enable mysql
-
-                # Wait for MySQL to be ready
+                sudo systemctl start mysql && sudo systemctl enable mysql
                 sleep 10
-
-                # Configure MySQL with root access
-                sudo mysql -u root -prootpassword123 -e \"CREATE DATABASE IF NOT EXISTS xiaozhi_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\" || true
-                sudo mysql -u root -prootpassword123 -e \"CREATE USER IF NOT EXISTS 'xiaozhi_user'@'localhost' IDENTIFIED BY 'xiaozhi_password123';\" || true
-                sudo mysql -u root -prootpassword123 -e \"GRANT ALL PRIVILEGES ON xiaozhi_db.* TO 'xiaozhi_user'@'localhost';\" || true
-                sudo mysql -u root -prootpassword123 -e \"FLUSH PRIVILEGES;\" || true
-
-                echo 'MySQL setup completed'
+                sudo mysql -u root -prootpassword123 -e "CREATE DATABASE IF NOT EXISTS xiaozhi_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" || true
+                sudo mysql -u root -prootpassword123 -e "CREATE USER IF NOT EXISTS \"xiaozhi_user\"@\"localhost\" IDENTIFIED BY \"xiaozhi_password123\";" || true
+                sudo mysql -u root -prootpassword123 -e "GRANT ALL PRIVILEGES ON xiaozhi_db.* TO \"xiaozhi_user\"@\"localhost\";" || true
+                sudo mysql -u root -prootpassword123 -e "FLUSH PRIVILEGES;" || true
               else
-                echo 'MySQL already installed, ensuring it is running...'
                 sudo systemctl start mysql || true
-                sudo systemctl enable mysql || true
               fi
+            '
 
-              # Verify MySQL is running and accessible
-              echo 'Checking MySQL connectivity...'
-              if mysql -u xiaozhi_user -pxiaozhi_password123 -e \"SELECT 1;\" >/dev/null 2>&1; then
-                echo 'MySQL connection successful'
-              else
-                echo 'MySQL connection failed, trying to recreate user...'
-                sudo mysql -u root -prootpassword123 -e \"DROP USER IF EXISTS 'xiaozhi_user'@'localhost';\" || true
-                sudo mysql -u root -prootpassword123 -e \"CREATE USER 'xiaozhi_user'@'localhost' IDENTIFIED BY 'xiaozhi_password123';\" || true
-                sudo mysql -u root -prootpassword123 -e \"GRANT ALL PRIVILEGES ON xiaozhi_db.* TO 'xiaozhi_user'@'localhost';\" || true
-                sudo mysql -u root -prootpassword123 -e \"FLUSH PRIVILEGES;\" || true
-              fi
-
-              # Install and configure Redis if needed
+            # Step 4: Setup Redis and Docker
+            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" '
               if ! command -v redis-server >/dev/null 2>&1; then
-                echo 'Installing Redis server...'
                 sudo apt-get install -y redis-server
-
-                # Start Redis service
-                sudo systemctl start redis-server
-                sudo systemctl enable redis-server
-
-                echo 'Redis setup completed'
+                sudo systemctl start redis-server && sudo systemctl enable redis-server
               fi
-
-              # Install Docker if needed (for LiveKit server)
               if ! command -v docker >/dev/null 2>&1; then
-                echo 'Installing Docker for LiveKit server...'
-                curl -fsSL https://get.docker.com -o get-docker.sh
-                sudo sh get-docker.sh
-                sudo usermod -aG docker \$USER
-                sudo systemctl enable docker
-                sudo systemctl start docker
-                rm -f get-docker.sh
-
-                # Wait for Docker to be ready
-                sleep 5
+                curl -fsSL https://get.docker.com | sudo sh
+                sudo usermod -aG docker $USER
+                sudo systemctl enable docker && sudo systemctl start docker
               else
-                echo 'Docker already installed, ensuring it is running...'
                 sudo systemctl start docker || true
-                sudo systemctl enable docker || true
               fi
+            '
 
-              # Deploy LiveKit server
-              echo 'Setting up LiveKit server...'
-
-              # Create LiveKit config directory
+            # Step 5: Deploy LiveKit server
+            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" '
               sudo mkdir -p /etc/livekit
-
-              # Create LiveKit server configuration
-              sudo tee /etc/livekit/livekit.yaml > /dev/null <<'LIVEKIT_CONFIG'
-              port: 7880
-              bind_addresses:
-                - 0.0.0.0
-              rtc:
-                tcp_port: 7881
-                port_range_start: 50000
-                port_range_end: 60000
-                use_external_ip: true
-              redis:
-                address: localhost:6379
-              keys:
-                devkey: secret
-              room:
-                auto_create: true
-                enable_recording: false
-              turn:
-                enabled: false
-              logging:
-                level: info
-                json: false
-              LIVEKIT_CONFIG
-
-              # Stop existing LiveKit server if running
-              if groups | grep -q docker; then
-                docker stop livekit-server || true
-                docker rm livekit-server || true
-              else
-                sudo docker stop livekit-server || true
-                sudo docker rm livekit-server || true
-              fi
-
-              # Start LiveKit server with Docker
-              echo 'Starting LiveKit server...'
-              if groups | grep -q docker; then
-                docker run -d \\
-                  --name livekit-server \\
-                  --restart unless-stopped \\
-                  -p 7880:7880 \\
-                  -p 7881:7881 \\
-                  -p 50000-60000:50000-60000/udp \\
-                  -v /etc/livekit:/etc/livekit:ro \\
-                  livekit/livekit-server \\
-                  --config /etc/livekit/livekit.yaml
-              else
-                sudo docker run -d \\
-                  --name livekit-server \\
-                  --restart unless-stopped \\
-                  -p 7880:7880 \\
-                  -p 7881:7881 \\
-                  -p 50000-60000:50000-60000/udp \\
-                  -v /etc/livekit:/etc/livekit:ro \\
-                  livekit/livekit-server \\
-                  --config /etc/livekit/livekit.yaml
-              fi
-
-              # Wait for LiveKit server to start
-              echo 'Waiting for LiveKit server to initialize...'
+              sudo bash -c "cat > /etc/livekit/livekit.yaml << EOF
+port: 7880
+bind_addresses:
+  - 0.0.0.0
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 60000
+  use_external_ip: true
+redis:
+  address: localhost:6379
+keys:
+  devkey: secret
+room:
+  auto_create: true
+  enable_recording: false
+turn:
+  enabled: false
+logging:
+  level: info
+  json: false
+EOF"
+              sudo docker stop livekit-server || true
+              sudo docker rm livekit-server || true
+              sudo docker run -d --name livekit-server --restart unless-stopped -p 7880:7880 -p 7881:7881 -p 50000-60000:50000-60000/udp -v /etc/livekit:/etc/livekit:ro livekit/livekit-server --config /etc/livekit/livekit.yaml
               sleep 10
+            '
 
-              # Verify LiveKit server is running
-              if groups | grep -q docker; then
-                docker ps | grep livekit-server || echo 'LiveKit server container not found'
-                docker logs livekit-server --tail 10 || echo 'Could not get LiveKit logs'
-              else
-                sudo docker ps | grep livekit-server || echo 'LiveKit server container not found'
-                sudo docker logs livekit-server --tail 10 || echo 'Could not get LiveKit logs'
+            # Step 6: Configure firewall and permissions
+            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" '
+              sudo ufw allow 22/tcp || true
+              sudo ufw allow 8001/tcp || true
+              sudo ufw allow 8002/tcp || true
+              sudo ufw allow 8886/tcp || true
+              sudo ufw allow 7880/tcp || true
+              sudo ufw allow 7881/tcp || true
+              sudo ufw allow 50000:60000/udp || true
+              if ! sudo ufw status | grep -q "Status: active"; then
+                sudo ufw --force enable || true
               fi
-
-              echo 'LiveKit server setup completed'
-
-              # Open required ports in firewall for external access
-              echo 'Opening firewall ports for external access...'
-
-              # CRITICAL: Allow SSH first to prevent lockout
-              sudo ufw allow 22/tcp || echo 'UFW rule for SSH failed'
-
-              # Allow application ports
-              sudo ufw allow 8001/tcp || echo 'UFW rule for 8001 failed'
-              sudo ufw allow 8002/tcp || echo 'UFW rule for 8002 failed'
-              sudo ufw allow 8886/tcp || echo 'UFW rule for 8886 failed'
-
-              # Allow LiveKit server ports
-              sudo ufw allow 7880/tcp || echo 'UFW rule for LiveKit WebSocket failed'
-              sudo ufw allow 7881/tcp || echo 'UFW rule for LiveKit RTC TCP failed'
-              sudo ufw allow 50000:60000/udp || echo 'UFW rule for LiveKit RTC UDP range failed'
-
-              # Check if UFW is already enabled before enabling it
-              if ! sudo ufw status | grep -q 'Status: active'; then
-                echo 'Enabling UFW with proper SSH protection...'
-                sudo ufw --force enable || echo 'UFW enable failed or not needed'
-              else
-                echo 'UFW already active, rules updated'
-              fi
-
-              echo 'Firewall configuration completed'
-
-              sudo chown -R \$USER:\$USER ${AZURE_DEPLOY_PATH} /var/log/pm2
-            "
+              sudo chown -R $USER:$USER '${AZURE_DEPLOY_PATH}' /var/log/pm2
+            '
 
             # Upload JAR file
             scp -o StrictHostKeyChecking=no "/tmp/workspace/${SVC}.jar" "${AZURE_USER}@${AZURE_HOST}:${AZURE_DEPLOY_PATH}/main/${SVC}/app.jar"
