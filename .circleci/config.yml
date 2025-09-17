@@ -865,28 +865,21 @@ jobs:
             # Step 5: Deploy LiveKit server
             ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" '
               sudo mkdir -p /etc/livekit
-              sudo tee /etc/livekit/livekit.yaml > /dev/null << "LIVEKIT_EOF"
-port: 7880
-bind_addresses:
-  - 0.0.0.0
-rtc:
-  tcp_port: 7881
-  port_range_start: 50000
-  port_range_end: 60000
-  use_external_ip: true
-redis:
-  address: localhost:6379
-keys:
-  devkey: secret
-room:
-  auto_create: true
-  enable_recording: false
-turn:
-  enabled: false
-logging:
-  level: info
-  json: false
-LIVEKIT_EOF
+              echo "port: 7880" | sudo tee /etc/livekit/livekit.yaml > /dev/null
+              echo "bind_addresses:" | sudo tee -a /etc/livekit/livekit.yaml > /dev/null
+              echo "  - 0.0.0.0" | sudo tee -a /etc/livekit/livekit.yaml > /dev/null
+              echo "rtc:" | sudo tee -a /etc/livekit/livekit.yaml > /dev/null
+              echo "  tcp_port: 7881" | sudo tee -a /etc/livekit/livekit.yaml > /dev/null
+              echo "  port_range_start: 50000" | sudo tee -a /etc/livekit/livekit.yaml > /dev/null
+              echo "  port_range_end: 60000" | sudo tee -a /etc/livekit/livekit.yaml > /dev/null
+              echo "  use_external_ip: true" | sudo tee -a /etc/livekit/livekit.yaml > /dev/null
+              echo "redis:" | sudo tee -a /etc/livekit/livekit.yaml > /dev/null
+              echo "  address: localhost:6379" | sudo tee -a /etc/livekit/livekit.yaml > /dev/null
+              echo "keys:" | sudo tee -a /etc/livekit/livekit.yaml > /dev/null
+              echo "  devkey: secret" | sudo tee -a /etc/livekit/livekit.yaml > /dev/null
+              echo "room:" | sudo tee -a /etc/livekit/livekit.yaml > /dev/null
+              echo "  auto_create: true" | sudo tee -a /etc/livekit/livekit.yaml > /dev/null
+              echo "  enable_recording: false" | sudo tee -a /etc/livekit/livekit.yaml > /dev/null
               sudo docker stop livekit-server || true
               sudo docker rm livekit-server || true
               sudo docker run -d --name livekit-server --restart unless-stopped -p 7880:7880 -p 7881:7881 -p 50000-60000:50000-60000/udp -v /etc/livekit:/etc/livekit:ro livekit/livekit-server --config /etc/livekit/livekit.yaml
