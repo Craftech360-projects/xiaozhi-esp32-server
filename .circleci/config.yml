@@ -728,3 +728,69 @@ workflows:
               ignore:
                 - develop
                 - main
+
+  manager-web-pipeline:
+    jobs:
+      # These run on ALL branches (no filters)
+      - build_node_service:
+          service_name: "manager-web"
+          service_path: "main/manager-web"
+
+      - test_node_service:
+          service_name: "manager-web"
+          service_path: "main/manager-web"
+          entry_file: "app.js"
+          requires: [build_node_service]
+
+      - security_scan_bundle:
+          service_name: "manager-web"
+          requires: [build_node_service]
+
+      # Deploy on all branches (environment based on branch)
+      - deploy_node_pm2_azure:
+          context: "azure-mqtt-gateway"
+          service_name: "manager-web"
+          service_path: "main/manager-web"
+          entry_file: "app.js"
+          env: "staging"
+          http_port: 8885
+          mqtt_port: 1883
+          requires:
+            - test_node_service
+            - security_scan_bundle
+          filters:
+            branches:
+              only: develop
+
+      - deploy_node_pm2_azure:
+          context: "azure-mqtt-gateway"
+          service_name: "manager-web"
+          service_path: "main/manager-web"
+          entry_file: "app.js"
+          env: "production"
+          http_port: 8885
+          mqtt_port: 1883
+          requires:
+            - test_node_service
+            - security_scan_bundle
+          filters:
+            branches:
+              only: main
+
+      # Deploy dev environment for all other branches
+      - deploy_node_pm2_azure:
+          context: "azure-mqtt-gateway"
+          service_name: "manager-web"
+          service_path: "main/manager-web"
+          entry_file: "app.js"
+          env: "development"
+          http_port: 8886
+          mqtt_port: 1884
+          requires:
+            - test_node_service
+            - security_scan_bundle
+          filters:
+            branches:
+              ignore:
+                - develop
+                - main
