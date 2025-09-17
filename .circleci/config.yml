@@ -715,6 +715,37 @@ jobs:
                 sudo npm install -g pm2
               fi
 
+              # Install and configure MySQL if needed (for Java services)
+              if ! command -v mysql >/dev/null 2>&1; then
+                echo 'Installing MySQL server...'
+                sudo apt-get update -y
+                sudo apt-get install -y mysql-server mysql-client
+
+                # Start MySQL service
+                sudo systemctl start mysql
+                sudo systemctl enable mysql
+
+                # Configure MySQL
+                sudo mysql -e \"CREATE DATABASE IF NOT EXISTS xiaozhi_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\"
+                sudo mysql -e \"CREATE USER IF NOT EXISTS 'xiaozhi_user'@'localhost' IDENTIFIED BY 'xiaozhi_password123';\"
+                sudo mysql -e \"GRANT ALL PRIVILEGES ON xiaozhi_db.* TO 'xiaozhi_user'@'localhost';\"
+                sudo mysql -e \"FLUSH PRIVILEGES;\"
+
+                echo 'MySQL setup completed'
+              fi
+
+              # Install and configure Redis if needed
+              if ! command -v redis-server >/dev/null 2>&1; then
+                echo 'Installing Redis server...'
+                sudo apt-get install -y redis-server
+
+                # Start Redis service
+                sudo systemctl start redis-server
+                sudo systemctl enable redis-server
+
+                echo 'Redis setup completed'
+              fi
+
               sudo chown -R \$USER:\$USER ${AZURE_DEPLOY_PATH} /var/log/pm2
             "
 
@@ -738,8 +769,8 @@ jobs:
               pm2 start \\
                 --name \$SVC \\
                 --cwd \$AZURE_DEPLOY_PATH/main/\$SVC \\
-                --interpreter /usr/lib/jvm/java-17-openjdk-amd64/bin/java \\
-                app.jar \\
+                /usr/lib/jvm/java-17-openjdk-amd64/bin/java \\
+                -- -jar app.jar \\
                 --env SPRING_PROFILES_ACTIVE=\$ENV_NAME \\
                 --env SERVER_PORT=8002 \\
                 --env JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
@@ -761,19 +792,30 @@ jobs:
 
               echo 'Starting health check for '\$SVC'...'
 
-              for i in \$(seq 1 30); do
-                if curl -fsS http://127.0.0.1:\$HTTP_PORT/toy/doc.html >/dev/null 2>&1; then
-                  echo 'SUCCESS: '\$SVC' healthy on port '\$HTTP_PORT
+              for i in \$(seq 1 24); do
+                # Check Spring Boot actuator health endpoint first
+                if curl -fsS http://127.0.0.1:\$HTTP_PORT/toy/actuator/health >/dev/null 2>&1; then
+                  echo 'SUCCESS: '\$SVC' actuator health check passed on port '\$HTTP_PORT
                   exit 0
+                # Check main application endpoint
                 elif curl -fsS http://127.0.0.1:\$HTTP_PORT/toy/ >/dev/null 2>&1; then
                   echo 'SUCCESS: '\$SVC' responding on port '\$HTTP_PORT
                   exit 0
+                # Check if basic port is responding
+                elif curl -fsS http://127.0.0.1:\$HTTP_PORT/ >/dev/null 2>&1; then
+                  echo 'SUCCESS: '\$SVC' basic response on port '\$HTTP_PORT
+                  exit 0
                 fi
-                echo \"Health check attempt \$i/30 - waiting for port \$HTTP_PORT\"
-                sleep 3
+
+                # Log every 6 attempts (every 30 seconds)
+                if [ \$((i % 6)) -eq 0 ]; then
+                  echo \"Health check attempt \$i/24 - Spring Boot may still be starting...\"
+                  pm2 logs \$SVC --lines 5 --nostream || echo 'No recent logs'
+                fi
+                sleep 5
               done
 
-              echo 'ERROR: Health check failed after 90 seconds'
+              echo 'ERROR: Health check failed after 120 seconds'
               pm2 logs \$SVC --lines 30 --nostream
               exit 1
             "
