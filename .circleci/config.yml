@@ -814,8 +814,20 @@ jobs:
               # Start with PM2 using ecosystem file
               pm2 start ecosystem.config.js
 
-              # Wait for process to start
-              sleep 5
+              # Wait for Spring Boot to fully start
+              echo 'Waiting for Spring Boot to fully initialize...'
+              sleep 15
+
+              # Check if port is listening
+              echo 'Checking if port '\$HTTP_PORT' is listening...'
+              for i in \$(seq 1 10); do
+                if netstat -tuln | grep :\$HTTP_PORT >/dev/null 2>&1; then
+                  echo 'Port '\$HTTP_PORT' is now listening'
+                  break
+                fi
+                echo 'Waiting for port '\$HTTP_PORT' to be ready... attempt '\$i'/10'
+                sleep 2
+              done
 
               # Save PM2 configuration
               pm2 save
@@ -831,34 +843,44 @@ jobs:
 
               echo 'Starting health check for '\$SVC'...'
 
-              for i in \$(seq 1 24); do
-                # Check Spring Boot actuator health endpoint first
-                if curl -fsS http://127.0.0.1:\$HTTP_PORT/toy/actuator/health >/dev/null 2>&1; then
-                  echo 'SUCCESS: '\$SVC' actuator health check passed on port '\$HTTP_PORT
-                  exit 0
-                # Check main application endpoint
-                elif curl -fsS http://127.0.0.1:\$HTTP_PORT/toy/ >/dev/null 2>&1; then
-                  echo 'SUCCESS: '\$SVC' responding on port '\$HTTP_PORT
-                  exit 0
-                # Check API documentation endpoint
-                elif curl -fsS http://127.0.0.1:\$HTTP_PORT/toy/doc.html >/dev/null 2>&1; then
-                  echo 'SUCCESS: '\$SVC' API docs accessible on port '\$HTTP_PORT
-                  exit 0
-                # Check if basic port is responding
-                elif curl -fsS http://127.0.0.1:\$HTTP_PORT/ >/dev/null 2>&1; then
-                  echo 'SUCCESS: '\$SVC' basic response on port '\$HTTP_PORT
-                  exit 0
-                fi
+              # Debug endpoints by testing various URLs
+              echo 'DEBUGGING: Testing different endpoint URLs...'
 
-                # Log every 6 attempts (every 30 seconds)
-                if [ \$((i % 6)) -eq 0 ]; then
-                  echo \"Health check attempt \$i/24 - Spring Boot may still be starting...\"
-                  pm2 logs \$SVC --lines 5 --nostream || echo 'No recent logs'
-                fi
-                sleep 5
-              done
+              # Test basic connectivity
+              echo 'Testing basic port connectivity...'
+              if nc -z 127.0.0.1 \$HTTP_PORT; then
+                echo 'Port '\$HTTP_PORT' is listening'
+              else
+                echo 'ERROR: Port '\$HTTP_PORT' is not listening'
+                netstat -tuln | grep :\$HTTP_PORT || echo 'Port not found in netstat'
+                pm2 logs \$SVC --lines 10 --nostream
+                exit 1
+              fi
 
-              echo 'ERROR: Health check failed after 120 seconds'
+              # Test HTTP responses with debugging
+              echo 'Testing HTTP endpoints with verbose output...'
+              echo 'Testing: http://127.0.0.1:'\$HTTP_PORT'/'
+              curl -v --connect-timeout 10 --max-time 15 http://127.0.0.1:\$HTTP_PORT/ || echo 'Root endpoint failed'
+
+              echo 'Testing: http://127.0.0.1:'\$HTTP_PORT'/toy/'
+              curl -v --connect-timeout 10 --max-time 15 http://127.0.0.1:\$HTTP_PORT/toy/ || echo 'Toy endpoint failed'
+
+              echo 'Testing: http://127.0.0.1:'\$HTTP_PORT'/toy/actuator/health'
+              curl -v --connect-timeout 10 --max-time 15 http://127.0.0.1:\$HTTP_PORT/toy/actuator/health || echo 'Health endpoint failed'
+
+              echo 'Testing: http://127.0.0.1:'\$HTTP_PORT'/toy/doc.html'
+              curl -v --connect-timeout 10 --max-time 15 http://127.0.0.1:\$HTTP_PORT/toy/doc.html || echo 'Doc endpoint failed'
+
+              # Simple success check
+              if curl -fsS --connect-timeout 10 --max-time 15 http://127.0.0.1:\$HTTP_PORT/ >/dev/null 2>&1 || \\
+                 curl -fsS --connect-timeout 10 --max-time 15 http://127.0.0.1:\$HTTP_PORT/toy/ >/dev/null 2>&1; then
+                echo 'SUCCESS: '\$SVC' HTTP server is responding'
+                exit 0
+              fi
+
+              echo 'All endpoint tests failed'
+
+              echo 'ERROR: Health check failed after 100 seconds'
               pm2 logs \$SVC --lines 30 --nostream
               exit 1
             "
