@@ -1035,13 +1035,13 @@ jobs:
                 if curl -fsS --connect-timeout 5 --max-time 10 http://127.0.0.1:7880/ >/dev/null 2>&1; then
                   echo 'SUCCESS: LiveKit server is also responding'
                 else
-                  echo 'WARNING: LiveKit server not responding, checking Docker status...'
-                  if groups | grep -q docker; then
-                    docker ps | grep livekit-server || echo 'LiveKit container not running'
-                    docker logs livekit-server --tail 5 || echo 'Could not get LiveKit logs'
+                  echo 'WARNING: LiveKit server not responding, checking PM2 status...'
+                  if pm2 describe livekit-server | grep -q 'status.*online'; then
+                    echo 'LiveKit PM2 process is online but not responding on port 7880'
+                    pm2 logs livekit-server --lines 5 --nostream || echo 'Could not get LiveKit logs'
                   else
-                    sudo docker ps | grep livekit-server || echo 'LiveKit container not running'
-                    sudo docker logs livekit-server --tail 5 || echo 'Could not get LiveKit logs'
+                    echo 'LiveKit PM2 process not found or not online'
+                    pm2 status | grep livekit-server || echo 'No LiveKit process in PM2'
                   fi
                 fi
 
