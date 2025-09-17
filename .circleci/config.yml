@@ -545,20 +545,20 @@ jobs:
               SVC=\"${SVC}\"
               ENV_NAME=\"${ENV_NAME}\"
               HTTP_PORT=\"${HTTP_PORT}\"
-              IMAGE_FILE=\"/tmp/\\\${SVC}-image.tar.gz\"
+              IMAGE_FILE=\"/tmp/\\\$SVC-image.tar.gz\"
 
               echo \"Checking for uploaded image file...\"
-              ls -la /tmp/ | grep \\\${SVC} || echo \"No \\\${SVC} files found in /tmp\"
+              ls -la /tmp/ | grep \"\\\$SVC\" || echo \"No \\\$SVC files found in /tmp\"
 
-              if [ ! -f \"\\\${IMAGE_FILE}\" ]; then
-                echo \"ERROR: Image file \\\${IMAGE_FILE} not found on Azure VM\"
+              if [ ! -f \"\\\$IMAGE_FILE\" ]; then
+                echo \"ERROR: Image file \\\$IMAGE_FILE not found on Azure VM\"
                 echo \"Available files in /tmp:\"
                 ls -la /tmp/
                 exit 1
               fi
 
-              echo \"Image file found: \\\${IMAGE_FILE}\"
-              echo \"Image file size: \\\$(du -h \\\${IMAGE_FILE})\"
+              echo \"Image file found: \\\$IMAGE_FILE\"
+              echo \"Image file size: \\\$(du -h \\\$IMAGE_FILE)\"
 
               # Install Docker if needed
               if ! command -v docker >/dev/null 2>&1; then
@@ -574,29 +574,29 @@ jobs:
               echo \"Loading Docker image...\"
               # Load image
               if groups | grep -q docker; then
-                docker load < \"\\\${IMAGE_FILE}\"
+                docker load < \"\\\$IMAGE_FILE\"
               else
-                sudo docker load < \"\\\${IMAGE_FILE}\"
+                sudo docker load < \"\\\$IMAGE_FILE\"
               fi
 
               echo \"Verifying image was loaded...\"
               if groups | grep -q docker; then
-                docker images | grep \\\${SVC} || { echo \"ERROR: Image not loaded\"; exit 1; }
+                docker images | grep \\\$SVC || { echo \"ERROR: Image not loaded\"; exit 1; }
               else
-                sudo docker images | grep \\\${SVC} || { echo \"ERROR: Image not loaded\"; exit 1; }
+                sudo docker images | grep \\\$SVC || { echo \"ERROR: Image not loaded\"; exit 1; }
               fi
 
               echo \"Cleaning up image file...\"
-              rm -f \"\\\${IMAGE_FILE}\"
+              rm -f \"\\\$IMAGE_FILE\"
 
               echo \"Stopping existing container...\"
               # Stop existing container
               if groups | grep -q docker; then
-                docker stop \\\${SVC} || true
-                docker rm \\\${SVC} || true
+                docker stop \\\$SVC || true
+                docker rm \\\$SVC || true
               else
-                sudo docker stop \\\${SVC} || true
-                sudo docker rm \\\${SVC} || true
+                sudo docker stop \\\$SVC || true
+                sudo docker rm \\\$SVC || true
               fi
             "
       - run:
@@ -614,30 +614,30 @@ jobs:
 
               # Start container
               if groups | grep -q docker; then
-                docker run -d --name \\\${SVC} --restart unless-stopped -p \\\${HTTP_PORT}:8002 -e SPRING_PROFILES_ACTIVE=\\\${ENV_NAME} \\\${SVC}:${CIRCLE_SHA1:0:7}
+                docker run -d --name \\\$SVC --restart unless-stopped -p \\\$HTTP_PORT:8002 -e SPRING_PROFILES_ACTIVE=\\\$ENV_NAME \\\$SVC:${CIRCLE_SHA1:0:7}
               else
-                sudo docker run -d --name \\\${SVC} --restart unless-stopped -p \\\${HTTP_PORT}:8002 -e SPRING_PROFILES_ACTIVE=\\\${ENV_NAME} \\\${SVC}:${CIRCLE_SHA1:0:7}
+                sudo docker run -d --name \\\$SVC --restart unless-stopped -p \\\$HTTP_PORT:8002 -e SPRING_PROFILES_ACTIVE=\\\$ENV_NAME \\\$SVC:${CIRCLE_SHA1:0:7}
               fi
 
               # Health check
-              echo 'Starting health check for '\\\${SVC}'...'
+              echo 'Starting health check for '\\\$SVC'...'
               for i in \\\$(seq 1 30); do
-                if curl -fsS http://127.0.0.1:\\\${HTTP_PORT}/toy/doc.html >/dev/null 2>&1; then
-                  echo 'SUCCESS: '\\\${SVC}' healthy on port '\\\${HTTP_PORT}
+                if curl -fsS http://127.0.0.1:\\\$HTTP_PORT/toy/doc.html >/dev/null 2>&1; then
+                  echo 'SUCCESS: '\\\$SVC' healthy on port '\\\$HTTP_PORT
                   exit 0
-                elif curl -fsS http://127.0.0.1:\\\${HTTP_PORT}/toy/ >/dev/null 2>&1; then
-                  echo 'SUCCESS: '\\\${SVC}' responding on port '\\\${HTTP_PORT}
+                elif curl -fsS http://127.0.0.1:\\\$HTTP_PORT/toy/ >/dev/null 2>&1; then
+                  echo 'SUCCESS: '\\\$SVC' responding on port '\\\$HTTP_PORT
                   exit 0
                 fi
-                echo \"Health check attempt \\\$i/30 - trying port \\\${HTTP_PORT}\"
+                echo \"Health check attempt \\\$i/30 - trying port \\\$HTTP_PORT\"
                 sleep 2
               done
 
               echo 'ERROR: Health check failed after 60 seconds'
               if groups | grep -q docker; then
-                docker logs \\\${SVC} --tail 30
+                docker logs \\\$SVC --tail 30
               else
-                sudo docker logs \\\${SVC} --tail 30
+                sudo docker logs \\\$SVC --tail 30
               fi
               exit 1
             "
@@ -690,13 +690,27 @@ jobs:
               set -eo pipefail
               mkdir -p ${AZURE_DEPLOY_PATH}/main/${SVC}
               mkdir -p /var/log/pm2
+
+              # Install net-tools for netstat command
+              if ! command -v netstat >/dev/null 2>&1; then
+                sudo apt-get update -y
+                sudo apt-get install -y net-tools
+              fi
+
+              # Install Node.js and PM2 if needed
               if ! command -v pm2 >/dev/null 2>&1; then
                 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs
                 sudo npm install -g pm2 serve
               fi
+
+              # Ensure serve is installed globally
               if ! command -v serve >/dev/null 2>&1; then
                 sudo npm install -g serve
               fi
+
+              # Verify serve installation
+              serve --version || echo 'serve command verification failed'
+
               sudo chown -R \$USER:\$USER ${AZURE_DEPLOY_PATH} /var/log/pm2
             "
 
@@ -753,54 +767,36 @@ jobs:
                 find dist/ -type f | head -10
               fi
 
-              # Write PM2 ecosystem for static file serving
-              CONFIG_FILE=\"\$AZURE_DEPLOY_PATH/\$SVC-pm2.config.js\"
-              echo \"Debug: CONFIG_FILE=\$CONFIG_FILE\"
+              # Use PM2 direct command instead of ecosystem file to avoid complexity
+              echo \"Starting \$SVC with PM2 direct command...\"
 
-              # Create PM2 config using echo to avoid heredoc issues
-              echo \"module.exports = {\" > \"\$CONFIG_FILE\"
-              echo \"  apps: [{\" >> \"\$CONFIG_FILE\"
-              echo \"    name: '\$SVC',\" >> \"\$CONFIG_FILE\"
-              echo \"    script: 'npx',\" >> \"\$CONFIG_FILE\"
-              echo \"    args: 'serve -s dist -l \$HTTP_PORT',\" >> \"\$CONFIG_FILE\"
-              echo \"    cwd: '\$AZURE_DEPLOY_PATH/main/\$SVC',\" >> \"\$CONFIG_FILE\"
-              echo \"    instances: 1,\" >> \"\$CONFIG_FILE\"
-              echo \"    autorestart: true,\" >> \"\$CONFIG_FILE\"
-              echo \"    watch: false,\" >> \"\$CONFIG_FILE\"
-              echo \"    max_memory_restart: '256M',\" >> \"\$CONFIG_FILE\"
-              echo \"    env: {\" >> \"\$CONFIG_FILE\"
-              echo \"      NODE_ENV: 'development',\" >> \"\$CONFIG_FILE\"
-              echo \"      PORT: '\$HTTP_PORT'\" >> \"\$CONFIG_FILE\"
-              echo \"    },\" >> \"\$CONFIG_FILE\"
-              echo \"    env_development: {\" >> \"\$CONFIG_FILE\"
-              echo \"      NODE_ENV: 'development',\" >> \"\$CONFIG_FILE\"
-              echo \"      PORT: '\$HTTP_PORT'\" >> \"\$CONFIG_FILE\"
-              echo \"    },\" >> \"\$CONFIG_FILE\"
-              echo \"    env_staging: {\" >> \"\$CONFIG_FILE\"
-              echo \"      NODE_ENV: 'staging',\" >> \"\$CONFIG_FILE\"
-              echo \"      PORT: '8885'\" >> \"\$CONFIG_FILE\"
-              echo \"    },\" >> \"\$CONFIG_FILE\"
-              echo \"    env_production: {\" >> \"\$CONFIG_FILE\"
-              echo \"      NODE_ENV: 'production',\" >> \"\$CONFIG_FILE\"
-              echo \"      PORT: '8885'\" >> \"\$CONFIG_FILE\"
-              echo \"    },\" >> \"\$CONFIG_FILE\"
-              echo \"    error_file: '/var/log/pm2/\$SVC-error.log',\" >> \"\$CONFIG_FILE\"
-              echo \"    out_file: '/var/log/pm2/\$SVC-out.log',\" >> \"\$CONFIG_FILE\"
-              echo \"    log_file: '/var/log/pm2/\$SVC-combined.log',\" >> \"\$CONFIG_FILE\"
-              echo \"    time: true,\" >> \"\$CONFIG_FILE\"
-              echo \"    log_date_format: 'YYYY-MM-DD HH:mm:ss Z'\" >> \"\$CONFIG_FILE\"
-              echo \"  }]\" >> \"\$CONFIG_FILE\"
-              echo \"}\" >> \"\$CONFIG_FILE\"
+              # Stop existing process if running
+              pm2 delete \$SVC || echo \"No existing \$SVC process found\"
 
-              echo \"Created PM2 config:\"
-              cat \"\$CONFIG_FILE\"
+              # Test serve command first
+              echo \"Testing serve command...\"
+              which serve || echo \"serve command not found\"
+              serve --version || echo \"serve version check failed\"
 
-              if pm2 describe \"\$SVC\" >/dev/null 2>&1; then
-                pm2 reload \"\$CONFIG_FILE\" --env \"\$ENV_NAME\"
-              else
-                pm2 start  \"\$CONFIG_FILE\" --env \"\$ENV_NAME\"
-              fi
+              # Start with a simple PM2 command
+              echo \"Starting PM2 process...\"
+              pm2 start \\
+                --name \$SVC \\
+                --cwd \$AZURE_DEPLOY_PATH/main/\$SVC \\
+                serve -- -s dist -l \$HTTP_PORT
+
+              # Wait for process to start
+              sleep 3
+
+              # Check PM2 status
+              echo \"PM2 process status:\"
+              pm2 list
+
+              # Save PM2 configuration
               pm2 save
+
+              echo \"Checking process details:\"
+              pm2 describe \$SVC || echo \"Failed to describe process\"
             "
 
             # Health check for frontend
