@@ -719,19 +719,43 @@ jobs:
               if ! command -v mysql >/dev/null 2>&1; then
                 echo 'Installing MySQL server...'
                 sudo apt-get update -y
+
+                # Pre-configure MySQL installation to avoid interactive prompts
+                sudo debconf-set-selections <<< 'mysql-server mysql-server/root_password password rootpassword123'
+                sudo debconf-set-selections <<< 'mysql-server mysql-server/root_password_again password rootpassword123'
+
                 sudo apt-get install -y mysql-server mysql-client
 
                 # Start MySQL service
                 sudo systemctl start mysql
                 sudo systemctl enable mysql
 
-                # Configure MySQL
-                sudo mysql -e \"CREATE DATABASE IF NOT EXISTS xiaozhi_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\"
-                sudo mysql -e \"CREATE USER IF NOT EXISTS 'xiaozhi_user'@'localhost' IDENTIFIED BY 'xiaozhi_password123';\"
-                sudo mysql -e \"GRANT ALL PRIVILEGES ON xiaozhi_db.* TO 'xiaozhi_user'@'localhost';\"
-                sudo mysql -e \"FLUSH PRIVILEGES;\"
+                # Wait for MySQL to be ready
+                sleep 10
+
+                # Configure MySQL with root access
+                sudo mysql -u root -prootpassword123 -e \"CREATE DATABASE IF NOT EXISTS xiaozhi_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\" || true
+                sudo mysql -u root -prootpassword123 -e \"CREATE USER IF NOT EXISTS 'xiaozhi_user'@'localhost' IDENTIFIED BY 'xiaozhi_password123';\" || true
+                sudo mysql -u root -prootpassword123 -e \"GRANT ALL PRIVILEGES ON xiaozhi_db.* TO 'xiaozhi_user'@'localhost';\" || true
+                sudo mysql -u root -prootpassword123 -e \"FLUSH PRIVILEGES;\" || true
 
                 echo 'MySQL setup completed'
+              else
+                echo 'MySQL already installed, ensuring it is running...'
+                sudo systemctl start mysql || true
+                sudo systemctl enable mysql || true
+              fi
+
+              # Verify MySQL is running and accessible
+              echo 'Checking MySQL connectivity...'
+              if mysql -u xiaozhi_user -pxiaozhi_password123 -e \"SELECT 1;\" >/dev/null 2>&1; then
+                echo 'MySQL connection successful'
+              else
+                echo 'MySQL connection failed, trying to recreate user...'
+                sudo mysql -u root -prootpassword123 -e \"DROP USER IF EXISTS 'xiaozhi_user'@'localhost';\" || true
+                sudo mysql -u root -prootpassword123 -e \"CREATE USER 'xiaozhi_user'@'localhost' IDENTIFIED BY 'xiaozhi_password123';\" || true
+                sudo mysql -u root -prootpassword123 -e \"GRANT ALL PRIVILEGES ON xiaozhi_db.* TO 'xiaozhi_user'@'localhost';\" || true
+                sudo mysql -u root -prootpassword123 -e \"FLUSH PRIVILEGES;\" || true
               fi
 
               # Install and configure Redis if needed
@@ -762,18 +786,35 @@ jobs:
 
               cd \$AZURE_DEPLOY_PATH/main/\$SVC
 
+              # Create PM2 ecosystem file for Java app
+              cat > ecosystem.config.js << 'EOL'
+module.exports = {
+  apps: [{
+    name: '\$SVC',
+    script: '/usr/lib/jvm/java-17-openjdk-amd64/bin/java',
+    args: ['-jar', 'app.jar'],
+    cwd: '\$AZURE_DEPLOY_PATH/main/\$SVC',
+    env: {
+      SPRING_PROFILES_ACTIVE: '\$ENV_NAME',
+      SERVER_PORT: '8002',
+      JAVA_HOME: '/usr/lib/jvm/java-17-openjdk-amd64'
+    },
+    autorestart: true,
+    watch: false,
+    max_memory_restart: '1G',
+    error_file: '/var/log/pm2/\$SVC-error.log',
+    out_file: '/var/log/pm2/\$SVC-out.log',
+    log_file: '/var/log/pm2/\$SVC-combined.log',
+    time: true
+  }]
+};
+EOL
+
               # Stop existing process if running
               pm2 delete \$SVC || echo \"No existing \$SVC process found\"
 
-              # Start with PM2 using Java 17
-              pm2 start \\
-                --name \$SVC \\
-                --cwd \$AZURE_DEPLOY_PATH/main/\$SVC \\
-                /usr/lib/jvm/java-17-openjdk-amd64/bin/java \\
-                -- -jar app.jar \\
-                --env SPRING_PROFILES_ACTIVE=\$ENV_NAME \\
-                --env SERVER_PORT=8002 \\
-                --env JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+              # Start with PM2 using ecosystem file
+              pm2 start ecosystem.config.js
 
               # Wait for process to start
               sleep 5
