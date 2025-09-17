@@ -478,23 +478,22 @@ jobs:
             SVC="<< parameters.service_name >>"
             DIR="<< parameters.service_path >>"
 
-            cat > "${DIR}/Dockerfile.deploy" << 'EOF'
-            FROM eclipse-temurin:17-jre-alpine
-            RUN apk add --no-cache curl
-            RUN addgroup -g 1001 -S appgroup && adduser -S appuser -G appgroup -u 1001
-            WORKDIR /app
-            COPY app.jar /app/app.jar
-            RUN chown -R appuser:appgroup /app
-            USER appuser
-            EXPOSE 8002
-            ENV JAVA_TOOL_OPTIONS="-Xms256m -Xmx512m"
-            ENV SPRING_PROFILES_ACTIVE=prod
-            HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 CMD curl -fsS http://127.0.0.1:8002/toy/doc.html || exit 1
-            ENTRYPOINT ["java","-jar","/app/app.jar"]
-            EOF
+            # Create Dockerfile using echo commands to avoid heredoc issues
+            echo "FROM eclipse-temurin:17-jre-alpine" > "${DIR}/Dockerfile.deploy"
+            echo "RUN apk add --no-cache curl" >> "${DIR}/Dockerfile.deploy"
+            echo "RUN addgroup -g 1001 -S appgroup && adduser -S appuser -G appgroup -u 1001" >> "${DIR}/Dockerfile.deploy"
+            echo "WORKDIR /app" >> "${DIR}/Dockerfile.deploy"
+            echo "COPY app.jar /app/app.jar" >> "${DIR}/Dockerfile.deploy"
+            echo "RUN chown -R appuser:appgroup /app" >> "${DIR}/Dockerfile.deploy"
+            echo "USER appuser" >> "${DIR}/Dockerfile.deploy"
+            echo "EXPOSE 8002" >> "${DIR}/Dockerfile.deploy"
+            echo 'ENV JAVA_TOOL_OPTIONS="-Xms256m -Xmx512m"' >> "${DIR}/Dockerfile.deploy"
+            echo "ENV SPRING_PROFILES_ACTIVE=prod" >> "${DIR}/Dockerfile.deploy"
+            echo "HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 CMD curl -fsS http://127.0.0.1:8002/toy/doc.html || exit 1" >> "${DIR}/Dockerfile.deploy"
+            echo 'ENTRYPOINT ["java","-jar","/app/app.jar"]' >> "${DIR}/Dockerfile.deploy"
 
-            echo "Created Dockerfile.deploy"
-            ls -la "${DIR}/Dockerfile.deploy"
+            echo "Created Dockerfile.deploy:"
+            cat "${DIR}/Dockerfile.deploy"
       - run:
           name: Build and upload Docker image
           command: |
