@@ -642,6 +642,122 @@ jobs:
               exit 1
             "
 
+  # PM2 deploy Java service to Azure VM
+  deploy_java_pm2_azure:
+    parameters:
+      service_name: { type: string }
+      service_path: { type: string }
+      env: { type: string, default: "staging" }
+      http_port: { type: integer, default: 8002 }
+    executor: node-executor
+    steps:
+      - attach_workspace:
+          at: /tmp/workspace
+      - add_ssh_keys:
+          fingerprints:
+            - "SHA256:VlAMfJstRWT1o3ZLc7LT00HxvqwqVsAR+F5X1ZSaXh0" # Azure VM key
+      - run:
+          name: Skip deploy if artifact missing
+          command: |
+            set -eo pipefail
+            if [ ! -f "/tmp/workspace/<< parameters.service_name >>.jar" ]; then
+              echo "Artifact missing; skipping deploy."
+              circleci step halt
+            fi
+      - run:
+          name: Deploy Java service to Azure VM with PM2
+          command: |
+            set -eo pipefail
+
+            SVC="<< parameters.service_name >>"
+            ENV_NAME="<< parameters.env >>"
+            HTTP_PORT="<< parameters.http_port >>"
+
+            : "${AZURE_HOST:?Set AZURE_HOST in CircleCI context}"
+            : "${AZURE_USER:?Set AZURE_USER in CircleCI context}"
+            : "${AZURE_DEPLOY_PATH:?Set AZURE_DEPLOY_PATH in CircleCI context}"
+
+            echo "Deploying ${SVC} JAR to ${AZURE_USER}@${AZURE_HOST} env=${ENV_NAME}"
+
+            # Ensure VM ready & Java installed
+            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
+              set -eo pipefail
+              mkdir -p ${AZURE_DEPLOY_PATH}/main/${SVC}
+              mkdir -p /var/log/pm2
+
+              # Install Java if needed
+              if ! command -v java >/dev/null 2>&1; then
+                sudo apt-get update -y
+                sudo apt-get install -y default-jre
+              fi
+
+              # Install PM2 if needed
+              if ! command -v pm2 >/dev/null 2>&1; then
+                curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs
+                sudo npm install -g pm2
+              fi
+
+              sudo chown -R \$USER:\$USER ${AZURE_DEPLOY_PATH} /var/log/pm2
+            "
+
+            # Upload JAR file
+            scp -o StrictHostKeyChecking=no "/tmp/workspace/${SVC}.jar" "${AZURE_USER}@${AZURE_HOST}:${AZURE_DEPLOY_PATH}/main/${SVC}/app.jar"
+
+            # Start with PM2
+            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
+              set -eo pipefail
+              SVC=\"${SVC}\"
+              ENV_NAME=\"${ENV_NAME}\"
+              HTTP_PORT=\"${HTTP_PORT}\"
+              AZURE_DEPLOY_PATH=\"${AZURE_DEPLOY_PATH}\"
+
+              cd \$AZURE_DEPLOY_PATH/main/\$SVC
+
+              # Stop existing process if running
+              pm2 delete \$SVC || echo \"No existing \$SVC process found\"
+
+              # Start with PM2
+              pm2 start \\
+                --name \$SVC \\
+                --cwd \$AZURE_DEPLOY_PATH/main/\$SVC \\
+                java -- -jar app.jar \\
+                --env SPRING_PROFILES_ACTIVE=\$ENV_NAME \\
+                --env SERVER_PORT=8002
+
+              # Wait for process to start
+              sleep 5
+
+              # Save PM2 configuration
+              pm2 save
+
+              echo \"PM2 Java service started:\"
+              pm2 describe \$SVC || echo \"Failed to describe process\"
+            "
+
+            # Health check
+            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
+              SVC=\"${SVC}\"
+              HTTP_PORT=\"${HTTP_PORT}\"
+
+              echo 'Starting health check for '\$SVC'...'
+
+              for i in \$(seq 1 30); do
+                if curl -fsS http://127.0.0.1:\$HTTP_PORT/toy/doc.html >/dev/null 2>&1; then
+                  echo 'SUCCESS: '\$SVC' healthy on port '\$HTTP_PORT
+                  exit 0
+                elif curl -fsS http://127.0.0.1:\$HTTP_PORT/toy/ >/dev/null 2>&1; then
+                  echo 'SUCCESS: '\$SVC' responding on port '\$HTTP_PORT
+                  exit 0
+                fi
+                echo \"Health check attempt \$i/30 - waiting for port \$HTTP_PORT\"
+                sleep 3
+              done
+
+              echo 'ERROR: Health check failed after 90 seconds'
+              pm2 logs \$SVC --lines 30 --nostream
+              exit 1
+            "
+
   # PM2 deploy Vue.js frontend to Azure VM with static file server
   deploy_vue_pm2_azure:
     parameters:
@@ -1047,8 +1163,8 @@ workflows:
           service_name: "manager-api"
           requires: [build_java_service]
 
-      # Deploy on specific branches
-      - deploy_java_docker_azure:
+      # Deploy on specific branches using PM2
+      - deploy_java_pm2_azure:
           context: "azure-mqtt-gateway"
           service_name: "manager-api"
           service_path: "main/manager-api"
@@ -1061,7 +1177,7 @@ workflows:
             branches:
               only: develop
 
-      - deploy_java_docker_azure:
+      - deploy_java_pm2_azure:
           context: "azure-mqtt-gateway"
           service_name: "manager-api"
           service_path: "main/manager-api"
@@ -1075,7 +1191,7 @@ workflows:
               only: main
 
       # Deploy dev environment for all other branches
-      - deploy_java_docker_azure:
+      - deploy_java_pm2_azure:
           context: "azure-mqtt-gateway"
           service_name: "manager-api"
           service_path: "main/manager-api"
