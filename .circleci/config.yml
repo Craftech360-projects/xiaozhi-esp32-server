@@ -83,7 +83,8 @@ jobs:
             popd >/dev/null
 
             mkdir -p /tmp/workspace
-            tar -czf "/tmp/workspace/${SVC}.tar.gz" -C "$ABS_DIR/$BASE" "dist"
+            # Archive the entire project directory to preserve structure
+            tar -czf "/tmp/workspace/${SVC}.tar.gz" -C "$ABS_DIR" "$BASE"
             echo "${SVC}-${CIRCLE_SHA1:0:7}" > "/tmp/workspace/${SVC}-build-info"
             date -u +"%Y-%m-%dT%H:%M:%SZ" > "/tmp/workspace/${SVC}-build-date"
             echo "✅ ${SVC} built and archived to /tmp/workspace/${SVC}.tar.gz"
@@ -713,22 +714,44 @@ jobs:
               ENV_NAME=\"${ENV_NAME}\"
               echo \"Debug after assignment: AZURE_DEPLOY_PATH=\$AZURE_DEPLOY_PATH\"
               cd \$AZURE_DEPLOY_PATH/main
+
+              echo \"Extracting \$SVC archive...\"
               tar -xzf /tmp/\$SVC.tar.gz
               rm -f /tmp/\$SVC.tar.gz
+
+              echo \"Checking extracted directory structure...\"
+              ls -la
+
+              if [ ! -d \"\$SVC\" ]; then
+                echo \"ERROR: \$SVC directory not found after extraction\"
+                echo \"Available directories:\"
+                ls -la
+                exit 1
+              fi
+
               cd \$AZURE_DEPLOY_PATH/main/\$SVC
 
-              echo \"Checking extracted files...\"
+              echo \"Checking project files...\"
               ls -la
 
               if [ ! -d \"dist\" ]; then
-                echo \"ERROR: dist directory not found after extraction\"
-                echo \"Available files:\"
+                echo \"ERROR: dist directory not found in \$SVC project\"
+                echo \"Available files and directories:\"
+                ls -la
+                echo \"Searching for dist directories:\"
                 find . -type d -name \"*dist*\" || echo \"No dist directories found\"
                 exit 1
               fi
 
               echo \"Contents of dist directory:\"
               ls -la dist/
+
+              # Ensure dist has actual content
+              if [ ! -f \"dist/index.html\" ]; then
+                echo \"WARNING: No index.html found in dist directory\"
+                echo \"Dist contents:\"
+                find dist/ -type f | head -10
+              fi
 
               # Write PM2 ecosystem for static file serving
               CONFIG_FILE=\"\$AZURE_DEPLOY_PATH/\$SVC-pm2.config.js\"
