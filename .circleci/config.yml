@@ -721,8 +721,8 @@ jobs:
                 sudo apt-get update -y
 
                 # Pre-configure MySQL installation to avoid interactive prompts
-                sudo debconf-set-selections <<< 'mysql-server mysql-server/root_password password rootpassword123'
-                sudo debconf-set-selections <<< 'mysql-server mysql-server/root_password_again password rootpassword123'
+                echo 'mysql-server mysql-server/root_password password rootpassword123' | sudo debconf-set-selections
+                echo 'mysql-server mysql-server/root_password_again password rootpassword123' | sudo debconf-set-selections
 
                 sudo apt-get install -y mysql-server mysql-client
 
