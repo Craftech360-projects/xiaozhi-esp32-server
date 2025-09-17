@@ -772,6 +772,11 @@ jobs:
 
               # Open required ports in firewall for external access
               echo 'Opening firewall ports for external access...'
+
+              # CRITICAL: Allow SSH first to prevent lockout
+              sudo ufw allow 22/tcp || echo 'UFW rule for SSH failed'
+
+              # Allow application ports
               sudo ufw allow 8001/tcp || echo 'UFW rule for 8001 failed'
               sudo ufw allow 8002/tcp || echo 'UFW rule for 8002 failed'
               sudo ufw allow 8886/tcp || echo 'UFW rule for 8886 failed'
