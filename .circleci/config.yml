@@ -791,11 +791,11 @@ jobs:
               echo '  apps: [{' >> ecosystem.config.js
               echo '    name: \"'\$SVC'\",' >> ecosystem.config.js
               echo '    script: \"/usr/lib/jvm/java-17-openjdk-amd64/bin/java\",' >> ecosystem.config.js
-              echo '    args: [\"-jar\", \"app.jar\"],' >> ecosystem.config.js
+              echo '    args: [\"-Djava.security.egd=file:/dev/./urandom\", \"-jar\", \"app.jar\"],' >> ecosystem.config.js
               echo '    cwd: \"'\$AZURE_DEPLOY_PATH'/main/'\$SVC'\",' >> ecosystem.config.js
               echo '    env: {' >> ecosystem.config.js
               echo '      SPRING_PROFILES_ACTIVE: \"'\$ENV_NAME'\",' >> ecosystem.config.js
-              echo '      SERVER_PORT: \"8002\",' >> ecosystem.config.js
+              echo '      SERVER_PORT: \"'\$HTTP_PORT'\",' >> ecosystem.config.js
               echo '      JAVA_HOME: \"/usr/lib/jvm/java-17-openjdk-amd64\"' >> ecosystem.config.js
               echo '    },' >> ecosystem.config.js
               echo '    autorestart: true,' >> ecosystem.config.js
@@ -1323,7 +1323,7 @@ workflows:
           service_name: "manager-api"
           service_path: "main/manager-api"
           env: "development"
-          http_port: 8003
+          http_port: 8002
           requires:
             - test_java_service
             - security_scan_jar
