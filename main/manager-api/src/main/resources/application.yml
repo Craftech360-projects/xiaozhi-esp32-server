@@ -6,6 +6,7 @@ server:
       max: 1000
       min-spare: 30
   port: 8002
+  address: 0.0.0.0
   servlet:
     context-path: /toy
     session:
