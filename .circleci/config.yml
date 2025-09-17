@@ -770,6 +770,17 @@ jobs:
                 echo 'Redis setup completed'
               fi
 
+              # Open required ports in firewall for external access
+              echo 'Opening firewall ports for external access...'
+              sudo ufw allow 8001/tcp || echo 'UFW rule for 8001 failed'
+              sudo ufw allow 8002/tcp || echo 'UFW rule for 8002 failed'
+              sudo ufw allow 8886/tcp || echo 'UFW rule for 8886 failed'
+
+              # Enable UFW if not already enabled (but don't fail if it causes issues)
+              sudo ufw --force enable || echo 'UFW enable failed or not needed'
+
+              echo 'Firewall configuration completed'
+
               sudo chown -R \$USER:\$USER ${AZURE_DEPLOY_PATH} /var/log/pm2
             "
 
@@ -883,6 +894,31 @@ jobs:
               echo 'ERROR: Health check failed after 100 seconds'
               pm2 logs \$SVC --lines 30 --nostream
               exit 1
+            "
+
+            # Network diagnostics for external access
+            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
+              echo '=== NETWORK DIAGNOSTICS FOR EXTERNAL ACCESS ==='
+
+              echo 'Checking which ports are listening:'
+              netstat -tuln | grep -E ':(8001|8002|8886)'
+
+              echo 'Checking if services bind to 0.0.0.0:'
+              netstat -tuln | grep '0.0.0.0'
+
+              echo 'Checking UFW firewall status:'
+              sudo ufw status || echo 'UFW not available'
+
+              echo 'Checking iptables rules:'
+              sudo iptables -L -n | head -20 || echo 'Iptables check failed'
+
+              echo 'Testing external connectivity (should work from inside VM):'
+              curl -s --connect-timeout 5 http://127.0.0.1:8002/toy/ || echo 'Local connection failed'
+
+              echo 'Current PM2 processes:'
+              pm2 status
+
+              echo '=== END NETWORK DIAGNOSTICS ==='
             "
 
   # PM2 deploy Vue.js frontend to Azure VM with static file server
