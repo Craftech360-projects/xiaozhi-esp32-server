@@ -833,15 +833,15 @@ jobs:
 
               for i in \$(seq 1 24); do
                 # Check Spring Boot actuator health endpoint first
-                if curl -fsS http://127.0.0.1:\$HTTP_PORT/xiaozhi/actuator/health >/dev/null 2>&1; then
+                if curl -fsS http://127.0.0.1:\$HTTP_PORT/toy/actuator/health >/dev/null 2>&1; then
                   echo 'SUCCESS: '\$SVC' actuator health check passed on port '\$HTTP_PORT
                   exit 0
                 # Check main application endpoint
-                elif curl -fsS http://127.0.0.1:\$HTTP_PORT/xiaozhi/ >/dev/null 2>&1; then
+                elif curl -fsS http://127.0.0.1:\$HTTP_PORT/toy/ >/dev/null 2>&1; then
                   echo 'SUCCESS: '\$SVC' responding on port '\$HTTP_PORT
                   exit 0
                 # Check API documentation endpoint
-                elif curl -fsS http://127.0.0.1:\$HTTP_PORT/xiaozhi/doc.html >/dev/null 2>&1; then
+                elif curl -fsS http://127.0.0.1:\$HTTP_PORT/toy/doc.html >/dev/null 2>&1; then
                   echo 'SUCCESS: '\$SVC' API docs accessible on port '\$HTTP_PORT
                   exit 0
                 # Check if basic port is responding
