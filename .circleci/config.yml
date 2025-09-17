@@ -685,10 +685,21 @@ jobs:
               mkdir -p ${AZURE_DEPLOY_PATH}/main/${SVC}
               mkdir -p /var/log/pm2
 
-              # Install Java if needed
-              if ! command -v java >/dev/null 2>&1; then
+              # Install Java 17 if needed (manager-api is compiled with Java 17)
+              if ! java -version 2>&1 | grep -q '17\\.'; then
+                echo 'Installing Java 17...'
                 sudo apt-get update -y
-                sudo apt-get install -y default-jre
+                sudo apt-get install -y openjdk-17-jre-headless
+
+                # Set Java 17 as default
+                sudo update-alternatives --install /usr/bin/java java /usr/lib/jvm/java-17-openjdk-amd64/bin/java 1
+                sudo update-alternatives --set java /usr/lib/jvm/java-17-openjdk-amd64/bin/java
+
+                echo 'Java version after installation:'
+                java -version
+              else
+                echo 'Java 17 already installed:'
+                java -version
               fi
 
               # Install PM2 if needed
