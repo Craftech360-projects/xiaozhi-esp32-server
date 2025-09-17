@@ -924,28 +924,28 @@ jobs:
               sudo mkdir -p /etc/livekit
 
               # Create LiveKit server configuration
-              sudo tee /etc/livekit/livekit.yaml > /dev/null <<EOL
-port: 7880
-bind_addresses:
-  - 0.0.0.0
-rtc:
-  tcp_port: 7881
-  port_range_start: 50000
-  port_range_end: 60000
-  use_external_ip: true
-redis:
-  address: localhost:6379
-keys:
-  devkey: secret
-room:
-  auto_create: true
-  enable_recording: false
-turn:
-  enabled: false
-logging:
-  level: info
-  json: false
-EOL
+              sudo tee /etc/livekit/livekit.yaml > /dev/null <<'LIVEKIT_CONFIG'
+              port: 7880
+              bind_addresses:
+                - 0.0.0.0
+              rtc:
+                tcp_port: 7881
+                port_range_start: 50000
+                port_range_end: 60000
+                use_external_ip: true
+              redis:
+                address: localhost:6379
+              keys:
+                devkey: secret
+              room:
+                auto_create: true
+                enable_recording: false
+              turn:
+                enabled: false
+              logging:
+                level: info
+                json: false
+              LIVEKIT_CONFIG
 
               # Stop existing LiveKit server if running
               if groups | grep -q docker; then
