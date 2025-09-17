@@ -966,17 +966,35 @@ jobs:
 
               # Wait for Spring Boot to fully start
               echo 'Waiting for Spring Boot to fully initialize...'
-              sleep 15
+              sleep 10
 
-              # Check if port is listening
+              # Check PM2 process status first
+              echo 'Checking PM2 process status...'
+              pm2 status
+
+              if ! pm2 describe \$SVC | grep -q 'status.*online'; then
+                echo 'ERROR: PM2 process is not online after startup'
+                pm2 logs \$SVC --lines 20
+                exit 1
+              fi
+
+              # Check if port is listening with extended wait time
               echo 'Checking if port '\$HTTP_PORT' is listening...'
-              for i in \$(seq 1 10); do
+              for i in \$(seq 1 15); do
                 if netstat -tuln | grep :\$HTTP_PORT >/dev/null 2>&1; then
                   echo 'Port '\$HTTP_PORT' is now listening'
                   break
                 fi
-                echo 'Waiting for port '\$HTTP_PORT' to be ready... attempt '\$i'/10'
-                sleep 2
+                echo 'Waiting for port '\$HTTP_PORT' to be ready... attempt '\$i'/15'
+
+                # Check if process is still alive
+                if ! pm2 describe \$SVC | grep -q 'status.*online'; then
+                  echo 'ERROR: PM2 process died during startup'
+                  pm2 logs \$SVC --lines 30
+                  exit 1
+                fi
+
+                sleep 3
               done
 
               # Save PM2 configuration
@@ -1584,14 +1602,13 @@ jobs:
               pm2 describe \$SVC || echo \"Failed to describe process\"
             "
 
-            # Health check for Python service
+            # Health check for Python service (LiveKit agent doesn't expose HTTP ports)
             ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
               SVC=\"${SVC}\"
-              HTTP_PORT=\"${HTTP_PORT}\"
 
               echo 'Starting health check for '\$SVC' Python service...'
 
-              # Check if PM2 process is online first
+              # Check if PM2 process is online and stable for at least 10 seconds
               if ! pm2 describe \$SVC | grep -q 'status.*online'; then
                 echo 'ERROR: PM2 process is not online'
                 pm2 status
@@ -1599,21 +1616,25 @@ jobs:
                 exit 1
               fi
 
-              echo 'PM2 process is online, checking for port listening...'
+              echo 'PM2 process is online, checking process stability...'
 
-              # Check if port is listening
-              for i in \$(seq 1 20); do
-                if netstat -tuln | grep -q :\$HTTP_PORT; then
-                  echo 'SUCCESS: '\$SVC' port '\$HTTP_PORT' is listening'
-                  exit 0
-                fi
-                echo \"Health check attempt \$i/20 - waiting for port \$HTTP_PORT\"
-                sleep 3
-              done
+              # Wait a bit for the process to stabilize and check it's still running
+              sleep 10
 
-              echo 'ERROR: Health check failed - port '\$HTTP_PORT' not listening after 60 seconds'
-              pm2 logs \$SVC --lines 20
-              exit 1
+              # Check if process is still online after initial startup
+              if pm2 describe \$SVC | grep -q 'status.*online'; then
+                echo 'SUCCESS: '\$SVC' Python service is running and stable'
+
+                # Show recent logs to verify it's working
+                echo 'Recent logs:'
+                pm2 logs \$SVC --lines 5 --nostream || echo 'No recent logs available'
+                exit 0
+              else
+                echo 'ERROR: Python service failed after initial startup'
+                pm2 status
+                pm2 logs \$SVC --lines 20
+                exit 1
+              fi
             "
 
 # =========================
@@ -1827,14 +1848,14 @@ workflows:
             branches:
               only: main
 
-      # OTHER BRANCHES - DEVELOPMENT ENVIRONMENT
+      # OTHER BRANCHES - DEV ENVIRONMENT
       - deploy_node_pm2_azure:
-          name: "deploy-mqtt-gateway-development"
+          name: "deploy-mqtt-gateway-dev"
           context: "azure-mqtt-gateway"
           service_name: "mqtt-gateway"
           service_path: "main/mqtt-gateway"
           entry_file: "app.js"
-          env: "development"
+          env: "dev"
           http_port: 8001
           mqtt_port: 1884
           requires:
@@ -1847,11 +1868,11 @@ workflows:
                 - main
 
       - deploy_java_pm2_azure:
-          name: "deploy-manager-api-development"
+          name: "deploy-manager-api-dev"
           context: "azure-mqtt-gateway"
           service_name: "manager-api"
           service_path: "main/manager-api"
-          env: "development"
+          env: "dev"
           http_port: 8002
           requires:
             - "test-manager-api"
@@ -1863,11 +1884,11 @@ workflows:
                 - main
 
       - deploy_vue_pm2_azure:
-          name: "deploy-manager-web-development"
+          name: "deploy-manager-web-dev"
           context: "azure-mqtt-gateway"
           service_name: "manager-web"
           service_path: "main/manager-web"
-          env: "development"
+          env: "dev"
           http_port: 8886
           requires:
             - "test-manager-web"
@@ -1879,11 +1900,11 @@ workflows:
                 - main
 
       - deploy_python_pm2_azure:
-          name: "deploy-livekit-server-development"
+          name: "deploy-livekit-server-dev"
           context: "azure-mqtt-gateway"
           service_name: "livekit-server"
           service_path: "main/livekit-server"
-          env: "development"
+          env: "dev"
           http_port: 8888
           entry_file: "main.py"
           requires:
