@@ -1267,184 +1267,209 @@ jobs:
 workflows:
   version: 2
 
-  mqtt-gateway-pipeline:
+  # ==========================================
+  # UNIFIED PIPELINE FOR ALL 3 SERVICES
+  # Triggers on ANY branch change
+  # ==========================================
+  xiaozhi-unified-pipeline:
     jobs:
-      # These run on ALL branches (no filters)
+      # ==========================================
+      # PHASE 1: BUILD ALL SERVICES IN PARALLEL
+      # ==========================================
       - build_node_service:
+          name: "build-mqtt-gateway"
           service_name: "mqtt-gateway"
           service_path: "main/mqtt-gateway"
 
-      - test_node_service:
-          service_name: "mqtt-gateway"
-          service_path: "main/mqtt-gateway"
-          entry_file: "app.js"
-          requires: [build_node_service]
-
-      - security_scan_bundle:
-          service_name: "mqtt-gateway"
-          requires: [build_node_service]
-
-      # Deploy on all branches (environment based on branch)
-      - deploy_node_pm2_azure:
-          context: "azure-mqtt-gateway"
-          service_name: "mqtt-gateway"
-          service_path: "main/mqtt-gateway"
-          entry_file: "app.js"
-          env: "staging"
-          http_port: 8884
-          mqtt_port: 1883
-          requires:
-            - test_node_service
-            - security_scan_bundle
-          filters:
-            branches:
-              only: develop
-
-      - deploy_node_pm2_azure:
-          context: "azure-mqtt-gateway"
-          service_name: "mqtt-gateway"
-          service_path: "main/mqtt-gateway"
-          entry_file: "app.js"
-          env: "production"
-          http_port: 8884
-          mqtt_port: 1883
-          requires:
-            - test_node_service
-            - security_scan_bundle
-          filters:
-            branches:
-              only: main
-
-      # Deploy dev environment for all other branches
-      - deploy_node_pm2_azure:
-          context: "azure-mqtt-gateway"
-          service_name: "mqtt-gateway"
-          service_path: "main/mqtt-gateway"
-          entry_file: "app.js"
-          env: "development"
-          http_port: 8884
-          mqtt_port: 1884
-          requires:
-            - test_node_service
-            - security_scan_bundle
-          filters:
-            branches:
-              ignore:
-                - develop
-                - main
-
-  manager-api-pipeline:
-    jobs:
-      # These run on ALL branches (no filters)
       - build_java_service:
+          name: "build-manager-api"
           service_name: "manager-api"
           service_path: "main/manager-api"
+
+      - build_vue_frontend:
+          name: "build-manager-web"
+          service_name: "manager-web"
+          service_path: "main/manager-web"
+
+      # ==========================================
+      # PHASE 2: TEST ALL SERVICES IN PARALLEL
+      # ==========================================
+      - test_node_service:
+          name: "test-mqtt-gateway"
+          service_name: "mqtt-gateway"
+          service_path: "main/mqtt-gateway"
+          entry_file: "app.js"
+          requires: ["build-mqtt-gateway"]
 
       - test_java_service:
+          name: "test-manager-api"
           service_name: "manager-api"
           service_path: "main/manager-api"
-          requires: [build_java_service]
+          requires: ["build-manager-api"]
+
+      - test_vue_frontend:
+          name: "test-manager-web"
+          service_name: "manager-web"
+          service_path: "main/manager-web"
+          requires: ["build-manager-web"]
+
+      # ==========================================
+      # PHASE 3: SECURITY SCANS IN PARALLEL
+      # ==========================================
+      - security_scan_bundle:
+          name: "security-mqtt-gateway"
+          service_name: "mqtt-gateway"
+          requires: ["build-mqtt-gateway"]
 
       - security_scan_jar:
+          name: "security-manager-api"
           service_name: "manager-api"
-          requires: [build_java_service]
+          requires: ["build-manager-api"]
 
-      # Deploy on specific branches using PM2
+      - security_scan_bundle:
+          name: "security-manager-web"
+          service_name: "manager-web"
+          requires: ["build-manager-web"]
+
+      # ==========================================
+      # PHASE 4: DEPLOY ALL SERVICES IN PARALLEL
+      # ==========================================
+
+      # DEVELOP BRANCH - STAGING ENVIRONMENT
+      - deploy_node_pm2_azure:
+          name: "deploy-mqtt-gateway-staging"
+          context: "azure-mqtt-gateway"
+          service_name: "mqtt-gateway"
+          service_path: "main/mqtt-gateway"
+          entry_file: "app.js"
+          env: "staging"
+          http_port: 8884
+          mqtt_port: 1883
+          requires:
+            - "test-mqtt-gateway"
+            - "security-mqtt-gateway"
+          filters:
+            branches:
+              only: develop
+
       - deploy_java_pm2_azure:
+          name: "deploy-manager-api-staging"
           context: "azure-mqtt-gateway"
           service_name: "manager-api"
           service_path: "main/manager-api"
           env: "staging"
           http_port: 8002
           requires:
-            - test_java_service
-            - security_scan_jar
+            - "test-manager-api"
+            - "security-manager-api"
           filters:
             branches:
               only: develop
 
+      - deploy_vue_pm2_azure:
+          name: "deploy-manager-web-staging"
+          context: "azure-mqtt-gateway"
+          service_name: "manager-web"
+          service_path: "main/manager-web"
+          env: "staging"
+          http_port: 8885
+          requires:
+            - "test-manager-web"
+            - "security-manager-web"
+          filters:
+            branches:
+              only: develop
+
+      # MAIN BRANCH - PRODUCTION ENVIRONMENT
+      - deploy_node_pm2_azure:
+          name: "deploy-mqtt-gateway-production"
+          context: "azure-mqtt-gateway"
+          service_name: "mqtt-gateway"
+          service_path: "main/mqtt-gateway"
+          entry_file: "app.js"
+          env: "production"
+          http_port: 8884
+          mqtt_port: 1883
+          requires:
+            - "test-mqtt-gateway"
+            - "security-mqtt-gateway"
+          filters:
+            branches:
+              only: main
+
       - deploy_java_pm2_azure:
+          name: "deploy-manager-api-production"
           context: "azure-mqtt-gateway"
           service_name: "manager-api"
           service_path: "main/manager-api"
           env: "production"
           http_port: 8002
           requires:
-            - test_java_service
-            - security_scan_jar
+            - "test-manager-api"
+            - "security-manager-api"
           filters:
             branches:
               only: main
 
-      # Deploy dev environment for all other branches
-      - deploy_java_pm2_azure:
+      - deploy_vue_pm2_azure:
+          name: "deploy-manager-web-production"
           context: "azure-mqtt-gateway"
-          service_name: "manager-api"
-          service_path: "main/manager-api"
-          env: "development"
-          http_port: 8002
+          service_name: "manager-web"
+          service_path: "main/manager-web"
+          env: "production"
+          http_port: 8885
           requires:
-            - test_java_service
-            - security_scan_jar
+            - "test-manager-web"
+            - "security-manager-web"
+          filters:
+            branches:
+              only: main
+
+      # OTHER BRANCHES - DEVELOPMENT ENVIRONMENT
+      - deploy_node_pm2_azure:
+          name: "deploy-mqtt-gateway-development"
+          context: "azure-mqtt-gateway"
+          service_name: "mqtt-gateway"
+          service_path: "main/mqtt-gateway"
+          entry_file: "app.js"
+          env: "development"
+          http_port: 8001
+          mqtt_port: 1884
+          requires:
+            - "test-mqtt-gateway"
+            - "security-mqtt-gateway"
           filters:
             branches:
               ignore:
                 - develop
                 - main
 
-  manager-web-pipeline:
-    jobs:
-      # These run on ALL branches (no filters)
-      - build_vue_frontend:
-          service_name: "manager-web"
-          service_path: "main/manager-web"
-
-      - test_vue_frontend:
-          service_name: "manager-web"
-          service_path: "main/manager-web"
-          requires: [build_vue_frontend]
-
-      - security_scan_bundle:
-          service_name: "manager-web"
-          requires: [build_vue_frontend]
-
-      # Deploy on all branches (environment based on branch)
-      - deploy_vue_pm2_azure:
+      - deploy_java_pm2_azure:
+          name: "deploy-manager-api-development"
           context: "azure-mqtt-gateway"
-          service_name: "manager-web"
-          service_path: "main/manager-web"
-          env: "staging"
-          http_port: 8885
+          service_name: "manager-api"
+          service_path: "main/manager-api"
+          env: "development"
+          http_port: 8002
           requires:
-            - test_vue_frontend
-            - security_scan_bundle
+            - "test-manager-api"
+            - "security-manager-api"
           filters:
             branches:
-              only: develop
+              ignore:
+                - develop
+                - main
 
       - deploy_vue_pm2_azure:
-          context: "azure-mqtt-gateway"
-          service_name: "manager-web"
-          service_path: "main/manager-web"
-          env: "production"
-          http_port: 8885
-          requires:
-            - test_vue_frontend
-            - security_scan_bundle
-          filters:
-            branches:
-              only: main
-
-      # Deploy dev environment for all other branches
-      - deploy_vue_pm2_azure:
+          name: "deploy-manager-web-development"
           context: "azure-mqtt-gateway"
           service_name: "manager-web"
           service_path: "main/manager-web"
           env: "development"
           http_port: 8886
           requires:
-            - test_vue_frontend
-            - security_scan_bundle
+            - "test-manager-web"
+            - "security-manager-web"
           filters:
             branches:
               ignore:
