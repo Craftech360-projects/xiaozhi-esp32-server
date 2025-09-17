@@ -500,12 +500,36 @@ jobs:
             SVC="<< parameters.service_name >>"
             DIR="<< parameters.service_path >>"
 
+            echo "Current working directory: $(pwd)"
+            echo "Available files in current directory:"
+            ls -la
+
+            echo "Contents of ${DIR}:"
+            ls -la "${DIR}/"
+
             echo "Building Docker image..."
             docker build -f "${DIR}/Dockerfile.deploy" -t "${SVC}:${CIRCLE_SHA1:0:7}" "${DIR}"
 
-            echo "Saving and uploading Docker image..."
-            docker save "${SVC}:${CIRCLE_SHA1:0:7}" | gzip > "/tmp/${SVC}-image.tar.gz"
-            scp -o StrictHostKeyChecking=no "/tmp/${SVC}-image.tar.gz" "${AZURE_USER}@${AZURE_HOST}:/tmp/"
+            echo "Verifying Docker image was created..."
+            docker images | grep "${SVC}" || { echo "ERROR: Docker image not found"; exit 1; }
+
+            echo "Creating /tmp directory if it doesn't exist..."
+            mkdir -p /tmp
+
+            echo "Saving Docker image to tar.gz..."
+            IMAGE_FILE="/tmp/${SVC}-image.tar.gz"
+            docker save "${SVC}:${CIRCLE_SHA1:0:7}" | gzip > "${IMAGE_FILE}"
+
+            echo "Verifying image file was created..."
+            ls -la "${IMAGE_FILE}" || { echo "ERROR: Image file not created at ${IMAGE_FILE}"; exit 1; }
+
+            echo "Image file size: $(du -h ${IMAGE_FILE})"
+
+            echo "Uploading Docker image to Azure VM..."
+            scp -o StrictHostKeyChecking=no "${IMAGE_FILE}" "${AZURE_USER}@${AZURE_HOST}:/tmp/"
+
+            echo "Cleaning up local image file..."
+            rm -f "${IMAGE_FILE}"
       - run:
           name: Deploy to Azure VM
           command: |
@@ -513,11 +537,27 @@ jobs:
             ENV_NAME="<< parameters.env >>"
             HTTP_PORT="<< parameters.http_port >>"
 
+            echo "Deploying ${SVC} to Azure VM..."
+
             ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
               set -eo pipefail
               SVC=\"${SVC}\"
               ENV_NAME=\"${ENV_NAME}\"
               HTTP_PORT=\"${HTTP_PORT}\"
+              IMAGE_FILE=\"/tmp/\\\${SVC}-image.tar.gz\"
+
+              echo \"Checking for uploaded image file...\"
+              ls -la /tmp/ | grep \\\${SVC} || echo \"No \\\${SVC} files found in /tmp\"
+
+              if [ ! -f \"\\\${IMAGE_FILE}\" ]; then
+                echo \"ERROR: Image file \\\${IMAGE_FILE} not found on Azure VM\"
+                echo \"Available files in /tmp:\"
+                ls -la /tmp/
+                exit 1
+              fi
+
+              echo \"Image file found: \\\${IMAGE_FILE}\"
+              echo \"Image file size: \\\$(du -h \\\${IMAGE_FILE})\"
 
               # Install Docker if needed
               if ! command -v docker >/dev/null 2>&1; then
@@ -530,14 +570,25 @@ jobs:
                 rm -f get-docker.sh
               fi
 
+              echo \"Loading Docker image...\"
               # Load image
               if groups | grep -q docker; then
-                docker load < /tmp/\\\${SVC}-image.tar.gz
+                docker load < \"\\\${IMAGE_FILE}\"
               else
-                sudo docker load < /tmp/\\\${SVC}-image.tar.gz
+                sudo docker load < \"\\\${IMAGE_FILE}\"
               fi
-              rm -f /tmp/\\\${SVC}-image.tar.gz
 
+              echo \"Verifying image was loaded...\"
+              if groups | grep -q docker; then
+                docker images | grep \\\${SVC} || { echo \"ERROR: Image not loaded\"; exit 1; }
+              else
+                sudo docker images | grep \\\${SVC} || { echo \"ERROR: Image not loaded\"; exit 1; }
+              fi
+
+              echo \"Cleaning up image file...\"
+              rm -f \"\\\${IMAGE_FILE}\"
+
+              echo \"Stopping existing container...\"
               # Stop existing container
               if groups | grep -q docker; then
                 docker stop \\\${SVC} || true
@@ -666,10 +717,60 @@ jobs:
               rm -f /tmp/\$SVC.tar.gz
               cd \$AZURE_DEPLOY_PATH/main/\$SVC
 
+              echo \"Checking extracted files...\"
+              ls -la
+
+              if [ ! -d \"dist\" ]; then
+                echo \"ERROR: dist directory not found after extraction\"
+                echo \"Available files:\"
+                find . -type d -name \"*dist*\" || echo \"No dist directories found\"
+                exit 1
+              fi
+
+              echo \"Contents of dist directory:\"
+              ls -la dist/
+
               # Write PM2 ecosystem for static file serving
               CONFIG_FILE=\"\$AZURE_DEPLOY_PATH/\$SVC-pm2.config.js\"
               echo \"Debug: CONFIG_FILE=\$CONFIG_FILE\"
-              printf 'module.exports = {\\n  apps: [{\\n    name: \"%s\",\\n    script: \"serve\",\\n    args: \"-s dist -l %s\",\\n    cwd: \"%s/main/%s\",\\n    instances: 1,\\n    interpreter: \"none\",\\n    autorestart: true,\\n    watch: false,\\n    max_memory_restart: \"256M\",\\n    env: {\\n      NODE_ENV: \"development\",\\n      PORT: %s\\n    },\\n    env_staging: {\\n      NODE_ENV: \"staging\",\\n      PORT: %s\\n    },\\n    env_production: {\\n      NODE_ENV: \"production\",\\n      PORT: %s\\n    },\\n    error_file: \"/var/log/pm2/%s-error.log\",\\n    out_file: \"/var/log/pm2/%s-out.log\",\\n    log_file: \"/var/log/pm2/%s-combined.log\",\\n    time: true,\\n    log_date_format: \"YYYY-MM-DD HH:mm:ss Z\"\\n  }]\\n}\\n' \"\$SVC\" \"\$HTTP_PORT\" \"\$AZURE_DEPLOY_PATH\" \"\$SVC\" \"\$HTTP_PORT\" \"\$HTTP_PORT\" \"\$HTTP_PORT\" \"\$SVC\" \"\$SVC\" \"\$SVC\" > \"\$CONFIG_FILE\"
+
+              # Create PM2 config using echo to avoid heredoc issues
+              echo \"module.exports = {\" > \"\$CONFIG_FILE\"
+              echo \"  apps: [{\" >> \"\$CONFIG_FILE\"
+              echo \"    name: '\$SVC',\" >> \"\$CONFIG_FILE\"
+              echo \"    script: 'npx',\" >> \"\$CONFIG_FILE\"
+              echo \"    args: 'serve -s dist -l \$HTTP_PORT',\" >> \"\$CONFIG_FILE\"
+              echo \"    cwd: '\$AZURE_DEPLOY_PATH/main/\$SVC',\" >> \"\$CONFIG_FILE\"
+              echo \"    instances: 1,\" >> \"\$CONFIG_FILE\"
+              echo \"    autorestart: true,\" >> \"\$CONFIG_FILE\"
+              echo \"    watch: false,\" >> \"\$CONFIG_FILE\"
+              echo \"    max_memory_restart: '256M',\" >> \"\$CONFIG_FILE\"
+              echo \"    env: {\" >> \"\$CONFIG_FILE\"
+              echo \"      NODE_ENV: 'development',\" >> \"\$CONFIG_FILE\"
+              echo \"      PORT: '\$HTTP_PORT'\" >> \"\$CONFIG_FILE\"
+              echo \"    },\" >> \"\$CONFIG_FILE\"
+              echo \"    env_development: {\" >> \"\$CONFIG_FILE\"
+              echo \"      NODE_ENV: 'development',\" >> \"\$CONFIG_FILE\"
+              echo \"      PORT: '\$HTTP_PORT'\" >> \"\$CONFIG_FILE\"
+              echo \"    },\" >> \"\$CONFIG_FILE\"
+              echo \"    env_staging: {\" >> \"\$CONFIG_FILE\"
+              echo \"      NODE_ENV: 'staging',\" >> \"\$CONFIG_FILE\"
+              echo \"      PORT: '8885'\" >> \"\$CONFIG_FILE\"
+              echo \"    },\" >> \"\$CONFIG_FILE\"
+              echo \"    env_production: {\" >> \"\$CONFIG_FILE\"
+              echo \"      NODE_ENV: 'production',\" >> \"\$CONFIG_FILE\"
+              echo \"      PORT: '8885'\" >> \"\$CONFIG_FILE\"
+              echo \"    },\" >> \"\$CONFIG_FILE\"
+              echo \"    error_file: '/var/log/pm2/\$SVC-error.log',\" >> \"\$CONFIG_FILE\"
+              echo \"    out_file: '/var/log/pm2/\$SVC-out.log',\" >> \"\$CONFIG_FILE\"
+              echo \"    log_file: '/var/log/pm2/\$SVC-combined.log',\" >> \"\$CONFIG_FILE\"
+              echo \"    time: true,\" >> \"\$CONFIG_FILE\"
+              echo \"    log_date_format: 'YYYY-MM-DD HH:mm:ss Z'\" >> \"\$CONFIG_FILE\"
+              echo \"  }]\" >> \"\$CONFIG_FILE\"
+              echo \"}\" >> \"\$CONFIG_FILE\"
+
+              echo \"Created PM2 config:\"
+              cat \"\$CONFIG_FILE\"
 
               if pm2 describe \"\$SVC\" >/dev/null 2>&1; then
                 pm2 reload \"\$CONFIG_FILE\" --env \"\$ENV_NAME\"
@@ -681,21 +782,43 @@ jobs:
 
             # Health check for frontend
             ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
-              echo 'Starting health check for ${SVC} frontend...'
-              pm2 describe '${SVC}' || echo 'PM2 process not found'
+              SVC=\"${SVC}\"
+              HTTP_PORT=\"${HTTP_PORT}\"
+
+              echo 'Starting health check for '\$SVC' frontend...'
+              pm2 describe \"\$SVC\" || echo 'PM2 process not found'
+
+              echo 'Checking if port '\$HTTP_PORT' is in use...'
+              netstat -tuln | grep :\$HTTP_PORT || echo 'Port '\$HTTP_PORT' not listening'
+
+              echo 'Checking PM2 process status...'
+              pm2 list | grep \$SVC
+
+              echo 'Checking process logs...'
+              pm2 logs \$SVC --lines 5 --nostream || echo 'No logs available'
 
               for i in \$(seq 1 30); do
-                if curl -fsS http://127.0.0.1:${HTTP_PORT}/ >/dev/null 2>&1; then
-                  echo 'SUCCESS: ${SVC} frontend healthy on port ${HTTP_PORT}'
+                if curl -fsS http://127.0.0.1:\$HTTP_PORT/ >/dev/null 2>&1; then
+                  echo 'SUCCESS: '\$SVC' frontend healthy on port '\$HTTP_PORT
                   exit 0
                 fi
-                echo \"Health check attempt \$i/30 - waiting for http://127.0.0.1:${HTTP_PORT}/\"
+                echo \"Health check attempt \$i/30 - waiting for http://127.0.0.1:\$HTTP_PORT/\"
+
+                # Additional diagnostic on certain attempts
+                if [ \$i -eq 10 ] || [ \$i -eq 20 ]; then
+                  echo 'Diagnostic check at attempt '\$i':'
+                  pm2 logs \$SVC --lines 3 --nostream || echo 'No recent logs'
+                  netstat -tuln | grep :\$HTTP_PORT || echo 'Port still not listening'
+                fi
+
                 sleep 2
               done
 
               echo 'ERROR: Health check failed after 60 seconds'
+              echo 'Final diagnostic information:'
               pm2 status
-              pm2 logs '${SVC}' --lines 30
+              pm2 logs \$SVC --lines 50 --nostream
+              netstat -tuln | grep :\$HTTP_PORT || echo 'Port '\$HTTP_PORT' not listening'
               exit 1
             "
 
