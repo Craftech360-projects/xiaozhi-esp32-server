@@ -1647,9 +1647,11 @@ workflows:
 
   # ==========================================
   # UNIFIED PIPELINE FOR ALL 4 SERVICES
-  # Triggers on ANY branch change
+  # Triggers ONLY on dev branch changes
   # ==========================================
   xiaozhi-unified-pipeline:
+    when:
+      equal: [ dev, << pipeline.git.branch >> ]
     jobs:
       # ==========================================
       # PHASE 1: BUILD ALL SERVICES IN PARALLEL
