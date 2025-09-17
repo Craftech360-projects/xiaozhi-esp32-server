@@ -1241,24 +1241,54 @@ jobs:
               pm2 save
             "
 
-            # Health check with better error handling
+            # Health check with service-specific logic
             ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
               echo 'Starting health check for ${SVC}...'
               pm2 describe '${SVC}' || echo 'PM2 process not found'
 
-              for i in \$(seq 1 30); do
-                if curl -fsS http://127.0.0.1:${HTTP_PORT}/health >/dev/null 2>&1; then
-                  echo 'SUCCESS: ${SVC} healthy on port ${HTTP_PORT}'
-                  exit 0
-                fi
-                echo \"Health check attempt \$i/30 - waiting for http://127.0.0.1:${HTTP_PORT}/health\"
-                sleep 2
-              done
+              # Check if PM2 process is online first
+              if ! pm2 describe '${SVC}' | grep -q 'status.*online'; then
+                echo 'ERROR: PM2 process is not online'
+                pm2 status
+                pm2 logs '${SVC}' --lines 10
+                exit 1
+              fi
 
-              echo 'ERROR: Health check failed after 60 seconds'
-              pm2 status
-              pm2 logs '${SVC}' --lines 30
-              exit 1
+              echo 'PM2 process is online'
+
+              # For MQTT services, check MQTT port instead of HTTP
+              if echo '${SVC}' | grep -q 'mqtt'; then
+                echo 'MQTT service detected - checking MQTT port ${MQTT_PORT:-1884}...'
+
+                # Wait briefly for MQTT server to start
+                sleep 3
+
+                if netstat -tuln | grep -q ':${MQTT_PORT:-1884}'; then
+                  echo 'SUCCESS: ${SVC} MQTT port ${MQTT_PORT:-1884} is listening'
+                  exit 0
+                else
+                  echo 'MQTT port ${MQTT_PORT:-1884} not found in netstat:'
+                  netstat -tuln | grep -E ':(188[0-9]|1884)'
+                  pm2 logs '${SVC}' --lines 5
+                  exit 1
+                fi
+              else
+                # For HTTP services, check HTTP port
+                echo 'HTTP service detected - checking port ${HTTP_PORT}...'
+
+                for i in \$(seq 1 20); do
+                  if curl -fsS http://127.0.0.1:${HTTP_PORT}/health >/dev/null 2>&1; then
+                    echo 'SUCCESS: ${SVC} healthy on port ${HTTP_PORT}'
+                    exit 0
+                  fi
+                  echo \"Health check attempt \$i/20 - waiting for port ${HTTP_PORT}\"
+                  sleep 2
+                done
+
+                echo 'ERROR: Health check failed after 40 seconds'
+                pm2 logs '${SVC}' --lines 10
+                exit 1
+              fi
             "
 
 # =========================
