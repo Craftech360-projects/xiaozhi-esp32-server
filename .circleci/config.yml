@@ -689,17 +689,24 @@ jobs:
               if ! java -version 2>&1 | grep -q '17\\.'; then
                 echo 'Installing Java 17...'
                 sudo apt-get update -y
-                sudo apt-get install -y openjdk-17-jre-headless
+                sudo apt-get install -y openjdk-17-jre-headless openjdk-17-jdk-headless
 
                 # Set Java 17 as default
-                sudo update-alternatives --install /usr/bin/java java /usr/lib/jvm/java-17-openjdk-amd64/bin/java 1
+                sudo update-alternatives --install /usr/bin/java java /usr/lib/jvm/java-17-openjdk-amd64/bin/java 100
                 sudo update-alternatives --set java /usr/lib/jvm/java-17-openjdk-amd64/bin/java
+
+                # Set JAVA_HOME
+                export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+                echo 'export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64' >> ~/.bashrc
+                echo 'export PATH=\$JAVA_HOME/bin:\$PATH' >> ~/.bashrc
 
                 echo 'Java version after installation:'
                 java -version
+                echo 'JAVA_HOME: '\$JAVA_HOME
               else
                 echo 'Java 17 already installed:'
                 java -version
+                export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
               fi
 
               # Install PM2 if needed
@@ -727,13 +734,15 @@ jobs:
               # Stop existing process if running
               pm2 delete \$SVC || echo \"No existing \$SVC process found\"
 
-              # Start with PM2
+              # Start with PM2 using Java 17
               pm2 start \\
                 --name \$SVC \\
                 --cwd \$AZURE_DEPLOY_PATH/main/\$SVC \\
-                java -- -jar app.jar \\
+                --interpreter /usr/lib/jvm/java-17-openjdk-amd64/bin/java \\
+                app.jar \\
                 --env SPRING_PROFILES_ACTIVE=\$ENV_NAME \\
-                --env SERVER_PORT=8002
+                --env SERVER_PORT=8002 \\
+                --env JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 
               # Wait for process to start
               sleep 5
