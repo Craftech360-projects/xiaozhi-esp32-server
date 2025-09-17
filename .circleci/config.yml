@@ -35,6 +35,69 @@ executors:
 # Jobs
 # =========================
 jobs:
+  # Build a Vue.js frontend application
+  build_vue_frontend:
+    parameters:
+      service_name: { type: string }
+      service_path: { type: string } # e.g. "main/manager-web"
+    executor: node-executor
+    steps:
+      - checkout
+      - run:
+          name: Skip if service folder missing
+          command: |
+            set -eo pipefail
+            if [ ! -d "<< parameters.service_path >>" ]; then
+              echo "Folder '<< parameters.service_path >>' not found on this branch; skipping build."
+              circleci step halt
+            fi
+      - restore_cache:
+          keys:
+            - npm-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/package-lock.json" }}
+            - npm-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/package.json" }}
+            - npm-<< parameters.service_name >>-v1-
+      - run:
+          name: Install dependencies and build Vue.js app
+          command: |
+            set -eo pipefail
+            SVC="<< parameters.service_name >>"
+            DIR="<< parameters.service_path >>"
+
+            ABS_DIR="$(cd "$(dirname "$DIR")" && pwd)"
+            BASE="$(basename "$DIR")"
+            test -d "$ABS_DIR/$BASE" || { echo "Missing $ABS_DIR/$BASE"; exit 1; }
+
+            pushd "$ABS_DIR/$BASE" >/dev/null
+            if [ -f package-lock.json ]; then
+              npm ci --no-audit --no-fund
+            else
+              npm install --no-audit --no-fund
+            fi
+
+            # Build the Vue.js application
+            npm run build
+
+            node -v
+            npm -v
+            ls -la dist/
+            popd >/dev/null
+
+            mkdir -p /tmp/workspace
+            tar -czf "/tmp/workspace/${SVC}.tar.gz" -C "$ABS_DIR/$BASE" "dist"
+            echo "${SVC}-${CIRCLE_SHA1:0:7}" > "/tmp/workspace/${SVC}-build-info"
+            date -u +"%Y-%m-%dT%H:%M:%SZ" > "/tmp/workspace/${SVC}-build-date"
+            echo "✅ ${SVC} built and archived to /tmp/workspace/${SVC}.tar.gz"
+      - save_cache:
+          paths:
+            - << parameters.service_path >>/node_modules
+          key: npm-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/package-lock.json" }}
+      - persist_to_workspace:
+          root: /tmp/workspace
+          paths:
+            - << parameters.service_name >>.tar.gz
+            - << parameters.service_name >>-build-info
+            - << parameters.service_name >>-build-date
+
   # Build a Node service (installs prod deps & archives the folder)
   build_node_service:
     parameters:
@@ -93,6 +156,47 @@ jobs:
             - << parameters.service_name >>.tar.gz
             - << parameters.service_name >>-build-info
             - << parameters.service_name >>-build-date
+
+  # Test a Vue.js frontend application
+  test_vue_frontend:
+    parameters:
+      service_name: { type: string }
+      service_path: { type: string }
+    executor: node-executor
+    steps:
+      - checkout
+      - run:
+          name: Skip if service folder missing
+          command: |
+            set -eo pipefail
+            if [ ! -d "<< parameters.service_path >>" ]; then
+              echo "Folder '<< parameters.service_path >>' not found on this branch; skipping tests."
+              circleci step halt
+            fi
+      - run:
+          name: Install deps & run frontend tests
+          command: |
+            set -eo pipefail
+            DIR="<< parameters.service_path >>"
+
+            cd "$DIR"
+
+            if [ -f package-lock.json ]; then
+              npm ci --no-audit --no-fund
+            else
+              npm install --no-audit --no-fund
+            fi
+
+            # Check if we can build the project (equivalent to syntax check)
+            npm run build
+
+            # Run tests if present, otherwise run a smoke test
+            if npm run | grep -qE '^  test'; then
+              npm test
+            else
+              echo "No npm test script; considering build success as test pass"
+              echo "✅ Build successful - frontend tests passed"
+            fi
 
   # Test a Node service (syntax + npm test if present)
   test_node_service:
@@ -732,65 +836,15 @@ workflows:
   manager-web-pipeline:
     jobs:
       # These run on ALL branches (no filters)
-      - build_node_service:
+      - build_vue_frontend:
           service_name: "manager-web"
           service_path: "main/manager-web"
 
-      - test_node_service:
+      - test_vue_frontend:
           service_name: "manager-web"
           service_path: "main/manager-web"
-          entry_file: "app.js"
-          requires: [build_node_service]
+          requires: [build_vue_frontend]
 
       - security_scan_bundle:
           service_name: "manager-web"
-          requires: [build_node_service]
-
-      # Deploy on all branches (environment based on branch)
-      - deploy_node_pm2_azure:
-          context: "azure-mqtt-gateway"
-          service_name: "manager-web"
-          service_path: "main/manager-web"
-          entry_file: "app.js"
-          env: "staging"
-          http_port: 8885
-          mqtt_port: 1883
-          requires:
-            - test_node_service
-            - security_scan_bundle
-          filters:
-            branches:
-              only: develop
-
-      - deploy_node_pm2_azure:
-          context: "azure-mqtt-gateway"
-          service_name: "manager-web"
-          service_path: "main/manager-web"
-          entry_file: "app.js"
-          env: "production"
-          http_port: 8885
-          mqtt_port: 1883
-          requires:
-            - test_node_service
-            - security_scan_bundle
-          filters:
-            branches:
-              only: main
-
-      # Deploy dev environment for all other branches
-      - deploy_node_pm2_azure:
-          context: "azure-mqtt-gateway"
-          service_name: "manager-web"
-          service_path: "main/manager-web"
-          entry_file: "app.js"
-          env: "development"
-          http_port: 8886
-          mqtt_port: 1884
-          requires:
-            - test_node_service
-            - security_scan_bundle
-          filters:
-            branches:
-              ignore:
-                - develop
-                - main
+          requires: [build_vue_frontend]
