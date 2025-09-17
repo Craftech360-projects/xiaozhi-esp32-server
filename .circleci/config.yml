@@ -781,8 +781,13 @@ jobs:
               sudo ufw allow 8002/tcp || echo 'UFW rule for 8002 failed'
               sudo ufw allow 8886/tcp || echo 'UFW rule for 8886 failed'
 
-              # Enable UFW if not already enabled (but don't fail if it causes issues)
-              sudo ufw --force enable || echo 'UFW enable failed or not needed'
+              # Check if UFW is already enabled before enabling it
+              if ! sudo ufw status | grep -q 'Status: active'; then
+                echo 'Enabling UFW with proper SSH protection...'
+                sudo ufw --force enable || echo 'UFW enable failed or not needed'
+              else
+                echo 'UFW already active, rules updated'
+              fi
 
               echo 'Firewall configuration completed'
 
@@ -1014,8 +1019,21 @@ jobs:
               cd \$AZURE_DEPLOY_PATH/main
 
               echo \"Extracting \$SVC archive...\"
-              tar -xzf /tmp/\$SVC.tar.gz
-              rm -f /tmp/\$SVC.tar.gz
+              ls -la /tmp/\$SVC* || echo \"Archive files in /tmp:\"
+              ls -la /tmp/ | grep \$SVC || echo \"No \$SVC files found in /tmp\"
+
+              # Try different possible archive paths
+              if [ -f \"/tmp/\$SVC.tar.gz\" ]; then
+                tar -xzf /tmp/\$SVC.tar.gz
+                rm -f /tmp/\$SVC.tar.gz
+              elif [ -f \"/tmp/\${SVC}.tar.gz\" ]; then
+                tar -xzf /tmp/\${SVC}.tar.gz
+                rm -f /tmp/\${SVC}.tar.gz
+              else
+                echo \"ERROR: Archive file not found\"
+                ls -la /tmp/
+                exit 1
+              fi
 
               echo \"Checking extracted directory structure...\"
               ls -la
