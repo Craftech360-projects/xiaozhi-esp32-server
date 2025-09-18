@@ -125,7 +125,7 @@ class AudioPlayer:
 
                 # Create audio source for music
                 from livekit import rtc
-                audio_source = rtc.AudioSource(24000, 1)
+                audio_source = rtc.AudioSource(48000, 1)
 
                 # Create and publish audio track
                 track = rtc.LocalAudioTrack.create_audio_track("music", audio_source)
@@ -164,12 +164,12 @@ class AudioPlayer:
     async def _stream_audio_data(self, audio_source, audio_segment, title: str):
         """Stream audio segment data to the audio source"""
         # Convert to required format
-        audio_segment = audio_segment.set_frame_rate(24000)
+        audio_segment = audio_segment.set_frame_rate(48000)
         audio_segment = audio_segment.set_channels(1)
         audio_segment = audio_segment.set_sample_width(2)
 
         raw_audio = audio_segment.raw_data
-        sample_rate = 24000
+        sample_rate = 48000
         frame_duration_ms = 20
         samples_per_frame = sample_rate * frame_duration_ms // 1000
         total_samples = len(raw_audio) // 2
