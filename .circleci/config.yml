@@ -1,10 +1,11 @@
 version: 2.1
 
 # ==========================================
-# 🚀 XIAOZHI DIRECT PIPELINE CONFIGURATION
+# 🚀 XIAOZHI BRANCH-SPECIFIC PIPELINE CONFIGURATION
 # ==========================================
-# No setup job needed - workflows run directly based on branch filters
-# MUCH FASTER: No intermediate setup step
+# Dev Pipeline: Tests + Deployment (dev branch only)
+# Production Pipeline: Tests + Deployment (production branch only)
+# Parallel execution for maximum efficiency
 # ==========================================
 
 # =========================
@@ -12,8 +13,8 @@ version: 2.1
 # =========================
 executors:
   node-executor:
-    docker:
-      - image: cimg/node:20.14
+    machine:
+      image: ubuntu-2204:2024.01.1
     resource_class: large
     environment:
       NPM_CONFIG_RETRY: "3"
@@ -21,21 +22,21 @@ executors:
       NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT: "10000"
 
   base-executor:
-    docker:
-      - image: cimg/base:stable
+    machine:
+      image: ubuntu-2204:2024.01.1
     resource_class: large
 
   maven-executor:
-    docker:
-      - image: cimg/openjdk:17.0
+    machine:
+      image: ubuntu-2204:2024.01.1
     resource_class: large
     environment:
       MAVEN_OPTS: -Xmx1024m
       MAVEN_CLI_OPTS: "--batch-mode --errors --fail-at-end --show-version"
 
   python-executor:
-    docker:
-      - image: cimg/python:3.10
+    machine:
+      image: ubuntu-2204:2024.01.1
     resource_class: large
     environment:
       PYTHONPATH: /home/circleci/project
@@ -69,7 +70,12 @@ jobs:
       - run:
           name: Install analysis tools
           command: |
-            sudo npm install -g jshint eslint
+            # Install Node.js and npm
+            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+            sudo apt-get install -y nodejs
+            npm install -g jshint eslint
+
+            # Install Python tools
             sudo apt-get update && sudo apt-get install -y python3-pip
             pip3 install flake8 pylint bandit safety
       - run:
@@ -124,6 +130,11 @@ jobs:
     steps:
       - checkout
       - run:
+          name: Install Node.js
+          command: |
+            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+            sudo apt-get install -y nodejs
+      - run:
           name: Skip if service folder missing
           command: |
             if [ ! -d "<< parameters.service_path >>" ]; then
@@ -176,6 +187,12 @@ jobs:
     steps:
       - checkout
       - run:
+          name: Install Java and Maven
+          command: |
+            sudo apt-get update
+            sudo apt-get install -y openjdk-17-jdk maven
+            export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+      - run:
           name: Skip if service folder missing
           command: |
             if [ ! -d "<< parameters.service_path >>" ]; then
@@ -224,6 +241,11 @@ jobs:
     executor: python-executor
     steps:
       - checkout
+      - run:
+          name: Install Python
+          command: |
+            sudo apt-get update
+            sudo apt-get install -y python3 python3-pip python3-venv
       - run:
           name: Skip if service folder missing
           command: |
@@ -322,6 +344,11 @@ jobs:
     steps:
       - checkout
       - run:
+          name: Install Node.js
+          command: |
+            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+            sudo apt-get install -y nodejs
+      - run:
           name: Skip if service folder missing
           command: |
             if [ ! -d "<< parameters.service_path >>" ]; then
@@ -414,6 +441,12 @@ jobs:
     steps:
       - checkout
       - run:
+          name: Install Java and Maven
+          command: |
+            sudo apt-get update
+            sudo apt-get install -y openjdk-17-jdk maven
+            export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+      - run:
           name: Skip if service folder missing
           command: |
             if [ ! -d "<< parameters.service_path >>" ]; then
@@ -449,6 +482,11 @@ jobs:
     executor: node-executor
     steps:
       - checkout
+      - run:
+          name: Install Node.js
+          command: |
+            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+            sudo apt-get install -y nodejs
       - run:
           name: Skip if service folder missing
           command: |
@@ -491,6 +529,11 @@ jobs:
     executor: python-executor
     steps:
       - checkout
+      - run:
+          name: Install Python
+          command: |
+            sudo apt-get update
+            sudo apt-get install -y python3 python3-pip python3-venv
       - run:
           name: Skip if service folder missing
           command: |
@@ -709,110 +752,200 @@ jobs:
             "
 
 # =========================
-# Workflows - NO SETUP JOB NEEDED!
+# Workflows - BRANCH-SPECIFIC PIPELINES
 # =========================
 workflows:
   version: 2
 
   # ==========================================
-  # 🧪 TESTING WORKFLOW
-  # Runs on ALL branches - ALL 4 SERVICES IN PARALLEL
+  # 🔧 DEV WORKFLOW
+  # Runs ONLY on dev branch - Tests + Deployment in parallel
   # ==========================================
-  testing-workflow:
-    jobs:
-      - test_pipeline_notification:
-          name: "[TEST] 🧪 Pipeline Start"
-
-      - test_code_quality_check:
-          name: "[TEST] 🧪 Code Quality"
-          requires: ["[TEST] 🧪 Pipeline Start"]
-
-      # ==========================================
-      # SERVICE TESTING PHASE: All 4 services test in parallel
-      # ==========================================
-      - test_node_service:
-          name: "[TEST] 🧪 Test MQTT Gateway"
-          service_name: "mqtt-gateway"
-          service_path: "main/mqtt-gateway"
-          requires: ["[TEST] 🧪 Code Quality"]
-
-      - test_java_service:
-          name: "[TEST] 🧪 Test Manager API"
-          service_name: "manager-api"
-          service_path: "main/manager-api"
-          requires: ["[TEST] 🧪 Code Quality"]
-
-      - test_node_service:
-          name: "[TEST] 🧪 Test Manager Web"
-          service_name: "manager-web"
-          service_path: "main/manager-web"
-          requires: ["[TEST] 🧪 Code Quality"]
-
-      - test_python_service:
-          name: "[TEST] 🧪 Test LiveKit Server"
-          service_name: "livekit-server"
-          service_path: "main/livekit-server"
-          requires: ["[TEST] 🧪 Code Quality"]
-
-      # ==========================================
-      # DEPLOY TO TEST ENVIRONMENT
-      # ==========================================
-      - test_deploy_to_test_env:
-          name: "[TEST] 🧪 Deploy Test Env"
-          context: "azure-mqtt-gateway"
-          requires:
-            - "[TEST] 🧪 Test MQTT Gateway"
-            - "[TEST] 🧪 Test Manager API"
-            - "[TEST] 🧪 Test Manager Web"
-            - "[TEST] 🧪 Test LiveKit Server"
-
-  # ==========================================
-  # 🚀 PRODUCTION WORKFLOW
-  # Runs ONLY on dev branch - ALL 4 SERVICES IN PARALLEL
-  # ==========================================
-  production-workflow:
+  dev-workflow:
     when:
       equal: [ dev, << pipeline.git.branch >> ]
     jobs:
+      # Notification
+      - test_pipeline_notification:
+          name: "[DEV] 🔧 Pipeline Start"
+
+      # Code Quality Check
+      - test_code_quality_check:
+          name: "[DEV] 🔧 Code Quality"
+          requires: ["[DEV] 🔧 Pipeline Start"]
+
+      # ==========================================
+      # TESTING PHASE: All 4 services test in parallel
+      # ==========================================
+      - test_node_service:
+          name: "[DEV] 🔧 Test MQTT Gateway"
+          service_name: "mqtt-gateway"
+          service_path: "main/mqtt-gateway"
+          requires: ["[DEV] 🔧 Code Quality"]
+
+      - test_java_service:
+          name: "[DEV] 🔧 Test Manager API"
+          service_name: "manager-api"
+          service_path: "main/manager-api"
+          requires: ["[DEV] 🔧 Code Quality"]
+
+      - test_node_service:
+          name: "[DEV] 🔧 Test Manager Web"
+          service_name: "manager-web"
+          service_path: "main/manager-web"
+          requires: ["[DEV] 🔧 Code Quality"]
+
+      - test_python_service:
+          name: "[DEV] 🔧 Test LiveKit Server"
+          service_name: "livekit-server"
+          service_path: "main/livekit-server"
+          requires: ["[DEV] 🔧 Code Quality"]
+
+      # ==========================================
+      # BUILD PHASE: All 4 services build in parallel (after tests pass)
+      # ==========================================
+      - build_node_service:
+          name: "[DEV] 🔧 Build MQTT Gateway"
+          service_name: "mqtt-gateway"
+          service_path: "main/mqtt-gateway"
+          requires: ["[DEV] 🔧 Test MQTT Gateway"]
+
+      - build_java_service:
+          name: "[DEV] 🔧 Build Manager API"
+          service_name: "manager-api"
+          service_path: "main/manager-api"
+          requires: ["[DEV] 🔧 Test Manager API"]
+
+      - build_vue_frontend:
+          name: "[DEV] 🔧 Build Manager Web"
+          service_name: "manager-web"
+          service_path: "main/manager-web"
+          requires: ["[DEV] 🔧 Test Manager Web"]
+
+      - build_python_service:
+          name: "[DEV] 🔧 Build LiveKit Server"
+          service_name: "livekit-server"
+          service_path: "main/livekit-server"
+          requires: ["[DEV] 🔧 Test LiveKit Server"]
+
+      # ==========================================
+      # DEPLOY PHASE: All 4 services deploy in parallel to dev environment
+      # ==========================================
+      - deploy_node_pm2_azure:
+          name: "[DEV] 🔧 Deploy MQTT Gateway"
+          context: "azure-mqtt-gateway"
+          service_name: "mqtt-gateway"
+          entry_file: "app.js"
+          env: "development"
+          http_port: 8884
+          mqtt_port: 1883
+          requires: ["[DEV] 🔧 Build MQTT Gateway"]
+
+      - deploy_java_pm2_azure:
+          name: "[DEV] 🔧 Deploy Manager API"
+          context: "azure-mqtt-gateway"
+          service_name: "manager-api"
+          env: "development"
+          http_port: 8002
+          requires: ["[DEV] 🔧 Build Manager API"]
+
+      - deploy_vue_pm2_azure:
+          name: "[DEV] 🔧 Deploy Manager Web"
+          context: "azure-mqtt-gateway"
+          service_name: "manager-web"
+          env: "development"
+          http_port: 8885
+          requires: ["[DEV] 🔧 Build Manager Web"]
+
+      - deploy_python_pm2_azure:
+          name: "[DEV] 🔧 Deploy LiveKit Server"
+          context: "azure-mqtt-gateway"
+          service_name: "livekit-server"
+          env: "development"
+          http_port: 8887
+          entry_file: "main.py"
+          requires: ["[DEV] 🔧 Build LiveKit Server"]
+
+  # ==========================================
+  # 🚀 PRODUCTION WORKFLOW
+  # Runs ONLY on production branch - Tests + Deployment in parallel
+  # ==========================================
+  production-workflow:
+    when:
+      equal: [ production, << pipeline.git.branch >> ]
+    jobs:
+      # Notification
       - prod_pipeline_notification:
           name: "[PROD] 🚀 Pipeline Start"
 
+      # Code Quality Check
+      - test_code_quality_check:
+          name: "[PROD] 🚀 Code Quality"
+          requires: ["[PROD] 🚀 Pipeline Start"]
+
       # ==========================================
-      # BUILD PHASE: All 4 services build in parallel
+      # TESTING PHASE: All 4 services test in parallel
+      # ==========================================
+      - test_node_service:
+          name: "[PROD] 🚀 Test MQTT Gateway"
+          service_name: "mqtt-gateway"
+          service_path: "main/mqtt-gateway"
+          requires: ["[PROD] 🚀 Code Quality"]
+
+      - test_java_service:
+          name: "[PROD] 🚀 Test Manager API"
+          service_name: "manager-api"
+          service_path: "main/manager-api"
+          requires: ["[PROD] 🚀 Code Quality"]
+
+      - test_node_service:
+          name: "[PROD] 🚀 Test Manager Web"
+          service_name: "manager-web"
+          service_path: "main/manager-web"
+          requires: ["[PROD] 🚀 Code Quality"]
+
+      - test_python_service:
+          name: "[PROD] 🚀 Test LiveKit Server"
+          service_name: "livekit-server"
+          service_path: "main/livekit-server"
+          requires: ["[PROD] 🚀 Code Quality"]
+
+      # ==========================================
+      # BUILD PHASE: All 4 services build in parallel (after tests pass)
       # ==========================================
       - build_node_service:
           name: "[PROD] 🚀 Build MQTT Gateway"
           service_name: "mqtt-gateway"
           service_path: "main/mqtt-gateway"
-          requires: ["[PROD] 🚀 Pipeline Start"]
+          requires: ["[PROD] 🚀 Test MQTT Gateway"]
 
       - build_java_service:
           name: "[PROD] 🚀 Build Manager API"
           service_name: "manager-api"
           service_path: "main/manager-api"
-          requires: ["[PROD] 🚀 Pipeline Start"]
+          requires: ["[PROD] 🚀 Test Manager API"]
 
       - build_vue_frontend:
           name: "[PROD] 🚀 Build Manager Web"
           service_name: "manager-web"
           service_path: "main/manager-web"
-          requires: ["[PROD] 🚀 Pipeline Start"]
+          requires: ["[PROD] 🚀 Test Manager Web"]
 
       - build_python_service:
           name: "[PROD] 🚀 Build LiveKit Server"
           service_name: "livekit-server"
           service_path: "main/livekit-server"
-          requires: ["[PROD] 🚀 Pipeline Start"]
+          requires: ["[PROD] 🚀 Test LiveKit Server"]
 
       # ==========================================
-      # DEPLOY PHASE: All 4 services deploy in parallel
+      # DEPLOY PHASE: All 4 services deploy in parallel to production environment
       # ==========================================
       - deploy_node_pm2_azure:
           name: "[PROD] 🚀 Deploy MQTT Gateway"
           context: "azure-mqtt-gateway"
           service_name: "mqtt-gateway"
           entry_file: "app.js"
-          env: "staging"
+          env: "production"
           http_port: 8884
           mqtt_port: 1883
           requires: ["[PROD] 🚀 Build MQTT Gateway"]
@@ -821,7 +954,7 @@ workflows:
           name: "[PROD] 🚀 Deploy Manager API"
           context: "azure-mqtt-gateway"
           service_name: "manager-api"
-          env: "staging"
+          env: "production"
           http_port: 8002
           requires: ["[PROD] 🚀 Build Manager API"]
 
@@ -829,7 +962,7 @@ workflows:
           name: "[PROD] 🚀 Deploy Manager Web"
           context: "azure-mqtt-gateway"
           service_name: "manager-web"
-          env: "staging"
+          env: "production"
           http_port: 8885
           requires: ["[PROD] 🚀 Build Manager Web"]
 
@@ -837,7 +970,7 @@ workflows:
           name: "[PROD] 🚀 Deploy LiveKit Server"
           context: "azure-mqtt-gateway"
           service_name: "livekit-server"
-          env: "staging"
+          env: "production"
           http_port: 8887
           entry_file: "main.py"
           requires: ["[PROD] 🚀 Build LiveKit Server"]
