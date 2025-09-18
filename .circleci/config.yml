@@ -32,17 +32,18 @@ jobs:
 
             if [ "$CIRCLE_BRANCH" = "dev" ]; then
               echo "🎯 DEV BRANCH DETECTED:"
-              echo "  ✅ Testing Pipeline (Quality + Security + Performance)"
-              echo "  ✅ Production Pipeline (Build + Deploy to Azure)"
+              echo "  ✅ Testing Pipeline (Independent - Quality + Security + Performance)"
+              echo "  ✅ Production Pipeline (Independent - Build + Deploy to Azure)"
+              echo "  🔄 Both pipelines run in PARALLEL (not sequential)"
               echo ""
-              echo "📋 CONFIGURATION: Combined pipelines for dev branch"
-              cp .circleci/combined-pipelines.yml .circleci/generated_config.yml
+              echo "📋 CONFIGURATION: Dual independent pipelines for dev branch"
+              cp .circleci/dual-pipelines.yml .circleci/generated_config.yml
             else
               echo "🎯 FEATURE/OTHER BRANCH DETECTED:"
               echo "  ✅ Testing Pipeline (Quality + Security + Performance)"
               echo "  ⏭️  Production Pipeline (Skipped - not dev branch)"
               echo ""
-              echo "📋 CONFIGURATION: Testing pipeline for all branches"
+              echo "📋 CONFIGURATION: Testing pipeline only"
               cp .circleci/testing-config.yml .circleci/generated_config.yml
             fi
 
