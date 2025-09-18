@@ -66,7 +66,7 @@ server:
   "version": 3,
   "transport": "mqtt",
   "audio_params": {
-    "sample_rate": 16000,
+    "sample_rate": 24000,
     "channels": 1,
     "frame_duration": 20,
     "format": "opus"

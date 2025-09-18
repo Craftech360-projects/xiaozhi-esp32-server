@@ -70,7 +70,7 @@ Real-time audio data bypasses MQTT and flows directly via encrypted UDP packets 
   "version": 3,
   "transport": "mqtt",
   "audio_params": {
-    "sample_rate": 16000,
+    "sample_rate": 24000,
     "channels": 1,
     "frame_duration": 20,
     "format": "opus"
@@ -94,7 +94,7 @@ Real-time audio data bypasses MQTT and flows directly via encrypted UDP packets 
     "nonce": "010000008e863dda0000000000000000"
   },
   "audio_params": {
-    "sample_rate": 16000,
+    "sample_rate": 24000,
     "channels": 1,
     "frame_duration": 20,
     "format": "opus"
@@ -277,7 +277,7 @@ Server → Client: goodbye (acknowledgment)
 
 ### Audio Streaming
 - **Protocol**: UDP with AES-128-CTR encryption
-- **Format**: Opus codec, 16kHz, mono
+- **Format**: Opus codec, 24kHz, mono
 - **Frame Duration**: 20ms per packet
 - **Encryption**: Header used as nonce, payload encrypted
 

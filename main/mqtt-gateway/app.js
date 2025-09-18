@@ -33,19 +33,19 @@ const { OpusEncoder, OpusDecoder, OpusApplication } = require("@voicehype/audify
 let opusEncoder = null;
 let opusDecoder = null;
 // Define constants for audio parameters
-const SAMPLE_RATE = 16000;     // Hz
+const SAMPLE_RATE = 24000;     // Hz - Updated to 24kHz to match LiveKit
 const CHANNELS = 1;            // Mono
 const FRAME_DURATION_MS = 20;  // 20ms frames (standard for Opus)
-const FRAME_SIZE_SAMPLES = (SAMPLE_RATE * FRAME_DURATION_MS) / 1000; // 16000 * 20 / 1000 = 320
-const FRAME_SIZE_BYTES = FRAME_SIZE_SAMPLES * 2; // 320 samples * 2 bytes/sample = 640 bytes PCM
+const FRAME_SIZE_SAMPLES = (SAMPLE_RATE * FRAME_DURATION_MS) / 1000; // 24000 * 20 / 1000 = 480
+const FRAME_SIZE_BYTES = FRAME_SIZE_SAMPLES * 2; // 480 samples * 2 bytes/sample = 960 bytes PCM
 
 try {
-  // For 24kHz, mono audio (resampled from 48kHz LiveKit audio)
+  // For 24kHz, mono audio (direct from LiveKit - no resampling needed)
   opusEncoder = new OpusEncoder(24000, 1, OpusApplication.OPUS_APPLICATION_AUDIO);
-  opusDecoder = new OpusDecoder(16000, 1);
+  opusDecoder = new OpusDecoder(24000, 1);
 
   console.log(
-    "✅ [OPUS] audify-plus encoder/decoder initialized successfully - encoder: 24kHz, decoder: 16kHz mono"
+    "✅ [OPUS] audify-plus encoder/decoder initialized successfully - encoder: 24kHz, decoder: 24kHz mono"
   );
 } catch (err) {
   console.error(
@@ -82,16 +82,16 @@ class LiveKitBridge extends Emitter {
     this.uuid = uuid;
     this.userData = userData;
     this.room = null;
-    this.audioSource = new AudioSource(16000, 1);
+    this.audioSource = new AudioSource(24000, 1);
     this.protocolVersion = protocolVersion;
 
-    // Initialize audio resampler for 48kHz -> 16kHz conversion
-    this.audioResampler = new AudioResampler(48000, 16000, 1, AudioResamplerQuality.QUICK); // 48kHz -> 16kHz, mono
+    // No resampling needed - LiveKit now outputs 24kHz directly
+    // this.audioResampler = new AudioResampler(48000, 16000, 1, AudioResamplerQuality.QUICK);
 
-    // Frame buffer for accumulating resampled audio into proper frame sizes
+    // Frame buffer for accumulating audio into proper frame sizes
     this.frameBuffer = Buffer.alloc(0);
-    this.targetFrameSize = 320; // 320 samples = 20ms at 16kHz
-    this.targetFrameBytes = this.targetFrameSize * 2; // 640 bytes for 16-bit PCM
+    this.targetFrameSize = 480; // 480 samples = 20ms at 24kHz
+    this.targetFrameBytes = this.targetFrameSize * 2; // 960 bytes for 16-bit PCM
 
     // Initialize Opus decoder for incoming audio (device -> LiveKit)
     // this.opusDecoder = null;
@@ -143,25 +143,30 @@ class LiveKitBridge extends Emitter {
         }
 
         if (frameCount <= 3 || frameCount % 100 === 0) {
-          // console.log(`✅ [BUFFERED] Frame ${frameCount}: 16kHz PCM ${frameData.length}B sent directly`);
+          console.log(`✅ [BUFFERED] Frame ${frameCount}: 24kHz PCM ${frameData.length}B → Opus encoding`);
         }
 
-        // Send PCM directly without Opus encoding
-        this.connection.sendUdpMessage(frameData, timestamp);
-
-        // Commented out Opus encoding for testing
-        /*
+        // Use Opus encoding for efficient transmission
         if (opusEncoder) {
           try {
             const alignedBuffer = Buffer.allocUnsafe(frameData.length);
             frameData.copy(alignedBuffer);
             const opusBuffer = opusEncoder.encode(alignedBuffer, this.targetFrameSize);
             this.connection.sendUdpMessage(opusBuffer, timestamp);
+
+            if (frameCount <= 3 || frameCount % 100 === 0) {
+              console.log(`✅ [OPUS] Compressed ${frameData.length}B PCM → ${opusBuffer.length}B Opus`);
+            }
           } catch (err) {
             console.error(`❌ [BUFFERED] Encode error: ${err.message}`);
+            // Fallback to PCM if Opus fails
+            this.connection.sendUdpMessage(frameData, timestamp);
           }
+        } else {
+          // Fallback: Send PCM if Opus encoder not available
+          console.warn("⚠️ [AUDIO] Opus encoder not available, sending PCM");
+          this.connection.sendUdpMessage(frameData, timestamp);
         }
-        */
       }
     }
   }
@@ -305,45 +310,35 @@ class LiveKitBridge extends Emitter {
                         `🏁 [AUDIO STREAM] Stream ended for ${participant.identity}. Total frames: ${frameCount}, Total bytes: ${totalBytes}`
                       );
 
-                      // Flush any remaining resampled data
-                      const finalFrames = this.audioResampler.flush();
-                      for (const finalFrame of finalFrames) {
-                        const finalBuffer = Buffer.from(
-                          finalFrame.data.buffer,
-                          finalFrame.data.byteOffset,
-                          finalFrame.data.byteLength
-                        );
-                        // Add final frames to buffer
-                        this.frameBuffer = Buffer.concat([this.frameBuffer, finalBuffer]);
-                      }
+                      // No resampler flush needed - using direct 24kHz audio
 
                       // Process any remaining complete frames in buffer
                       const finalTimestamp = (Date.now() - this.connection.udp.startTime) & 0xffffffff;
                       this.processBufferedFrames(finalTimestamp, frameCount, participant.identity);
 
                       // Send any remaining partial frame if it has significant data
-                      if (this.frameBuffer.length > 160) { // At least 10ms worth of 16kHz audio (160 samples * 2 bytes = 320B)
-                        console.log(`🔄 [FLUSH] Processing partial 16kHz PCM frame: ${this.frameBuffer.length}B`);
+                      if (this.frameBuffer.length > 240) { // At least 10ms worth of 24kHz audio (240 samples * 2 bytes = 480B)
+                        console.log(`🔄 [FLUSH] Processing partial 24kHz PCM frame: ${this.frameBuffer.length}B`);
 
-                        // Send remaining PCM data directly without Opus encoding
-                        this.connection.sendUdpMessage(this.frameBuffer, finalTimestamp);
-
-                        // Commented out Opus encoding for testing
-                        /*
                         if (opusEncoder) {
                           try {
-                            // Pad to nearest valid frame size for 16kHz
-                            const targetSize = this.frameBuffer.length <= 320 ? 320 : 640;
+                            // Pad to nearest valid frame size for 24kHz (480 or 960 bytes)
+                            const targetSize = this.frameBuffer.length <= 480 ? 480 : 960;
                             const paddedBuffer = Buffer.alloc(targetSize);
                             this.frameBuffer.copy(paddedBuffer);
 
                             const opusBuffer = opusEncoder.encode(paddedBuffer, targetSize / 2);
                             this.connection.sendUdpMessage(opusBuffer, finalTimestamp);
+                            console.log(`✅ [FLUSH] Encoded partial frame: ${this.frameBuffer.length}B → ${opusBuffer.length}B Opus`);
                           } catch (err) {
                             console.log(`⚠️ [FLUSH] Failed to encode partial frame: ${err.message}`);
+                            // Fallback to PCM
+                            this.connection.sendUdpMessage(this.frameBuffer, finalTimestamp);
                           }
+                        } else {
+                          // Fallback: Send remaining PCM if no Opus encoder
+                          this.connection.sendUdpMessage(this.frameBuffer, finalTimestamp);
                         }
-                        */
                       }
 
                       // Clear the buffer
@@ -353,22 +348,16 @@ class LiveKitBridge extends Emitter {
 
                     frameCount++;
 
-                    // value is an AudioFrame from LiveKit (48kHz)
-                    // Push the frame to resampler and get resampled frames back (16kHz)
-                    const resampledFrames = this.audioResampler.push(value);
+                    // value is an AudioFrame from LiveKit (24kHz) - no resampling needed
+                    const audioBuffer = Buffer.from(
+                      value.data.buffer,
+                      value.data.byteOffset,
+                      value.data.byteLength
+                    );
 
-                    // Add resampled frames to buffer instead of processing directly
-                    for (const resampledFrame of resampledFrames) {
-                      const resampledBuffer = Buffer.from(
-                        resampledFrame.data.buffer,
-                        resampledFrame.data.byteOffset,
-                        resampledFrame.data.byteLength
-                      );
-
-                      // Append to frame buffer
-                      this.frameBuffer = Buffer.concat([this.frameBuffer, resampledBuffer]);
-                      totalBytes += resampledBuffer.length;
-                    }
+                    // Append directly to frame buffer (no resampling needed)
+                    this.frameBuffer = Buffer.concat([this.frameBuffer, audioBuffer]);
+                    totalBytes += audioBuffer.length;
 
                     const timestamp = (Date.now() - this.connection.udp.startTime) & 0xffffffff;
 
@@ -457,7 +446,7 @@ class LiveKitBridge extends Emitter {
         resolve({
           session_id: roomName,
           audio_params: {
-            sample_rate: 16000,
+            sample_rate: 24000,
             channels: 1,
             frame_duration: 20,
             format: "opus"
@@ -506,7 +495,7 @@ class LiveKitBridge extends Emitter {
                 pcmBuffer.byteOffset,
                 pcmBuffer.length / 2
               );
-              const frame = new AudioFrame(samples, 16000, 1, samples.length);
+              const frame = new AudioFrame(samples, 24000, 1, samples.length);
 
               // console.log(
               //   `📤 [UDP IN] Opus->PCM->LiveKit: ${opusData.length}B opus -> ${pcmBuffer.length}B pcm -> ${samples.length} samples, ts=${timestamp}, mac=${this.macAddress}`
@@ -552,7 +541,7 @@ class LiveKitBridge extends Emitter {
           opusData.byteOffset,
           opusData.length / 2
         );
-        const frame = new AudioFrame(samples, 16000, 1, samples.length);
+        const frame = new AudioFrame(samples, 24000, 1, samples.length);
         console.log(
           `📤 [UDP IN] Device->LiveKit: ${opusData.length}B, samples=${samples.length}, ts=${timestamp}, mac=${this.macAddress}`
         );
@@ -588,7 +577,7 @@ class LiveKitBridge extends Emitter {
       if (error.message.includes('InvalidState')) {
         console.log(`🔄 [AUDIO] Attempting to reinitialize AudioSource due to InvalidState`);
         try {
-          this.audioSource = new AudioSource(16000, 1);
+          this.audioSource = new AudioSource(24000, 1);
           console.log(`✅ [AUDIO] AudioSource reinitialized successfully`);
         } catch (reinitError) {
           console.error(`❌ [AUDIO] Failed to reinitialize AudioSource: ${reinitError.message}`);
