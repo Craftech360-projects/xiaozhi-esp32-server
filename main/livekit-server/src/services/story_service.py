@@ -10,7 +10,7 @@ import logging
 from typing import Dict, List, Optional
 from pathlib import Path
 import urllib.parse
-from .semantic_search import SemanticSearchService
+from .semantic_search import QdrantSemanticSearch
 
 logger = logging.getLogger(__name__)
 
@@ -19,11 +19,11 @@ class StoryService:
 
     def __init__(self):
         self.metadata = {}
-        self.cloudfront_domain = os.getenv("CLOUDFRONT_DOMAIN", "dbtnllz9fcr1z.cloudfront.net")
-        self.s3_base_url = os.getenv("S3_BASE_URL", "https://cheeko-audio-files.s3.us-east-1.amazonaws.com")
+        self.cloudfront_domain = os.getenv("CLOUDFRONT_DOMAIN", "")
+        self.s3_base_url = os.getenv("S3_BASE_URL", "")
         self.use_cdn = os.getenv("USE_CDN", "true").lower() == "true"
         self.is_initialized = False
-        self.semantic_search = SemanticSearchService()
+        self.semantic_search = QdrantSemanticSearch()
 
     async def initialize(self) -> bool:
         """Initialize story service using only Qdrant cloud API"""

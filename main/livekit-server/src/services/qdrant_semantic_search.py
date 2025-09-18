@@ -12,7 +12,7 @@ from dataclasses import dataclass
 try:
     from qdrant_client import QdrantClient
     from qdrant_client import models
-    from qdrant_client.models import Filter, FieldCondition, Match, PointStruct
+    from qdrant_client.models import PointStruct
     from sentence_transformers import SentenceTransformer
     QDRANT_AVAILABLE = True
 except ImportError:
@@ -44,8 +44,8 @@ class QdrantSemanticSearch:
 
         # Qdrant configuration
         self.config = {
-            "qdrant_url": "https://a2482b9f-2c29-476e-9ff0-741aaaaf632e.eu-west-1-0.aws.cloud.qdrant.io",
-            "qdrant_api_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.zPBGAqVGy-edbbgfNOJsPWV496BsnQ4ELOFvsLNyjsk",
+            "qdrant_url": os.getenv("QDRANT_URL", ""),
+            "qdrant_api_key": os.getenv("QDRANT_API_KEY", ""),
             "music_collection": "xiaozhi_music",
             "stories_collection": "xiaozhi_stories",
             "embedding_model": "all-MiniLM-L6-v2",
@@ -278,21 +278,12 @@ class QdrantSemanticSearch:
             return []
 
         try:
-            # Build filter conditions
-            query_filter = None
-            if category_filter:
-                query_filter = Filter(
-                    must=[
-                        FieldCondition(key="category", match=Match(value=category_filter))
-                    ]
-                )
-
             # Use scroll to get all matching points, then filter by text locally
+            # Avoid using Filter/FieldCondition to prevent Union type issues
             scroll_result = self.client.scroll(
                 collection_name=self.config["stories_collection"],
                 limit=1000,  # Get more points to search through
-                with_payload=True,
-                scroll_filter=query_filter
+                with_payload=True
             )
 
             # Filter results by text matching
@@ -301,6 +292,11 @@ class QdrantSemanticSearch:
 
             for point in scroll_result[0]:
                 payload = point.payload
+                
+                # Apply category filter manually if specified
+                if category_filter and payload.get('category') != category_filter:
+                    continue
+                
                 # Check title, romanized, alternatives for text matches
                 title = payload.get('title', '').lower()
                 romanized = payload.get('romanized', '').lower()
@@ -324,7 +320,7 @@ class QdrantSemanticSearch:
                     results.append(QdrantSearchResult(
                         title=payload['title'],
                         filename=payload['filename'],
-                        language_or_category=payload['category'],
+                        language_or_category=payload.get('category', ''),
                         score=score,
                         metadata=payload,
                         alternatives=payload.get('alternatives', []),
