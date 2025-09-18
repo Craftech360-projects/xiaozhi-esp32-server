@@ -186,13 +186,13 @@ class UnifiedAudioPlayer:
             # Convert MP3 to PCM using pydub
             audio_segment = AudioSegment.from_mp3(io.BytesIO(audio_data))
 
-            # Convert to 24kHz mono for LiveKit
-            audio_segment = audio_segment.set_frame_rate(24000)
+            # Convert to 48kHz mono for LiveKit
+            audio_segment = audio_segment.set_frame_rate(48000)
             audio_segment = audio_segment.set_channels(1)
             audio_segment = audio_segment.set_sample_width(2)
 
             raw_audio = audio_segment.raw_data
-            sample_rate = 24000
+            sample_rate = 48000
             frame_duration_ms = 20
             samples_per_frame = sample_rate * frame_duration_ms // 1000
 
