@@ -1,5 +1,13 @@
 version: 2.1
 
+# ==========================================
+# 🚀 XIAOZHI PRODUCTION DEPLOYMENT PIPELINE
+# ==========================================
+# Pipeline Type: PRODUCTION DEPLOYMENT
+# Triggers: DEV BRANCH ONLY
+# Purpose: Build, test, security scan, and deploy to production
+# ==========================================
+
 # =========================
 # Executors
 # =========================
@@ -42,6 +50,53 @@ executors:
 # Jobs
 # =========================
 jobs:
+  # ==========================================
+  # 🚀 PRODUCTION PIPELINE JOBS
+  # All jobs prefixed with [PROD] for dashboard clarity
+  # ==========================================
+
+  # [PROD] Pipeline Type Notification and Metadata
+  prod_pipeline_notification:
+    executor: base-executor
+    steps:
+      - run:
+          name: "🚀 [PRODUCTION PIPELINE] Pipeline Type Notification"
+          command: |
+            echo "=================================================="
+            echo "🚀 XIAOZHI PRODUCTION DEPLOYMENT PIPELINE"
+            echo "=================================================="
+            echo "📊 PIPELINE METADATA:"
+            echo "  • Pipeline Type: PRODUCTION DEPLOYMENT"
+            echo "  • Trigger: DEV BRANCH ONLY"
+            echo "  • Purpose: Build, test, security scan, and deploy"
+            echo "  • Branch: $CIRCLE_BRANCH"
+            echo "  • Commit: $CIRCLE_SHA1"
+            echo "  • Build Number: $CIRCLE_BUILD_NUM"
+            echo "  • Workflow ID: $CIRCLE_WORKFLOW_ID"
+            echo "  • Project: $CIRCLE_PROJECT_REPONAME"
+            echo "  • Username: $CIRCLE_USERNAME"
+            echo ""
+            echo "🏗️ DEPLOYMENT STAGES:"
+            echo "  ✅ Build All Services"
+            echo "  ✅ Run Service Tests"
+            echo "  ✅ Security Vulnerability Scanning"
+            echo "  ✅ Deploy to Azure with PM2"
+            echo "  ✅ Health Checks & Verification"
+            echo ""
+            echo "🔧 DEPLOYMENT TARGETS:"
+            echo "  • MQTT Gateway → Azure VM (PM2)"
+            echo "  • Manager API → Azure VM (PM2)"
+            echo "  • Manager Web → Azure VM (PM2)"
+            echo "  • LiveKit Server → Azure VM (PM2)"
+            echo ""
+            echo "🌍 ENVIRONMENTS:"
+            echo "  • Staging (develop branch)"
+            echo "  • Production (main branch)"
+            echo "  • Dev (other branches)"
+            echo "=================================================="
+            echo "🚀 Starting Production Pipeline Execution..."
+            echo "=================================================="
+
   # Build a Vue.js frontend application
   build_vue_frontend:
     parameters:
@@ -1646,33 +1701,41 @@ workflows:
   version: 2
 
   # ==========================================
-  # UNIFIED PIPELINE FOR ALL 4 SERVICES
-  # Triggers ONLY on dev branch changes
+  # 🚀 PRODUCTION DEPLOYMENT PIPELINE
+  # Pipeline Type: PRODUCTION DEPLOYMENT
+  # Triggers: DEV BRANCH ONLY (unified 4-service deployment)
+  # Dashboard Display: [PROD] prefix for all jobs
   # ==========================================
-  xiaozhi-unified-pipeline:
+  prod-pipeline-xiaozhi-deployment:
     when:
       equal: [ dev, << pipeline.git.branch >> ]
     jobs:
       # ==========================================
+      # PHASE 0: PIPELINE IDENTIFICATION
+      # ==========================================
+      - prod_pipeline_notification:
+          name: "[PROD] 🚀 Pipeline Type Notification"
+
+      # ==========================================
       # PHASE 1: BUILD ALL SERVICES IN PARALLEL
       # ==========================================
       - build_node_service:
-          name: "build-mqtt-gateway"
+          name: "[PROD] Build MQTT Gateway"
           service_name: "mqtt-gateway"
           service_path: "main/mqtt-gateway"
 
       - build_java_service:
-          name: "build-manager-api"
+          name: "[PROD] Build Manager API"
           service_name: "manager-api"
           service_path: "main/manager-api"
 
       - build_vue_frontend:
-          name: "build-manager-web"
+          name: "[PROD] Build Manager Web"
           service_name: "manager-web"
           service_path: "main/manager-web"
 
       - build_python_service:
-          name: "build-livekit-server"
+          name: "[PROD] Build LiveKit Server"
           service_name: "livekit-server"
           service_path: "main/livekit-server"
 
@@ -1680,26 +1743,26 @@ workflows:
       # PHASE 2: TEST ALL SERVICES IN PARALLEL
       # ==========================================
       - test_node_service:
-          name: "test-mqtt-gateway"
+          name: "[PROD] Test MQTT Gateway"
           service_name: "mqtt-gateway"
           service_path: "main/mqtt-gateway"
           entry_file: "app.js"
           requires: ["build-mqtt-gateway"]
 
       - test_java_service:
-          name: "test-manager-api"
+          name: "[PROD] Test Manager API"
           service_name: "manager-api"
           service_path: "main/manager-api"
           requires: ["build-manager-api"]
 
       - test_vue_frontend:
-          name: "test-manager-web"
+          name: "[PROD] Test Manager Web"
           service_name: "manager-web"
           service_path: "main/manager-web"
           requires: ["build-manager-web"]
 
       - test_python_service:
-          name: "test-livekit-server"
+          name: "[PROD] Test LiveKit Server"
           service_name: "livekit-server"
           service_path: "main/livekit-server"
           entry_file: "main.py"

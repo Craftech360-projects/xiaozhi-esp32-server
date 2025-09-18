@@ -1,5 +1,13 @@
 version: 2.1
 
+# ==========================================
+# 🧪 XIAOZHI TESTING PIPELINE CONFIGURATION
+# ==========================================
+# Pipeline Type: TESTING & QUALITY ASSURANCE
+# Triggers: ALL BRANCHES (comprehensive testing)
+# Purpose: Code quality, testing, security scanning
+# ==========================================
+
 # =========================
 # Executors (reusing from main config)
 # =========================
@@ -37,11 +45,67 @@ executors:
 # Jobs - Testing Pipeline
 # =========================
 jobs:
-  # Code Quality Gate - runs static analysis and linting
-  code_quality_check:
+  # ==========================================
+  # 🧪 TESTING PIPELINE JOBS
+  # All jobs prefixed with [TEST] for dashboard clarity
+  # ==========================================
+
+  # [TEST] Pipeline Type Notification and Metadata
+  test_pipeline_notification:
+    executor: base-executor
+    steps:
+      - run:
+          name: "🧪 [TESTING PIPELINE] Pipeline Type Notification"
+          command: |
+            echo "=================================================="
+            echo "🧪 XIAOZHI TESTING & QUALITY ASSURANCE PIPELINE"
+            echo "=================================================="
+            echo "📊 PIPELINE METADATA:"
+            echo "  • Pipeline Type: TESTING & QUALITY ASSURANCE"
+            echo "  • Trigger: ALL BRANCHES"
+            echo "  • Purpose: Code quality, testing, security scanning"
+            echo "  • Branch: $CIRCLE_BRANCH"
+            echo "  • Commit: $CIRCLE_SHA1"
+            echo "  • Build Number: $CIRCLE_BUILD_NUM"
+            echo "  • Workflow ID: $CIRCLE_WORKFLOW_ID"
+            echo "  • Project: $CIRCLE_PROJECT_REPONAME"
+            echo "  • Username: $CIRCLE_USERNAME"
+            echo ""
+            echo "🎯 TESTING FOCUS AREAS:"
+            echo "  ✅ Code Quality Analysis (ESLint, Pylint, SpotBugs)"
+            echo "  ✅ Code Redundancy Detection (jscpd, Vulture)"
+            echo "  ✅ Security Vulnerability Scanning (Bandit, Safety, OWASP)"
+            echo "  ✅ Comprehensive Unit & Integration Testing"
+            echo "  ✅ Performance & Load Testing"
+            echo "  ✅ Test Environment Deployment"
+            echo ""
+            echo "🔍 SERVICES UNDER TEST:"
+            echo "  • MQTT Gateway (Node.js)"
+            echo "  • Manager API (Java/Spring Boot)"
+            echo "  • Manager Web (Vue.js)"
+            echo "  • LiveKit Server (Python)"
+            echo "=================================================="
+            echo "🚀 Starting Testing Pipeline Execution..."
+            echo "=================================================="
+
+  # [TEST] Code Quality Gate - runs static analysis and linting
+  test_code_quality_check:
     executor: node-executor
     steps:
       - checkout
+      - run:
+          name: "🧪 [TESTING PIPELINE] Pipeline Identification"
+          command: |
+            echo "=================================================="
+            echo "🧪 XIAOZHI TESTING & QUALITY ASSURANCE PIPELINE"
+            echo "=================================================="
+            echo "Pipeline Type: TESTING"
+            echo "Branch: $CIRCLE_BRANCH"
+            echo "Job: Code Quality Check"
+            echo "Commit: $CIRCLE_SHA1"
+            echo "Build: $CIRCLE_BUILD_NUM"
+            echo "Workflow: $CIRCLE_WORKFLOW_ID"
+            echo "=================================================="
       - run:
           name: Install quality analysis tools
           command: |
@@ -146,11 +210,24 @@ jobs:
           path: main/livekit-server/bandit-report.json
           destination: security-reports/bandit-report.json
 
-  # Duplicate Code Detection
-  duplicate_code_detection:
+  # [TEST] Duplicate Code Detection
+  test_duplicate_code_detection:
     executor: node-executor
     steps:
       - checkout
+      - run:
+          name: "🧪 [TESTING PIPELINE] Pipeline Identification"
+          command: |
+            echo "=================================================="
+            echo "🧪 XIAOZHI TESTING & QUALITY ASSURANCE PIPELINE"
+            echo "=================================================="
+            echo "Pipeline Type: TESTING"
+            echo "Branch: $CIRCLE_BRANCH"
+            echo "Job: Code Redundancy Detection"
+            echo "Commit: $CIRCLE_SHA1"
+            echo "Build: $CIRCLE_BUILD_NUM"
+            echo "Workflow: $CIRCLE_WORKFLOW_ID"
+            echo "=================================================="
       - run:
           name: Install duplicate detection tools
           command: |
@@ -204,8 +281,8 @@ jobs:
           path: duplication-summary.txt
           destination: code-analysis/duplication-summary.txt
 
-  # Dependency Vulnerability Scanning
-  dependency_vulnerability_scan:
+  # [TEST] Dependency Vulnerability Scanning
+  test_dependency_vulnerability_scan:
     executor: node-executor
     steps:
       - checkout
@@ -262,8 +339,8 @@ jobs:
           path: main/livekit-server/pip-audit-report.json
           destination: vulnerability-reports/pip-audit-report.json
 
-  # Comprehensive Node.js Service Testing
-  comprehensive_test_node_service:
+  # [TEST] Comprehensive Node.js Service Testing
+  test_comprehensive_node_service:
     parameters:
       service_name: { type: string }
       service_path: { type: string }
@@ -412,8 +489,8 @@ jobs:
 
             echo "✅ Comprehensive testing completed for $SERVICE"
 
-  # Comprehensive Java Service Testing
-  comprehensive_test_java_service:
+  # [TEST] Comprehensive Java Service Testing
+  test_comprehensive_java_service:
     parameters:
       service_name: { type: string }
       service_path: { type: string }
@@ -517,8 +594,8 @@ jobs:
           path: << parameters.service_path >>/target/spotbugsXml.xml
           destination: analysis-reports/spotbugs.xml
 
-  # Comprehensive Vue.js Frontend Testing
-  comprehensive_test_vue_frontend:
+  # [TEST] Comprehensive Vue.js Frontend Testing
+  test_comprehensive_vue_frontend:
     parameters:
       service_name: { type: string }
       service_path: { type: string }
@@ -691,8 +768,8 @@ jobs:
           path: << parameters.service_path >>/dist
           destination: build-artifacts/frontend
 
-  # Comprehensive Python Service Testing
-  comprehensive_test_python_service:
+  # [TEST] Comprehensive Python Service Testing
+  test_comprehensive_python_service:
     parameters:
       service_name: { type: string }
       service_path: { type: string }
@@ -921,8 +998,8 @@ jobs:
           path: << parameters.service_path >>/safety-report.json
           destination: security-reports/safety-detailed.json
 
-  # Integration Testing
-  integration_test_services:
+  # [TEST] Integration Testing
+  test_integration_services:
     executor: node-executor
     steps:
       - checkout
@@ -1154,8 +1231,8 @@ jobs:
           path: integration-test-report.json
           destination: integration-test-report.json
 
-  # Performance Testing
-  performance_test_services:
+  # [TEST] Performance Testing
+  test_performance_services:
     executor: node-executor
     steps:
       - checkout
@@ -1559,8 +1636,8 @@ jobs:
           path: performance-report.json
           destination: performance-report.json
 
-  # Deploy to Test Environment (for feature branches)
-  deploy_to_test_environment:
+  # [TEST] Deploy to Test Environment (for feature branches)
+  test_deploy_to_test_environment:
     parameters:
       service_name: { type: string, default: "all-services" }
     executor: node-executor
@@ -1677,57 +1754,65 @@ workflows:
   version: 2
 
   # ==========================================
-  # COMPREHENSIVE TESTING PIPELINE
-  # Triggers on ALL branches for comprehensive testing
+  # 🧪 COMPREHENSIVE TESTING PIPELINE
+  # Pipeline Type: TESTING & QUALITY ASSURANCE
+  # Triggers: ALL BRANCHES for comprehensive testing
+  # Dashboard Display: [TEST] prefix for all jobs
   # ==========================================
-  xiaozhi-testing-pipeline:
+  test-pipeline-xiaozhi-qa:
     jobs:
+      # ==========================================
+      # PHASE 0: PIPELINE IDENTIFICATION
+      # ==========================================
+      - test_pipeline_notification:
+          name: "[TEST] 🧪 Pipeline Type Notification"
+
       # ==========================================
       # PHASE 1: QUALITY GATES & CODE ANALYSIS
       # ==========================================
-      - code_quality_check:
-          name: "quality-gate-check"
+      - test_code_quality_check:
+          name: "[TEST] Quality Gate Check"
 
-      - duplicate_code_detection:
-          name: "redundancy-check"
+      - test_duplicate_code_detection:
+          name: "[TEST] Code Redundancy Analysis"
 
-      - dependency_vulnerability_scan:
-          name: "dependency-security-scan"
+      - test_dependency_vulnerability_scan:
+          name: "[TEST] Dependency Security Scan"
 
       # ==========================================
       # PHASE 2: COMPREHENSIVE SERVICE TESTING
       # ==========================================
-      - comprehensive_test_node_service:
-          name: "comprehensive-test-mqtt-gateway"
+      - test_comprehensive_node_service:
+          name: "[TEST] MQTT Gateway - Comprehensive"
           service_name: "mqtt-gateway"
           service_path: "main/mqtt-gateway"
           entry_file: "app.js"
-          requires: ["quality-gate-check", "redundancy-check"]
+          requires: ["[TEST] Quality Gate Check", "[TEST] Code Redundancy Analysis"]
 
-      - comprehensive_test_java_service:
-          name: "comprehensive-test-manager-api"
+      - test_comprehensive_java_service:
+          name: "[TEST] Manager API - Comprehensive"
           service_name: "manager-api"
           service_path: "main/manager-api"
-          requires: ["quality-gate-check", "redundancy-check"]
+          requires: ["[TEST] Quality Gate Check", "[TEST] Code Redundancy Analysis"]
 
-      - comprehensive_test_vue_frontend:
-          name: "comprehensive-test-manager-web"
+      - test_comprehensive_vue_frontend:
+          name: "[TEST] Manager Web - Comprehensive"
           service_name: "manager-web"
           service_path: "main/manager-web"
-          requires: ["quality-gate-check", "redundancy-check"]
+          requires: ["[TEST] Quality Gate Check", "[TEST] Code Redundancy Analysis"]
 
-      - comprehensive_test_python_service:
-          name: "comprehensive-test-livekit-server"
+      - test_comprehensive_python_service:
+          name: "[TEST] LiveKit Server - Comprehensive"
           service_name: "livekit-server"
           service_path: "main/livekit-server"
           entry_file: "main.py"
-          requires: ["quality-gate-check", "redundancy-check"]
+          requires: ["[TEST] Quality Gate Check", "[TEST] Code Redundancy Analysis"]
 
       # ==========================================
       # PHASE 3: INTEGRATION & E2E TESTING
       # ==========================================
-      - integration_test_services:
-          name: "integration-test-all"
+      - test_integration_services:
+          name: "[TEST] Integration & E2E Testing"
           requires:
             - "comprehensive-test-mqtt-gateway"
             - "comprehensive-test-manager-api"
@@ -1735,16 +1820,16 @@ workflows:
             - "comprehensive-test-livekit-server"
             - "dependency-security-scan"
 
-      - performance_test_services:
-          name: "performance-test-all"
+      - test_performance_services:
+          name: "[TEST] Performance & Load Testing"
           requires: ["integration-test-all"]
 
       # ==========================================
       # PHASE 4: CONDITIONAL DEPLOYMENT TO TEST ENV
       # Deploy only if all tests pass (for feature branches)
       # ==========================================
-      - deploy_to_test_environment:
-          name: "deploy-test-environment"
+      - test_deploy_to_test_environment:
+          name: "[TEST] Deploy to Test Environment"
           context: "azure-mqtt-gateway"
           requires: ["performance-test-all"]
           filters:
