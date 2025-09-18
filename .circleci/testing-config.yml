@@ -1,4 +1,4 @@
-version: 2.1
+sversion: 2.1
 
 # ==========================================
 # 🧪 XIAOZHI TESTING PIPELINE CONFIGURATION
@@ -1787,26 +1787,30 @@ workflows:
           service_name: "mqtt-gateway"
           service_path: "main/mqtt-gateway"
           entry_file: "app.js"
-          requires: ["[TEST] Quality Gate Check", "[TEST] Code Redundancy Analysis"]
+          requires:
+            ["[TEST] Quality Gate Check", "[TEST] Code Redundancy Analysis"]
 
       - test_comprehensive_java_service:
           name: "[TEST] Manager API - Comprehensive"
           service_name: "manager-api"
           service_path: "main/manager-api"
-          requires: ["[TEST] Quality Gate Check", "[TEST] Code Redundancy Analysis"]
+          requires:
+            ["[TEST] Quality Gate Check", "[TEST] Code Redundancy Analysis"]
 
       - test_comprehensive_vue_frontend:
           name: "[TEST] Manager Web - Comprehensive"
           service_name: "manager-web"
           service_path: "main/manager-web"
-          requires: ["[TEST] Quality Gate Check", "[TEST] Code Redundancy Analysis"]
+          requires:
+            ["[TEST] Quality Gate Check", "[TEST] Code Redundancy Analysis"]
 
       - test_comprehensive_python_service:
           name: "[TEST] LiveKit Server - Comprehensive"
           service_name: "livekit-server"
           service_path: "main/livekit-server"
           entry_file: "main.py"
-          requires: ["[TEST] Quality Gate Check", "[TEST] Code Redundancy Analysis"]
+          requires:
+            ["[TEST] Quality Gate Check", "[TEST] Code Redundancy Analysis"]
 
       # ==========================================
       # PHASE 3: INTEGRATION & E2E TESTING
@@ -1838,5 +1842,4 @@ workflows:
                 - dev
                 - develop
                 - main
-
 # Completed - Comprehensive Testing Pipeline
