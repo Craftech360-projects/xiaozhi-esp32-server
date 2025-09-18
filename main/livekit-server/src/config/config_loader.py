@@ -21,6 +21,17 @@ class ConfigLoader:
         }
 
     @staticmethod
+    def get_tts_config():
+        """Get TTS configuration from environment variables"""
+        return {
+            'provider': os.getenv('TTS_PROVIDER', 'groq'),  # groq or elevenlabs
+            'model': os.getenv('TTS_MODEL', 'playai-tts'),
+            'voice': os.getenv('TTS_VOICE', 'Aaliyah-PlayAI'),
+            'elevenlabs_voice_id': os.getenv('ELEVENLABS_VOICE_ID', ''),
+            'elevenlabs_model': os.getenv('ELEVENLABS_MODEL', 'eleven_turbo_v2_5')
+        }
+
+    @staticmethod
     def get_livekit_config():
         """Get LiveKit configuration from environment variables"""
         return {
