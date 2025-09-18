@@ -594,7 +594,7 @@ jobs:
             mkdir -p integration-tests
 
             echo "=== API Endpoint Testing ==="
-            cat > integration-tests/api-test.sh << 'EOF'
+            cat > integration-tests/api-test.sh \<< 'EOF'
             #!/bin/bash
             set -eo pipefail
 
@@ -604,7 +604,7 @@ jobs:
             echo "Simulating Manager API health check..."
 
             # Create mock response for testing
-            cat > mock-api-response.json << 'MOCK_EOF'
+            cat > mock-api-response.json \<< 'MOCK_EOF'
             {
               "status": "healthy",
               "timestamp": "2024-01-01T00:00:00Z",
@@ -653,7 +653,7 @@ jobs:
             mkdir -p performance-tests
 
             echo "=== Load Testing Simulation ==="
-            cat > performance-tests/load-test.js << 'EOF'
+            cat > performance-tests/load-test.js \<< 'EOF'
             const { performance } = require('perf_hooks');
 
             console.log('Load Testing Simulation');
