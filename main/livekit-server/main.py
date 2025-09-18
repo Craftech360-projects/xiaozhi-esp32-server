@@ -9,7 +9,6 @@ from livekit.agents import (
     WorkerOptions,
     cli,
     RoomInputOptions,
-    RoomOutputOptions
 )
 from livekit.plugins import noise_cancellation
 
@@ -40,12 +39,13 @@ async def entrypoint(ctx: JobContext):
 
     # Load configuration (environment variables already loaded at module level)
     groq_config = ConfigLoader.get_groq_config()
+    tts_config = ConfigLoader.get_tts_config()
     agent_config = ConfigLoader.get_agent_config()
 
     # Create providers using factory
     llm = ProviderFactory.create_llm(groq_config)
     stt = ProviderFactory.create_stt(groq_config)
-    tts = ProviderFactory.create_tts(groq_config)
+    tts = ProviderFactory.create_tts(groq_config, tts_config)
     # Disable turn detection to avoid timeout issues
     turn_detection = ProviderFactory.create_turn_detection()
     vad = ctx.proc.userdata["vad"]
@@ -111,9 +111,6 @@ async def entrypoint(ctx: JobContext):
             room_options = RoomInputOptions(
                 noise_cancellation=noise_cancellation.BVC()
             )
-            # room_output_options= RoomOutputOptions(
-            #     audio_sample_rate=24000
-            # )
             logger.info("Noise cancellation enabled (requires LiveKit Cloud)")
         except Exception as e:
             logger.warning(f"Could not enable noise cancellation: {e}")
@@ -126,9 +123,9 @@ async def entrypoint(ctx: JobContext):
     await session.start(
         agent=assistant,
         room=ctx.room,
-        room_input_options=room_options, 
-        # room_output_options=room_output_options
+        room_input_options=room_options,
     )
+
     # Set up music/story integration with session and context
     try:
         # Pass session and context to both audio players
