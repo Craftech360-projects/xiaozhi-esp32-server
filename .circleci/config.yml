@@ -36,22 +36,21 @@ jobs:
               echo "  ✅ Production Pipeline (Build + Deploy to Azure)"
               echo ""
               echo "📋 CONFIGURATION: Combined pipelines for dev branch"
-              echo ".circleci/combined-pipelines.yml" > /tmp/config_path
+              cp .circleci/combined-pipelines.yml .circleci/generated_config.yml
             else
               echo "🎯 FEATURE/OTHER BRANCH DETECTED:"
               echo "  ✅ Testing Pipeline (Quality + Security + Performance)"
               echo "  ⏭️  Production Pipeline (Skipped - not dev branch)"
               echo ""
               echo "📋 CONFIGURATION: Testing pipeline for all branches"
-              echo ".circleci/testing-config.yml" > /tmp/config_path
+              cp .circleci/testing-config.yml .circleci/generated_config.yml
             fi
 
             echo "=================================================="
-            CONFIG_PATH=$(cat /tmp/config_path)
-            echo "🚀 Selected Configuration: $CONFIG_PATH"
+            echo "🚀 Generated Configuration: .circleci/generated_config.yml"
 
-            if [ ! -f "$CONFIG_PATH" ]; then
-              echo "❌ ERROR: Configuration file $CONFIG_PATH not found"
+            if [ ! -f ".circleci/generated_config.yml" ]; then
+              echo "❌ ERROR: Generated configuration file not found"
               echo "Available files:"
               ls -la .circleci/
               exit 1
@@ -60,7 +59,7 @@ jobs:
             echo "✅ Configuration validated"
             echo "=================================================="
       - continuation/continue:
-          configuration_path: "$(cat /tmp/config_path)"
+          configuration_path: .circleci/generated_config.yml
 
 workflows:
   setup:
