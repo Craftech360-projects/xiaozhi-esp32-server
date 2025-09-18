@@ -224,35 +224,23 @@ jobs:
             # Fix Maven test execution with proper Spring Boot configuration
             export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 
-            # Create comprehensive test configuration
+            # Create comprehensive test configuration using echo commands
             mkdir -p src/test/resources
-            cat > src/test/resources/application-test.properties << 'EOF'
-# Test Database Configuration
-spring.datasource.url=jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
-spring.datasource.driverClassName=org.h2.Driver
-spring.datasource.username=sa
-spring.datasource.password=
-
-# JPA Configuration
-spring.jpa.database-platform=org.hibernate.dialect.H2Dialect
-spring.jpa.hibernate.ddl-auto=create-drop
-spring.jpa.show-sql=false
-
-# Disable security for tests
-spring.autoconfigure.exclude=org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration
-
-# Logging Configuration
-logging.level.org.springframework=ERROR
-logging.level.org.hibernate=ERROR
-logging.level.xiaozhi=DEBUG
-
-# Disable banner
-spring.main.banner-mode=off
-
-# Test specific settings
-spring.test.database.replace=none
-management.endpoints.enabled-by-default=false
-EOF
+            echo "# Test Database Configuration" > src/test/resources/application-test.properties
+            echo "spring.datasource.url=jdbc:h2:mem:testdb" >> src/test/resources/application-test.properties
+            echo "spring.datasource.driverClassName=org.h2.Driver" >> src/test/resources/application-test.properties
+            echo "spring.datasource.username=sa" >> src/test/resources/application-test.properties
+            echo "spring.datasource.password=" >> src/test/resources/application-test.properties
+            echo "" >> src/test/resources/application-test.properties
+            echo "# JPA Configuration" >> src/test/resources/application-test.properties
+            echo "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect" >> src/test/resources/application-test.properties
+            echo "spring.jpa.hibernate.ddl-auto=create-drop" >> src/test/resources/application-test.properties
+            echo "spring.jpa.show-sql=false" >> src/test/resources/application-test.properties
+            echo "" >> src/test/resources/application-test.properties
+            echo "# Logging Configuration" >> src/test/resources/application-test.properties
+            echo "logging.level.org.springframework=ERROR" >> src/test/resources/application-test.properties
+            echo "logging.level.org.hibernate=ERROR" >> src/test/resources/application-test.properties
+            echo "spring.main.banner-mode=off" >> src/test/resources/application-test.properties
 
             # Temporarily modify pom.xml to enable tests
             echo "=== Modifying POM to enable tests ==="
