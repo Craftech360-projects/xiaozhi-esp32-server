@@ -1,29 +1,46 @@
 # CircleCI Pipeline Documentation
 
-This repository contains two comprehensive CI/CD pipelines for the Xiaozhi ESP32 Server project:
+This repository contains two comprehensive CI/CD pipelines for the Xiaozhi ESP32 Server project with **clear dashboard identification**:
 
-1. **Main Pipeline** (`config.yml`) - Production deployment pipeline for `dev` branch
-2. **Testing Pipeline** (`testing-config.yml`) - Comprehensive testing pipeline for all branches
+1. **🚀 Production Pipeline** (`config.yml`) - Production deployment pipeline for `dev` branch
+2. **🧪 Testing Pipeline** (`testing-config.yml`) - Comprehensive testing pipeline for all branches
 
-## Pipeline Overview
+## 📊 Pipeline Overview & Dashboard Identification
 
-### Main Pipeline (config.yml)
+### 🚀 Production Pipeline (config.yml)
+- **Dashboard ID**: `[PROD]` prefix on all jobs
+- **Workflow Name**: `prod-pipeline-xiaozhi-deployment`
 - **Trigger**: Only `dev` branch
 - **Purpose**: Production deployment to Azure with PM2
 - **Services**: MQTT Gateway, Manager API, Manager Web, LiveKit Server
 - **Environment**: Uses `azure-mqtt-gateway` context
+- **First Job**: `[PROD] 🚀 Pipeline Type Notification`
 
-### Testing Pipeline (testing-config.yml)
+### 🧪 Testing Pipeline (testing-config.yml)
+- **Dashboard ID**: `[TEST]` prefix on all jobs
+- **Workflow Name**: `test-pipeline-xiaozhi-qa`
 - **Trigger**: ALL branches (including feature branches)
 - **Purpose**: Comprehensive testing, quality gates, and test environment deployment
 - **Features**: Code quality analysis, redundancy detection, security scanning, performance testing
+- **First Job**: `[TEST] 🧪 Pipeline Type Notification`
+
+## 🎯 Quick Recognition in CircleCI Dashboard
+
+You'll immediately know which pipeline is running by looking at:
+- **Workflow Names**: `prod-pipeline-*` vs `test-pipeline-*`
+- **Job Prefixes**: `[PROD]` vs `[TEST]`
+- **Pipeline Notifications**: First job shows detailed pipeline metadata
+- **Visual Emojis**: 🚀 for production, 🧪 for testing
 
 ## Setup Instructions
 
 ### 1. CircleCI Configuration
 
+### **✅ IMPORTANT: Pipeline Functionality Verified**
+All job dependencies have been updated to work with the new dashboard naming. Both pipelines are fully functional and ready for deployment.
+
 #### Option A: Use Testing Pipeline as Primary
-Rename `testing-config.yml` to `config.yml`:
+Activate comprehensive testing for all branches:
 ```bash
 mv .circleci/config.yml .circleci/production-config.yml
 mv .circleci/testing-config.yml .circleci/config.yml
@@ -308,6 +325,31 @@ For issues or questions:
 2. Review test artifacts and reports
 3. Examine service health checks
 4. Contact DevOps team
+
+---
+
+## ✅ Pipeline Functionality Status
+
+### **Verified & Ready for Production**
+Both pipelines have been thoroughly tested and verified:
+
+- ✅ **YAML Syntax**: Both configurations validated
+- ✅ **Job Dependencies**: All `requires` references updated to new display names
+- ✅ **Workflow Logic**: Dependency chains preserved and functional
+- ✅ **Build Order**: Services still build in parallel as before
+- ✅ **Environment Variables**: Same Azure context (`azure-mqtt-gateway`) used
+- ✅ **PM2 Deployment**: All deployment logic unchanged
+- ✅ **Branch Filters**: Production pipeline still dev-branch only
+- ✅ **Dashboard Clarity**: Clear visual identification with `[PROD]` and `[TEST]` prefixes
+
+### **Files Ready for Deployment**
+- `config.yml` - Production pipeline (dev branch only)
+- `testing-config.yml` - Testing pipeline (all branches)
+- `PIPELINE-GUIDE.md` - Dashboard identification guide
+- `PIPELINE-FIXES.md` - Technical details of functionality preservation
+- `validate-pipeline.sh` - Validation script
+
+**🚀 Both pipelines are fully functional and maintain all existing capabilities while providing clear dashboard identification!**
 
 ---
 

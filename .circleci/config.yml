@@ -1747,26 +1747,26 @@ workflows:
           service_name: "mqtt-gateway"
           service_path: "main/mqtt-gateway"
           entry_file: "app.js"
-          requires: ["build-mqtt-gateway"]
+          requires: ["[PROD] Build MQTT Gateway"]
 
       - test_java_service:
           name: "[PROD] Test Manager API"
           service_name: "manager-api"
           service_path: "main/manager-api"
-          requires: ["build-manager-api"]
+          requires: ["[PROD] Build Manager API"]
 
       - test_vue_frontend:
           name: "[PROD] Test Manager Web"
           service_name: "manager-web"
           service_path: "main/manager-web"
-          requires: ["build-manager-web"]
+          requires: ["[PROD] Build Manager Web"]
 
       - test_python_service:
           name: "[PROD] Test LiveKit Server"
           service_name: "livekit-server"
           service_path: "main/livekit-server"
           entry_file: "main.py"
-          requires: ["build-livekit-server"]
+          requires: ["[PROD] Build LiveKit Server"]
 
       # ==========================================
       # PHASE 3: SECURITY SCANS IN PARALLEL
@@ -1774,22 +1774,22 @@ workflows:
       - security_scan_bundle:
           name: "security-mqtt-gateway"
           service_name: "mqtt-gateway"
-          requires: ["build-mqtt-gateway"]
+          requires: ["[PROD] Build MQTT Gateway"]
 
       - security_scan_jar:
           name: "security-manager-api"
           service_name: "manager-api"
-          requires: ["build-manager-api"]
+          requires: ["[PROD] Build Manager API"]
 
       - security_scan_bundle:
           name: "security-manager-web"
           service_name: "manager-web"
-          requires: ["build-manager-web"]
+          requires: ["[PROD] Build Manager Web"]
 
       - security_scan_bundle:
           name: "security-livekit-server"
           service_name: "livekit-server"
-          requires: ["build-livekit-server"]
+          requires: ["[PROD] Build LiveKit Server"]
 
       # ==========================================
       # PHASE 4: DEPLOY ALL SERVICES IN PARALLEL
@@ -1806,7 +1806,7 @@ workflows:
           http_port: 8884
           mqtt_port: 1883
           requires:
-            - "test-mqtt-gateway"
+            - "[PROD] Test MQTT Gateway"
             - "security-mqtt-gateway"
           filters:
             branches:
@@ -1820,7 +1820,7 @@ workflows:
           env: "staging"
           http_port: 8002
           requires:
-            - "test-manager-api"
+            - "[PROD] Test Manager API"
             - "security-manager-api"
           filters:
             branches:
@@ -1834,7 +1834,7 @@ workflows:
           env: "staging"
           http_port: 8885
           requires:
-            - "test-manager-web"
+            - "[PROD] Test Manager Web"
             - "security-manager-web"
           filters:
             branches:
@@ -1849,7 +1849,7 @@ workflows:
           http_port: 8887
           entry_file: "main.py"
           requires:
-            - "test-livekit-server"
+            - "[PROD] Test LiveKit Server"
             - "security-livekit-server"
           filters:
             branches:
@@ -1866,7 +1866,7 @@ workflows:
           http_port: 8884
           mqtt_port: 1883
           requires:
-            - "test-mqtt-gateway"
+            - "[PROD] Test MQTT Gateway"
             - "security-mqtt-gateway"
           filters:
             branches:
@@ -1880,7 +1880,7 @@ workflows:
           env: "production"
           http_port: 8002
           requires:
-            - "test-manager-api"
+            - "[PROD] Test Manager API"
             - "security-manager-api"
           filters:
             branches:
@@ -1894,7 +1894,7 @@ workflows:
           env: "production"
           http_port: 8885
           requires:
-            - "test-manager-web"
+            - "[PROD] Test Manager Web"
             - "security-manager-web"
           filters:
             branches:
@@ -1909,7 +1909,7 @@ workflows:
           http_port: 8887
           entry_file: "main.py"
           requires:
-            - "test-livekit-server"
+            - "[PROD] Test LiveKit Server"
             - "security-livekit-server"
           filters:
             branches:
@@ -1926,7 +1926,7 @@ workflows:
           http_port: 8001
           mqtt_port: 1884
           requires:
-            - "test-mqtt-gateway"
+            - "[PROD] Test MQTT Gateway"
             - "security-mqtt-gateway"
           filters:
             branches:
@@ -1942,7 +1942,7 @@ workflows:
           env: "dev"
           http_port: 8002
           requires:
-            - "test-manager-api"
+            - "[PROD] Test Manager API"
             - "security-manager-api"
           filters:
             branches:
@@ -1958,7 +1958,7 @@ workflows:
           env: "dev"
           http_port: 8886
           requires:
-            - "test-manager-web"
+            - "[PROD] Test Manager Web"
             - "security-manager-web"
           filters:
             branches:
@@ -1975,7 +1975,7 @@ workflows:
           http_port: 8888
           entry_file: "main.py"
           requires:
-            - "test-livekit-server"
+            - "[PROD] Test LiveKit Server"
             - "security-livekit-server"
           filters:
             branches:
