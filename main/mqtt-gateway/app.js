@@ -86,7 +86,7 @@ class LiveKitBridge extends Emitter {
     this.protocolVersion = protocolVersion;
 
     // Initialize audio resampler for 48kHz -> 16kHz conversion
-    this.audioResampler = new AudioResampler(48000, 16000, 1); // 48kHz -> 16kHz, mono
+    this.audioResampler = new AudioResampler(48000, 16000, 1, AudioResamplerQuality.QUICK); // 48kHz -> 16kHz, mono
 
     // Frame buffer for accumulating resampled audio into proper frame sizes
     this.frameBuffer = Buffer.alloc(0);
