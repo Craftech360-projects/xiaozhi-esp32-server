@@ -757,7 +757,7 @@ jobs:
     parameters:
       service_name: { type: string }
       env: { type: string, default: "staging" }
-      http_port: { type: integer, default: 8885 }
+      http_port: { type: integer, default: 8886 }
     executor: node-executor
     steps:
       - attach_workspace:
@@ -977,7 +977,7 @@ workflows:
           context: "azure-mqtt-gateway"
           service_name: "manager-web"
           env: "development"
-          http_port: 8885
+          http_port: 8886
           requires: ["[DEV] 🔧 Build Manager Web"]
 
       - deploy_python_pm2_azure:
@@ -1086,7 +1086,7 @@ workflows:
           context: "azure-mqtt-gateway"
           service_name: "manager-web"
           env: "production"
-          http_port: 8885
+          http_port: 8886
           requires: ["[PROD] 🚀 Build Manager Web"]
 
       - deploy_python_pm2_azure:
