@@ -29,23 +29,27 @@ const {
 // Import Opus Encoder and Decoder from audify-plus
 const { OpusEncoder, OpusDecoder, OpusApplication } = require("@voicehype/audify-plus");
 
-// Initialize Opus encoder and decoder for 16kHz mono (same as before)
+// Initialize Opus encoder for 24kHz mono (outgoing), decoder for 16kHz mono (incoming)
 let opusEncoder = null;
 let opusDecoder = null;
 // Define constants for audio parameters
-const SAMPLE_RATE = 16000;     // Hz
+const OUTGOING_SAMPLE_RATE = 24000;  // Hz - for LiveKit → ESP32
+const INCOMING_SAMPLE_RATE = 16000;  // Hz - for ESP32 → LiveKit
 const CHANNELS = 1;            // Mono
-const FRAME_DURATION_MS = 20;  // 20ms frames (standard for Opus)
-const FRAME_SIZE_SAMPLES = (SAMPLE_RATE * FRAME_DURATION_MS) / 1000; // 16000 * 20 / 1000 = 320
-const FRAME_SIZE_BYTES = FRAME_SIZE_SAMPLES * 2; // 320 samples * 2 bytes/sample = 640 bytes PCM
+const OUTGOING_FRAME_DURATION_MS = 60;  // 60ms frames for outgoing (LiveKit → ESP32)
+const INCOMING_FRAME_DURATION_MS = 20;  // 20ms frames for incoming (ESP32 → LiveKit)
+const OUTGOING_FRAME_SIZE_SAMPLES = (OUTGOING_SAMPLE_RATE * OUTGOING_FRAME_DURATION_MS) / 1000; // 24000 * 60 / 1000 = 1440
+const INCOMING_FRAME_SIZE_SAMPLES = (INCOMING_SAMPLE_RATE * INCOMING_FRAME_DURATION_MS) / 1000; // 16000 * 20 / 1000 = 320
+const OUTGOING_FRAME_SIZE_BYTES = OUTGOING_FRAME_SIZE_SAMPLES * 2; // 1440 samples * 2 bytes/sample = 2880 bytes PCM
+const INCOMING_FRAME_SIZE_BYTES = INCOMING_FRAME_SIZE_SAMPLES * 2; // 320 samples * 2 bytes/sample = 640 bytes PCM
 
 try {
-  // For 16kHz, mono audio (resampled from 48kHz LiveKit audio)
-  opusEncoder = new OpusEncoder(16000, 1, OpusApplication.OPUS_APPLICATION_AUDIO);
+  // For outgoing: 24kHz encoder (LiveKit → ESP32), incoming: 16kHz decoder (ESP32 → LiveKit)
+  opusEncoder = new OpusEncoder(24000, 1, OpusApplication.OPUS_APPLICATION_AUDIO);
   opusDecoder = new OpusDecoder(16000, 1);
 
   console.log(
-    "✅ [OPUS] audify-plus encoder/decoder initialized successfully - encoder: 16kHz, decoder: 16kHz mono"
+    "✅ [OPUS] audify-plus encoder/decoder initialized successfully - encoder: 24kHz, decoder: 16kHz mono"
   );
 } catch (err) {
   console.error(
@@ -85,13 +89,13 @@ class LiveKitBridge extends Emitter {
     this.audioSource = new AudioSource(16000, 1);
     this.protocolVersion = protocolVersion;
 
-    // Initialize audio resampler for 48kHz -> 16kHz conversion
-    this.audioResampler = new AudioResampler(48000, 16000, 1, AudioResamplerQuality.QUICK);
+    // Initialize audio resampler for 48kHz -> 24kHz conversion (outgoing: LiveKit -> ESP32)
+    this.audioResampler = new AudioResampler(48000, 24000, 1, AudioResamplerQuality.QUICK);
 
     // Frame buffer for accumulating resampled audio into proper frame sizes
     this.frameBuffer = Buffer.alloc(0);
-    this.targetFrameSize = 320; // 320 samples = 20ms at 16kHz
-    this.targetFrameBytes = this.targetFrameSize * 2; // 640 bytes for 16-bit PCM
+    this.targetFrameSize = 1440; // 1440 samples = 60ms at 24kHz (outgoing)
+    this.targetFrameBytes = this.targetFrameSize * 2; // 2880 bytes for 16-bit PCM
 
     // Initialize Opus decoder for incoming audio (device -> LiveKit)
     // this.opusDecoder = null;
@@ -154,7 +158,7 @@ class LiveKitBridge extends Emitter {
             const opusBuffer = opusEncoder.encode(alignedBuffer, this.targetFrameSize);
 
             if (frameCount <= 3 || frameCount % 100 === 0) {
-              console.log(`🎵 [OPUS] Frame ${frameCount}: 16kHz PCM ${frameData.length}B → Opus ${opusBuffer.length}B`);
+              console.log(`🎵 [OPUS] Frame ${frameCount}: 24kHz 60ms PCM ${frameData.length}B → Opus ${opusBuffer.length}B`);
             }
 
             this.connection.sendUdpMessage(opusBuffer, timestamp);
@@ -328,13 +332,13 @@ class LiveKitBridge extends Emitter {
                       this.processBufferedFrames(finalTimestamp, frameCount, participant.identity);
 
                       // Send any remaining partial frame if it has significant data
-                      if (this.frameBuffer.length > 160) { // At least 10ms worth of 16kHz audio (160 samples * 2 bytes = 320B)
-                        console.log(`🔄 [FLUSH] Processing partial 16kHz PCM frame: ${this.frameBuffer.length}B`);
+                      if (this.frameBuffer.length > 720) { // At least 30ms worth of 24kHz audio (720 samples * 2 bytes = 1440B)
+                        console.log(`🔄 [FLUSH] Processing partial 24kHz 60ms PCM frame: ${this.frameBuffer.length}B`);
 
                         if (opusEncoder) {
                           try {
-                            // Pad to nearest valid frame size for 16kHz (320 or 640 bytes)
-                            const targetSize = this.frameBuffer.length <= 320 ? 320 : 640;
+                            // Pad to nearest valid frame size for 24kHz 60ms (1440 or 2880 bytes)
+                            const targetSize = this.frameBuffer.length <= 1440 ? 1440 : 2880;
                             const paddedBuffer = Buffer.alloc(targetSize);
                             this.frameBuffer.copy(paddedBuffer);
 
@@ -463,9 +467,9 @@ class LiveKitBridge extends Emitter {
         resolve({
           session_id: roomName,
           audio_params: {
-            sample_rate: 16000,
+            sample_rate: 24000,
             channels: 1,
-            frame_duration: 20,
+            frame_duration: 60,
             format: "opus"
           }
         });
