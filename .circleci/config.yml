@@ -100,16 +100,14 @@ jobs:
             fi
 
             # Create quality check test result
-            cat > test-results/quality-junit.xml \<< EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<testsuites name="Code Quality" tests="3" failures="0" time="5.0">
-  <testsuite name="Static Analysis" tests="3" failures="0" time="5.0">
-    <testcase name="JavaScript Lint" time="1.5"/>
-    <testcase name="Python Lint" time="2.0"/>
-    <testcase name="Java Compile" time="1.5"/>
-  </testsuite>
-</testsuites>
-EOF
+            echo '<?xml version="1.0" encoding="UTF-8"?>' > test-results/quality-junit.xml
+            echo '<testsuites name="Code Quality" tests="3" failures="0" time="5.0">' >> test-results/quality-junit.xml
+            echo '  <testsuite name="Static Analysis" tests="3" failures="0" time="5.0">' >> test-results/quality-junit.xml
+            echo '    <testcase name="JavaScript Lint" time="1.5"/>' >> test-results/quality-junit.xml
+            echo '    <testcase name="Python Lint" time="2.0"/>' >> test-results/quality-junit.xml
+            echo '    <testcase name="Java Compile" time="1.5"/>' >> test-results/quality-junit.xml
+            echo '  </testsuite>' >> test-results/quality-junit.xml
+            echo '</testsuites>' >> test-results/quality-junit.xml
 
             echo "✅ Code quality analysis completed"
       - store_test_results:
@@ -157,14 +155,12 @@ EOF
               npm test || echo "$SVC tests completed with warnings"
             else
               # Create a dummy test result if no tests exist
-              cat > test-results/junit.xml \<< EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<testsuites name="<< parameters.service_name >>" tests="1" failures="0" time="0.001">
-  <testsuite name="Build Verification" tests="1" failures="0" time="0.001">
-    <testcase name="Build Success" time="0.001"/>
-  </testsuite>
-</testsuites>
-EOF
+              echo '<?xml version="1.0" encoding="UTF-8"?>' > test-results/junit.xml
+              echo '<testsuites name="<< parameters.service_name >>" tests="1" failures="0" time="0.001">' >> test-results/junit.xml
+              echo '  <testsuite name="Build Verification" tests="1" failures="0" time="0.001">' >> test-results/junit.xml
+              echo '    <testcase name="Build Success" time="0.001"/>' >> test-results/junit.xml
+              echo '  </testsuite>' >> test-results/junit.xml
+              echo '</testsuites>' >> test-results/junit.xml
             fi
             echo "✅ ${SVC} testing completed"
       - store_test_results:
@@ -204,14 +200,12 @@ EOF
 
             # Ensure test results exist
             if [ ! -f target/surefire-reports/TEST-*.xml ]; then
-              cat > target/surefire-reports/TEST-BuildVerification.xml \<< EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<testsuites name="<< parameters.service_name >>" tests="1" failures="0" time="0.001">
-  <testsuite name="Build Verification" tests="1" failures="0" time="0.001">
-    <testcase name="Compile Success" time="0.001"/>
-  </testsuite>
-</testsuites>
-EOF
+              echo '<?xml version="1.0" encoding="UTF-8"?>' > target/surefire-reports/TEST-BuildVerification.xml
+              echo '<testsuites name="<< parameters.service_name >>" tests="1" failures="0" time="0.001">' >> target/surefire-reports/TEST-BuildVerification.xml
+              echo '  <testsuite name="Build Verification" tests="1" failures="0" time="0.001">' >> target/surefire-reports/TEST-BuildVerification.xml
+              echo '    <testcase name="Compile Success" time="0.001"/>' >> target/surefire-reports/TEST-BuildVerification.xml
+              echo '  </testsuite>' >> target/surefire-reports/TEST-BuildVerification.xml
+              echo '</testsuites>' >> target/surefire-reports/TEST-BuildVerification.xml
             fi
             echo "✅ ${SVC} testing completed"
       - store_test_results:
@@ -261,14 +255,12 @@ EOF
               python3 -m pytest tests/ --junit-xml=test-results/junit.xml --cov=. --cov-report=xml:test-results/coverage.xml || echo "$SVC tests completed with warnings"
             else
               # Create a dummy test result if no tests exist
-              cat > test-results/junit.xml \<< EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<testsuites name="<< parameters.service_name >>" tests="1" failures="0" time="0.001">
-  <testsuite name="Syntax Check" tests="1" failures="0" time="0.001">
-    <testcase name="Python Syntax Valid" time="0.001"/>
-  </testsuite>
-</testsuites>
-EOF
+              echo '<?xml version="1.0" encoding="UTF-8"?>' > test-results/junit.xml
+              echo '<testsuites name="<< parameters.service_name >>" tests="1" failures="0" time="0.001">' >> test-results/junit.xml
+              echo '  <testsuite name="Syntax Check" tests="1" failures="0" time="0.001">' >> test-results/junit.xml
+              echo '    <testcase name="Python Syntax Valid" time="0.001"/>' >> test-results/junit.xml
+              echo '  </testsuite>' >> test-results/junit.xml
+              echo '</testsuites>' >> test-results/junit.xml
             fi
             echo "✅ ${SVC} testing completed"
       - store_test_results:
