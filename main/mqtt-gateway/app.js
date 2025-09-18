@@ -473,7 +473,13 @@ class LiveKitBridge extends Emitter {
   }
 
   sendAudio(opusData, timestamp) {
-    if (this.audioSource) {
+    // Check if audioSource is available and room is connected
+    if (!this.audioSource || !this.room || !this.room.isConnected) {
+      console.warn(`⚠️ [AUDIO] Cannot send audio - audioSource or room not ready. Room connected: ${this.room?.isConnected}`);
+      return;
+    }
+
+    try {
       // Audio format analysis (only log occasionally to reduce spam)
       if (Math.random() < 0.01) {
         // Log 1% of packets
@@ -505,7 +511,9 @@ class LiveKitBridge extends Emitter {
               // console.log(
               //   `📤 [UDP IN] Opus->PCM->LiveKit: ${opusData.length}B opus -> ${pcmBuffer.length}B pcm -> ${samples.length} samples, ts=${timestamp}, mac=${this.macAddress}`
               // );
-              this.audioSource.captureFrame(frame);
+              
+              // Safe capture with error handling
+              this.safeCaptureFrame(frame);
             } else {
               // console.warn(
               //   `⚠️  [OPUS] Decoder returned empty buffer for ${opusData.length}B input`
@@ -514,7 +522,7 @@ class LiveKitBridge extends Emitter {
           } catch (err) {
             console.error(`❌ [OPUS] Decode error: ${err.message}`);
             console.log(
-              `🔍 [DEBUG] Opus data: ${opusData.slice(0, 8).toString("hex")}...`
+              `� [RDEBUG] Opus data: ${opusData.slice(0, 8).toString("hex")}...`
             );
           }
         } else {
@@ -532,7 +540,9 @@ class LiveKitBridge extends Emitter {
             Math.min(opusData.length / 2, 320)
           ); // Limit to reasonable PCM size
           const frame = new AudioFrame(samples, 16000, 1, samples.length);
-          this.audioSource.captureFrame(frame);
+          
+          // Safe capture with error handling
+          this.safeCaptureFrame(frame);
         }
       } else {
         // Treat as PCM
@@ -546,7 +556,43 @@ class LiveKitBridge extends Emitter {
         console.log(
           `📤 [UDP IN] Device->LiveKit: ${opusData.length}B, samples=${samples.length}, ts=${timestamp}, mac=${this.macAddress}`
         );
-        this.audioSource.captureFrame(frame);
+        
+        // Safe capture with error handling
+        this.safeCaptureFrame(frame);
+      }
+    } catch (error) {
+      console.error(`❌ [AUDIO] Error in sendAudio: ${error.message}`);
+    }
+  }
+
+  safeCaptureFrame(frame) {
+    try {
+      // Validate frame before capture
+      if (!frame || !frame.data || frame.data.length === 0) {
+        console.warn(`⚠️ [AUDIO] Invalid frame data, skipping`);
+        return;
+      }
+
+      // Check if audioSource is still valid
+      if (!this.audioSource) {
+        console.warn(`⚠️ [AUDIO] AudioSource is null, cannot capture frame`);
+        return;
+      }
+
+      // Attempt to capture the frame
+      this.audioSource.captureFrame(frame);
+    } catch (error) {
+      console.error(`❌ [AUDIO] Failed to capture frame: ${error.message}`);
+      
+      // If we get InvalidState error, try to reinitialize the audio source
+      if (error.message.includes('InvalidState')) {
+        console.log(`🔄 [AUDIO] Attempting to reinitialize AudioSource due to InvalidState`);
+        try {
+          this.audioSource = new AudioSource(16000, 1);
+          console.log(`✅ [AUDIO] AudioSource reinitialized successfully`);
+        } catch (reinitError) {
+          console.error(`❌ [AUDIO] Failed to reinitialize AudioSource: ${reinitError.message}`);
+        }
       }
     }
   }
@@ -832,6 +878,39 @@ class LiveKitBridge extends Emitter {
       `📤 [MQTT OUT] Sending record stop to device: ${this.macAddress}`
     );
     this.connection.sendMqttMessage(JSON.stringify(message));
+  }
+
+  async sendAbortSignal(sessionId) {
+    /**
+     * Send abort signal to LiveKit agent via data channel
+     * This tells the agent to stop current TTS/music playback
+     */
+    if (!this.room || !this.room.localParticipant) {
+      throw new Error("Room not connected or no local participant");
+    }
+
+    try {
+      const abortMessage = {
+        type: "abort_playback",
+        session_id: sessionId,
+        timestamp: Date.now(),
+        source: "mqtt_gateway"
+      };
+
+      // Send via LiveKit data channel to the agent
+      // Convert to Uint8Array as required by LiveKit Node SDK
+      const messageString = JSON.stringify(abortMessage);
+      const messageData = new Uint8Array(Buffer.from(messageString, 'utf8'));
+      await this.room.localParticipant.publishData(
+        messageData,
+        { reliable: true }
+      );
+
+      console.log(`🛑 [ABORT] Sent abort signal to LiveKit agent via data channel`);
+    } catch (error) {
+      console.error(`[LiveKitBridge] Failed to send abort signal:`, error);
+      throw error;
+    }
   }
 
   close() {
@@ -1186,6 +1265,18 @@ class MQTTConnection {
       return;
     }
 
+    // Handle abort message - forward to LiveKit agent via data channel
+    if (json.type === "abort") {
+      try {
+        console.log(`🛑 [ABORT] Received abort signal from device: ${this.macAddress}`);
+        await this.bridge.sendAbortSignal(json.session_id);
+        debug("Successfully forwarded abort signal to LiveKit agent");
+      } catch (error) {
+        debug("Failed to forward abort signal to LiveKit:", error);
+      }
+      return;
+    }
+
     // Not sending other messages to LiveKit for now
     debug("Received other message, not forwarding to LiveKit:", json);
   }
@@ -1503,6 +1594,18 @@ class VirtualMQTTConnection {
     if (json.type === "goodbye") {
       this.bridge.close();
       this.bridge = null;
+      return;
+    }
+
+    // Handle abort message - forward to LiveKit agent via data channel
+    if (json.type === "abort") {
+      try {
+        console.log(`🛑 [ABORT] Received abort signal from device: ${this.deviceId}`);
+        await this.bridge.sendAbortSignal(json.session_id);
+        debug("Successfully forwarded abort signal to LiveKit agent");
+      } catch (error) {
+        debug("Failed to forward abort signal to LiveKit:", error);
+      }
       return;
     }
 
