@@ -9,6 +9,7 @@ from livekit.agents import (
     WorkerOptions,
     cli,
     RoomInputOptions,
+    RoomOutputOptions
 )
 from livekit.plugins import noise_cancellation
 
@@ -110,6 +111,9 @@ async def entrypoint(ctx: JobContext):
             room_options = RoomInputOptions(
                 noise_cancellation=noise_cancellation.BVC()
             )
+            room_output_options= RoomOutputOptions(
+                audio_sample_rate=24000
+            )
             logger.info("Noise cancellation enabled (requires LiveKit Cloud)")
         except Exception as e:
             logger.warning(f"Could not enable noise cancellation: {e}")
@@ -122,9 +126,9 @@ async def entrypoint(ctx: JobContext):
     await session.start(
         agent=assistant,
         room=ctx.room,
-        room_input_options=room_options,
+        room_input_options=room_options, 
+        room_output_options=room_output_options
     )
-
     # Set up music/story integration with session and context
     try:
         # Pass session and context to both audio players

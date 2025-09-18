@@ -193,12 +193,12 @@ class SimpleAudioPlayer:
             from livekit import rtc
 
             # Convert to proper format
-            audio_segment = audio_segment.set_frame_rate(48000)
+            audio_segment = audio_segment.set_frame_rate(24000)
             audio_segment = audio_segment.set_channels(1)
             audio_segment = audio_segment.set_sample_width(2)  # 16-bit
 
             raw_audio = audio_segment.raw_data
-            sample_rate = 48000
+            sample_rate = 24000
             frame_duration_ms = 20
             samples_per_frame = sample_rate * frame_duration_ms // 1000
             total_samples = len(raw_audio) // 2

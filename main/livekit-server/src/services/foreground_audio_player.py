@@ -145,7 +145,7 @@ class ForegroundAudioPlayer:
             from livekit import rtc
 
             # Create temporary audio source for this playback
-            audio_source = rtc.AudioSource(48000, 1)  # 48kHz, mono
+            audio_source = rtc.AudioSource(24000, 1)  # 24kHz, mono
             audio_track = rtc.LocalAudioTrack.create_audio_track("foreground_music", audio_source)
 
             # Publish track temporarily
@@ -154,12 +154,12 @@ class ForegroundAudioPlayer:
 
             try:
                 # Convert audio to proper format
-                audio_segment = audio_segment.set_frame_rate(48000)
+                audio_segment = audio_segment.set_frame_rate(24000)
                 audio_segment = audio_segment.set_channels(1)
                 audio_segment = audio_segment.set_sample_width(2)
 
                 raw_audio = audio_segment.raw_data
-                sample_rate = 48000
+                sample_rate = 24000
                 frame_duration_ms = 20
                 samples_per_frame = sample_rate * frame_duration_ms // 1000
                 total_samples = len(raw_audio) // 2
