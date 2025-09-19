@@ -432,6 +432,16 @@ class LiveKitBridge extends Emitter {
           console.log(
             `👤 [PARTICIPANT] Connected: ${participant.identity} (${participant.sid})`
           );
+
+          // Check if this is an agent joining (agent identity typically contains "agent")
+          if (participant.identity.includes('agent')) {
+            console.log(`🤖 [AGENT] Agent joined the room: ${participant.identity}`);
+
+            // Send initial greeting message to let user know agent is ready
+            setTimeout(() => {
+              this.sendInitialGreeting();
+            }, 1000); // Small delay to ensure connection is stable
+          }
         });
 
         this.room.on(RoomEvent.ParticipantDisconnected, (participant) => {
@@ -888,6 +898,43 @@ class LiveKitBridge extends Emitter {
       `📤 [MQTT OUT] Sending record stop to device: ${this.macAddress}`
     );
     this.connection.sendMqttMessage(JSON.stringify(message));
+  }
+
+  // Send initial greeting when agent joins
+  async sendInitialGreeting() {
+    if (!this.connection) return;
+
+    try {
+      // Send a data message to the agent to trigger an initial response
+      const initialMessage = {
+        type: "agent_ready",
+        message: "Say hello to the user",
+        timestamp: Date.now(),
+        source: "mqtt_gateway"
+      };
+
+      // Send via LiveKit data channel to trigger agent response
+      if (this.room && this.room.localParticipant) {
+        const messageString = JSON.stringify(initialMessage);
+        const messageData = new Uint8Array(Buffer.from(messageString, 'utf8'));
+        await this.room.localParticipant.publishData(
+          messageData,
+          { reliable: true }
+        );
+
+        console.log(
+          `🤖 [AGENT READY] Sent initial greeting trigger to agent for device: ${this.macAddress}`
+        );
+      } else {
+        console.warn(
+          `⚠️ [AGENT READY] Cannot send initial greeting - room not ready for device: ${this.macAddress}`
+        );
+      }
+    } catch (error) {
+      console.error(
+        `❌ [AGENT READY] Error sending initial greeting trigger for device ${this.macAddress}:`, error
+      );
+    }
   }
 
   async sendAbortSignal(sessionId) {

@@ -1,5 +1,6 @@
 import livekit.plugins.groq as groq
 import livekit.plugins.elevenlabs as elevenlabs
+import livekit.plugins.deepgram as deepgram
 from livekit.plugins import silero
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 from livekit.plugins.turn_detector.english import EnglishModel
@@ -15,10 +16,19 @@ class ProviderFactory:
     @staticmethod
     def create_stt(config):
         """Create Speech-to-Text provider based on configuration"""
-        return groq.STT(
-            model=config['stt_model'],
-            language=config['stt_language']
-        )
+        provider = config.get('stt_provider', 'groq').lower()
+
+        if provider == 'deepgram':
+            return deepgram.STT(
+                model=config.get('deepgram_model', 'nova-3'),
+                language=config['stt_language']
+            )
+        else:
+            # Default to Groq
+            return groq.STT(
+                model=config['stt_model'],
+                language=config['stt_language']
+            )
 
     @staticmethod
     def create_tts(groq_config, tts_config):
