@@ -8,6 +8,9 @@ services:
     ports:
       - "7880-7882:7880-7882/tcp"
       - "50000-50200:50000-50200/udp"
+    volumes:
+      - ./livekit.yaml:/livekit.yaml:ro
+    command: --config /livekit.yaml
     environment:
       LIVEKIT_KEYS: "devkey: secret"
       REDIS_URL: "redis://:redispassword@manager-api-redis:6379"

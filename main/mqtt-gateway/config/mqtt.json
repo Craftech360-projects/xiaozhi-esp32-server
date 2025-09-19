@@ -13,7 +13,7 @@
   "livekit": {
     "url": "ws://localhost:7880",
     "api_key": "devkey",
-    "api_secret": "a-very-long-secret-key-for-development-purposes-only-replace-in-production"
+    "api_secret": "secret"
   }
 }
 

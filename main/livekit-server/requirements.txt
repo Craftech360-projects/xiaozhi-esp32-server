@@ -3,6 +3,38 @@ python-dotenv
 pydub
 aiohttp
 
-# Optional dependencies for enhanced semantic search
+# Core RAG System Dependencies
 qdrant-client
 sentence-transformers
+openai
+
+# Document Processing Dependencies
+PyMuPDF  # fitz for PDF processing
+pdfplumber  # Alternative PDF processing
+pytesseract  # OCR
+Pillow  # Image processing
+opencv-python  # Image processing
+
+# Table extraction (choose one based on your system)
+# camelot-py[cv]  # Better but has more dependencies
+tabula-py  # Simpler alternative
+
+# ML and NLP Dependencies
+torch>=1.9.0  # Modern PyTorch version
+transformers>=4.20.0  # Hugging Face transformers
+scikit-learn  # For similarity calculations
+nltk  # Text processing
+
+# Data Processing
+pandas  # Data manipulation
+numpy<2.0  # Numerical operations (compatibility with sentence-transformers)
+
+# Visual embeddings (alternative to clip-by-openai)
+# Install manually if needed: pip install git+https://github.com/openai/CLIP.git
+# Or use sentence-transformers with CLIP models
+
+# Optional dependencies for enhanced features
+# tiktoken  # Token counting for OpenAI
+# spacy  # Advanced NLP (optional)
+# matplotlib  # Plotting (optional)
+# seaborn  # Plotting (optional)
