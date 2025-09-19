@@ -17,7 +17,7 @@ spring:
   # Profile will be set by SPRING_PROFILES_ACTIVE environment variable
   # Default to 'dev' if not specified
   profiles:
-    default: dev
+    default: local
   messages:
     encoding: UTF-8
     basename: i18n/messages
@@ -28,6 +28,50 @@ spring:
       enabled: true
   main:
     allow-bean-definition-overriding: true
+
+  # Local Docker Database Configuration
+  datasource:
+    druid:
+      driver-class-name: com.mysql.cj.jdbc.Driver
+      url: jdbc:mysql://localhost:3307/manager_api?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&nullCatalogMeansCurrent=true&useSSL=false&allowPublicKeyRetrieval=true
+      username: manager
+      password: managerpassword
+
+      initial-size: 5
+      max-active: 20
+      min-idle: 5
+      max-wait: 6000
+      pool-prepared-statements: true
+      max-pool-prepared-statement-per-connection-size: 20
+      time-between-eviction-runs-millis: 60000
+      min-evictable-idle-time-millis: 300000
+      test-while-idle: true
+      test-on-borrow: false
+      test-on-return: false
+      stat-view-servlet:
+        enabled: false
+      filter:
+        stat:
+          log-slow-sql: true
+          slow-sql-millis: 1000
+          merge-sql: false
+        wall:
+          config:
+            multi-statement-allow: true
+
+  data:
+    redis:
+      host: localhost
+      port: 6380
+      password: redispassword
+      database: 0
+      timeout: 10000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+        shutdown-timeout: 100ms
 
 knife4j:
   enable: true
