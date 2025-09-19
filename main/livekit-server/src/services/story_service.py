@@ -57,25 +57,36 @@ class StoryService:
             return f"{self.s3_base_url}/{encoded_path}"
 
     async def search_stories(self, query: str, category: Optional[str] = None) -> List[Dict]:
-        """Search for stories using Qdrant cloud API"""
+        """Search for stories using enhanced semantic search with spell tolerance"""
         if not self.is_initialized:
+            logger.warning(f"Story service not initialized - cannot search for '{query}'")
             return []
 
-        # Use semantic search service with Qdrant cloud (no local metadata needed)
-        search_results = await self.semantic_search.search_stories(query, category, limit=5)
+        try:
+            # Use semantic search service with enhanced fuzzy matching
+            search_results = await self.semantic_search.search_stories(query, category, limit=5)
 
-        # Convert search results to expected format
-        results = []
-        for result in search_results:
-            results.append({
-                'title': result.title,
-                'filename': result.filename,
-                'category': result.language_or_category,
-                'url': self.get_story_url(result.filename, result.language_or_category),
-                'score': result.score
-            })
+            # Convert search results to expected format
+            results = []
+            for result in search_results:
+                results.append({
+                    'title': result.title,
+                    'filename': result.filename,
+                    'category': result.language_or_category,
+                    'url': self.get_story_url(result.filename, result.language_or_category),
+                    'score': result.score
+                })
 
-        return results
+            if results:
+                logger.info(f"📚 Found {len(results)} stories for '{query}' - top match: '{results[0]['title']}' (score: {results[0]['score']:.2f})")
+            else:
+                logger.warning(f"📚 No stories found for '{query}' - check spelling or try different terms")
+
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error searching stories for '{query}': {e}")
+            return []
 
     async def get_random_story(self, category: Optional[str] = None) -> Optional[Dict]:
         """Get a random story using Qdrant cloud API"""

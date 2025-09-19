@@ -175,13 +175,17 @@ USER CHAT CONTENT""",
             if not song:
                 return "Sorry, I couldn't find any music to play right now."
 
-            # Send music start signal to device via data channel
+            # Start playing the song through TTS channel first
+            await player.play_from_url(song['url'], song['title'])
+
+            # Send music start signal to device via data channel (after starting playback)
             try:
                 import json
                 music_start_data = {
                     "type": "music_playback_started",
                     "title": song['title'],
-                    "language": song.get('language', 'Unknown')
+                    "language": song.get('language', 'Unknown'),
+                    "message": f"Now playing: {song['title']}"  # Include the message in data channel
                 }
                 # Try different ways to access the room
                 room = None
@@ -197,16 +201,15 @@ USER CHAT CONTENT""",
                         json.dumps(music_start_data).encode(),
                         topic="music_control"
                     )
-                    logger.info("Sent music_playback_started via data channel")
+                    logger.info(f"Sent music_playback_started via data channel: {song['title']}")
                 else:
                     logger.warning("Could not access room for data channel")
             except Exception as e:
                 logger.warning(f"Failed to send music start signal: {e}")
 
-            # Start playing the song through TTS channel
-            await player.play_from_url(song['url'], song['title'])
-
-            return f"Now playing: {song['title']}"
+            # Return empty string to avoid TTS interrupting music playback
+            # The acknowledgment is sent via data channel instead
+            return ""
 
         except Exception as e:
             logger.error(f"Error playing music: {e}")
@@ -255,7 +258,9 @@ USER CHAT CONTENT""",
             # Start playing the story through TTS channel
             await player.play_from_url(story['url'], story['title'])
 
-            return f"Now playing story: {story['title']}"
+            # Return minimal acknowledgment to avoid interrupting story
+            # The audio player will handle state transitions when story completes
+            return ""  # Return empty string to avoid TTS during story playback
 
         except Exception as e:
             logger.error(f"Error playing story: {e}")

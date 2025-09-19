@@ -85,11 +85,13 @@ class UnifiedAudioPlayer:
         # Set global music state
         audio_state_manager.set_music_playing(True, title)
 
-        # Start playback task
+        # Start playback task (non-blocking)
         self.current_task = asyncio.create_task(self._play_via_session_say(url, title))
 
-        # Return immediately so the agent continues
-        return f"Playing {title}"
+        # Return immediately - don't wait for completion to avoid blocking the agent
+        # The agent function should return empty string to avoid TTS interference
+        logger.info(f"🎵 UNIFIED: Started playback task for: {title}")
+        return f"Started playing {title}"
 
     async def _play_via_session_say(self, url: str, title: str):
         """Play audio through session.say() with audio frames"""
@@ -133,6 +135,9 @@ class UnifiedAudioPlayer:
 
             # Send music end signal via data channel
             await self._send_music_end_signal()
+
+            # Send completion message via TTS now that music is done
+            await self._send_completion_message(title)
 
             # Send agent state change to listening mode (like normal TTS does)
             await self._send_agent_state_to_listening()
@@ -220,6 +225,28 @@ class UnifiedAudioPlayer:
                 logger.info("🎵 UNIFIED: Sent music_playback_stopped via data channel")
         except Exception as e:
             logger.warning(f"🎵 UNIFIED: Failed to send music end signal: {e}")
+
+    async def _send_completion_message(self, title: str):
+        """Send completion message via TTS after music finishes"""
+        try:
+            if self.session:
+                # Now that music is done, we can safely use TTS for completion message
+                completion_messages = [
+                    f"That was {title}. What would you like to hear next?",
+                    f"Finished playing {title}. Anything else?",
+                    f"Hope you enjoyed {title}!",
+                    f"That was fun! Want to hear another song?"
+                ]
+                
+                # Choose a random completion message
+                import random
+                message = random.choice(completion_messages)
+                
+                # Use session.say() to send completion message
+                await self.session.say(message, allow_interruptions=True)
+                logger.info(f"🎵 UNIFIED: Sent completion message: {message}")
+        except Exception as e:
+            logger.warning(f"🎵 UNIFIED: Failed to send completion message: {e}")
 
     async def _send_agent_state_to_listening(self):
         """Send agent state change to listening mode (mimics normal TTS completion)"""
