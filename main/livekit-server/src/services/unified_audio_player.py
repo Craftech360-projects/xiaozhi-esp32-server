@@ -46,33 +46,33 @@ class UnifiedAudioPlayer:
         logger.info("Unified audio player integrated with context")
 
     async def stop(self):
-        """Stop current playback and interrupt session.say() if needed"""
-        # Set stop event first
+        """Stop current playback and interrupt session.say() IMMEDIATELY"""
+        logger.info("🛑 UNIFIED: IMMEDIATE STOP requested")
+        
+        # Set stop event FIRST - this stops audio frame iteration immediately
         self.stop_event.set()
-
-        # Cancel background task
-        if self.current_task and not self.current_task.done():
-            self.current_task.cancel()
-            try:
-                await self.current_task
-            except asyncio.CancelledError:
-                pass
-
-        # Interrupt session.say() if running
+        
+        # Interrupt session.say() IMMEDIATELY if running
         if self.session_say_task:
             try:
                 if hasattr(self.session_say_task, 'interrupt'):
                     self.session_say_task.interrupt()
-                    logger.info("🎵 UNIFIED: Interrupted speech handle")
+                    logger.info("🛑 UNIFIED: IMMEDIATELY interrupted speech handle")
                 else:
-                    logger.warning("🎵 UNIFIED: Speech handle doesn't support interruption")
+                    logger.warning("🛑 UNIFIED: Speech handle doesn't support interruption")
             except Exception as e:
                 logger.warning(f"Error interrupting speech: {e}")
 
+        # Cancel background task aggressively
+        if self.current_task and not self.current_task.done():
+            self.current_task.cancel()
+            logger.info("🛑 UNIFIED: Cancelled background task")
+            # Don't wait for cancellation - be immediate
+            
+        # Force clear all states immediately
         self.is_playing = False
-        # Force clear music state to allow listening transitions
         audio_state_manager.force_stop_music()
-        logger.info("🎵 Unified audio playback stopped")
+        logger.info("🛑 UNIFIED: IMMEDIATE stop completed")
 
     async def play_from_url(self, url: str, title: str = "Audio"):
         """Play audio from URL through agent's TTS channel using session.say()"""
@@ -85,11 +85,13 @@ class UnifiedAudioPlayer:
         # Set global music state
         audio_state_manager.set_music_playing(True, title)
 
-        # Start playback task
+        # Start playback task (non-blocking)
         self.current_task = asyncio.create_task(self._play_via_session_say(url, title))
 
-        # Return immediately so the agent continues
-        return f"Playing {title}"
+        # Return immediately - don't wait for completion to avoid blocking the agent
+        # The agent function should return empty string to avoid TTS interference
+        logger.info(f"🎵 UNIFIED: Started playback task for: {title}")
+        return f"Started playing {title}"
 
     async def _play_via_session_say(self, url: str, title: str):
         """Play audio through session.say() with audio frames"""
@@ -104,9 +106,9 @@ class UnifiedAudioPlayer:
             if audio_frames:
                 logger.info(f"🎵 UNIFIED: Injecting {title} into TTS queue via session.say()")
 
-                # Use session.say() with audio frames - this puts it in the TTS queue!
+                # Use session.say() with audio frames - NO TEXT to avoid TTS before music!
                 speech_handle = self.session.say(
-                    text=f"Playing {title}",  # Text for transcript
+                    text="",  # EMPTY TEXT - no TTS before music!
                     audio=audio_frames,  # Pre-recorded audio to play
                     allow_interruptions=True,  # Allow user to interrupt
                     add_to_chat_ctx=False  # Don't add music to chat context
@@ -133,6 +135,9 @@ class UnifiedAudioPlayer:
 
             # Send music end signal via data channel
             await self._send_music_end_signal()
+
+            # Send completion message via TTS now that music is done
+            await self._send_completion_message(title)
 
             # Send agent state change to listening mode (like normal TTS does)
             await self._send_agent_state_to_listening()
@@ -221,6 +226,28 @@ class UnifiedAudioPlayer:
         except Exception as e:
             logger.warning(f"🎵 UNIFIED: Failed to send music end signal: {e}")
 
+    async def _send_completion_message(self, title: str):
+        """Send completion message via TTS after music finishes"""
+        try:
+            if self.session:
+                # Now that music is done, we can safely use TTS for completion message
+                completion_messages = [
+                    f"That was {title}. What would you like to hear next?",
+                    f"Finished playing {title}. Anything else?",
+                    f"Hope you enjoyed {title}!",
+                    f"That was fun! Want to hear another song?"
+                ]
+                
+                # Choose a random completion message
+                import random
+                message = random.choice(completion_messages)
+                
+                # Use session.say() to send completion message
+                await self.session.say(message, allow_interruptions=True)
+                logger.info(f"🎵 UNIFIED: Sent completion message: {message}")
+        except Exception as e:
+            logger.warning(f"🎵 UNIFIED: Failed to send completion message: {e}")
+
     async def _send_agent_state_to_listening(self):
         """Send agent state change to listening mode (mimics normal TTS completion)"""
         try:
@@ -256,6 +283,7 @@ class AudioFrameIterator:
         return self
 
     async def __anext__(self):
+        # Check stop event FIRST - immediate response to abort
         if self.stop_event.is_set():
             raise StopAsyncIteration
 
@@ -268,6 +296,10 @@ class AudioFrameIterator:
 
         if len(chunk) < self.samples_per_frame * 2:
             chunk += b'\x00' * (self.samples_per_frame * 2 - len(chunk))
+
+        # Check stop event again before creating frame - double check for responsiveness
+        if self.stop_event.is_set():
+            raise StopAsyncIteration
 
         frame = rtc.AudioFrame(
             data=chunk,

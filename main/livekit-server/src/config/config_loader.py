@@ -17,7 +17,9 @@ class ConfigLoader:
             'stt_model': os.getenv('STT_MODEL', 'whisper-large-v3-turbo'),
             'tts_model': os.getenv('TTS_MODEL', 'playai-tts'),
             'tts_voice': os.getenv('TTS_VOICE', 'Aaliyah-PlayAI'),
-            'stt_language': os.getenv('STT_LANGUAGE', 'en')
+            'stt_language': os.getenv('STT_LANGUAGE', 'en'),
+            'stt_provider': os.getenv('STT_PROVIDER', 'groq'),  # groq or deepgram
+            'deepgram_model': os.getenv('DEEPGRAM_MODEL', 'nova-3')
         }
 
     @staticmethod

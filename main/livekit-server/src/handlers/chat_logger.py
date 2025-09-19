@@ -104,7 +104,15 @@ class ChatEventHandler:
                 # Handle abort playback message from MQTT gateway
                 if message.get('type') == 'abort_playback':
                     logger.info("🛑 Processing abort playback signal from MQTT gateway")
+                    # Create task for immediate execution (stop() method is now aggressive)
                     asyncio.create_task(ChatEventHandler._handle_abort_playback(session, ctx))
+
+                # Handle agent ready message from MQTT gateway
+                elif message.get('type') == 'agent_ready':
+                    logger.info("🤖 Processing agent ready signal from MQTT gateway")
+                    # Trigger initial greeting from the agent
+                    greeting_instructions = "Say a brief, friendly hello to greet the user and let them know you're ready to chat. Keep it short and welcoming."
+                    session.generate_reply(instructions=greeting_instructions)
 
             except Exception as e:
                 logger.error(f"Error processing data channel message: {e}")

@@ -12,6 +12,7 @@ dependencies = [
     "livekit-agents[openai,turn-detector,silero,cartesia,deepgram]~=1.2",
     "livekit-plugins-noise-cancellation~=0.2",
     "livekit-plugins-groq",
+    "livekit.plugins.deepgram",
     "livekit-plugins-elevenlabs",
     "python-dotenv",
     "paho-mqtt",

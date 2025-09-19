@@ -29,8 +29,49 @@ from src.services.unified_audio_player import UnifiedAudioPlayer
 logger = logging.getLogger("agent")
 
 def prewarm(proc: JobProcess):
-    """Prewarm function to load VAD model"""
+    """Prewarm function to load VAD model and embedding models"""
+    import os
+    from src.services.semantic_search import QdrantSemanticSearch, QDRANT_AVAILABLE
+
+    # Load VAD model
     proc.userdata["vad"] = ProviderFactory.create_vad()
+
+    # Pre-load embedding models for semantic search
+    if QDRANT_AVAILABLE:
+        try:
+            logger.info("🔥 Prewarming: Loading embedding model...")
+            from sentence_transformers import SentenceTransformer
+
+            # Load the embedding model (this is the heavy operation)
+            embedding_model_name = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+            embedding_model = SentenceTransformer(embedding_model_name)
+            proc.userdata["embedding_model"] = embedding_model
+
+            # Pre-initialize Qdrant client (but don't test connection yet)
+            qdrant_url = os.getenv("QDRANT_URL", "")
+            qdrant_api_key = os.getenv("QDRANT_API_KEY", "")
+
+            if qdrant_url and qdrant_api_key:
+                from qdrant_client import QdrantClient
+                qdrant_client = QdrantClient(
+                    url=qdrant_url,
+                    api_key=qdrant_api_key,
+                    timeout=10
+                )
+                proc.userdata["qdrant_client"] = qdrant_client
+                logger.info("🔥 Prewarming: Qdrant client prepared")
+
+            logger.info(f"✅ Prewarming complete: Embedding model '{embedding_model_name}' loaded")
+
+        except Exception as e:
+            logger.warning(f"⚠️ Prewarming failed for embedding models: {e}")
+            # Continue without prewarmed models - services will load them later
+            proc.userdata["embedding_model"] = None
+            proc.userdata["qdrant_client"] = None
+    else:
+        logger.warning("⚠️ Qdrant dependencies not available for prewarming")
+        proc.userdata["embedding_model"] = None
+        proc.userdata["qdrant_client"] = None
 
 async def entrypoint(ctx: JobContext):
     """Main entrypoint for the organized agent"""
@@ -60,9 +101,13 @@ async def entrypoint(ctx: JobContext):
         preemptive_generation=agent_config['preemptive_generation'],
     )
 
-    # Initialize music and story services FIRST
-    music_service = MusicService()
-    story_service = StoryService()
+    # Get preloaded models from prewarm
+    preloaded_embedding_model = ctx.proc.userdata.get("embedding_model")
+    preloaded_qdrant_client = ctx.proc.userdata.get("qdrant_client")
+
+    # Initialize music service with preloaded models, story service without semantic search
+    music_service = MusicService(preloaded_embedding_model, preloaded_qdrant_client)
+    story_service = StoryService()  # No semantic search - simple initialization
     audio_player = ForegroundAudioPlayer()
     unified_audio_player = UnifiedAudioPlayer()
 
