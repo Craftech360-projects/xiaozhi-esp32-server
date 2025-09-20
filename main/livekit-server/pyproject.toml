@@ -11,8 +11,16 @@ requires-python = ">=3.9"
 dependencies = [
     "livekit-agents[openai,turn-detector,silero,cartesia,deepgram]~=1.2",
     "livekit-plugins-noise-cancellation~=0.2",
+    "livekit-plugins-groq",
+    "livekit.plugins.deepgram",
+    "livekit-plugins-elevenlabs",
     "python-dotenv",
     "paho-mqtt",
+    "aiohttp",
+    "pydub",
+    "pytz",
+    "qdrant-client>=1.7.0",
+    "sentence-transformers>=2.2.0"
 ]
 
 [dependency-groups]
@@ -35,7 +43,6 @@ asyncio_default_fixture_loop_scope = "function"
 [tool.ruff]
 line-length = 88
 target-version = "py39"
-
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "B", "A", "C4", "UP", "SIM", "RUF"]
 ignore = ["E501"]  # Line too long (handled by formatter)
