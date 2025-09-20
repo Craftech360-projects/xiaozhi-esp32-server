@@ -252,4 +252,13 @@ public class ModelConfigServiceImpl extends BaseServiceImpl<ModelConfigDao, Mode
         modelConfigDao.update(entity, new QueryWrapper<ModelConfigEntity>()
                 .eq("model_type", modelType));
     }
+
+    @Override
+    public List<ModelConfigEntity> getEnabledModelsByType(String modelType) {
+        return modelConfigDao.selectList(new LambdaQueryWrapper<ModelConfigEntity>()
+                .eq(ModelConfigEntity::getModelType, modelType)
+                .eq(ModelConfigEntity::getIsEnabled, 1)
+                .orderByDesc(ModelConfigEntity::getIsDefault)
+                .orderByAsc(ModelConfigEntity::getCreateDate));
+    }
 }

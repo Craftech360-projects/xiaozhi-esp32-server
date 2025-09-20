@@ -26,6 +26,7 @@ import xiaozhi.modules.model.entity.ModelConfigEntity;
 import xiaozhi.modules.model.service.ModelConfigService;
 import xiaozhi.modules.model.service.ModelProviderService;
 import xiaozhi.modules.timbre.service.TimbreService;
+import xiaozhi.modules.config.service.LiveKitConfigService;
 
 @AllArgsConstructor
 @RestController
@@ -38,6 +39,7 @@ public class ModelController {
     private final ModelConfigService modelConfigService;
     private final ConfigService configService;
     private final AgentTemplateService agentTemplateService;
+    private final LiveKitConfigService liveKitConfigService;
 
     @GetMapping("/names")
     @Operation(summary = "Get all model names")
@@ -84,6 +86,16 @@ public class ModelController {
             @RequestBody ModelConfigBodyDTO modelConfigBodyDTO) {
         ModelConfigDTO modelConfigDTO = modelConfigService.add(modelType, provideCode, modelConfigBodyDTO);
         configService.getConfig(false);
+
+        // Auto-sync to LiveKit if this is a default model
+        if (modelConfigBodyDTO.getIsDefault() != null && modelConfigBodyDTO.getIsDefault() == 1) {
+            try {
+                liveKitConfigService.syncToLiveKit();
+            } catch (Exception e) {
+                System.err.println("Failed to sync to LiveKit: " + e.getMessage());
+            }
+        }
+
         return new Result<ModelConfigDTO>().ok(modelConfigDTO);
     }
 
@@ -96,6 +108,16 @@ public class ModelController {
             @RequestBody ModelConfigBodyDTO modelConfigBodyDTO) {
         ModelConfigDTO modelConfigDTO = modelConfigService.edit(modelType, provideCode, id, modelConfigBodyDTO);
         configService.getConfig(false);
+
+        // Auto-sync to LiveKit if this is a default model
+        if (modelConfigBodyDTO.getIsDefault() != null && modelConfigBodyDTO.getIsDefault() == 1) {
+            try {
+                liveKitConfigService.syncToLiveKit();
+            } catch (Exception e) {
+                System.err.println("Failed to sync to LiveKit: " + e.getMessage());
+            }
+        }
+
         return new Result<ModelConfigDTO>().ok(modelConfigDTO);
     }
 
@@ -147,6 +169,15 @@ public class ModelController {
         agentTemplateService.updateDefaultTemplateModelId(entity.getModelType(), entity.getId());
 
         configService.getConfig(false);
+
+        // Auto-sync to LiveKit agent when default model changes
+        try {
+            liveKitConfigService.syncToLiveKit();
+        } catch (Exception e) {
+            // Log error but don't fail the request
+            System.err.println("Failed to sync to LiveKit: " + e.getMessage());
+        }
+
         return new Result<Void>();
     }
 

@@ -10,7 +10,7 @@ from livekit.agents import (
     cli,
     RoomInputOptions,
 )
-from livekit.plugins import noise_cancellation
+# from livekit.plugins import noise_cancellation  # Commented out due to import issues
 
 # Load environment variables first, before importing modules
 load_dotenv(".env")
@@ -78,10 +78,11 @@ async def entrypoint(ctx: JobContext):
     ctx.log_context_fields = {"room": ctx.room.name}
     print(f"Starting agent in room: {ctx.room.name}")
 
-    # Load configuration (environment variables already loaded at module level)
-    groq_config = ConfigLoader.get_groq_config()
-    tts_config = ConfigLoader.get_tts_config()
-    agent_config = ConfigLoader.get_agent_config()
+    # Load configuration from Java backend API (not env files)
+    logger.info("Loading model configuration from Java backend...")
+    groq_config = await ConfigLoader.get_groq_config()
+    tts_config = await ConfigLoader.get_tts_config()
+    agent_config = ConfigLoader.get_agent_config()  # This one stays sync as it's for agent settings
 
     # Create providers using factory
     llm = ProviderFactory.create_llm(groq_config)
