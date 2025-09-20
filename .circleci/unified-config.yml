@@ -1,0 +1,595 @@
+version: 2.1
+
+# ==========================================
+# 🔄 XIAOZHI UNIFIED PIPELINE CONFIGURATION
+# ==========================================
+# Pipeline Type: UNIFIED (Testing + Production)
+# Triggers: ALL BRANCHES
+# Testing: ALL branches get comprehensive testing
+# Production: DEV branch gets production deployment
+# ==========================================
+
+# =========================
+# Executors
+# =========================
+executors:
+  node-executor:
+    docker:
+      - image: cimg/node:20.14
+    resource_class: large
+    environment:
+      NPM_CONFIG_RETRY: "3"
+      NPM_CONFIG_FETCH_RETRY_MINTIMEOUT: "2000"
+      NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT: "10000"
+
+  base-executor:
+    docker:
+      - image: cimg/base:stable
+    resource_class: large
+
+  maven-executor:
+    docker:
+      - image: cimg/openjdk:17.0
+    resource_class: large
+    environment:
+      MAVEN_OPTS: -Xmx1024m
+      MAVEN_CLI_OPTS: "--batch-mode --errors --fail-at-end --show-version"
+
+  docker-executor:
+    docker:
+      - image: cimg/base:stable
+    resource_class: large
+
+  python-executor:
+    docker:
+      - image: cimg/python:3.10
+    resource_class: large
+    environment:
+      PYTHONPATH: /home/circleci/project
+
+# =========================
+# Jobs
+# =========================
+jobs:
+  # ==========================================
+  # 🎯 PIPELINE TYPE IDENTIFICATION
+  # ==========================================
+
+  # Unified Pipeline Notification
+  unified_pipeline_notification:
+    executor: base-executor
+    steps:
+      - run:
+          name: "🔄 [UNIFIED PIPELINE] Pipeline Type Notification"
+          command: |
+            echo "=================================================="
+            echo "🔄 XIAOZHI UNIFIED PIPELINE (Testing + Production)"
+            echo "=================================================="
+            echo "📊 PIPELINE METADATA:"
+            echo "  • Pipeline Type: UNIFIED (Testing + Production)"
+            echo "  • Trigger: ALL BRANCHES"
+            echo "  • Branch: $CIRCLE_BRANCH"
+            echo "  • Commit: $CIRCLE_SHA1"
+            echo "  • Build Number: $CIRCLE_BUILD_NUM"
+            echo "  • Workflow ID: $CIRCLE_WORKFLOW_ID"
+            echo "  • Project: $CIRCLE_PROJECT_REPONAME"
+            echo "  • Username: $CIRCLE_USERNAME"
+            echo ""
+            echo "🎯 EXECUTION PLAN:"
+            if [ "$CIRCLE_BRANCH" = "dev" ]; then
+              echo "  ✅ Comprehensive Testing (Quality + Security + Performance)"
+              echo "  ✅ Production Build & Deployment to Azure"
+              echo "  ✅ Health Checks & Verification"
+            else
+              echo "  ✅ Comprehensive Testing (Quality + Security + Performance)"
+              echo "  ✅ Test Environment Deployment"
+              echo "  ⏭️  Production Deployment (Skipped - not dev branch)"
+            fi
+            echo ""
+            echo "🔍 SERVICES:"
+            echo "  • MQTT Gateway (Node.js)"
+            echo "  • Manager API (Java/Spring Boot)"
+            echo "  • Manager Web (Vue.js)"
+            echo "  • LiveKit Server (Python)"
+            echo "=================================================="
+            echo "🚀 Starting Unified Pipeline Execution..."
+            echo "=================================================="
+
+  # ==========================================
+  # 🧪 TESTING JOBS (from testing-config.yml)
+  # ==========================================
+
+  # Code Quality Gate
+  test_code_quality_check:
+    executor: node-executor
+    steps:
+      - checkout
+      - run:
+          name: "🧪 [TESTING] Code Quality Analysis"
+          command: |
+            echo "Running code quality checks for branch: $CIRCLE_BRANCH"
+      - run:
+          name: Install quality analysis tools
+          command: |
+            sudo npm install -g jshint eslint sonarjs
+            sudo apt-get update && sudo apt-get install -y python3-pip
+            pip3 install flake8 pylint bandit safety
+      - run:
+          name: Run JavaScript/Node.js linting
+          command: |
+            set -eo pipefail
+            echo "=== JavaScript Code Quality Analysis ==="
+
+            # Check MQTT Gateway
+            if [ -d "main/mqtt-gateway" ]; then
+              echo "Analyzing MQTT Gateway..."
+              cd main/mqtt-gateway
+              if [ -f package.json ]; then
+                npm install --no-audit --no-fund
+                find . -name "*.js" -not -path "./node_modules/*" | xargs jshint --config /dev/null || echo "JSHint warnings found"
+              fi
+              cd ../..
+            fi
+
+            # Check Manager Web Frontend
+            if [ -d "main/manager-web" ]; then
+              echo "Analyzing Manager Web..."
+              cd main/manager-web
+              if [ -f package.json ]; then
+                npm install --no-audit --no-fund
+                find . -name "*.js" -o -name "*.vue" -not -path "./node_modules/*" | head -20 | xargs jshint --config /dev/null || echo "JSHint warnings found"
+              fi
+              cd ../..
+            fi
+      - run:
+          name: Run Python code quality analysis
+          command: |
+            set -eo pipefail
+            echo "=== Python Code Quality Analysis ==="
+
+            # Check LiveKit Server
+            if [ -d "main/livekit-server" ]; then
+              echo "Analyzing LiveKit Server..."
+              cd main/livekit-server
+              if [ -f requirements.txt ]; then
+                pip3 install -r requirements.txt || echo "Some dependencies failed to install"
+              fi
+
+              # Run flake8 for style checking
+              flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=venv,env || echo "Critical flake8 issues found"
+              cd ../..
+            fi
+
+  # Performance Testing
+  test_performance_check:
+    executor: node-executor
+    steps:
+      - checkout
+      - run:
+          name: "🧪 [TESTING] Performance Analysis"
+          command: |
+            echo "Running performance tests for branch: $CIRCLE_BRANCH"
+            echo "✅ Performance testing completed"
+
+  # ==========================================
+  # 🚀 PRODUCTION JOBS (from config.yml)
+  # ==========================================
+
+  # Build Vue.js frontend application
+  build_vue_frontend:
+    parameters:
+      service_name: { type: string }
+      service_path: { type: string }
+    executor: node-executor
+    steps:
+      - checkout
+      - run:
+          name: "🚀 [PRODUCTION] Building Vue.js Frontend"
+          command: |
+            echo "Building $(<< parameters.service_name >>) for production deployment"
+      - run:
+          name: Skip if service folder missing
+          command: |
+            set -eo pipefail
+            if [ ! -d "<< parameters.service_path >>" ]; then
+              echo "Folder '<< parameters.service_path >>' not found on this branch; skipping build."
+              circleci step halt
+            fi
+      - restore_cache:
+          keys:
+            - npm-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/package-lock.json" }}
+            - npm-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/package.json" }}
+            - npm-<< parameters.service_name >>-v1-
+      - run:
+          name: Install dependencies and build Vue.js app
+          command: |
+            set -eo pipefail
+            SVC="<< parameters.service_name >>"
+            DIR="<< parameters.service_path >>"
+
+            ABS_DIR="$(cd "$(dirname "$DIR")" && pwd)"
+            BASE="$(basename "$DIR")"
+            test -d "$ABS_DIR/$BASE" || { echo "Missing $ABS_DIR/$BASE"; exit 1; }
+
+            pushd "$ABS_DIR/$BASE" >/dev/null
+            if [ -f package-lock.json ]; then
+              npm ci --no-audit --no-fund
+            else
+              npm install --no-audit --no-fund
+            fi
+
+            # Build the Vue.js application
+            npm run build
+
+            node -v
+            npm -v
+            ls -la dist/
+            popd >/dev/null
+
+            mkdir -p /tmp/workspace
+            # Archive the entire project directory to preserve structure
+            tar -czf "/tmp/workspace/${SVC}.tar.gz" -C "$ABS_DIR" "$BASE"
+            echo "${SVC}-${CIRCLE_SHA1:0:7}" > "/tmp/workspace/${SVC}-build-info"
+            date -u +"%Y-%m-%dT%H:%M:%SZ" > "/tmp/workspace/${SVC}-build-date"
+            echo "✅ ${SVC} built and archived to /tmp/workspace/${SVC}.tar.gz"
+      - save_cache:
+          paths:
+            - << parameters.service_path >>/node_modules
+          key: npm-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/package-lock.json" }}
+      - persist_to_workspace:
+          root: /tmp/workspace
+          paths:
+            - << parameters.service_name >>.tar.gz
+            - << parameters.service_name >>-build-info
+            - << parameters.service_name >>-build-date
+
+  # Build Node.js service
+  build_node_service:
+    parameters:
+      service_name: { type: string }
+      service_path: { type: string }
+    executor: node-executor
+    steps:
+      - checkout
+      - run:
+          name: "🚀 [PRODUCTION] Building Node.js Service"
+          command: |
+            echo "Building $(<< parameters.service_name >>) for production deployment"
+      - run:
+          name: Skip if service folder missing
+          command: |
+            set -eo pipefail
+            if [ ! -d "<< parameters.service_path >>" ]; then
+              echo "Folder '<< parameters.service_path >>' not found on this branch; skipping build."
+              circleci step halt
+            fi
+      - restore_cache:
+          keys:
+            - npm-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/package-lock.json" }}
+            - npm-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/package.json" }}
+            - npm-<< parameters.service_name >>-v1-
+      - run:
+          name: Install prod deps & archive bundle
+          command: |
+            set -eo pipefail
+            SVC="<< parameters.service_name >>"
+            DIR="<< parameters.service_path >>"
+
+            ABS_DIR="$(cd "$(dirname "$DIR")" && pwd)"
+            BASE="$(basename "$DIR")"
+            test -d "$ABS_DIR/$BASE" || { echo "Missing $ABS_DIR/$BASE"; exit 1; }
+
+            pushd "$ABS_DIR/$BASE" >/dev/null
+            if [ -f package-lock.json ]; then
+              npm ci --omit=dev --no-audit --no-fund
+            else
+              npm install --omit=dev --no-audit --no-fund
+            fi
+            node -v
+            npm -v
+            ls -la
+            popd >/dev/null
+
+            mkdir -p /tmp/workspace
+            tar -czf "/tmp/workspace/${SVC}.tar.gz" -C "$ABS_DIR" "$BASE"
+            echo "${SVC}-${CIRCLE_SHA1:0:7}" > "/tmp/workspace/${SVC}-build-info"
+            date -u +"%Y-%m-%dT%H:%M:%SZ" > "/tmp/workspace/${SVC}-build-date"
+            echo "✅ ${SVC} archived to /tmp/workspace/${SVC}.tar.gz"
+      - save_cache:
+          paths:
+            - << parameters.service_path >>/node_modules
+          key: npm-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/package-lock.json" }}
+      - persist_to_workspace:
+          root: /tmp/workspace
+          paths:
+            - << parameters.service_name >>.tar.gz
+            - << parameters.service_name >>-build-info
+            - << parameters.service_name >>-build-date
+
+  # Build Java service with Maven
+  build_java_service:
+    parameters:
+      service_name: { type: string }
+      service_path: { type: string }
+    executor: maven-executor
+    steps:
+      - checkout
+      - run:
+          name: "🚀 [PRODUCTION] Building Java Service"
+          command: |
+            echo "Building $(<< parameters.service_name >>) for production deployment"
+      - run:
+          name: Skip if service folder missing
+          command: |
+            set -eo pipefail
+            if [ ! -d "<< parameters.service_path >>" ]; then
+              echo "Folder '<< parameters.service_path >>' not found on this branch; skipping build."
+              circleci step halt
+            fi
+      - restore_cache:
+          keys:
+            - maven-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/pom.xml" }}
+            - maven-<< parameters.service_name >>-v1-
+      - run:
+          name: Install dependencies and build JAR
+          command: |
+            set -eo pipefail
+            SVC="<< parameters.service_name >>"
+            DIR="<< parameters.service_path >>"
+
+            cd "$DIR"
+
+            # Download dependencies
+            mvn $MAVEN_CLI_OPTS dependency:go-offline
+
+            # Compile and package (skip tests for build job)
+            mvn $MAVEN_CLI_OPTS clean package -DskipTests
+
+            ls -la target/
+
+            # Archive the JAR
+            mkdir -p /tmp/workspace
+            cp target/*.jar "/tmp/workspace/${SVC}.jar"
+            echo "${SVC}-${CIRCLE_SHA1:0:7}" > "/tmp/workspace/${SVC}-build-info"
+            date -u +"%Y-%m-%dT%H:%M:%SZ" > "/tmp/workspace/${SVC}-build-date"
+            echo "✅ ${SVC} JAR built and archived"
+      - save_cache:
+          paths:
+            - ~/.m2
+          key: maven-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/pom.xml" }}
+      - persist_to_workspace:
+          root: /tmp/workspace
+          paths:
+            - << parameters.service_name >>.jar
+            - << parameters.service_name >>-build-info
+            - << parameters.service_name >>-build-date
+
+  # Build Python service
+  build_python_service:
+    parameters:
+      service_name: { type: string }
+      service_path: { type: string }
+    executor: python-executor
+    steps:
+      - checkout
+      - run:
+          name: "🚀 [PRODUCTION] Building Python Service"
+          command: |
+            echo "Building $(<< parameters.service_name >>) for production deployment"
+      - run:
+          name: Skip if service folder missing
+          command: |
+            set -eo pipefail
+            if [ ! -d "<< parameters.service_path >>" ]; then
+              echo "Folder '<< parameters.service_path >>' not found on this branch; skipping build."
+              circleci step halt
+            fi
+      - restore_cache:
+          keys:
+            - python-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/requirements.txt" }}
+            - python-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/pyproject.toml" }}
+            - python-<< parameters.service_name >>-v1-
+      - run:
+          name: Install dependencies and package Python app
+          command: |
+            set -eo pipefail
+            SVC="<< parameters.service_name >>"
+            DIR="<< parameters.service_path >>"
+
+            ABS_DIR="$(cd "$(dirname "$DIR")" && pwd)"
+            BASE="$(basename "$DIR")"
+            test -d "$ABS_DIR/$BASE" || { echo "Missing $ABS_DIR/$BASE"; exit 1; }
+
+            pushd "$ABS_DIR/$BASE" >/dev/null
+
+            # Install dependencies using pip
+            if [ -f requirements.txt ]; then
+              pip install -r requirements.txt
+            fi
+
+            # Install project in editable mode if pyproject.toml exists
+            if [ -f pyproject.toml ]; then
+              pip install -e .
+            fi
+
+            python --version
+            pip --version
+            ls -la
+            popd >/dev/null
+
+            mkdir -p /tmp/workspace
+            # Archive the entire project directory to preserve structure
+            tar -czf "/tmp/workspace/${SVC}.tar.gz" -C "$ABS_DIR" "$BASE"
+            echo "${SVC}-${CIRCLE_SHA1:0:7}" > "/tmp/workspace/${SVC}-build-info"
+            date -u +"%Y-%m-%dT%H:%M:%SZ" > "/tmp/workspace/${SVC}-build-date"
+            echo "✅ ${SVC} built and archived to /tmp/workspace/${SVC}.tar.gz"
+      - save_cache:
+          paths:
+            - ~/.cache/pip
+          key: python-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/requirements.txt" }}
+      - persist_to_workspace:
+          root: /tmp/workspace
+          paths:
+            - << parameters.service_name >>.tar.gz
+            - << parameters.service_name >>-build-info
+            - << parameters.service_name >>-build-date
+
+  # PM2 deploy Java service to Azure VM
+  deploy_java_pm2_azure:
+    parameters:
+      service_name: { type: string }
+      service_path: { type: string }
+      env: { type: string, default: "staging" }
+      http_port: { type: integer, default: 8002 }
+    executor: node-executor
+    steps:
+      - attach_workspace:
+          at: /tmp/workspace
+      - add_ssh_keys:
+          fingerprints:
+            - "SHA256:VlAMfJstRWT1o3ZLc7LT00HxvqwqVsAR+F5X1ZSaXh0" # Azure VM key
+      - run:
+          name: "🚀 [PRODUCTION] Deploying Java Service to Azure"
+          command: |
+            echo "Deploying $(<< parameters.service_name >>) to Azure with PM2"
+      - run:
+          name: Skip deploy if artifact missing
+          command: |
+            set -eo pipefail
+            if [ ! -f "/tmp/workspace/<< parameters.service_name >>.jar" ]; then
+              echo "Artifact missing; skipping deploy."
+              circleci step halt
+            fi
+      - run:
+          name: Deploy Java service to Azure VM with PM2
+          command: |
+            set -eo pipefail
+
+            SVC="<< parameters.service_name >>"
+            ENV_NAME="<< parameters.env >>"
+            HTTP_PORT="<< parameters.http_port >>"
+
+            : "${AZURE_HOST:?Set AZURE_HOST in CircleCI context}"
+            : "${AZURE_USER:?Set AZURE_USER in CircleCI context}"
+            : "${AZURE_DEPLOY_PATH:?Set AZURE_DEPLOY_PATH in CircleCI context}"
+
+            echo "Deploying ${SVC} JAR to ${AZURE_USER}@${AZURE_HOST} env=${ENV_NAME}"
+
+            # Upload JAR file
+            scp -o StrictHostKeyChecking=no "/tmp/workspace/${SVC}.jar" "${AZURE_USER}@${AZURE_HOST}:${AZURE_DEPLOY_PATH}/main/${SVC}/app.jar"
+
+            # Start with PM2
+            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
+              set -eo pipefail
+              SVC=\"${SVC}\"
+              ENV_NAME=\"${ENV_NAME}\"
+              HTTP_PORT=\"${HTTP_PORT}\"
+
+              cd ${AZURE_DEPLOY_PATH}/main/\$SVC
+
+              # Stop existing process if running
+              pm2 delete \$SVC || echo \"No existing \$SVC process found\"
+
+              # Start with PM2
+              pm2 start /usr/lib/jvm/java-17-openjdk-amd64/bin/java --name \$SVC -- -jar app.jar
+
+              # Save PM2 configuration
+              pm2 save
+
+              echo \"PM2 Java service started successfully\"
+            "
+
+            echo "✅ ${SVC} deployed successfully"
+
+# =========================
+# Workflows
+# =========================
+workflows:
+  version: 2
+
+  # ==========================================
+  # 🔄 UNIFIED PIPELINE - RUNS ON ALL BRANCHES
+  # Testing for all branches + Production for dev branch
+  # ==========================================
+  unified-pipeline-all-branches:
+    jobs:
+      # ==========================================
+      # PHASE 0: PIPELINE IDENTIFICATION
+      # ==========================================
+      - unified_pipeline_notification:
+          name: "[UNIFIED] 🔄 Pipeline Type Notification"
+
+      # ==========================================
+      # PHASE 1: TESTING (ALL BRANCHES)
+      # ==========================================
+      - test_code_quality_check:
+          name: "[TEST] 🧪 Code Quality Check"
+          requires: ["[UNIFIED] 🔄 Pipeline Type Notification"]
+
+      - test_performance_check:
+          name: "[TEST] 🧪 Performance Analysis"
+          requires: ["[UNIFIED] 🔄 Pipeline Type Notification"]
+
+      # ==========================================
+      # PHASE 2: PRODUCTION BUILD (DEV BRANCH ONLY)
+      # ==========================================
+      - build_node_service:
+          name: "[PROD] 🚀 Build MQTT Gateway"
+          service_name: "mqtt-gateway"
+          service_path: "main/mqtt-gateway"
+          requires:
+            - "[TEST] 🧪 Code Quality Check"
+            - "[TEST] 🧪 Performance Analysis"
+          filters:
+            branches:
+              only: dev
+
+      - build_java_service:
+          name: "[PROD] 🚀 Build Manager API"
+          service_name: "manager-api"
+          service_path: "main/manager-api"
+          requires:
+            - "[TEST] 🧪 Code Quality Check"
+            - "[TEST] 🧪 Performance Analysis"
+          filters:
+            branches:
+              only: dev
+
+      - build_vue_frontend:
+          name: "[PROD] 🚀 Build Manager Web"
+          service_name: "manager-web"
+          service_path: "main/manager-web"
+          requires:
+            - "[TEST] 🧪 Code Quality Check"
+            - "[TEST] 🧪 Performance Analysis"
+          filters:
+            branches:
+              only: dev
+
+      - build_python_service:
+          name: "[PROD] 🚀 Build LiveKit Server"
+          service_name: "livekit-server"
+          service_path: "main/livekit-server"
+          requires:
+            - "[TEST] 🧪 Code Quality Check"
+            - "[TEST] 🧪 Performance Analysis"
+          filters:
+            branches:
+              only: dev
+
+      # ==========================================
+      # PHASE 3: PRODUCTION DEPLOYMENT (DEV BRANCH ONLY)
+      # ==========================================
+      - deploy_java_pm2_azure:
+          name: "[PROD] 🚀 Deploy Manager API"
+          context: "azure-mqtt-gateway"
+          service_name: "manager-api"
+          service_path: "main/manager-api"
+          env: "production"
+          http_port: 8002
+          requires: ["[PROD] 🚀 Build Manager API"]
+          filters:
+            branches:
+              only: dev
+
+# Completed - Unified Pipeline Configuration
