@@ -1,0 +1,67 @@
+# Xiaozhi ESP32 LiveKit Agent Configuration Template
+# Copy this file to config.yaml and fill in your API keys
+
+# Configuration source control - ALWAYS fetch from backend
+read_config_from_api: true  # FORCE backend model fetching - no fallbacks
+
+# Manager API settings (used when read_config_from_api is true)
+manager_api:
+  url: "http://localhost:8080"
+  timeout: 5
+  cache_duration: 30  # seconds
+
+# Default model configurations (used when API is unavailable or read_config_from_api is false)
+models:
+  llm:
+    provider: "groq"
+    model: "llama-3.1-8b-instant"
+
+  stt:
+    provider: "groq"
+    model: "whisper-large-v3-turbo"
+    language: "en"
+
+  tts:
+    provider: "edge"
+    model: "edge-tts"
+    voice: "Aaliyah-PlayAI"
+
+# LiveKit configuration
+livekit:
+  url: "ws://localhost:7880"
+  api_key: "devkey"
+  api_secret: "secret"
+
+# MQTT configuration
+mqtt:
+  host: "192.168.1.5"
+  port: 1883
+  client_id: "GID_test@@@00:11:22:33:44:55"
+  username: "testuser"
+  password: "testpassword"
+
+# Redis configuration
+redis:
+  url: "redis://:redispassword@192.168.1.101:6380"
+  password: "redispassword"
+
+# Agent settings
+agent:
+  preemptive_generation: false
+  noise_cancellation: false
+
+# API Keys - REPLACE WITH YOUR ACTUAL KEYS
+api_keys:
+  groq: "YOUR_GROQ_API_KEY_HERE"
+  google: "YOUR_GOOGLE_API_KEY_HERE"
+  deepgram: "YOUR_DEEPGRAM_API_KEY_HERE"
+  elevenlabs: "YOUR_ELEVENLABS_API_KEY_HERE"
+
+# Embedding model settings
+embedding:
+  model: "all-MiniLM-L6-v2"
+
+# Qdrant configuration
+qdrant:
+  url: "YOUR_QDRANT_URL_HERE"
+  api_key: "YOUR_QDRANT_API_KEY_HERE"
