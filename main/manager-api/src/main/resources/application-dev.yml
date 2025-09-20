@@ -12,7 +12,7 @@ knife4j:
 server:
   port: ${SERVER_PORT:8002}
   address: 0.0.0.0
-  secret: d153e93c-bb2f-42e7-8045-a1ee47a1dcfc
+  secret: 6738aa73-f5c6-4abe-b926-0128d9f891b6
 
 # Management endpoints for health checks
 management:
@@ -28,7 +28,7 @@ management:
 spring:
   datasource:
     druid:
-      # Local MySQL for Azure VM (matches pipeline setup)
+      # Local Azure database (same as Azure VM configuration)
       driver-class-name: com.mysql.cj.jdbc.Driver
       url: jdbc:mysql://localhost:3306/xiaozhi_db?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&nullCatalogMeansCurrent=true&useSSL=false&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true
       username: xiaozhi_user
@@ -58,7 +58,7 @@ spring:
 
   data:
     redis:
-      # Local Redis for Azure VM (matches pipeline setup)
+      # Local Azure Redis (same as Azure VM configuration)
       host: localhost
       port: 6379
       password: # No password for local Redis
