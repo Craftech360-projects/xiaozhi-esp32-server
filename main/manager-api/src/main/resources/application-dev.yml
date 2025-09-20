@@ -3,37 +3,40 @@ knife4j:
   enable: true
   basic:
     enable: false
-    username: renren
-    password: 2ZABCDEUgF
+    username: admin
+    password: admin
   setting:
     enableFooter: false
 
 # Server configuration
 server:
-  secret: 850d12bb-2709-498c-b01e-6df50a54f6f9
+  port: ${SERVER_PORT:8002}
+  address: 0.0.0.0
+  secret: d153e93c-bb2f-42e7-8045-a1ee47a1dcfc
+
+# Management endpoints for health checks
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+
 spring:
   datasource:
     druid:
-      #MySQL
-      # driver-class-name: com.mysql.cj.jdbc.Driver
-      # # Railway MySQL Configuration - Updated for Railway database
-      # url: jdbc:mysql://yamanote.proxy.rlwy.net:16958/railway?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&nullCatalogMeansCurrent=true&useSSL=true&allowPublicKeyRetrieval=true
-      # username: root
-      # password: cTefiuLmZSMqGpcQImUmBIsUBhNyUvrK
+      # Local MySQL for Azure VM (matches pipeline setup)
       driver-class-name: com.mysql.cj.jdbc.Driver
-      # Railway MySQL Configuration - Updated for Railway database
+      url: jdbc:mysql://localhost:3306/xiaozhi_db?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&nullCatalogMeansCurrent=true&useSSL=false&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true
+      username: xiaozhi_user
+      password: xiaozhi_password123
 
-      # url: jdbc:mysql://crossover.proxy.rlwy.net:56145/railway?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&nullCatalogMeansCurrent=true&useSSL=true&allowPublicKeyRetrieval=true
-      # username: root
-      # password: XjOWQwtGNcoMIELTjoMoaaBTfKiBjVcA
-      url: jdbc:mysql://localhost:3307/manager_api?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&nullCatalogMeansCurrent=true&useSSL=false&allowPublicKeyRetrieval=true
-      username: manager
-      password: managerpassword
-
-
-      initial-size: 10
-      max-active: 100
-      min-idle: 10
+      initial-size: 5
+      max-active: 20
+      min-idle: 5
       max-wait: 6000
       pool-prepared-statements: true
       max-pool-prepared-statement-per-connection-size: 20
@@ -52,11 +55,13 @@ spring:
         wall:
           config:
             multi-statement-allow: true
+
   data:
     redis:
+      # Local Redis for Azure VM (matches pipeline setup)
       host: localhost
-      port: 6380
-      password: redispassword
+      port: 6379
+      password: # No password for local Redis
       database: 0
       timeout: 10000ms
       lettuce:
@@ -64,5 +69,4 @@ spring:
           max-active: 8
           max-idle: 8
           min-idle: 0
-          max-wait: -1ms
-
+        shutdown-timeout: 100ms
