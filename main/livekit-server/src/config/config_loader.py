@@ -17,7 +17,20 @@ class ConfigLoader:
             'stt_model': os.getenv('STT_MODEL', 'whisper-large-v3-turbo'),
             'tts_model': os.getenv('TTS_MODEL', 'playai-tts'),
             'tts_voice': os.getenv('TTS_VOICE', 'Aaliyah-PlayAI'),
-            'stt_language': os.getenv('STT_LANGUAGE', 'en')
+            'stt_language': os.getenv('STT_LANGUAGE', 'en'),
+            'stt_provider': os.getenv('STT_PROVIDER', 'groq'),  # groq or deepgram
+            'deepgram_model': os.getenv('DEEPGRAM_MODEL', 'nova-3')
+        }
+
+    @staticmethod
+    def get_tts_config():
+        """Get TTS configuration from environment variables"""
+        return {
+            'provider': os.getenv('TTS_PROVIDER', 'groq'),  # groq or elevenlabs
+            'model': os.getenv('TTS_MODEL', 'playai-tts'),
+            'voice': os.getenv('TTS_VOICE', 'Aaliyah-PlayAI'),
+            'elevenlabs_voice_id': os.getenv('ELEVENLABS_VOICE_ID', ''),
+            'elevenlabs_model': os.getenv('ELEVENLABS_MODEL', 'eleven_turbo_v2_5')
         }
 
     @staticmethod

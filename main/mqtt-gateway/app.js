@@ -29,18 +29,22 @@ const {
 // Import Opus Encoder and Decoder from audify-plus
 const { OpusEncoder, OpusDecoder, OpusApplication } = require("@voicehype/audify-plus");
 
-// Initialize Opus encoder and decoder for 16kHz mono (same as before)
+// Initialize Opus encoder for 24kHz mono (outgoing), decoder for 16kHz mono (incoming)
 let opusEncoder = null;
 let opusDecoder = null;
 // Define constants for audio parameters
-const SAMPLE_RATE = 16000;     // Hz
+const OUTGOING_SAMPLE_RATE = 24000;  // Hz - for LiveKit → ESP32
+const INCOMING_SAMPLE_RATE = 16000;  // Hz - for ESP32 → LiveKit
 const CHANNELS = 1;            // Mono
-const FRAME_DURATION_MS = 20;  // 20ms frames (standard for Opus)
-const FRAME_SIZE_SAMPLES = (SAMPLE_RATE * FRAME_DURATION_MS) / 1000; // 16000 * 20 / 1000 = 320
-const FRAME_SIZE_BYTES = FRAME_SIZE_SAMPLES * 2; // 320 samples * 2 bytes/sample = 640 bytes PCM
+const OUTGOING_FRAME_DURATION_MS = 60;  // 60ms frames for outgoing (LiveKit → ESP32)
+const INCOMING_FRAME_DURATION_MS = 20;  // 20ms frames for incoming (ESP32 → LiveKit)
+const OUTGOING_FRAME_SIZE_SAMPLES = (OUTGOING_SAMPLE_RATE * OUTGOING_FRAME_DURATION_MS) / 1000; // 24000 * 60 / 1000 = 1440
+const INCOMING_FRAME_SIZE_SAMPLES = (INCOMING_SAMPLE_RATE * INCOMING_FRAME_DURATION_MS) / 1000; // 16000 * 20 / 1000 = 320
+const OUTGOING_FRAME_SIZE_BYTES = OUTGOING_FRAME_SIZE_SAMPLES * 2; // 1440 samples * 2 bytes/sample = 2880 bytes PCM
+const INCOMING_FRAME_SIZE_BYTES = INCOMING_FRAME_SIZE_SAMPLES * 2; // 320 samples * 2 bytes/sample = 640 bytes PCM
 
 try {
-  // For 24kHz, mono audio (resampled from 48kHz LiveKit audio)
+  // For outgoing: 24kHz encoder (LiveKit → ESP32), incoming: 16kHz decoder (ESP32 → LiveKit)
   opusEncoder = new OpusEncoder(24000, 1, OpusApplication.OPUS_APPLICATION_AUDIO);
   opusDecoder = new OpusDecoder(16000, 1);
 
@@ -85,13 +89,13 @@ class LiveKitBridge extends Emitter {
     this.audioSource = new AudioSource(16000, 1);
     this.protocolVersion = protocolVersion;
 
-    // Initialize audio resampler for 48kHz -> 16kHz conversion
-    this.audioResampler = new AudioResampler(48000, 16000, 1); // 48kHz -> 16kHz, mono
+    // Initialize audio resampler for 48kHz -> 24kHz conversion (outgoing: LiveKit -> ESP32)
+    this.audioResampler = new AudioResampler(48000, 24000, 1, AudioResamplerQuality.QUICK);
 
     // Frame buffer for accumulating resampled audio into proper frame sizes
     this.frameBuffer = Buffer.alloc(0);
-    this.targetFrameSize = 320; // 320 samples = 20ms at 16kHz
-    this.targetFrameBytes = this.targetFrameSize * 2; // 640 bytes for 16-bit PCM
+    this.targetFrameSize = 1440; // 1440 samples = 60ms at 24kHz (outgoing)
+    this.targetFrameBytes = this.targetFrameSize * 2; // 2880 bytes for 16-bit PCM
 
     // Initialize Opus decoder for incoming audio (device -> LiveKit)
     // this.opusDecoder = null;
@@ -123,14 +127,14 @@ class LiveKitBridge extends Emitter {
     this.livekitConfig = livekitConfig;
   }
 
-  // Process buffered audio frames and send PCM directly
+  // Process buffered audio frames and encode to Opus
   processBufferedFrames(timestamp, frameCount, participantIdentity) {
     while (this.frameBuffer.length >= this.targetFrameBytes) {
       // Extract one complete frame
       const frameData = this.frameBuffer.slice(0, this.targetFrameBytes);
       this.frameBuffer = this.frameBuffer.slice(this.targetFrameBytes);
 
-      // Process this complete frame - send PCM directly without Opus encoding
+      // Process this complete frame - encode to Opus before sending
       if (frameData.length > 0) {
         const samples = new Int16Array(frameData.buffer, frameData.byteOffset, frameData.length / 2);
         const isSilent = samples.every(sample => sample === 0);
@@ -143,25 +147,31 @@ class LiveKitBridge extends Emitter {
         }
 
         if (frameCount <= 3 || frameCount % 100 === 0) {
-          // console.log(`✅ [BUFFERED] Frame ${frameCount}: 16kHz PCM ${frameData.length}B sent directly`);
+          // Log progress every 100 frames for Opus encoding
         }
 
-        // Send PCM directly without Opus encoding
-        this.connection.sendUdpMessage(frameData, timestamp);
-
-        // Commented out Opus encoding for testing
-        /*
+        // Encode to Opus and send to ESP32
         if (opusEncoder) {
           try {
             const alignedBuffer = Buffer.allocUnsafe(frameData.length);
             frameData.copy(alignedBuffer);
             const opusBuffer = opusEncoder.encode(alignedBuffer, this.targetFrameSize);
+
+            if (frameCount <= 3 || frameCount % 100 === 0) {
+              console.log(`🎵 [OPUS] Frame ${frameCount}: 24kHz 60ms PCM ${frameData.length}B → Opus ${opusBuffer.length}B`);
+            }
+
             this.connection.sendUdpMessage(opusBuffer, timestamp);
           } catch (err) {
-            console.error(`❌ [BUFFERED] Encode error: ${err.message}`);
+            console.error(`❌ [OPUS] Encode error: ${err.message}`);
+            // Fallback to PCM if Opus encoding fails
+            this.connection.sendUdpMessage(frameData, timestamp);
           }
+        } else {
+          // Fallback: Send PCM directly if Opus encoder not available
+          console.log(`⚠️ [PCM] No Opus encoder, sending PCM directly`);
+          this.connection.sendUdpMessage(frameData, timestamp);
         }
-        */
       }
     }
   }
@@ -322,28 +332,28 @@ class LiveKitBridge extends Emitter {
                       this.processBufferedFrames(finalTimestamp, frameCount, participant.identity);
 
                       // Send any remaining partial frame if it has significant data
-                      if (this.frameBuffer.length > 160) { // At least 10ms worth of 16kHz audio (160 samples * 2 bytes = 320B)
-                        console.log(`🔄 [FLUSH] Processing partial 16kHz PCM frame: ${this.frameBuffer.length}B`);
+                      if (this.frameBuffer.length > 720) { // At least 30ms worth of 24kHz audio (720 samples * 2 bytes = 1440B)
+                        console.log(`🔄 [FLUSH] Processing partial 24kHz 60ms PCM frame: ${this.frameBuffer.length}B`);
 
-                        // Send remaining PCM data directly without Opus encoding
-                        this.connection.sendUdpMessage(this.frameBuffer, finalTimestamp);
-
-                        // Commented out Opus encoding for testing
-                        /*
                         if (opusEncoder) {
                           try {
-                            // Pad to nearest valid frame size for 16kHz
-                            const targetSize = this.frameBuffer.length <= 320 ? 320 : 640;
+                            // Pad to nearest valid frame size for 24kHz 60ms (1440 or 2880 bytes)
+                            const targetSize = this.frameBuffer.length <= 1440 ? 1440 : 2880;
                             const paddedBuffer = Buffer.alloc(targetSize);
                             this.frameBuffer.copy(paddedBuffer);
 
                             const opusBuffer = opusEncoder.encode(paddedBuffer, targetSize / 2);
                             this.connection.sendUdpMessage(opusBuffer, finalTimestamp);
+                            console.log(`✅ [FLUSH] Encoded partial frame: ${this.frameBuffer.length}B → ${opusBuffer.length}B Opus`);
                           } catch (err) {
                             console.log(`⚠️ [FLUSH] Failed to encode partial frame: ${err.message}`);
+                            // Fallback to PCM
+                            this.connection.sendUdpMessage(this.frameBuffer, finalTimestamp);
                           }
+                        } else {
+                          // Fallback: Send remaining PCM if no Opus encoder
+                          this.connection.sendUdpMessage(this.frameBuffer, finalTimestamp);
                         }
-                        */
                       }
 
                       // Clear the buffer
@@ -422,6 +432,16 @@ class LiveKitBridge extends Emitter {
           console.log(
             `👤 [PARTICIPANT] Connected: ${participant.identity} (${participant.sid})`
           );
+
+          // Check if this is an agent joining (agent identity typically contains "agent")
+          if (participant.identity.includes('agent')) {
+            console.log(`🤖 [AGENT] Agent joined the room: ${participant.identity}`);
+
+            // Send initial greeting message to let user know agent is ready
+            setTimeout(() => {
+              this.sendInitialGreeting();
+            }, 1000); // Small delay to ensure connection is stable
+          }
         });
 
         this.room.on(RoomEvent.ParticipantDisconnected, (participant) => {
@@ -457,9 +477,9 @@ class LiveKitBridge extends Emitter {
         resolve({
           session_id: roomName,
           audio_params: {
-            sample_rate: 16000,
+            sample_rate: 24000,
             channels: 1,
-            frame_duration: 20,
+            frame_duration: 60,
             format: "opus"
           }
         });
@@ -473,7 +493,13 @@ class LiveKitBridge extends Emitter {
   }
 
   sendAudio(opusData, timestamp) {
-    if (this.audioSource) {
+    // Check if audioSource is available and room is connected
+    if (!this.audioSource || !this.room || !this.room.isConnected) {
+      console.warn(`⚠️ [AUDIO] Cannot send audio - audioSource or room not ready. Room connected: ${this.room?.isConnected}`);
+      return;
+    }
+
+    try {
       // Audio format analysis (only log occasionally to reduce spam)
       if (Math.random() < 0.01) {
         // Log 1% of packets
@@ -505,7 +531,9 @@ class LiveKitBridge extends Emitter {
               // console.log(
               //   `📤 [UDP IN] Opus->PCM->LiveKit: ${opusData.length}B opus -> ${pcmBuffer.length}B pcm -> ${samples.length} samples, ts=${timestamp}, mac=${this.macAddress}`
               // );
-              this.audioSource.captureFrame(frame);
+              
+              // Safe capture with error handling
+              this.safeCaptureFrame(frame);
             } else {
               // console.warn(
               //   `⚠️  [OPUS] Decoder returned empty buffer for ${opusData.length}B input`
@@ -514,7 +542,7 @@ class LiveKitBridge extends Emitter {
           } catch (err) {
             console.error(`❌ [OPUS] Decode error: ${err.message}`);
             console.log(
-              `🔍 [DEBUG] Opus data: ${opusData.slice(0, 8).toString("hex")}...`
+              `� [RDEBUG] Opus data: ${opusData.slice(0, 8).toString("hex")}...`
             );
           }
         } else {
@@ -532,7 +560,9 @@ class LiveKitBridge extends Emitter {
             Math.min(opusData.length / 2, 320)
           ); // Limit to reasonable PCM size
           const frame = new AudioFrame(samples, 16000, 1, samples.length);
-          this.audioSource.captureFrame(frame);
+          
+          // Safe capture with error handling
+          this.safeCaptureFrame(frame);
         }
       } else {
         // Treat as PCM
@@ -546,7 +576,43 @@ class LiveKitBridge extends Emitter {
         console.log(
           `📤 [UDP IN] Device->LiveKit: ${opusData.length}B, samples=${samples.length}, ts=${timestamp}, mac=${this.macAddress}`
         );
-        this.audioSource.captureFrame(frame);
+        
+        // Safe capture with error handling
+        this.safeCaptureFrame(frame);
+      }
+    } catch (error) {
+      console.error(`❌ [AUDIO] Error in sendAudio: ${error.message}`);
+    }
+  }
+
+  safeCaptureFrame(frame) {
+    try {
+      // Validate frame before capture
+      if (!frame || !frame.data || frame.data.length === 0) {
+        console.warn(`⚠️ [AUDIO] Invalid frame data, skipping`);
+        return;
+      }
+
+      // Check if audioSource is still valid
+      if (!this.audioSource) {
+        console.warn(`⚠️ [AUDIO] AudioSource is null, cannot capture frame`);
+        return;
+      }
+
+      // Attempt to capture the frame
+      this.audioSource.captureFrame(frame);
+    } catch (error) {
+      console.error(`❌ [AUDIO] Failed to capture frame: ${error.message}`);
+      
+      // If we get InvalidState error, try to reinitialize the audio source
+      if (error.message.includes('InvalidState')) {
+        console.log(`🔄 [AUDIO] Attempting to reinitialize AudioSource due to InvalidState`);
+        try {
+          this.audioSource = new AudioSource(16000, 1);
+          console.log(`✅ [AUDIO] AudioSource reinitialized successfully`);
+        } catch (reinitError) {
+          console.error(`❌ [AUDIO] Failed to reinitialize AudioSource: ${reinitError.message}`);
+        }
       }
     }
   }
@@ -832,6 +898,76 @@ class LiveKitBridge extends Emitter {
       `📤 [MQTT OUT] Sending record stop to device: ${this.macAddress}`
     );
     this.connection.sendMqttMessage(JSON.stringify(message));
+  }
+
+  // Send initial greeting when agent joins
+  async sendInitialGreeting() {
+    if (!this.connection) return;
+
+    try {
+      // Send a data message to the agent to trigger an initial response
+      const initialMessage = {
+        type: "agent_ready",
+        message: "Say hello to the user",
+        timestamp: Date.now(),
+        source: "mqtt_gateway"
+      };
+
+      // Send via LiveKit data channel to trigger agent response
+      if (this.room && this.room.localParticipant) {
+        const messageString = JSON.stringify(initialMessage);
+        const messageData = new Uint8Array(Buffer.from(messageString, 'utf8'));
+        await this.room.localParticipant.publishData(
+          messageData,
+          { reliable: true }
+        );
+
+        console.log(
+          `🤖 [AGENT READY] Sent initial greeting trigger to agent for device: ${this.macAddress}`
+        );
+      } else {
+        console.warn(
+          `⚠️ [AGENT READY] Cannot send initial greeting - room not ready for device: ${this.macAddress}`
+        );
+      }
+    } catch (error) {
+      console.error(
+        `❌ [AGENT READY] Error sending initial greeting trigger for device ${this.macAddress}:`, error
+      );
+    }
+  }
+
+  async sendAbortSignal(sessionId) {
+    /**
+     * Send abort signal to LiveKit agent via data channel
+     * This tells the agent to stop current TTS/music playback
+     */
+    if (!this.room || !this.room.localParticipant) {
+      throw new Error("Room not connected or no local participant");
+    }
+
+    try {
+      const abortMessage = {
+        type: "abort_playback",
+        session_id: sessionId,
+        timestamp: Date.now(),
+        source: "mqtt_gateway"
+      };
+
+      // Send via LiveKit data channel to the agent
+      // Convert to Uint8Array as required by LiveKit Node SDK
+      const messageString = JSON.stringify(abortMessage);
+      const messageData = new Uint8Array(Buffer.from(messageString, 'utf8'));
+      await this.room.localParticipant.publishData(
+        messageData,
+        { reliable: true }
+      );
+
+      console.log(`🛑 [ABORT] Sent abort signal to LiveKit agent via data channel`);
+    } catch (error) {
+      console.error(`[LiveKitBridge] Failed to send abort signal:`, error);
+      throw error;
+    }
   }
 
   close() {
@@ -1186,6 +1322,18 @@ class MQTTConnection {
       return;
     }
 
+    // Handle abort message - forward to LiveKit agent via data channel
+    if (json.type === "abort") {
+      try {
+        console.log(`🛑 [ABORT] Received abort signal from device: ${this.macAddress}`);
+        await this.bridge.sendAbortSignal(json.session_id);
+        debug("Successfully forwarded abort signal to LiveKit agent");
+      } catch (error) {
+        debug("Failed to forward abort signal to LiveKit:", error);
+      }
+      return;
+    }
+
     // Not sending other messages to LiveKit for now
     debug("Received other message, not forwarding to LiveKit:", json);
   }
@@ -1503,6 +1651,18 @@ class VirtualMQTTConnection {
     if (json.type === "goodbye") {
       this.bridge.close();
       this.bridge = null;
+      return;
+    }
+
+    // Handle abort message - forward to LiveKit agent via data channel
+    if (json.type === "abort") {
+      try {
+        console.log(`🛑 [ABORT] Received abort signal from device: ${this.deviceId}`);
+        await this.bridge.sendAbortSignal(json.session_id);
+        debug("Successfully forwarded abort signal to LiveKit agent");
+      } catch (error) {
+        debug("Failed to forward abort signal to LiveKit:", error);
+      }
       return;
     }
 

@@ -277,7 +277,7 @@ Server → Client: goodbye (acknowledgment)
 
 ### Audio Streaming
 - **Protocol**: UDP with AES-128-CTR encryption
-- **Format**: Opus codec, 16kHz, mono
+- **Format**: Opus codec, 24kHz, mono
 - **Frame Duration**: 20ms per packet
 - **Encryption**: Header used as nonce, payload encrypted
 
