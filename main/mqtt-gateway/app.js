@@ -347,6 +347,7 @@ class LiveKitBridge extends Emitter {
                             console.log(`✅ [FLUSH] Encoded partial frame: ${this.frameBuffer.length}B → ${opusBuffer.length}B Opus`);
                           } catch (err) {
                             console.log(`⚠️ [FLUSH] Failed to encode partial frame: ${err.message}`);
+                            console.log(`🔍 [DEBUG] Partial frame size: ${this.frameBuffer.length}B, target: ${targetSize}B`);
                             // Fallback to PCM
                             this.connection.sendUdpMessage(this.frameBuffer, finalTimestamp);
                           }
@@ -970,10 +971,35 @@ class LiveKitBridge extends Emitter {
     }
   }
 
-  close() {
+  async close() {
     if (this.room) {
       console.log("[LiveKitBridge] Disconnecting from LiveKit room");
-      this.room.disconnect();
+
+      // First disconnect from the room
+      await this.room.disconnect();
+
+      // Send a final cleanup signal to ensure the agent side also cleans up
+      try {
+        const cleanupMessage = {
+          type: "cleanup_request",
+          session_id: this.connection.udp.session_id,
+          timestamp: Date.now(),
+          source: "mqtt_gateway"
+        };
+
+        if (this.room.localParticipant && this.room.isConnected) {
+          const messageString = JSON.stringify(cleanupMessage);
+          const messageData = new Uint8Array(Buffer.from(messageString, 'utf8'));
+          await this.room.localParticipant.publishData(
+            messageData,
+            { reliable: true }
+          );
+          console.log("🧹 Sent cleanup signal to agent before disconnect");
+        }
+      } catch (error) {
+        console.log("Note: Could not send cleanup signal (room already disconnected)");
+      }
+
       this.room = null;
     }
   }
@@ -1281,10 +1307,18 @@ class MQTTConnection {
       console.log(
         `Call ended: ${this.clientId} Session: ${this.udp.session_id} Duration: ${seconds}s`
       );
+
+      // Send goodbye to device
       this.sendMqttMessage(
         JSON.stringify({ type: "goodbye", session_id: this.udp.session_id })
       );
+
+      // Clean up the bridge reference
       this.bridge = null;
+
+      // Log room cleanup
+      console.log(`🧹 LiveKit room cleanup initiated for session: ${this.udp.session_id}`);
+
       if (this.closing) {
         this.protocol.close();
       }
@@ -1622,10 +1656,18 @@ class VirtualMQTTConnection {
       console.log(
         `Call ended: ${this.deviceId} Session: ${this.udp.session_id} Duration: ${seconds}s`
       );
+
+      // Send goodbye to device
       this.sendMqttMessage(
         JSON.stringify({ type: "goodbye", session_id: this.udp.session_id })
       );
+
+      // Clean up the bridge reference
       this.bridge = null;
+
+      // Log room cleanup
+      console.log(`🧹 LiveKit room cleanup initiated for virtual session: ${this.udp.session_id}`);
+
       if (this.closing) {
         // Remove from gateway connections
         this.gateway.connections.delete(this.connectionId);

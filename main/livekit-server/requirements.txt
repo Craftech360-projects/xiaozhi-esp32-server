@@ -9,3 +9,7 @@ sentence-transformers
 
 # EdgeTTS support
 edge-tts
+
+# Room management and JWT for API calls
+livekit-api
+PyJWT

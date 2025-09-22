@@ -1,6 +1,7 @@
 import logging
 import asyncio
 import os
+import aiohttp
 from dotenv import load_dotenv
 from livekit.agents import (
     AgentSession,
@@ -10,6 +11,7 @@ from livekit.agents import (
     cli,
     RoomInputOptions,
 )
+from livekit import rtc
 from livekit.plugins import noise_cancellation
 
 # Load environment variables first, before importing modules
@@ -27,6 +29,73 @@ from src.services.foreground_audio_player import ForegroundAudioPlayer
 from src.services.unified_audio_player import UnifiedAudioPlayer
 
 logger = logging.getLogger("agent")
+
+async def delete_livekit_room(room_name: str):
+    """Delete a LiveKit room using the API"""
+    try:
+        # Get LiveKit credentials from environment
+        livekit_url = os.getenv("LIVEKIT_URL", "").replace("ws://", "http://").replace("wss://", "https://")
+        api_key = os.getenv("LIVEKIT_API_KEY")
+        api_secret = os.getenv("LIVEKIT_API_SECRET")
+
+        if not all([livekit_url, api_key, api_secret]):
+            logger.warning("LiveKit credentials not configured for room deletion")
+            return
+
+        # For LiveKit Cloud, use the management API
+        # For self-hosted, this would be different
+        from livekit import api
+
+        # Create API client
+        lk_api = api.LiveKitAPI(
+            url=livekit_url,
+            api_key=api_key,
+            api_secret=api_secret,
+        )
+
+        # Delete the room using the correct API method
+        from livekit.api import DeleteRoomRequest
+        request = DeleteRoomRequest(room=room_name)
+        await lk_api.room.delete_room(request)
+        logger.info(f"🗑️ Successfully deleted room: {room_name}")
+
+    except ImportError:
+        logger.warning("LiveKit API client not available, using HTTP API directly")
+        # Fallback to direct HTTP API call
+        try:
+            import jwt
+            import time
+
+            # Generate access token for API call
+            now = int(time.time())
+            token_payload = {
+                "exp": now + 600,  # 10 minutes
+                "iss": api_key,
+                "nbf": now,
+                "sub": api_key,
+                "roomAdmin": True,
+                "room": room_name,
+            }
+            token = jwt.encode(token_payload, api_secret, algorithm="HS256")
+
+            # Make API call to delete room
+            async with aiohttp.ClientSession() as session:
+                try:
+                    headers = {"Authorization": f"Bearer {token}"}
+                    url = f"{livekit_url}/twirp/livekit.RoomService/DeleteRoom"
+                    payload = {"room": room_name}
+
+                    async with session.post(url, json=payload, headers=headers) as resp:
+                        if resp.status == 200:
+                            logger.info(f"🗑️ Successfully deleted room via API: {room_name}")
+                        else:
+                            logger.error(f"Failed to delete room: {resp.status}")
+                finally:
+                    await session.close()
+        except Exception as e:
+            logger.error(f"Failed to delete room via HTTP API: {e}")
+    except Exception as e:
+        logger.error(f"Failed to delete room: {e}")
 
 def prewarm(proc: JobProcess):
     """Prewarm function to load VAD model and embedding models"""
@@ -163,6 +232,93 @@ async def entrypoint(ctx: JobContext):
             room_options = None
     else:
         logger.info("Noise cancellation disabled by configuration")
+
+    # Track participants and manage room lifecycle
+    participant_count = len(ctx.room.remote_participants)
+    cleanup_completed = False
+
+    async def cleanup_room_and_session():
+        """Cleanup room and session when participant leaves"""
+        nonlocal cleanup_completed
+        if cleanup_completed:
+            return
+        cleanup_completed = True
+
+        try:
+            logger.info("🔴 Initiating room and session cleanup")
+
+            # 1. End the agent session (use aclose() method)
+            try:
+                if session and hasattr(session, 'aclose'):
+                    logger.info("Ending agent session")
+                    await session.aclose()
+            except Exception as e:
+                logger.warning(f"Session close error (expected during shutdown): {e}")
+
+            # 2. Stop audio services
+            try:
+                if audio_player:
+                    await audio_player.stop()
+                if unified_audio_player:
+                    await unified_audio_player.stop()
+            except Exception as e:
+                logger.warning(f"Audio service stop error: {e}")
+
+            # 3. Clean up music and story services (if cleanup methods exist)
+            try:
+                if music_service and hasattr(music_service, 'cleanup'):
+                    await music_service.cleanup()
+                if story_service and hasattr(story_service, 'cleanup'):
+                    await story_service.cleanup()
+            except Exception as e:
+                logger.warning(f"Service cleanup error: {e}")
+
+            # 4. Disconnect from room (gracefully handle already disconnected)
+            try:
+                if ctx.room and hasattr(ctx.room, 'disconnect'):
+                    logger.info("Disconnecting from LiveKit room")
+                    await ctx.room.disconnect()
+            except Exception as e:
+                logger.warning(f"Room disconnect error (may already be disconnected): {e}")
+
+            # 5. Request room deletion via API (requires admin token)
+            try:
+                room_name = ctx.room.name if ctx.room else "unknown"
+                await delete_livekit_room(room_name)
+            except Exception as e:
+                logger.warning(f"Room deletion error: {e}")
+
+            logger.info("✅ Room and session cleanup completed")
+        except Exception as e:
+            logger.error(f"Error during cleanup: {e}")
+            # Continue cleanup even if there are errors
+
+    # Monitor participant events
+    @ctx.room.on("participant_disconnected")
+    def on_participant_disconnected(participant: rtc.RemoteParticipant):
+        nonlocal participant_count
+        participant_count -= 1
+        logger.info(f"👤 Participant disconnected: {participant.identity}, remaining: {participant_count}")
+
+        # If no participants left, cleanup room and session
+        if participant_count == 0:
+            logger.info("🔴 No participants remaining, initiating cleanup")
+            asyncio.create_task(cleanup_room_and_session())
+
+    @ctx.room.on("participant_connected")
+    def on_participant_connected(participant: rtc.RemoteParticipant):
+        nonlocal participant_count
+        participant_count += 1
+        logger.info(f"👤 Participant connected: {participant.identity}, total: {participant_count}")
+
+    # Monitor room disconnection
+    @ctx.room.on("disconnected")
+    def on_room_disconnected():
+        logger.info("🔴 Room disconnected, initiating cleanup")
+        asyncio.create_task(cleanup_room_and_session())
+
+    # Add cleanup to shutdown callback
+    ctx.add_shutdown_callback(cleanup_room_and_session)
 
     # Start agent session
     await session.start(

@@ -114,5 +114,11 @@ class ChatEventHandler:
                     greeting_instructions = "Say a brief, friendly hello to greet the user and let them know you're ready to chat. Keep it short and welcoming."
                     session.generate_reply(instructions=greeting_instructions)
 
+                # Handle cleanup request from MQTT gateway
+                elif message.get('type') == 'cleanup_request':
+                    logger.info("🧹 Processing cleanup request from MQTT gateway")
+                    # This will trigger our participant disconnect logic
+                    # The room cleanup will be handled by the event handlers in main.py
+
             except Exception as e:
                 logger.error(f"Error processing data channel message: {e}")
