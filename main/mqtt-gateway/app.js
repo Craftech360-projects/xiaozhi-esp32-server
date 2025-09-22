@@ -1001,6 +1001,10 @@ class MQTTConnection {
     };
     this.headerBuffer = Buffer.alloc(16);
 
+    // Add inactivity timeout tracking
+    this.lastActivityTime = Date.now();
+    this.inactivityTimeoutMs = 3 * 60 * 1000; // 3 minutes in milliseconds
+
     // Create protocol handler and pass in socket
     this.protocol = new MQTTProtocol(socket);
     this.setupProtocolHandlers();
@@ -1118,23 +1122,40 @@ class MQTTConnection {
     }
   }
 
+  updateActivityTime() {
+    this.lastActivityTime = Date.now();
+  }
+
   checkKeepAlive() {
     const now = Date.now();
+
+    // Check for inactivity timeout (3 minutes of no communication)
+    const timeSinceLastActivity = now - this.lastActivityTime;
+    if (timeSinceLastActivity > this.inactivityTimeoutMs) {
+      console.log(`🕒 [TIMEOUT] Closing connection due to 3-minute inactivity: ${this.clientId} (inactive for ${Math.round(timeSinceLastActivity / 1000)}s)`);
+      this.close();
+      return;
+    }
+
+    // Original keep-alive check
     const keepAliveInterval = this.protocol.getKeepAliveInterval();
     // If keepAliveInterval is 0, heartbeat check is not needed
     if (keepAliveInterval === 0 || !this.protocol.isConnected) return;
 
-    const lastActivity = this.protocol.getLastActivity();
-    const timeSinceLastActivity = now - lastActivity;
+    const protocolLastActivity = this.protocol.getLastActivity();
+    const timeSinceProtocolActivity = now - protocolLastActivity;
 
     // If heartbeat interval is exceeded, close connection
-    if (timeSinceLastActivity > keepAliveInterval) {
+    if (timeSinceProtocolActivity > keepAliveInterval) {
       debug("Heartbeat timeout, closing connection:", this.clientId);
       this.close();
     }
   }
 
   handlePublish(publishData) {
+    // Update activity timestamp on any MQTT message receipt
+    this.updateActivityTime();
+
     debug("Received publish message:", {
       clientId: this.clientId,
       topic: publishData.topic,
@@ -1339,6 +1360,9 @@ class MQTTConnection {
   }
 
   onUdpMessage(rinfo, message, payloadLength, timestamp, sequence) {
+    // Update activity timestamp on any UDP message receipt
+    this.updateActivityTime();
+
     if (!this.bridge) {
       // console.log(
       //   `📡 [UDP RECV] No bridge available for ${this.clientId}, dropping message`
@@ -1423,6 +1447,10 @@ class VirtualMQTTConnection {
     this.headerBuffer = Buffer.alloc(16);
     this.closing = false;
 
+    // Add inactivity timeout tracking
+    this.lastActivityTime = Date.now();
+    this.inactivityTimeoutMs = 3 * 60 * 1000; // 3 minutes in milliseconds
+
     // Parse device info from hello message
     if (helloPayload.clientId) {
       const parts = helloPayload.clientId.split("@@@");
@@ -1476,7 +1504,14 @@ class VirtualMQTTConnection {
     debug(`Virtual connection created for device: ${this.deviceId}`);
   }
 
+  updateActivityTime() {
+    this.lastActivityTime = Date.now();
+  }
+
   handlePublish(publishData) {
+    // Update activity timestamp on any MQTT message receipt
+    this.updateActivityTime();
+
     try {
       const json = JSON.parse(publishData.payload);
       if (json.type === "hello") {
@@ -1670,6 +1705,9 @@ class VirtualMQTTConnection {
   }
 
   onUdpMessage(rinfo, message, payloadLength, timestamp, sequence) {
+    // Update activity timestamp on any UDP message receipt
+    this.updateActivityTime();
+
     if (!this.bridge) {
       return;
     }
@@ -1707,6 +1745,16 @@ class VirtualMQTTConnection {
   }
 
   checkKeepAlive() {
+    const now = Date.now();
+
+    // Check for inactivity timeout (3 minutes of no communication)
+    const timeSinceLastActivity = now - this.lastActivityTime;
+    if (timeSinceLastActivity > this.inactivityTimeoutMs) {
+      console.log(`🕒 [TIMEOUT] Closing virtual connection due to 3-minute inactivity: ${this.deviceId} (inactive for ${Math.round(timeSinceLastActivity / 1000)}s)`);
+      this.close();
+      return;
+    }
+
     // Virtual connections don't need traditional keep-alive since EMQX handles it
   }
 

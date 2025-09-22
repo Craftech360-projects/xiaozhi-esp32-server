@@ -26,11 +26,19 @@ class ConfigLoader:
     def get_tts_config():
         """Get TTS configuration from environment variables"""
         return {
-            'provider': os.getenv('TTS_PROVIDER', 'groq'),  # groq or elevenlabs
+            'provider': os.getenv('TTS_PROVIDER', 'groq'),  # groq, elevenlabs, or edge
             'model': os.getenv('TTS_MODEL', 'playai-tts'),
             'voice': os.getenv('TTS_VOICE', 'Aaliyah-PlayAI'),
+            # ElevenLabs configuration
             'elevenlabs_voice_id': os.getenv('ELEVENLABS_VOICE_ID', ''),
-            'elevenlabs_model': os.getenv('ELEVENLABS_MODEL', 'eleven_turbo_v2_5')
+            'elevenlabs_model': os.getenv('ELEVENLABS_MODEL', 'eleven_turbo_v2_5'),
+            # EdgeTTS configuration
+            'edge_voice': os.getenv('EDGE_TTS_VOICE', 'en-US-AvaNeural'),
+            'edge_rate': os.getenv('EDGE_TTS_RATE', '+0%'),
+            'edge_volume': os.getenv('EDGE_TTS_VOLUME', '+0%'),
+            'edge_pitch': os.getenv('EDGE_TTS_PITCH', '+0Hz'),
+            'edge_sample_rate': int(os.getenv('EDGE_TTS_SAMPLE_RATE', '24000')),
+            'edge_channels': int(os.getenv('EDGE_TTS_CHANNELS', '1'))
         }
 
     @staticmethod

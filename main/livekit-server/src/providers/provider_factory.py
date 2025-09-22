@@ -5,6 +5,9 @@ from livekit.plugins import silero
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 from livekit.plugins.turn_detector.english import EnglishModel
 
+# Import our custom EdgeTTS provider
+from .edge_tts_provider import EdgeTTS
+
 class ProviderFactory:
     """Factory class for creating AI service providers"""
 
@@ -34,11 +37,20 @@ class ProviderFactory:
     def create_tts(groq_config, tts_config):
         """Create Text-to-Speech provider based on configuration"""
         provider = tts_config.get('provider', 'groq').lower()
-        
+
         if provider == 'elevenlabs':
             return elevenlabs.TTS(
                 voice_id=tts_config['elevenlabs_voice_id'],
                 model=tts_config['elevenlabs_model']
+            )
+        elif provider == 'edge':
+            return EdgeTTS(
+                voice=tts_config.get('edge_voice', 'en-US-AvaNeural'),
+                rate=tts_config.get('edge_rate', '+0%'),
+                volume=tts_config.get('edge_volume', '+0%'),
+                pitch=tts_config.get('edge_pitch', '+0Hz'),
+                sample_rate=tts_config.get('edge_sample_rate', 24000),
+                channels=tts_config.get('edge_channels', 1)
             )
         else:
             # Default to Groq
