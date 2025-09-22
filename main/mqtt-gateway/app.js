@@ -336,9 +336,10 @@ class LiveKitBridge extends Emitter {
                         console.log(`🔄 [FLUSH] Processing partial 24kHz 60ms PCM frame: ${this.frameBuffer.length}B`);
 
                         if (opusEncoder) {
+                          // Declare targetSize outside try block
+                          const targetSize = this.frameBuffer.length <= 1440 ? 1440 : 2880;
                           try {
                             // Pad to nearest valid frame size for 24kHz 60ms (1440 or 2880 bytes)
-                            const targetSize = this.frameBuffer.length <= 1440 ? 1440 : 2880;
                             const paddedBuffer = Buffer.alloc(targetSize);
                             this.frameBuffer.copy(paddedBuffer);
 

@@ -152,13 +152,15 @@ async def entrypoint(ctx: JobContext):
     tts_config = ConfigLoader.get_tts_config()
     agent_config = ConfigLoader.get_agent_config()
 
+    # Get VAD first as it's needed for STT
+    vad = ctx.proc.userdata["vad"]
+
     # Create providers using factory
     llm = ProviderFactory.create_llm(groq_config)
-    stt = ProviderFactory.create_stt(groq_config)
+    stt = ProviderFactory.create_stt(groq_config, vad)  # Pass VAD to STT factory
     tts = ProviderFactory.create_tts(groq_config, tts_config)
     # Disable turn detection to avoid timeout issues
     turn_detection = ProviderFactory.create_turn_detection()
-    vad = ctx.proc.userdata["vad"]
 
     # Set up voice AI pipeline
     session = AgentSession(
