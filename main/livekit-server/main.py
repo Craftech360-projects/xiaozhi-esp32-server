@@ -20,8 +20,8 @@ from src.config.config_loader import ConfigLoader
 from src.providers.provider_factory import ProviderFactory
 from src.handlers.chat_logger import ChatEventHandler
 from src.utils.helpers import UsageManager
-from src.services.music_service import MusicService
-from src.services.story_service import StoryService
+# from src.services.music_service import MusicService
+# from src.services.story_service import StoryService
 from src.services.foreground_audio_player import ForegroundAudioPlayer
 from src.services.unified_audio_player import UnifiedAudioPlayer
 
@@ -112,9 +112,11 @@ async def entrypoint(ctx: JobContext):
         max_tool_steps=25,  # Increased for educational searches
     )
 
-    # Initialize music and story services FIRST
-    music_service = MusicService()
-    story_service = StoryService()
+    # Initialize music and story services FIRST - DISABLED
+    # music_service = MusicService()
+    # story_service = StoryService()
+    music_service = None
+    story_service = None
     audio_player = ForegroundAudioPlayer()
     unified_audio_player = UnifiedAudioPlayer()
 
@@ -144,7 +146,7 @@ async def entrypoint(ctx: JobContext):
     else:
         assistant = Assistant()
 
-    # Set services for all agents
+    # Set services for all agents - music and story services disabled
     assistant.set_services(music_service, story_service, audio_player, unified_audio_player)
 
     # Setup event handlers and pass assistant reference for abort handling
@@ -161,25 +163,26 @@ async def entrypoint(ctx: JobContext):
 
     ctx.add_shutdown_callback(log_usage)
 
-    logger.info("Initializing music and story services...")
-    try:
-        music_initialized = await music_service.initialize()
-        story_initialized = await story_service.initialize()
-
-        if music_initialized:
-            languages = await music_service.get_all_languages()
-            logger.info(f"Music service initialized with {len(languages)} languages")
-        else:
-            logger.warning("Music service initialization failed")
-
-        if story_initialized:
-            categories = await story_service.get_all_categories()
-            logger.info(f"Story service initialized with {len(categories)} categories")
-        else:
-            logger.warning("Story service initialization failed")
-
-    except Exception as e:
-        logger.error(f"Failed to initialize music/story services: {e}")
+    logger.info("Music and story services disabled")
+    # Music and story services initialization disabled
+    # try:
+    #     music_initialized = await music_service.initialize()
+    #     story_initialized = await story_service.initialize()
+    #
+    #     if music_initialized:
+    #         languages = await music_service.get_all_languages()
+    #         logger.info(f"Music service initialized with {len(languages)} languages")
+    #     else:
+    #         logger.warning("Music service initialization failed")
+    #
+    #     if story_initialized:
+    #         categories = await story_service.get_all_categories()
+    #         logger.info(f"Story service initialized with {len(categories)} categories")
+    #     else:
+    #         logger.warning("Story service initialization failed")
+    #
+    # except Exception as e:
+    #     logger.error(f"Failed to initialize music/story services: {e}")
 
     # Create room input options with optional noise cancellation
     room_options = None
