@@ -336,13 +336,19 @@ class EducationalRetriever:
         normalized_subject = self._normalize_subject(subject)
 
         if normalized_subject:
-            # Search specified subject
-            target_collections.append(f"grade_{grade}_{normalized_subject}")
+            # Search specified subject with special handling for Grade 6 science
+            if grade == 6 and normalized_subject == "science":
+                target_collections.append("grade_06_science")
+            else:
+                target_collections.append(f"grade_{grade}_{normalized_subject}")
 
             # Include prerequisite grades if needed
             if analysis.requires_prerequisites and grade > 6:
                 for prereq_grade in range(max(6, grade - 2), grade):
-                    target_collections.append(f"grade_{prereq_grade}_{normalized_subject}")
+                    if prereq_grade == 6 and normalized_subject == "science":
+                        target_collections.append("grade_06_science")
+                    else:
+                        target_collections.append(f"grade_{prereq_grade}_{normalized_subject}")
 
         else:
             # Auto-detect subjects from query
@@ -354,12 +360,19 @@ class EducationalRetriever:
             for subj in detected_subjects:
                 normalized_subj = self._normalize_subject(subj)
                 if normalized_subj:
-                    target_collections.append(f"grade_{grade}_{normalized_subj}")
+                    # Special handling for Grade 6 science
+                    if grade == 6 and normalized_subj == "science":
+                        target_collections.append("grade_06_science")
+                    else:
+                        target_collections.append(f"grade_{grade}_{normalized_subj}")
 
                     # Include prerequisites if needed
                     if analysis.requires_prerequisites and grade > 6:
                         for prereq_grade in range(max(6, grade - 1), grade):
-                            target_collections.append(f"grade_{prereq_grade}_{normalized_subj}")
+                            if prereq_grade == 6 and normalized_subj == "science":
+                                target_collections.append("grade_06_science")
+                            else:
+                                target_collections.append(f"grade_{prereq_grade}_{normalized_subj}")
 
         # Remove duplicates and validate collections exist
         unique_collections = list(set(target_collections))
@@ -715,7 +728,12 @@ class EducationalRetriever:
     ) -> List[RetrievalResult]:
         """Search for content by specific topic"""
 
-        collection_name = f"grade_{grade}_{self._normalize_subject(subject)}"
+        # Special handling for Grade 6 science
+        normalized_subject = self._normalize_subject(subject)
+        if grade == 6 and normalized_subject == "science":
+            collection_name = "grade_06_science"
+        else:
+            collection_name = f"grade_{grade}_{normalized_subject}"
 
         try:
             # Search using metadata filter for topic
@@ -758,7 +776,12 @@ class EducationalRetriever:
     ) -> Dict[str, List[RetrievalResult]]:
         """Get structured curriculum content for a grade and subject"""
 
-        collection_name = f"grade_{grade}_{self._normalize_subject(subject)}"
+        # Special handling for Grade 6 science
+        normalized_subject = self._normalize_subject(subject)
+        if grade == 6 and normalized_subject == "science":
+            collection_name = "grade_06_science"
+        else:
+            collection_name = f"grade_{grade}_{normalized_subject}"
         curriculum_content = {
             "concepts": [],
             "examples": [],

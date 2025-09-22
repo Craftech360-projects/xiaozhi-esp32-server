@@ -146,6 +146,41 @@ class QdrantEducationManager:
             logger.error(f"Failed to initialize grade_10_science collection: {e}")
             return False
 
+    async def initialize_grade6_and_grade10_science(self) -> bool:
+        """Initialize both grade_06_science and grade_10_science collections"""
+        try:
+            logger.info("Initializing grade_06_science and grade_10_science collections...")
+
+            # Check existing collections
+            existing_collections = await self.get_existing_collections()
+            collections_to_check = ["grade_06_science", "grade_10_science"]
+
+            success_count = 0
+            for collection_name in collections_to_check:
+                if collection_name not in existing_collections:
+                    success = await self.create_collection(collection_name, "science")
+                    if success:
+                        logger.info(f"✅ Created collection: {collection_name}")
+                        success_count += 1
+                    else:
+                        logger.error(f"❌ Failed to create collection: {collection_name}")
+                else:
+                    logger.info(f"Collection {collection_name} already exists")
+                    success_count += 1
+
+            # Create indexes if not yet done globally
+            if not QdrantEducationManager.check_indexes_created():
+                await self.create_indexes_for_science_collections()
+                QdrantEducationManager.mark_indexes_created()
+
+            self.is_initialized = True
+            logger.info(f"✅ Science collections initialization complete ({success_count}/2 collections ready)")
+            return success_count == 2
+
+        except Exception as e:
+            logger.error(f"Failed to initialize science collections: {e}")
+            return False
+
     async def get_existing_collections(self) -> List[str]:
         """Get list of existing collection names"""
         try:
@@ -235,6 +270,27 @@ class QdrantEducationManager:
 
         except Exception as e:
             logger.error(f"Failed to create indexes for all collections: {e}")
+            return False
+
+    async def create_indexes_for_science_collections(self) -> bool:
+        """Create payload indexes for both grade_06_science and grade_10_science collections"""
+        try:
+            logger.info("Creating payload indexes for science collections...")
+
+            collections_to_index = ["grade_06_science", "grade_10_science"]
+            existing_collections = await self.get_existing_collections()
+
+            for collection_name in collections_to_index:
+                if collection_name in existing_collections:
+                    await self.create_payload_indexes(collection_name, "science")
+                    logger.info(f"✅ Finished creating payload indexes for {collection_name}")
+                else:
+                    logger.warning(f"Collection {collection_name} does not exist, skipping indexing")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to create indexes for science collections: {e}")
             return False
 
     def get_subject_specific_schema(self, subject: str) -> Dict[str, Any]:

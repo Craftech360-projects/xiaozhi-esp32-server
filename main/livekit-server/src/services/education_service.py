@@ -38,8 +38,8 @@ class EducationService:
         try:
             logger.info("Initializing Education Service...")
 
-            # Initialize Qdrant manager (only for grade_10_science)
-            qdrant_success = await self.qdrant_manager.initialize_grade10_science_only()
+            # Initialize Qdrant manager (for both grade_06_science and grade_10_science)
+            qdrant_success = await self.qdrant_manager.initialize_grade6_and_grade10_science()
             if not qdrant_success:
                 logger.error("Failed to initialize Qdrant collections")
                 return False
