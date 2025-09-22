@@ -15,6 +15,17 @@ from livekit.agents import (
 # Load environment variables first, before importing modules
 load_dotenv(".env")
 
+# Log some key environment variables to show what's loaded
+import os
+print("="*60)
+print("XIAOZHI LIVEKIT AGENT - Configuration Status")
+print("="*60)
+print("Environment Variables (.env):")
+print(f"   LIVEKIT_URL: {os.getenv('LIVEKIT_URL', 'Not set')}")
+print(f"   GROQ_API_KEY: {'Set' if os.getenv('GROQ_API_KEY') else 'Not set'}")
+print(f"   TTS_PROVIDER: {os.getenv('TTS_PROVIDER', 'Not set')}")
+print(f"   REDIS_URL: {os.getenv('REDIS_URL', 'Not set')[:20]}..." if os.getenv('REDIS_URL') else "   REDIS_URL: Not set")
+
 # Import our organized modules
 from src.config.config_loader import ConfigLoader
 from src.providers.provider_factory import ProviderFactory
@@ -28,6 +39,21 @@ from src.services.unified_audio_player import UnifiedAudioPlayer
 
 logger = logging.getLogger("agent")
 
+# Log configuration source at startup
+from src.config.config_loader import ConfigLoader
+startup_config = ConfigLoader._load_yaml_config()
+print("\nConfiguration Source (config.yaml):")
+if startup_config.get('read_config_from_api', False):
+    manager_api_config = startup_config.get('manager_api', {})
+    manager_api_url = manager_api_config.get('url', 'Not configured')
+    print(f"   Mode: MANAGER API (Dynamic)")
+    print(f"   API URL: {manager_api_url}")
+    print(f"   Status: ENABLED - Will fetch models from backend")
+else:
+    print(f"   Mode: LOCAL CONFIG (Static)")
+    print(f"   Status: DISABLED - Using local fallback models")
+print("="*60)
+
 def prewarm(proc: JobProcess):
     """Prewarm function to load VAD model and embedding models"""
     import os
@@ -39,7 +65,7 @@ def prewarm(proc: JobProcess):
     # Pre-load embedding models for semantic search
     if QDRANT_AVAILABLE:
         try:
-            logger.info("🔥 Prewarming: Loading embedding model...")
+            logger.info("PREWARM: Loading embedding model...")
             from sentence_transformers import SentenceTransformer
 
             # Load the embedding model (this is the heavy operation)
@@ -59,30 +85,32 @@ def prewarm(proc: JobProcess):
                     timeout=10
                 )
                 proc.userdata["qdrant_client"] = qdrant_client
-                logger.info("🔥 Prewarming: Qdrant client prepared")
+                logger.info("PREWARM: Qdrant client prepared")
 
-            logger.info(f"✅ Prewarming complete: Embedding model '{embedding_model_name}' loaded")
+            logger.info(f"PREWARM: Complete - Embedding model '{embedding_model_name}' loaded")
 
         except Exception as e:
-            logger.warning(f"⚠️ Prewarming failed for embedding models: {e}")
+            logger.warning(f"PREWARM: Failed for embedding models: {e}")
             # Continue without prewarmed models - services will load them later
             proc.userdata["embedding_model"] = None
             proc.userdata["qdrant_client"] = None
     else:
-        logger.warning("⚠️ Qdrant dependencies not available for prewarming")
+        logger.warning("PREWARM: Qdrant dependencies not available")
         proc.userdata["embedding_model"] = None
         proc.userdata["qdrant_client"] = None
 
 async def entrypoint(ctx: JobContext):
     """Main entrypoint for the organized agent"""
     ctx.log_context_fields = {"room": ctx.room.name}
-    print(f"Starting agent in room: {ctx.room.name}")
+    logger.info(f"AGENT: Starting in room - {ctx.room.name}")
 
     # Load configuration from Java backend API (not env files)
-    logger.info("Loading model configuration from Java backend...")
+    logger.info("AGENT: Loading configuration from configured source...")
     groq_config = await ConfigLoader.get_groq_config()
     tts_config = await ConfigLoader.get_tts_config()
     agent_config = ConfigLoader.get_agent_config()  # This one stays sync as it's for agent settings
+
+    logger.info(f"AGENT: Configuration loaded - LLM={groq_config.get('llm_model')}, STT={groq_config.get('stt_model')}, TTS={tts_config.get('model')}")
 
     # Create providers using factory
     llm = ProviderFactory.create_llm(groq_config)

@@ -14,9 +14,28 @@ class ModelService:
 
     def __init__(self, base_url: str = "http://localhost:8080"):
         self.base_url = base_url
+        self.secret = None
         self._cached_models = None
         self._cache_timestamp = 0
         self.cache_duration = 30  # Cache for 30 seconds
+
+    def update_config(self, base_url: str, secret: str = None):
+        """Update the configuration for the manager API"""
+        self.base_url = base_url
+        self.secret = secret
+        logger.info(f"Updated ModelService config: base_url={base_url}, has_secret={bool(secret)}")
+
+    def update_base_url(self, base_url: str):
+        """Update the base URL for the manager API (for backward compatibility)"""
+        self.base_url = base_url
+        logger.info(f"Updated ModelService base URL to: {base_url}")
+
+    def _get_headers(self) -> dict:
+        """Get headers for API requests including authentication if configured"""
+        headers = {"Content-Type": "application/json"}
+        if self.secret:
+            headers["Authorization"] = f"Bearer {self.secret}"
+        return headers
 
     async def get_models(self) -> Dict[str, str]:
         """Get model configurations from backend"""
@@ -50,23 +69,38 @@ class ModelService:
         try:
             # Try the /config/livekit/default-models endpoint first
             endpoint = f"{self.base_url}/config/livekit/default-models"
+            logger.info(f"Attempting to fetch models from: {endpoint}")
 
+            headers = self._get_headers()
             loop = asyncio.get_event_loop()
             response = await loop.run_in_executor(
                 None,
-                lambda: requests.get(endpoint, timeout=3)
+                lambda: requests.get(endpoint, headers=headers, timeout=3)
             )
+
+            logger.info(f"Manager API response: status={response.status_code}")
 
             if response.status_code == 200:
                 data = response.json()
-                if data.get('success') and data.get('data'):
+                logger.info(f"Manager API response data: {data}")
+                # Check for Manager API success format: code=0 means success
+                if data.get('code') == 0 and data.get('data'):
                     return self._process_backend_response(data['data'])
+            else:
+                logger.warning(f"Manager API returned status {response.status_code}: {response.text}")
 
             # Fallback: try fetching individual model types
+            logger.info("Falling back to individual model fetching...")
             return await self._fetch_individual_models()
 
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"Connection error to Manager API at {self.base_url}: {e}")
+            return None
+        except requests.exceptions.Timeout as e:
+            logger.error(f"Timeout connecting to Manager API at {self.base_url}: {e}")
+            return None
         except Exception as e:
-            logger.error(f"Error fetching from backend: {e}")
+            logger.error(f"Unexpected error fetching from backend at {self.base_url}: {e}")
             return None
 
     async def _fetch_individual_models(self) -> Optional[Dict[str, str]]:
@@ -85,14 +119,19 @@ class ModelService:
             for model_type, config_key in model_types:
                 endpoint = f"{self.base_url}/models/names"
                 params = {'modelType': model_type}
+                logger.info(f"Fetching {model_type} models from: {endpoint}?modelType={model_type}")
 
+                headers = self._get_headers()
                 response = await loop.run_in_executor(
                     None,
-                    lambda: requests.get(endpoint, params=params, timeout=3)
+                    lambda: requests.get(endpoint, params=params, headers=headers, timeout=3)
                 )
+
+                logger.info(f"Individual model fetch for {model_type}: status={response.status_code}")
 
                 if response.status_code == 200:
                     data = response.json()
+                    logger.info(f"Individual model data for {model_type}: {data}")
                     if data.get('success') and data.get('data'):
                         models = data['data']
 
@@ -117,14 +156,27 @@ class ModelService:
         config = {}
 
         if 'LLM_MODEL' in data:
-            config['LLM_MODEL'] = data['LLM_MODEL']
+            # Map the model code to actual model name
+            mapped_model = self._map_model_code(data['LLM_MODEL'])
+            config['LLM_MODEL'] = mapped_model
+            logger.info(f"Mapped LLM model: {data['LLM_MODEL']} -> {mapped_model}")
+
         if 'STT_MODEL' in data:
-            config['STT_MODEL'] = data['STT_MODEL']
+            # Map the model code to actual model name
+            mapped_model = self._map_model_code(data['STT_MODEL'])
+            config['STT_MODEL'] = mapped_model
+            logger.info(f"Mapped STT model: {data['STT_MODEL']} -> {mapped_model}")
+
         if 'TTS_MODEL' in data:
-            config['TTS_MODEL'] = data['TTS_MODEL']
+            # Map the model code to actual model name
+            mapped_model = self._map_model_code(data['TTS_MODEL'])
+            config['TTS_MODEL'] = mapped_model
+            logger.info(f"Mapped TTS model: {data['TTS_MODEL']} -> {mapped_model}")
+
         if 'TTS_PROVIDER' in data:
             config['TTS_PROVIDER'] = data['TTS_PROVIDER']
 
+        logger.info(f"Final processed config: {config}")
         return config
 
     def _select_best_model(self, models: list) -> Optional[dict]:
@@ -148,6 +200,7 @@ class ModelService:
     def _map_model_code(self, model_code: str) -> str:
         """Map database model code to actual API model name"""
         mapping = {
+            # Standard model codes
             'GroqLLM': 'llama-3.1-8b-instant',
             'GeminiLLM': 'gemini-1.5-flash',
             'GroqASR': 'whisper-large-v3-turbo',
@@ -155,15 +208,19 @@ class ModelService:
             'ElevenLabs': 'eleven_turbo_v2_5',
             'EdgeTTS': 'edge-tts',
             'openai': 'tts-1',
-            'gemini': 'gemini-tts'
+            'gemini': 'gemini-tts',
+            # LiveKit-specific model codes
+            'LiveKitGroqLLM': 'llama-3.1-8b-instant',
+            'LiveKitGroqASR': 'whisper-large-v3-turbo',
+            'LiveKitGroqTTS': 'edge-tts'
         }
         return mapping.get(model_code, model_code)
 
     def _get_tts_provider(self, model_code: str) -> str:
         """Get TTS provider based on model code"""
-        if model_code == 'ElevenLabs':
+        if model_code in ['ElevenLabs']:
             return 'elevenlabs'
-        elif model_code == 'EdgeTTS':
+        elif model_code in ['EdgeTTS', 'LiveKitGroqTTS']:
             return 'edge'
         elif model_code == 'openai':
             return 'openai'

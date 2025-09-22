@@ -47,6 +47,12 @@ class ConfigLoader:
         if not config.get('read_config_from_api', False):
             raise RuntimeError("read_config_from_api is disabled. Backend integration required!")
 
+        # Initialize model_service with the correct URL and secret from config
+        manager_api_config = config.get('manager_api', {})
+        manager_api_url = manager_api_config.get('url', 'http://localhost:8080')
+        manager_api_secret = manager_api_config.get('secret')
+        model_service.update_config(manager_api_url, manager_api_secret)
+
         logger.info("Fetching model configuration from manager-api backend...")
         backend_models = await model_service.get_models()
 
@@ -78,6 +84,12 @@ class ConfigLoader:
         # Check if we should read from API
         if config.get('read_config_from_api', False):
             try:
+                # Ensure model_service has the correct URL and secret
+                manager_api_config = config.get('manager_api', {})
+                manager_api_url = manager_api_config.get('url', 'http://localhost:8080')
+                manager_api_secret = manager_api_config.get('secret')
+                model_service.update_config(manager_api_url, manager_api_secret)
+
                 tts_config = await model_service.get_tts_config()
                 if tts_config:
                     logger.info(f"Successfully loaded TTS config from API: {tts_config}")
