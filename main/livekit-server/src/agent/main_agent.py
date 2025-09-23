@@ -628,3 +628,17 @@ Your mission is to make learning irresistibly fun while building genuine knowled
         except Exception as e:
             logger.error(f"Error formatting news response: {e}")
             return f"News item received from {source} but formatting failed."
+
+    async def send_response(self, ctx: RunContext, response_text: str):
+        """Send response and capture it for chat history"""
+        try:
+            # Store the response for chat logging
+            ChatEventHandler.set_last_response(response_text)
+            logger.info(f"📝 Agent sending response: {response_text[:100]}...")
+
+            # Send the response via session
+            await ctx.session.say(response_text)
+
+        except Exception as e:
+            logger.error(f"Error sending response: {e}")
+            await ctx.session.say("Sorry, I encountered an error while responding.")

@@ -171,17 +171,61 @@ async def entrypoint(ctx: JobContext):
     # Setup event handlers and pass assistant reference for abort handling
     ChatEventHandler.set_assistant(assistant)
 
-    # Hook into TTS to capture the text being synthesized
-    original_tts_synthesize = tts.synthesize
-    def patched_tts_synthesize(text: str, **kwargs):
-        """Patched TTS synthesize method to capture agent responses"""
-        # Store the response text for chat logging
-        ChatEventHandler.set_last_response(text)
-        logger.info(f"🎯 TTS capturing text for chat history: {text[:100]}...")
-        # Call original synthesize method (returns context manager)
-        return original_tts_synthesize(text, **kwargs)
+    # Efficient approach: Hook directly into the LLM client's completion stream
+    # This captures the raw LLM output before any processing
+    if hasattr(llm, '_client'):
+        original_client = llm._client
+        if hasattr(original_client, 'chat') and hasattr(original_client.chat, 'completions'):
+            original_create = original_client.chat.completions.create
 
-    tts.synthesize = patched_tts_synthesize
+            async def patched_create(*args, **kwargs):
+                # Call the original method to get the stream
+                stream = await original_create(*args, **kwargs)
+
+                # Create a wrapper to capture the response
+                return LLMStreamCapture(stream)
+
+            # Create wrapper class to capture streaming response
+            class LLMStreamCapture:
+                def __init__(self, original_stream):
+                    self._stream = original_stream
+                    self._captured_text = ""
+
+                def __aiter__(self):
+                    return self
+
+                async def __anext__(self):
+                    chunk = await self._stream.__anext__()
+
+                    # Extract content from streaming chunk
+                    if hasattr(chunk, 'choices') and chunk.choices:
+                        choice = chunk.choices[0]
+                        if hasattr(choice, 'delta') and choice.delta:
+                            content = getattr(choice.delta, 'content', None)
+                            if content:
+                                self._captured_text += content
+
+                        # Check if stream is complete
+                        if hasattr(choice, 'finish_reason') and choice.finish_reason == 'stop':
+                            if self._captured_text.strip():
+                                ChatEventHandler.set_last_response(self._captured_text.strip())
+                                logger.info(f"🎯 LLM output captured: {self._captured_text[:100]}...")
+
+                    return chunk
+
+                async def __aenter__(self):
+                    if hasattr(self._stream, '__aenter__'):
+                        await self._stream.__aenter__()
+                    return self
+
+                async def __aexit__(self, exc_type, exc_val, exc_tb):
+                    if hasattr(self._stream, '__aexit__'):
+                        return await self._stream.__aexit__(exc_type, exc_val, exc_tb)
+
+            original_client.chat.completions.create = patched_create
+            logger.info("✅ LLM stream capture installed successfully")
+    else:
+        logger.warning("Could not find LLM client to hook into")
 
     ChatEventHandler.setup_session_handlers(session, ctx)
 

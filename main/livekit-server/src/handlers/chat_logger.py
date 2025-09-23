@@ -131,7 +131,7 @@ class ChatEventHandler:
 
         @session.on("speech_created")
         def _on_speech_created(ev: SpeechCreatedEvent):
-            # logger.info(f"Speech created with id: {ev.speech_id}, duration: {ev.duration_ms}ms")
+            # Send event via data channel
             payload = json.dumps({
                 "type": "speech_created",
                 "data": ev.dict()
@@ -139,33 +139,14 @@ class ChatEventHandler:
             asyncio.create_task(ctx.room.local_participant.publish_data(payload.encode("utf-8"), reliable=True))
             logger.info("Sent speech_created via data channel")
 
-            # Try to get the actual speech text from the TTS synthesis
-            speech_text = None
+            # Use the captured LLM response directly
+            speech_text = ChatEventHandler._last_agent_response
 
-            try:
-                # Check if the event has a speech handle with the original text
-                if hasattr(ev, 'speech_handle') and ev.speech_handle:
-                    speech_handle = ev.speech_handle
-                    # Try to get the text that was sent to TTS
-                    if hasattr(speech_handle, '_source_text'):
-                        speech_text = speech_handle._source_text
-                        logger.info(f"✅ Found speech text from TTS source: {speech_text[:100]}...")
-                    elif hasattr(speech_handle, 'text'):
-                        speech_text = speech_handle.text
-                        logger.info(f"✅ Found speech text from handle: {speech_text[:100]}...")
-
-                # If no text found from event, use the cached LLM response from ChatEventHandler
-                if not speech_text and ChatEventHandler._last_agent_response:
-                    speech_text = ChatEventHandler._last_agent_response
-                    logger.info(f"✅ Using stored agent response: {speech_text[:100]}...")
-
-            except Exception as e:
-                logger.debug(f"Could not extract speech text: {e}")
-
-            # Use a more descriptive placeholder if no text was found
             if not speech_text:
                 speech_text = "[Audio response generated]"
-                logger.info(f"ℹ️ Using placeholder for audio-only response")
+                logger.warning("⚠️ No LLM response captured, using placeholder")
+            else:
+                logger.info(f"✅ Using captured LLM response: {speech_text[:100]}...")
 
             # Send real-time chat data to manager-api only for actual LLM responses
             speech_id = getattr(ev, 'id', None) or getattr(ev, 'speech_id', None)
