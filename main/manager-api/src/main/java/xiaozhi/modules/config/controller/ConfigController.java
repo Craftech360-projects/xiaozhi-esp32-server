@@ -1,5 +1,7 @@
 package xiaozhi.modules.config.controller;
 
+import java.util.Map;
+
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -40,5 +42,17 @@ public class ConfigController {
         ValidatorUtils.validateEntity(dto);
         Object models = configService.getAgentModels(dto.getMacAddress(), dto.getSelectedModule());
         return new Result<Object>().ok(models);
+    }
+
+    @PostMapping("agent-prompt")
+    @Operation(summary = "获取智能体提示词")
+    public Result<String> getAgentPrompt(@Valid @RequestBody Map<String, String> request) {
+        String macAddress = request.get("macAddress");
+        if (macAddress == null || macAddress.trim().isEmpty()) {
+            return new Result<String>().error("MAC address is required");
+        }
+
+        String prompt = configService.getAgentPrompt(macAddress);
+        return new Result<String>().ok(prompt);
     }
 }

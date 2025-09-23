@@ -1,5 +1,7 @@
 from dotenv import load_dotenv
 import os
+import yaml
+from pathlib import Path
 
 class ConfigLoader:
     """Configuration loader for the agent system"""
@@ -62,3 +64,39 @@ class ConfigLoader:
             'preemptive_generation': os.getenv('PREEMPTIVE_GENERATION', 'false').lower() == 'true',
             'noise_cancellation': os.getenv('NOISE_CANCELLATION', 'true').lower() == 'true'
         }
+
+    @staticmethod
+    def load_yaml_config():
+        """Load configuration from config.yaml"""
+        config_path = Path(__file__).parent.parent.parent / "config.yaml"
+        try:
+            with open(config_path, 'r', encoding='utf-8') as file:
+                return yaml.safe_load(file)
+        except FileNotFoundError:
+            print(f"Warning: config.yaml not found at {config_path}")
+            return {}
+        except Exception as e:
+            print(f"Error loading config.yaml: {e}")
+            return {}
+
+    @staticmethod
+    def should_read_from_api():
+        """Check if configuration should be read from API"""
+        config = ConfigLoader.load_yaml_config()
+        return config.get('read_config_from_api', False)
+
+    @staticmethod
+    def get_default_prompt():
+        """Get default prompt from config.yaml"""
+        config = ConfigLoader.load_yaml_config()
+        default_prompt = config.get('default_prompt', '')
+        if not default_prompt:
+            # Fallback prompt if none configured
+            return "You are a helpful AI assistant."
+        return default_prompt.strip()
+
+    @staticmethod
+    def get_manager_api_config():
+        """Get manager API configuration from config.yaml"""
+        config = ConfigLoader.load_yaml_config()
+        return config.get('manager_api', {})

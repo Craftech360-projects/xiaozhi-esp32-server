@@ -37,6 +37,22 @@ class ChatEventHandler:
             logger.error(f"🛑 Error handling abort playback: {e}")
 
     @staticmethod
+    async def _handle_device_info(session, ctx, device_mac):
+        """Handle device info message from MQTT gateway"""
+        try:
+            if not device_mac:
+                logger.warning("⚠️ No device MAC provided in device_info message")
+                return
+
+            # Since the agent now starts with the correct device-specific prompt
+            # (extracted from room name), we just log this for informational purposes
+            logger.info(f"📱 Device info received via data channel - MAC: {device_mac}")
+            logger.info(f"ℹ️ Agent was already initialized with device-specific prompt for this MAC")
+
+        except Exception as e:
+            logger.error(f"Error handling device info: {e}")
+
+    @staticmethod
     def setup_session_handlers(session, ctx):
         """Setup all event handlers for the agent session"""
 
@@ -106,6 +122,13 @@ class ChatEventHandler:
                     logger.info("🛑 Processing abort playback signal from MQTT gateway")
                     # Create task for immediate execution (stop() method is now aggressive)
                     asyncio.create_task(ChatEventHandler._handle_abort_playback(session, ctx))
+
+                # Handle device info message from MQTT gateway
+                elif message.get('type') == 'device_info':
+                    device_mac = message.get('device_mac')
+                    logger.info(f"📱 Processing device info from MQTT gateway - MAC: {device_mac}")
+                    # Create task to update agent prompt
+                    asyncio.create_task(ChatEventHandler._handle_device_info(session, ctx, device_mac))
 
                 # Handle agent ready message from MQTT gateway
                 elif message.get('type') == 'agent_ready':
