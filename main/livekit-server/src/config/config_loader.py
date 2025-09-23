@@ -57,7 +57,16 @@ class ConfigLoader:
         backend_models = await model_service.get_models()
 
         if not backend_models:
-            raise RuntimeError("Failed to fetch models from manager-api backend. Backend must be running!")
+            logger.warning("Failed to fetch models from manager-api backend, using fallback configuration")
+            # Use fallback configuration from config.yaml
+            config = ConfigLoader._load_yaml_config()
+            return {
+                'llm_model': config['models']['llm']['model'],
+                'stt_model': config['models']['stt']['model'],
+                'stt_language': config['models']['stt']['language'],
+                'tts_model': config['models']['tts']['model'],
+                'tts_voice': config['models']['tts'].get('voice', 'default')
+            }
 
         result = {
             'llm_model': backend_models.get('LLM_MODEL'),
@@ -170,3 +179,34 @@ class ConfigLoader:
         """Check if API configuration is enabled"""
         config = cls._load_yaml_config()
         return config.get('read_config_from_api', False)
+
+    @classmethod
+    def get_manager_api_secret(cls) -> Optional[str]:
+        """Get manager-api server secret from database"""
+        config = cls._load_yaml_config()
+        db_config = config.get('database', {})
+
+        try:
+            import pymysql
+
+            connection = pymysql.connect(
+                host=db_config.get('host', 'localhost'),
+                port=db_config.get('port', 3307),
+                user=db_config.get('user', 'manager'),
+                password=db_config.get('password', 'managerpassword'),
+                database=db_config.get('database', 'manager_api'),
+                charset=db_config.get('charset', 'utf8mb4')
+            )
+
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT param_value FROM sys_params WHERE param_code = 'server.secret'")
+                result = cursor.fetchone()
+                if result:
+                    return result[0]
+
+            connection.close()
+
+        except Exception as e:
+            logger.error(f"Failed to fetch server secret from database: {e}")
+
+        return None

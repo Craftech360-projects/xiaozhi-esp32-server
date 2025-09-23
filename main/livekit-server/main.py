@@ -120,12 +120,12 @@ async def entrypoint(ctx: JobContext):
     turn_detection = ProviderFactory.create_turn_detection()
     vad = ctx.proc.userdata["vad"]
 
-    # Set up voice AI pipeline
+    # Set up voice AI pipeline without turn detection to avoid timeout
     session = AgentSession(
         llm=llm,
         stt=stt,
         tts=tts,
-        turn_detection=turn_detection,  # Disabled to avoid timeout
+        turn_detection=None,  # Explicitly disabled to avoid timeout
         vad=vad,
         preemptive_generation=agent_config['preemptive_generation'],
     )

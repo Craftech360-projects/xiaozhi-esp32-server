@@ -27,6 +27,7 @@ import io.swagger.v3.oas.annotations.Parameters;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.AllArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import xiaozhi.common.constant.Constant;
 import xiaozhi.common.page.PageData;
 import xiaozhi.common.redis.RedisKeys;
@@ -53,6 +54,7 @@ import xiaozhi.modules.device.entity.DeviceEntity;
 import xiaozhi.modules.device.service.DeviceService;
 import xiaozhi.modules.security.user.SecurityUser;
 
+@Slf4j
 @Tag(name = "Agent Management")
 @AllArgsConstructor
 @RestController
@@ -188,9 +190,31 @@ public class AgentController {
     public Result<PageData<AgentChatSessionDTO>> getAgentSessions(
             @PathVariable("id") String id,
             @Parameter(hidden = true) @RequestParam Map<String, Object> params) {
-        params.put("agentId", id);
-        PageData<AgentChatSessionDTO> page = agentChatHistoryService.getSessionListByAgentId(params);
-        return new Result<PageData<AgentChatSessionDTO>>().ok(page);
+
+        log.info("=== CONTROLLER: getAgentSessions START ===");
+        log.info("Agent ID from path: {}", id);
+        log.info("Request params received: {}", params);
+
+        try {
+            params.put("agentId", id);
+            log.info("Final params sent to service: {}", params);
+
+            PageData<AgentChatSessionDTO> page = agentChatHistoryService.getSessionListByAgentId(params);
+
+            log.info("Service returned successfully with {} records", page.getList().size());
+            log.info("=== CONTROLLER: getAgentSessions SUCCESS ===");
+
+            return new Result<PageData<AgentChatSessionDTO>>().ok(page);
+
+        } catch (Exception e) {
+            log.error("=== CONTROLLER ERROR in getAgentSessions ===");
+            log.error("Exception type: {}", e.getClass().getSimpleName());
+            log.error("Exception message: {}", e.getMessage());
+            log.error("Full stack trace: ", e);
+
+            // Re-throw to let global exception handler deal with it
+            throw e;
+        }
     }
 
     @GetMapping("/{id}/chat-history/{sessionId}")

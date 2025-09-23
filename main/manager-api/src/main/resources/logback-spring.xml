@@ -71,7 +71,20 @@
         <logger name="org.springframework.web" level="INFO" />
         <logger name="org.springboot.sample" level="INFO" />
     </springProfile>
-    
+
+    <!-- 本地环境配置 -->
+    <springProfile name="local">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE" />
+            <!-- 本地环境也记录日志文件 -->
+            <appender-ref ref="FILE" />
+            <appender-ref ref="ERROR_FILE" />
+        </root>
+        <logger name="xiaozhi" level="DEBUG" />
+        <logger name="org.springframework.web" level="DEBUG" />
+        <logger name="org.springboot.sample" level="INFO" />
+    </springProfile>
+
     <!-- 测试环境配置 -->
     <springProfile name="test">
         <root level="INFO">

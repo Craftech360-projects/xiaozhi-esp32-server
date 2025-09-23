@@ -16,7 +16,7 @@ INSERT INTO `sys_params` (
 ) VALUES (
     1966453680394723331,
     'server.websocket',
-    'ws://192.168.1.102:8080',
+    'ws://192.168.1.79:8080',
     'string',
     0,
     'WebSocket cluster addresses for OTA functionality',
@@ -25,7 +25,7 @@ INSERT INTO `sys_params` (
     1,
     NOW()
 ) ON DUPLICATE KEY UPDATE
-    `param_value` = 'ws://192.168.1.102:8080',
+    `param_value` = 'ws://192.168.1.79:8080',
     `updater` = 1,
     `update_date` = NOW();
 
@@ -44,7 +44,7 @@ INSERT INTO `sys_params` (
 ) VALUES (
     1966453680394723332,
     'server.ota',
-    'http://192.168.1.102:8002',
+    'http://192.168.1.79:8002',
     'string',
     0,
     'OTA server addresses for firmware updates',
@@ -53,7 +53,7 @@ INSERT INTO `sys_params` (
     1,
     NOW()
 ) ON DUPLICATE KEY UPDATE
-    `param_value` = 'http://192.168.1.102:8002',
+    `param_value` = 'http://192.168.1.79:8002',
     `updater` = 1,
     `update_date` = NOW();
 

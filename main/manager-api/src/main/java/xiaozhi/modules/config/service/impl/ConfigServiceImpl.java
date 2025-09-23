@@ -395,6 +395,7 @@ public class ConfigServiceImpl implements ConfigService {
                         }
                     }
                     System.out.println("map: " + map);
+                    System.out.println("Intent processing completed successfully");
                 }
                 if ("Memory".equals(modelTypes[i])) {
                     Map<String, Object> map = (Map<String, Object>) model.getConfigJson();
@@ -422,6 +423,7 @@ public class ConfigServiceImpl implements ConfigService {
                         }
                     }
                 }
+                System.out.println("Memory processing completed successfully");
                 // 如果是LLM类型，且intentLLMModelId不为空，则添加附加模型
                 if ("LLM".equals(modelTypes[i])) {
                     if (StringUtils.isNotBlank(intentLLMModelId)) {

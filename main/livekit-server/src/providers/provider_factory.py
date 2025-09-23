@@ -67,5 +67,5 @@ class ProviderFactory:
     @staticmethod
     def create_turn_detection():
         """Create turn detection model"""
-       # return MultilingualModel()
-        return  EnglishModel()
+        # Disable turn detection to avoid model download timeouts
+        return None

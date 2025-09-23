@@ -15,6 +15,11 @@ public class AgentChatSessionDTO {
     private String sessionId;
 
     /**
+     * 设备MAC地址
+     */
+    private String macAddress;
+
+    /**
      * 会话时间
      */
     private LocalDateTime createdAt;

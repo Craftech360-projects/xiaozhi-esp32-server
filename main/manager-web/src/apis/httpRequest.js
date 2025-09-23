@@ -27,9 +27,21 @@ function sendRequest() {
         _url: '',
         _responseType: undefined, // 新增响应类型字段
         'send'() {
+            console.log('=== FRONTEND: API REQUEST START ===');
+            console.log('URL:', this._url);
+            console.log('Method:', this._method);
+            console.log('Data:', this._data);
+            console.log('Headers before token:', this._header);
+
             if (isNotNull(store.getters.getToken)) {
                 this._header.Authorization = 'Bearer ' + (JSON.parse(store.getters.getToken)).token
+                console.log('Token added to headers');
+            } else {
+                console.log('No token available');
             }
+
+            console.log('Final headers:', this._header);
+            console.log('Making API call...');
 
             // 打印请求信息
             fly.request(this._url, this._data, {
@@ -37,17 +49,24 @@ function sendRequest() {
                 headers: this._header,
                 responseType: this._responseType
             }).then((res) => {
+                console.log('=== FRONTEND: API RESPONSE RECEIVED ===');
+                console.log('Response status:', res.status);
+                console.log('Response data:', res.data);
+                console.log('Response headers:', res.headers);
                 const error = httpHandlerError(res, this._failCallback, this._networkFailCallback);
                 if (error) {
+                    console.log('=== FRONTEND: API ERROR HANDLED ===');
                     return
                 }
 
                 if (this._sucCallback) {
+                    console.log('=== FRONTEND: API SUCCESS ===');
                     this._sucCallback(res)
                 }
             }).catch((res) => {
                 // 打印失败响应
-                console.log('catch', res)
+                console.log('=== FRONTEND: API REQUEST FAILED ===');
+                console.error('Request error details:', res);
                 httpHandlerError(res, this._failCallback, this._networkFailCallback)
             })
             return this
@@ -105,17 +124,28 @@ function sendRequest() {
  */
 // 在错误处理函数中添加日志
 function httpHandlerError(info, failCallback, networkFailCallback) {
+    console.log('=== FRONTEND: ERROR HANDLER START ===');
+    console.log('Response info:', info);
+    console.log('Status:', info.status);
+    console.log('Data:', info.data);
 
     /** 请求成功，退出该函数 可以根据项目需求来判断是否请求成功。这里判断的是status为200的时候是成功 */
     let networkError = false
     if (info.status === 200) {
         if (info.data.code === 'success' || info.data.code === 0 || info.data.code === undefined) {
+            console.log('Request successful - no error');
             return networkError
         } else if (info.data.code === 401) {
+            console.log('401 Unauthorized - clearing auth and redirecting to login');
             store.commit('clearAuth');
             goToPage(Constant.PAGE.LOGIN, true);
             return true
         } else {
+            console.log('Application error detected:', info.data.code, info.data.msg);
+            if (info.data.code === 500) {
+                console.error('=== SERVER INTERNAL EXCEPTION DETECTED ===');
+                console.error('Full response:', JSON.stringify(info.data, null, 2));
+            }
             if (failCallback) {
                 failCallback(info)
             } else {
@@ -124,6 +154,7 @@ function httpHandlerError(info, failCallback, networkFailCallback) {
             return true
         }
     }
+    console.log('Network error detected - status:', info.status);
     if (networkFailCallback) {
         networkFailCallback(info)
     } else {

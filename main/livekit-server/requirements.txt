@@ -2,6 +2,7 @@ livekit-plugins-groq
 python-dotenv
 pydub
 aiohttp
+pymysql
 
 # Optional dependencies for enhanced semantic search
 qdrant-client

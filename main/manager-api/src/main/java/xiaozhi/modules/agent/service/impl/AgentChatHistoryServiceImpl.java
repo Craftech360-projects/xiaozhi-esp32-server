@@ -25,6 +25,7 @@ import xiaozhi.modules.agent.dto.AgentChatSessionDTO;
 import xiaozhi.modules.agent.entity.AgentChatHistoryEntity;
 import xiaozhi.modules.agent.service.AgentChatHistoryService;
 import xiaozhi.modules.agent.vo.AgentChatHistoryUserVO;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * 智能体聊天记录表处理service {@link AgentChatHistoryService} impl
@@ -33,44 +34,109 @@ import xiaozhi.modules.agent.vo.AgentChatHistoryUserVO;
  * @version 1.0, 2025/4/30
  * @since 1.0.0
  */
+@Slf4j
 @Service
 public class AgentChatHistoryServiceImpl extends ServiceImpl<AiAgentChatHistoryDao, AgentChatHistoryEntity>
         implements AgentChatHistoryService {
 
     @Override
     public PageData<AgentChatSessionDTO> getSessionListByAgentId(Map<String, Object> params) {
+        log.info("=== getSessionListByAgentId START ===");
+        log.info("Input params: {}", params);
+
         String agentId = (String) params.get("agentId");
-        int page = Integer.parseInt(params.get(Constant.PAGE).toString());
-        int limit = Integer.parseInt(params.get(Constant.LIMIT).toString());
+        String macAddress = (String) params.get("macAddress");
+        log.info("Extracted agentId: {}, macAddress: {}", agentId, macAddress);
+
+        // Safe parameter parsing with defaults
+        int page = 1;
+        int limit = 20;
+
+        try {
+            Object pageParam = params.get(Constant.PAGE);
+            Object limitParam = params.get(Constant.LIMIT);
+            log.info("Raw parameters - page: {}, limit: {}", pageParam, limitParam);
+
+            if (pageParam != null && !pageParam.toString().isEmpty()) {
+                page = Integer.parseInt(pageParam.toString());
+            }
+            if (limitParam != null && !limitParam.toString().isEmpty()) {
+                limit = Integer.parseInt(limitParam.toString());
+            }
+
+            // Validate bounds
+            if (page < 1) page = 1;
+            if (limit < 1) limit = 20;
+            if (limit > 100) limit = 100; // Prevent excessive queries
+
+            log.info("Final parsed parameters - page: {}, limit: {}", page, limit);
+
+        } catch (NumberFormatException e) {
+            log.error("Invalid page/limit parameters: {}", e.getMessage());
+            page = 1;
+            limit = 20;
+        }
 
         // 构建查询条件
+        log.info("Building database query...");
         QueryWrapper<AgentChatHistoryEntity> wrapper = new QueryWrapper<>();
-        wrapper.select("session_id", "MAX(created_at) as created_at", "COUNT(*) as chat_count")
-                .eq("agent_id", agentId)
-                .groupBy("session_id")
+        wrapper.select("session_id", "ANY_VALUE(mac_address) as mac_address", "MAX(created_at) as created_at", "COUNT(*) as chat_count");
+
+        // Support filtering by either agent_id OR mac_address for dynamic sessions
+        if (macAddress != null && !macAddress.isEmpty()) {
+            log.info("Filtering by MAC address: {}", macAddress);
+            wrapper.eq("mac_address", macAddress);
+        } else {
+            log.info("Filtering by agent_id: {}", agentId);
+            wrapper.eq("agent_id", agentId);
+        }
+
+        wrapper.groupBy("session_id")
                 .orderByDesc("created_at");
 
-        // 执行分页查询
-        Page<Map<String, Object>> pageParam = new Page<>(page, limit);
-        IPage<Map<String, Object>> result = this.baseMapper.selectMapsPage(pageParam, wrapper);
+        log.info("Query wrapper: {}", wrapper.getSqlSelect());
 
-        List<AgentChatSessionDTO> records = result.getRecords().stream().map(map -> {
-            AgentChatSessionDTO dto = new AgentChatSessionDTO();
-            dto.setSessionId((String) map.get("session_id"));
-            dto.setCreatedAt((LocalDateTime) map.get("created_at"));
-            dto.setChatCount(((Number) map.get("chat_count")).intValue());
-            return dto;
-        }).collect(Collectors.toList());
+        try {
+            // 执行分页查询
+            log.info("Executing database query with page: {}, limit: {}", page, limit);
+            Page<Map<String, Object>> pageParam = new Page<>(page, limit);
+            IPage<Map<String, Object>> result = this.baseMapper.selectMapsPage(pageParam, wrapper);
 
-        return new PageData<>(records, result.getTotal());
+            log.info("Database query completed. Total records: {}, Records returned: {}",
+                result.getTotal(), result.getRecords().size());
+
+            List<AgentChatSessionDTO> records = result.getRecords().stream().map(map -> {
+                log.debug("Processing record: {}", map);
+                AgentChatSessionDTO dto = new AgentChatSessionDTO();
+                dto.setSessionId((String) map.get("session_id"));
+                dto.setMacAddress((String) map.get("mac_address"));
+                dto.setCreatedAt((LocalDateTime) map.get("created_at"));
+                dto.setChatCount(((Number) map.get("chat_count")).intValue());
+                return dto;
+            }).collect(Collectors.toList());
+
+            log.info("Successfully processed {} session records", records.size());
+            log.info("=== getSessionListByAgentId END ===");
+            return new PageData<>(records, result.getTotal());
+
+        } catch (Exception e) {
+            log.error("DATABASE ERROR in getSessionListByAgentId: {}", e.getMessage(), e);
+            throw e;
+        }
     }
 
     @Override
     public List<AgentChatHistoryDTO> getChatHistoryBySessionId(String agentId, String sessionId) {
         // 构建查询条件
         QueryWrapper<AgentChatHistoryEntity> wrapper = new QueryWrapper<>();
-        wrapper.eq("agent_id", agentId)
-                .eq("session_id", sessionId)
+
+        // For dynamic sessions where agent_id equals session_id, just filter by session_id
+        // For traditional sessions, filter by both agent_id and session_id
+        if (agentId != null && !agentId.equals(sessionId)) {
+            wrapper.eq("agent_id", agentId);
+        }
+
+        wrapper.eq("session_id", sessionId)
                 .orderByAsc("created_at");
 
         // 查询聊天记录
