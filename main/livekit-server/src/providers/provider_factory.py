@@ -145,7 +145,17 @@ class ProviderFactory:
 
     @staticmethod
     def create_vad():
-        """Create Voice Activity Detection provider"""
+        """Create Voice Activity Detection provider using cache"""
+        # Try to use cached VAD first
+        try:
+            from ..utils.model_cache import model_cache
+            cached_vad = model_cache.get_vad_model()
+            if cached_vad:
+                return cached_vad
+        except Exception:
+            pass  # Fall back to direct loading
+
+        # Fallback to direct loading
         return silero.VAD.load()
 
     @staticmethod

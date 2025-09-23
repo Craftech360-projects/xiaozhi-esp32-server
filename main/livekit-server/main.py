@@ -27,6 +27,8 @@ from src.services.music_service import MusicService
 from src.services.story_service import StoryService
 from src.services.foreground_audio_player import ForegroundAudioPlayer
 from src.services.unified_audio_player import UnifiedAudioPlayer
+from src.utils.model_cache import model_cache
+from src.utils.model_preloader import model_preloader
 
 logger = logging.getLogger("agent")
 
@@ -98,49 +100,38 @@ async def delete_livekit_room(room_name: str):
         logger.error(f"Failed to delete room: {e}")
 
 def prewarm(proc: JobProcess):
-    """Prewarm function to load VAD model and embedding models"""
-    import os
-    from src.services.semantic_search import QdrantSemanticSearch, QDRANT_AVAILABLE
+    """Fast prewarm function using cached models"""
+    logger.info("[PREWARM] Fast prewarm: Using cached models")
 
-    # Load VAD model
-    proc.userdata["vad"] = ProviderFactory.create_vad()
+    # Start background model loading if not already started
+    if not model_preloader.is_ready():
+        model_preloader.start_background_loading()
 
-    # Pre-load embedding models for semantic search
-    if QDRANT_AVAILABLE:
-        try:
-            logger.info("🔥 Prewarming: Loading embedding model...")
-            from sentence_transformers import SentenceTransformer
-
-            # Load the embedding model (this is the heavy operation)
-            embedding_model_name = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
-            embedding_model = SentenceTransformer(embedding_model_name)
-            proc.userdata["embedding_model"] = embedding_model
-
-            # Pre-initialize Qdrant client (but don't test connection yet)
-            qdrant_url = os.getenv("QDRANT_URL", "")
-            qdrant_api_key = os.getenv("QDRANT_API_KEY", "")
-
-            if qdrant_url and qdrant_api_key:
-                from qdrant_client import QdrantClient
-                qdrant_client = QdrantClient(
-                    url=qdrant_url,
-                    api_key=qdrant_api_key,
-                    timeout=10
-                )
-                proc.userdata["qdrant_client"] = qdrant_client
-                logger.info("🔥 Prewarming: Qdrant client prepared")
-
-            logger.info(f"✅ Prewarming complete: Embedding model '{embedding_model_name}' loaded")
-
-        except Exception as e:
-            logger.warning(f"⚠️ Prewarming failed for embedding models: {e}")
-            # Continue without prewarmed models - services will load them later
-            proc.userdata["embedding_model"] = None
-            proc.userdata["qdrant_client"] = None
+    # Load VAD model directly on main thread (required by Silero)
+    if "vad_model" not in model_cache._models:
+        logger.info("[PREWARM] Loading VAD model on main thread...")
+        vad = ProviderFactory.create_vad()
+        model_cache._models["vad_model"] = vad
+        logger.info("[PREWARM] VAD model loaded and cached")
     else:
-        logger.warning("⚠️ Qdrant dependencies not available for prewarming")
-        proc.userdata["embedding_model"] = None
-        proc.userdata["qdrant_client"] = None
+        vad = model_cache._models["vad_model"]
+        logger.info("[PREWARM] Using cached VAD model")
+
+    proc.userdata["vad"] = vad
+    proc.userdata["embedding_model"] = model_cache.get_embedding_model()
+    proc.userdata["qdrant_client"] = model_cache.get_qdrant_client()
+
+    # Store service initialization info for later use
+    proc.userdata["service_cache_ready"] = True
+
+    # Log cache status
+    stats = model_cache.get_cache_stats()
+    logger.info(f"[PREWARM] Fast prewarm complete: {stats['cache_size']} models cached")
+
+    # Optional: Wait briefly for background loading (non-blocking)
+    if not model_preloader.is_ready():
+        logger.info("[PREWARM] Background model loading in progress...")
+        # Don't wait - let the session start immediately
 
 async def entrypoint(ctx: JobContext):
     """Main entrypoint for the organized agent"""
@@ -176,9 +167,21 @@ async def entrypoint(ctx: JobContext):
     preloaded_embedding_model = ctx.proc.userdata.get("embedding_model")
     preloaded_qdrant_client = ctx.proc.userdata.get("qdrant_client")
 
-    # Initialize music service with preloaded models, story service without semantic search
-    music_service = MusicService(preloaded_embedding_model, preloaded_qdrant_client)
-    story_service = StoryService()  # No semantic search - simple initialization
+    # Try to use cached services first, otherwise create new ones
+    music_service = model_cache.get_cached_service("music_service")
+    story_service = model_cache.get_cached_service("story_service")
+
+    services_from_cache = False
+
+    if music_service and story_service:
+        logger.info("[FAST] Using cached music and story services")
+        services_from_cache = True
+    else:
+        logger.info("[INIT] Creating new music and story services...")
+        # Create new services with preloaded models
+        music_service = MusicService(preloaded_embedding_model, preloaded_qdrant_client)
+        story_service = StoryService()
+
     audio_player = ForegroundAudioPlayer()
     unified_audio_player = UnifiedAudioPlayer()
 
@@ -200,25 +203,43 @@ async def entrypoint(ctx: JobContext):
 
     ctx.add_shutdown_callback(log_usage)
 
-    logger.info("Initializing music and story services...")
-    try:
-        music_initialized = await music_service.initialize()
-        story_initialized = await story_service.initialize()
+    # Initialize services only if not from cache
+    if not services_from_cache:
+        logger.info("[INIT] Initializing music and story services...")
+        try:
+            music_initialized = await music_service.initialize()
+            story_initialized = await story_service.initialize()
 
-        if music_initialized:
-            languages = await music_service.get_all_languages()
-            logger.info(f"Music service initialized with {len(languages)} languages")
-        else:
-            logger.warning("Music service initialization failed")
+            if music_initialized:
+                # Cache the initialized service
+                model_cache.cache_service("music_service", music_service)
+                languages = await music_service.get_all_languages()
+                logger.info(f"[INIT] Music service initialized with {len(languages)} languages")
+            else:
+                logger.warning("[INIT] Music service initialization failed")
 
-        if story_initialized:
-            categories = await story_service.get_all_categories()
-            logger.info(f"Story service initialized with {len(categories)} categories")
-        else:
-            logger.warning("Story service initialization failed")
+            if story_initialized:
+                # Cache the initialized service
+                model_cache.cache_service("story_service", story_service)
+                categories = await story_service.get_all_categories()
+                logger.info(f"[INIT] Story service initialized with {len(categories)} categories")
+            else:
+                logger.warning("[INIT] Story service initialization failed")
 
-    except Exception as e:
-        logger.error(f"Failed to initialize music/story services: {e}")
+        except Exception as e:
+            logger.error(f"[INIT] Failed to initialize music/story services: {e}")
+    else:
+        # Services are from cache, just log their status
+        try:
+            if music_service and music_service.is_initialized:
+                languages = await music_service.get_all_languages()
+                logger.info(f"[FAST] Music service ready with {len(languages)} languages")
+
+            if story_service and story_service.is_initialized:
+                categories = await story_service.get_all_categories()
+                logger.info(f"[FAST] Story service ready with {len(categories)} categories")
+        except Exception as e:
+            logger.warning(f"[FAST] Error checking cached services: {e}")
 
     # Create room input options with optional noise cancellation
     room_options = None

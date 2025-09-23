@@ -39,8 +39,16 @@ class QdrantSemanticSearch:
 
     def __init__(self, preloaded_model=None, preloaded_client=None):
         self.is_available = QDRANT_AVAILABLE
-        self.client: Optional[QdrantClient] = preloaded_client
-        self.model: Optional[SentenceTransformer] = preloaded_model
+
+        # Use cached models if preloaded ones not provided
+        if preloaded_model is None or preloaded_client is None:
+            from ..utils.model_cache import model_cache
+            self.client = preloaded_client or model_cache.get_qdrant_client()
+            self.model = preloaded_model or model_cache.get_embedding_model()
+        else:
+            self.client = preloaded_client
+            self.model = preloaded_model
+
         self.is_initialized = False
 
         # Qdrant configuration from environment variables

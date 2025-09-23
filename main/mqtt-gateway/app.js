@@ -1030,7 +1030,7 @@ class MQTTConnection {
 
     // Add inactivity timeout tracking
     this.lastActivityTime = Date.now();
-    this.inactivityTimeoutMs = 3 * 60 * 1000; // 3 minutes in milliseconds
+    this.inactivityTimeoutMs = 1 * 60 * 1000; // 3 minutes in milliseconds
 
     // Create protocol handler and pass in socket
     this.protocol = new MQTTProtocol(socket);
@@ -1484,7 +1484,7 @@ class VirtualMQTTConnection {
 
     // Add inactivity timeout tracking
     this.lastActivityTime = Date.now();
-    this.inactivityTimeoutMs = 3 * 60 * 1000; // 3 minutes in milliseconds
+    this.inactivityTimeoutMs = 1 * 60 * 1000; // 3 minutes in milliseconds
 
     // Parse device info from hello message
     if (helloPayload.clientId) {
