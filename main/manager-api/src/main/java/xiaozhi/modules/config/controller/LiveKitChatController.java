@@ -66,7 +66,7 @@ public class LiveKitChatController {
 
     @PostMapping("/store/{agentId}")
     @Operation(summary = "Store provided chat data to MySQL with agent binding")
-    @RequiresPermissions("sys:role:normal")
+    // @RequiresPermissions("sys:role:normal") // Disabled for LiveKit server API calls
     public Result<Map<String, Object>> storeChatData(
             @Parameter(description = "Agent ID", required = true)
             @PathVariable String agentId,

@@ -212,7 +212,8 @@ class ModelService:
             # LiveKit-specific model codes
             'LiveKitGroqLLM': 'llama-3.1-8b-instant',
             'LiveKitGroqASR': 'whisper-large-v3-turbo',
-            'LiveKitGroqTTS': 'edge-tts'
+            'LiveKitGroqTTS': 'edge-tts',  # Use EdgeTTS instead of Groq TTS
+            'GroqTTS': 'edge-tts'  # Force Groq TTS to use EdgeTTS
         }
         return mapping.get(model_code, model_code)
 
@@ -220,8 +221,8 @@ class ModelService:
         """Get TTS provider based on model code"""
         if model_code in ['ElevenLabs']:
             return 'elevenlabs'
-        elif model_code in ['EdgeTTS', 'LiveKitGroqTTS']:
-            return 'edge'
+        elif model_code in ['EdgeTTS', 'LiveKitGroqTTS', 'GroqTTS']:
+            return 'edge'  # Force all TTS to use edge provider
         elif model_code == 'openai':
             return 'openai'
         elif model_code == 'gemini':

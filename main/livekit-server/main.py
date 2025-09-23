@@ -36,12 +36,16 @@ from src.services.music_service import MusicService
 from src.services.story_service import StoryService
 from src.services.foreground_audio_player import ForegroundAudioPlayer
 from src.services.unified_audio_player import UnifiedAudioPlayer
+from src.config.manage_api_client import init_service as init_manage_api, manage_api_http_safe_close
+from src.handlers.report_handle import start_report_thread, stop_report_thread
 
 logger = logging.getLogger("agent")
 
 # Log configuration source at startup
 from src.config.config_loader import ConfigLoader
 startup_config = ConfigLoader._load_yaml_config()
+if startup_config.get('read_config_from_api', False):
+    init_manage_api(startup_config)
 print("\nConfiguration Source (config.yaml):")
 if startup_config.get('read_config_from_api', False):
     manager_api_config = startup_config.get('manager_api', {})
@@ -129,6 +133,26 @@ async def entrypoint(ctx: JobContext):
         vad=vad,
         preemptive_generation=agent_config['preemptive_generation'],
     )
+
+    session.session_id = ctx.room.name
+    mac_address = "unknown-device"
+    for participant in ctx.room.remote_participants.values():
+        if ":" in participant.identity:
+            mac_address = participant.identity
+            break
+    session.mac_address = mac_address
+
+    start_report_thread(session)
+
+    def stop_reporting():
+        stop_report_thread(session)
+
+    ctx.add_shutdown_callback(stop_reporting)
+
+    def close_api_client():
+        manage_api_http_safe_close()
+
+    ctx.add_shutdown_callback(close_api_client)
 
     # Get preloaded models from prewarm
     preloaded_embedding_model = ctx.proc.userdata.get("embedding_model")

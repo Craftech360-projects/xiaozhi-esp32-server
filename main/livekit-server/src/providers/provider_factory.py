@@ -36,7 +36,7 @@ class ProviderFactory:
     @staticmethod
     def create_tts(groq_config, tts_config):
         """Create Text-to-Speech provider based on configuration"""
-        provider = tts_config.get('provider', 'groq').lower()
+        provider = tts_config.get('provider', 'edge').lower()  # Default to edge instead of groq
 
         if provider == 'elevenlabs':
             return elevenlabs.TTS(

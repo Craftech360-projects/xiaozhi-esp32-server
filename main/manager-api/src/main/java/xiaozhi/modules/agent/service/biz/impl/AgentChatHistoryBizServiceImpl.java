@@ -51,35 +51,58 @@ public class AgentChatHistoryBizServiceImpl implements AgentChatHistoryBizServic
         String macAddress = report.getMacAddress();
         Byte chatType = report.getChatType();
         Long reportTimeMillis = null != report.getReportTime() ? report.getReportTime() * 1000 : System.currentTimeMillis();
-        log.info("小智设备聊天上报请求: macAddress={}, type={} reportTime={}", macAddress, chatType, reportTimeMillis);
+
+        log.info("🔥 [CHAT_BIZ_SERVICE] === BUSINESS LOGIC START ===");
+        log.info("🔥 [CHAT_BIZ_SERVICE] Processing chat report: macAddress={}, type={}, reportTime={}",
+                macAddress, chatType, reportTimeMillis);
+        log.info("🔥 [CHAT_BIZ_SERVICE] Content: {}", report.getContent());
 
         // 根据设备MAC地址查询对应的默认智能体，判断是否需要上报
+        log.info("🔥 [CHAT_BIZ_SERVICE] Looking up default agent for MAC address: {}", macAddress);
         AgentEntity agentEntity = agentService.getDefaultAgentByMacAddress(macAddress);
         if (agentEntity == null) {
+            log.warn("🔥 [CHAT_BIZ_SERVICE] ❌ No default agent found for MAC address: {} - returning FALSE", macAddress);
+            log.info("🔥 [CHAT_BIZ_SERVICE] === BUSINESS LOGIC END (NO AGENT) ===");
             return Boolean.FALSE;
         }
+
+        log.info("🔥 [CHAT_BIZ_SERVICE] ✅ Found agent: id={}, chatHistoryConf={}",
+                agentEntity.getId(), agentEntity.getChatHistoryConf());
 
         Integer chatHistoryConf = agentEntity.getChatHistoryConf();
         String agentId = agentEntity.getId();
 
+        log.info("🔥 [CHAT_BIZ_SERVICE] Chat history configuration: {}", chatHistoryConf);
+        log.info("🔥 [CHAT_BIZ_SERVICE] RECORD_TEXT code: {}", Constant.ChatHistoryConfEnum.RECORD_TEXT.getCode());
+        log.info("🔥 [CHAT_BIZ_SERVICE] RECORD_TEXT_AUDIO code: {}", Constant.ChatHistoryConfEnum.RECORD_TEXT_AUDIO.getCode());
+
         if (Objects.equals(chatHistoryConf, Constant.ChatHistoryConfEnum.RECORD_TEXT.getCode())) {
+            log.info("🔥 [CHAT_BIZ_SERVICE] 📝 Saving TEXT ONLY chat history...");
             saveChatText(report, agentId, macAddress, null, reportTimeMillis);
         } else if (Objects.equals(chatHistoryConf, Constant.ChatHistoryConfEnum.RECORD_TEXT_AUDIO.getCode())) {
+            log.info("🔥 [CHAT_BIZ_SERVICE] 🎵 Saving TEXT + AUDIO chat history...");
             String audioId = saveChatAudio(report);
             saveChatText(report, agentId, macAddress, audioId, reportTimeMillis);
+        } else {
+            log.warn("🔥 [CHAT_BIZ_SERVICE] ⚠️ Chat history disabled or unknown config: {} - skipping save", chatHistoryConf);
         }
 
         // 更新设备最后对话时间
+        log.info("🔥 [CHAT_BIZ_SERVICE] Updating Redis last connected time for agent: {}", agentId);
         redisUtils.set(RedisKeys.getAgentDeviceLastConnectedAtById(agentId), new Date());
 
         // 更新设备最后连接时间
+        log.info("🔥 [CHAT_BIZ_SERVICE] Looking up device by MAC address: {}", macAddress);
         DeviceEntity device = deviceService.getDeviceByMacAddress(macAddress);
         if (device != null) {
+            log.info("🔥 [CHAT_BIZ_SERVICE] ✅ Found device: id={}, updating connection info", device.getId());
             deviceService.updateDeviceConnectionInfo(agentId, device.getId(), null);
         } else {
-            log.warn("聊天记录上报时，未找到mac地址为 {} 的设备", macAddress);
+            log.warn("🔥 [CHAT_BIZ_SERVICE] ⚠️ Device not found for MAC address: {} - skipping device update", macAddress);
         }
 
+        log.info("🔥 [CHAT_BIZ_SERVICE] ✅ Chat history processing completed successfully");
+        log.info("🔥 [CHAT_BIZ_SERVICE] === BUSINESS LOGIC END (SUCCESS) ===");
         return Boolean.TRUE;
     }
 
@@ -106,6 +129,15 @@ public class AgentChatHistoryBizServiceImpl implements AgentChatHistoryBizServic
      * 组装上报数据
      */
     private void saveChatText(AgentChatHistoryReportDTO report, String agentId, String macAddress, String audioId, Long reportTime) {
+        log.info("🔥 [SAVE_CHAT_TEXT] === SAVE TO DATABASE START ===");
+        log.info("🔥 [SAVE_CHAT_TEXT] Building chat history entity...");
+        log.info("🔥 [SAVE_CHAT_TEXT] - agentId: {}", agentId);
+        log.info("🔥 [SAVE_CHAT_TEXT] - macAddress: {}", macAddress);
+        log.info("🔥 [SAVE_CHAT_TEXT] - sessionId: {}", report.getSessionId());
+        log.info("🔥 [SAVE_CHAT_TEXT] - chatType: {}", report.getChatType());
+        log.info("🔥 [SAVE_CHAT_TEXT] - audioId: {}", audioId);
+        log.info("🔥 [SAVE_CHAT_TEXT] - reportTime: {}", new Date(reportTime));
+
         // 构建聊天记录实体
         AgentChatHistoryEntity entity = AgentChatHistoryEntity.builder()
                 .macAddress(macAddress)
@@ -118,9 +150,17 @@ public class AgentChatHistoryBizServiceImpl implements AgentChatHistoryBizServic
                 // NOTE(haotian): 2025/5/26 updateAt可以不设置，重点是createAt，而且这样可以看到上报延迟
                 .build();
 
-        // 保存数据
-        agentChatHistoryService.save(entity);
-
-        log.info("设备 {} 对应智能体 {} 上报成功", macAddress, agentId);
+        log.info("🔥 [SAVE_CHAT_TEXT] Calling agentChatHistoryService.save()...");
+        try {
+            // 保存数据
+            agentChatHistoryService.save(entity);
+            log.info("🔥 [SAVE_CHAT_TEXT] ✅ Database save successful!");
+            log.info("🔥 [SAVE_CHAT_TEXT] === SAVE TO DATABASE END (SUCCESS) ===");
+            log.info("设备 {} 对应智能体 {} 上报成功", macAddress, agentId);
+        } catch (Exception e) {
+            log.error("🔥 [SAVE_CHAT_TEXT] ❌ Database save failed!", e);
+            log.error("🔥 [SAVE_CHAT_TEXT] === SAVE TO DATABASE END (ERROR) ===");
+            throw e;
+        }
     }
 }

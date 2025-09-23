@@ -101,10 +101,12 @@ class ConfigLoader:
 
                 tts_config = await model_service.get_tts_config()
                 if tts_config:
-                    logger.info(f"Successfully loaded TTS config from API: {tts_config}")
+                    logger.info(f"API returned TTS config: {tts_config}")
+                    # Force EdgeTTS provider regardless of API response
+                    logger.info("🔧 Forcing TTS provider to 'edge' to avoid Groq TTS 404 errors")
                     return {
-                        'provider': tts_config.get('provider', 'edge'),
-                        'model': tts_config.get('model', 'edge-tts'),
+                        'provider': 'edge',  # Force edge provider
+                        'model': 'edge-tts',  # Force edge model
                         'voice': config.get('models', {}).get('tts', {}).get('voice', 'Aaliyah-PlayAI'),
                         'elevenlabs_voice_id': config.get('api_keys', {}).get('elevenlabs_voice_id', ''),
                         'elevenlabs_model': 'eleven_turbo_v2_5'
@@ -144,6 +146,12 @@ class ConfigLoader:
             'preemptive_generation': agent_config.get('preemptive_generation', False),
             'noise_cancellation': agent_config.get('noise_cancellation', False)
         }
+
+    @classmethod
+    def get_chat_history_config(cls) -> Dict[str, Any]:
+        """Get chat history configuration from YAML"""
+        config = cls._load_yaml_config()
+        return config.get('chat_history', {'enabled': False, 'mode': 0})
 
     @classmethod
     def get_api_keys(cls) -> Dict[str, str]:

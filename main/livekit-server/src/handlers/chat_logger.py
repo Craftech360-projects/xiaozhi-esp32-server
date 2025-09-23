@@ -12,6 +12,7 @@ from livekit.agents import (
 )
 from ..utils.audio_state_manager import audio_state_manager
 from ..config.config_loader import ConfigLoader
+from .report_handle import enqueue_user_report, enqueue_agent_report
 
 logger = logging.getLogger("chat_logger")
 
@@ -93,9 +94,13 @@ class ChatEventHandler:
                 "user_input_transcribed",
                 ev.transcript,
                 ctx.room.name,
-                ctx
+                ctx,
+                None,
+                session  # Pass session to update mac_address
             )
             asyncio.create_task(ChatEventHandler._send_chat_to_manager_api(chat_data))
+
+            enqueue_user_report(session, ev.transcript)
 
         @session.on("speech_created")
         def _on_speech_created(ev: SpeechCreatedEvent):
@@ -166,9 +171,13 @@ class ChatEventHandler:
                 speech_text,  # Use extracted text or default
                 ctx.room.name,
                 ctx,
-                additional_data
+                additional_data,
+                session  # Pass session to update mac_address
             )
             asyncio.create_task(ChatEventHandler._send_chat_to_manager_api(chat_data))
+
+            if speech_text:
+                enqueue_agent_report(session, speech_text)
 
         # Add data channel message handler for abort signals
         @ctx.room.on("data_received")
@@ -241,7 +250,7 @@ class ChatEventHandler:
             logger.error(f"❌ Failed to send chat data to manager-api: {e}")
 
     @staticmethod
-    def _create_chat_data(event_type, content, session_id, ctx=None, additional_data=None):
+    def _create_chat_data(event_type, content, session_id, ctx=None, additional_data=None, session=None):
         """Create chat data structure for manager-api"""
         # Ensure session_id is not None or empty
         if not session_id:
@@ -263,6 +272,10 @@ class ChatEventHandler:
                 if participant.identity and ":" in participant.identity:
                     mac_address = participant.identity
                     logger.info(f"✅ Found MAC address from participant: {mac_address}")
+                    # Update the session's mac_address for report_handle to use
+                    if session and hasattr(session, 'mac_address'):
+                        session.mac_address = mac_address
+                        logger.debug(f"📝 Updated session.mac_address to: {mac_address}")
                     break
 
             # Also check all participants (including local)
@@ -275,6 +288,10 @@ class ChatEventHandler:
                     if participant.identity and ":" in participant.identity:
                         mac_address = participant.identity
                         logger.info(f"✅ Found MAC address from participant (all): {mac_address}")
+                        # Update the session's mac_address for report_handle to use
+                        if session and hasattr(session, 'mac_address'):
+                            session.mac_address = mac_address
+                            logger.debug(f"📝 Updated session.mac_address to: {mac_address}")
                         break
 
             # Use the session_id as passed in (which should be ctx.room.name)

@@ -50,6 +50,12 @@ agent:
   preemptive_generation: false
   noise_cancellation: false
 
+# Chat history settings
+chat_history:
+  enabled: true
+  # 0: disabled, 1: text only
+  mode: 1
+
 # API Keys - REPLACE WITH YOUR ACTUAL KEYS
 api_keys:
   groq: "YOUR_GROQ_API_KEY_HERE"
