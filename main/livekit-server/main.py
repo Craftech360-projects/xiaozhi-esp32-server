@@ -170,6 +170,19 @@ async def entrypoint(ctx: JobContext):
 
     # Setup event handlers and pass assistant reference for abort handling
     ChatEventHandler.set_assistant(assistant)
+
+    # Hook into TTS to capture the text being synthesized
+    original_tts_synthesize = tts.synthesize
+    def patched_tts_synthesize(text: str, **kwargs):
+        """Patched TTS synthesize method to capture agent responses"""
+        # Store the response text for chat logging
+        ChatEventHandler.set_last_response(text)
+        logger.info(f"🎯 TTS capturing text for chat history: {text[:100]}...")
+        # Call original synthesize method (returns context manager)
+        return original_tts_synthesize(text, **kwargs)
+
+    tts.synthesize = patched_tts_synthesize
+
     ChatEventHandler.setup_session_handlers(session, ctx)
 
     # Setup usage tracking

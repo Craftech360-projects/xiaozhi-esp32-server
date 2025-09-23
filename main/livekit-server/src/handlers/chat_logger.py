@@ -8,6 +8,8 @@ from livekit.agents import (
     AgentStateChangedEvent,
     UserInputTranscribedEvent,
     SpeechCreatedEvent,
+    ChatMessageEvent,
+    FunctionCallOutputEvent,
     NOT_GIVEN,
 )
 from ..utils.audio_state_manager import audio_state_manager
@@ -21,6 +23,7 @@ class ChatEventHandler:
 
     # Store assistant reference for abort handling
     _assistant_instance = None
+    _last_agent_response = None  # Store the last agent response text
 
     # Manager API configuration
     _manager_api_url = "http://localhost:8002"
@@ -30,6 +33,12 @@ class ChatEventHandler:
     def set_assistant(assistant):
         """Set the assistant instance for abort handling"""
         ChatEventHandler._assistant_instance = assistant
+
+    @staticmethod
+    def set_last_response(response_text: str):
+        """Store the last agent response for logging"""
+        ChatEventHandler._last_agent_response = response_text
+        logger.debug(f"Stored agent response for logging: {response_text[:100]}...")
 
     @staticmethod
     async def _handle_abort_playback(session, ctx):
@@ -102,6 +111,24 @@ class ChatEventHandler:
 
             enqueue_user_report(session, ev.transcript)
 
+        @session.on("function_call_output")
+        def _on_function_call_output(ev: FunctionCallOutputEvent):
+            logger.debug(f"Function call output: {ev}")
+            # This might contain LLM responses if functions return text
+            if hasattr(ev, 'output') and ev.output:
+                ChatEventHandler.set_last_response(ev.output)
+                logger.info(f"Captured function output: {ev.output[:100]}...")
+
+        # Try to capture chat messages that might contain LLM responses
+        @session.on("chat_message")
+        def _on_chat_message(ev: ChatMessageEvent):
+            logger.debug(f"Chat message: {ev}")
+            if hasattr(ev, 'message') and ev.message:
+                # Check if this is an agent message
+                if hasattr(ev, 'role') and ev.role == 'assistant':
+                    ChatEventHandler.set_last_response(ev.message)
+                    logger.info(f"Captured assistant message: {ev.message[:100]}...")
+
         @session.on("speech_created")
         def _on_speech_created(ev: SpeechCreatedEvent):
             # logger.info(f"Speech created with id: {ev.speech_id}, duration: {ev.duration_ms}ms")
@@ -112,49 +139,33 @@ class ChatEventHandler:
             asyncio.create_task(ctx.room.local_participant.publish_data(payload.encode("utf-8"), reliable=True))
             logger.info("Sent speech_created via data channel")
 
-            # Extract actual speech content if available
-            speech_text = None  # Start with None to detect if we found real text
+            # Try to get the actual speech text from the TTS synthesis
+            speech_text = None
 
             try:
-                # Debug the event structure
-                logger.debug(f"🔍 Speech event attributes: {dir(ev)}")
-
-                # Try multiple ways to get the actual speech text
+                # Check if the event has a speech handle with the original text
                 if hasattr(ev, 'speech_handle') and ev.speech_handle:
                     speech_handle = ev.speech_handle
-                    logger.debug(f"🔍 Speech handle attributes: {dir(speech_handle)}")
+                    # Try to get the text that was sent to TTS
+                    if hasattr(speech_handle, '_source_text'):
+                        speech_text = speech_handle._source_text
+                        logger.info(f"✅ Found speech text from TTS source: {speech_text[:100]}...")
+                    elif hasattr(speech_handle, 'text'):
+                        speech_text = speech_handle.text
+                        logger.info(f"✅ Found speech text from handle: {speech_text[:100]}...")
 
-                    # Try different text attributes
-                    for attr in ['text', '_text', 'content', 'message']:
-                        if hasattr(speech_handle, attr):
-                            text_value = getattr(speech_handle, attr)
-                            if text_value and isinstance(text_value, str) and text_value.strip():
-                                speech_text = text_value.strip()
-                                logger.info(f"✅ Found speech text via {attr}: {speech_text[:50]}...")
-                                break
-
-                # Try to get text directly from the event
-                if not speech_text:
-                    for attr in ['text', 'content', 'message', 'transcript']:
-                        if hasattr(ev, attr):
-                            text_value = getattr(ev, attr)
-                            if text_value and isinstance(text_value, str) and text_value.strip():
-                                speech_text = text_value.strip()
-                                logger.info(f"✅ Found speech text via event.{attr}: {speech_text[:50]}...")
-                                break
-
-                # Skip logging if this is music playback (empty text from session.say)
-                if hasattr(ev, 'source') and ev.source != 'generate_reply':
-                    logger.debug(f"Skipping non-LLM speech event: {ev.source}")
-                    return
+                # If no text found from event, use the cached LLM response from ChatEventHandler
+                if not speech_text and ChatEventHandler._last_agent_response:
+                    speech_text = ChatEventHandler._last_agent_response
+                    logger.info(f"✅ Using stored agent response: {speech_text[:100]}...")
 
             except Exception as e:
                 logger.debug(f"Could not extract speech text: {e}")
 
-            # Use default if no text was found
+            # Use a more descriptive placeholder if no text was found
             if not speech_text:
-                speech_text = "Agent response"
-                logger.warning(f"⚠️ No speech text found, using default: {speech_text}")
+                speech_text = "[Audio response generated]"
+                logger.info(f"ℹ️ Using placeholder for audio-only response")
 
             # Send real-time chat data to manager-api only for actual LLM responses
             speech_id = getattr(ev, 'id', None) or getattr(ev, 'speech_id', None)

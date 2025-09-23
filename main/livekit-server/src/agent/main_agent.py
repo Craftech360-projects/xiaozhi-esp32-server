@@ -11,6 +11,7 @@ from livekit.agents import (
     RunContext,
     function_tool,
 )
+from ..handlers.chat_logger import ChatEventHandler
 
 logger = logging.getLogger("agent")
 
