@@ -3,6 +3,7 @@ import asyncio
 import os
 import aiohttp
 import json
+from datetime import datetime
 from dotenv import load_dotenv
 from livekit.agents import (
     AgentSession,
@@ -30,6 +31,8 @@ from src.services.foreground_audio_player import ForegroundAudioPlayer
 from src.services.unified_audio_player import UnifiedAudioPlayer
 
 from src.services.prompt_service import PromptService
+from src.services.chat_history_service import ChatHistoryService
+from src.utils.database_helper import DatabaseHelper
 
 from src.utils.model_cache import model_cache
 from src.utils.model_preloader import model_preloader
@@ -164,11 +167,44 @@ async def entrypoint(ctx: JobContext):
                 device_mac = ':'.join(mac_part[i:i+2] for i in range(0, 12, 2))
                 logger.info(f"📱 Extracted MAC from room name: {device_mac}")
 
+    # Initialize chat history service if MAC is available
+    chat_history_service = None
+    if device_mac:
+        try:
+            # Get Manager API configuration
+            manager_api_url = os.getenv("MANAGER_API_URL", "http://192.168.1.101:8002/toy")
+            manager_api_secret = os.getenv("MANAGER_API_SECRET", "a3c1734a-1efe-4ab7-8f43-98f88b874e4b")
+
+            # Create database helper and get agent_id
+            db_helper = DatabaseHelper(manager_api_url, manager_api_secret)
+            agent_id = await db_helper.get_agent_id(device_mac)
+
+            # Create chat history service
+            chat_history_service = ChatHistoryService(
+                manager_api_url=manager_api_url,
+                secret=manager_api_secret,
+                device_mac=device_mac,
+                session_id=room_name,
+                agent_id=agent_id
+            )
+
+            # Start periodic sending
+            chat_history_service.start_periodic_sending()
+            logger.info(f"📝✅ Chat history service initialized for MAC: {device_mac}, Agent ID: {agent_id}")
+            logger.info(f"📝📊 Service config: batch_size={chat_history_service.batch_size}, interval={chat_history_service.send_interval}s")
+
+        except Exception as e:
+            logger.error(f"📝❌ Failed to initialize chat history service: {e}")
+            chat_history_service = None
+
     # Fetch device-specific prompt BEFORE creating assistant
     if device_mac:
         try:
             agent_prompt = await prompt_service.get_prompt(room_name, device_mac)
             logger.info(f"🎯 Using device-specific prompt for MAC: {device_mac} (length: {len(agent_prompt)} chars)")
+            # Log first few lines of the fetched prompt for verification
+            prompt_lines = agent_prompt.split('\n')[:5]  # First 5 lines
+            logger.info(f"📝 Fetched prompt preview: {' | '.join(line.strip()[:50] for line in prompt_lines if line.strip())}")
         except Exception as e:
             logger.warning(f"Failed to fetch device prompt for MAC {device_mac}, using default: {e}")
             agent_prompt = ConfigLoader.get_default_prompt()
@@ -182,6 +218,11 @@ async def entrypoint(ctx: JobContext):
 
     # Create providers using factory
     llm = ProviderFactory.create_llm(groq_config)
+
+    # Log LLM info for debugging (but don't hook into it - use conversation events instead)
+    if chat_history_service:
+        logger.debug(f"🧠 Using LLM type: {type(llm)} (will capture responses via conversation_item_added event)")
+
     stt = ProviderFactory.create_stt(groq_config, vad)  # Pass VAD to STT factory
     tts = ProviderFactory.create_tts(groq_config, tts_config)
     # Disable turn detection to avoid timeout issues
@@ -223,8 +264,17 @@ async def entrypoint(ctx: JobContext):
     assistant = Assistant(instructions=agent_prompt)
     assistant.set_services(music_service, story_service, audio_player, unified_audio_player)
 
+    # Log session info (responses will be captured via conversation_item_added event)
+    if chat_history_service:
+        logger.debug("🎯 Chat history service ready - will capture via conversation_item_added and session.history")
+
     # Setup event handlers and pass assistant reference for abort handling
     ChatEventHandler.set_assistant(assistant)
+    if chat_history_service:
+        ChatEventHandler.set_chat_history_service(chat_history_service)
+        logger.info(f"📝🔗 Chat history service connected to event handlers")
+    else:
+        logger.warning(f"📝⚠️ No chat history service available - events will not be captured")
     ChatEventHandler.setup_session_handlers(session, ctx)
 
 
@@ -305,7 +355,53 @@ async def entrypoint(ctx: JobContext):
         try:
             logger.info("🔴 Initiating room and session cleanup")
 
-            # 1. End the agent session (use aclose() method)
+            # 1. Save session history to JSON file (using documented method)
+            try:
+                if session and hasattr(session, 'history') and session.history:
+                    current_date = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    filename = f"transcript_{ctx.room.name}_{current_date}.json"
+
+                    logger.info(f"💾 Saving session history to: {filename}")
+
+                    # Create transcripts directory if it doesn't exist
+                    os.makedirs("transcripts", exist_ok=True)
+                    filepath = os.path.join("transcripts", filename)
+
+                    # Use the documented method to save conversation history
+                    with open(filepath, 'w', encoding='utf-8') as f:
+                        history_dict = session.history.to_dict()
+                        json.dump(history_dict, f, indent=2, ensure_ascii=False)
+
+                    message_count = len(history_dict.get('messages', []))
+                    logger.info(f"💾✅ Session history saved: {filepath} ({message_count} messages)")
+
+                    # Log a sample of the conversation for verification
+                    if message_count > 0:
+                        messages = history_dict.get('messages', [])
+                        for i, msg in enumerate(messages[-3:]):  # Last 3 messages
+                            role = msg.get('role', 'unknown')
+                            content = msg.get('content', '')
+                            if isinstance(content, list):
+                                # Handle content as list (some formats)
+                                content = ' '.join(str(item) for item in content)
+                            logger.debug(f"💾 Message {i}: {role} - '{str(content)[:50]}...'")
+
+                else:
+                    logger.warning(f"💾⚠️ Session history not available or empty for backup")
+            except Exception as e:
+                logger.error(f"💾❌ Failed to save session history: {e}")
+                import traceback
+                logger.debug(f"💾❌ Traceback: {traceback.format_exc()}")
+
+            # 2. Cleanup chat history service
+            try:
+                if chat_history_service:
+                    logger.info("📝 Cleaning up chat history service")
+                    await chat_history_service.cleanup()
+            except Exception as e:
+                logger.warning(f"📝❌ Chat history cleanup error: {e}")
+
+            # 3. End the agent session (use aclose() method)
             try:
                 if session and hasattr(session, 'aclose'):
                     logger.info("Ending agent session")
@@ -313,7 +409,7 @@ async def entrypoint(ctx: JobContext):
             except Exception as e:
                 logger.warning(f"Session close error (expected during shutdown): {e}")
 
-            # 2. Stop audio services
+            # 4. Stop audio services
             try:
                 if audio_player:
                     await audio_player.stop()
@@ -322,7 +418,7 @@ async def entrypoint(ctx: JobContext):
             except Exception as e:
                 logger.warning(f"Audio service stop error: {e}")
 
-            # 3. Clean up music and story services (if cleanup methods exist)
+            # 5. Clean up music and story services (if cleanup methods exist)
             try:
                 if music_service and hasattr(music_service, 'cleanup'):
                     await music_service.cleanup()
@@ -331,7 +427,7 @@ async def entrypoint(ctx: JobContext):
             except Exception as e:
                 logger.warning(f"Service cleanup error: {e}")
 
-            # 4. Disconnect from room (gracefully handle already disconnected)
+            # 6. Disconnect from room (gracefully handle already disconnected)
             try:
                 if ctx.room and hasattr(ctx.room, 'disconnect'):
                     logger.info("Disconnecting from LiveKit room")
@@ -339,7 +435,7 @@ async def entrypoint(ctx: JobContext):
             except Exception as e:
                 logger.warning(f"Room disconnect error (may already be disconnected): {e}")
 
-            # 5. Request room deletion via API (requires admin token)
+            # 7. Request room deletion via API (requires admin token)
             try:
                 room_name = ctx.room.name if ctx.room else "unknown"
                 await delete_livekit_room(room_name)
