@@ -169,6 +169,9 @@ async def entrypoint(ctx: JobContext):
         try:
             agent_prompt = await prompt_service.get_prompt(room_name, device_mac)
             logger.info(f"🎯 Using device-specific prompt for MAC: {device_mac} (length: {len(agent_prompt)} chars)")
+            # Log first few lines of the fetched prompt for verification
+            prompt_lines = agent_prompt.split('\n')[:5]  # First 5 lines
+            logger.info(f"📝 Fetched prompt preview: {' | '.join(line.strip()[:50] for line in prompt_lines if line.strip())}")
         except Exception as e:
             logger.warning(f"Failed to fetch device prompt for MAC {device_mac}, using default: {e}")
             agent_prompt = ConfigLoader.get_default_prompt()
