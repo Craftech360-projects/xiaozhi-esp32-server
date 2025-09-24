@@ -3,6 +3,9 @@ import asyncio
 import logging
 import aiohttp
 import time
+import threading
+from dataclasses import dataclass, field
+from typing import Optional, List, Dict, Any
 from livekit.agents import (
     AgentFalseInterruptionEvent,
     AgentStateChangedEvent,
@@ -18,12 +21,135 @@ from .report_handle import enqueue_user_report, enqueue_agent_report
 
 logger = logging.getLogger("chat_logger")
 
+@dataclass
+class ChatMessage:
+    """Thread-safe chat message with proper correlation"""
+    user_input: str
+    agent_response: str
+    timestamp: int
+    user_input_hash: int
+    correlation_id: str = field(default_factory=lambda: str(int(time.time() * 1000000)))
+
+class ChatSynchronizer:
+    """Thread-safe chat message synchronization manager"""
+
+    def __init__(self):
+        self._lock = threading.RLock()  # Reentrant lock for nested operations
+        self._pending_inputs: Dict[str, str] = {}  # correlation_id -> user_input
+        self._pending_responses: Dict[str, str] = {}  # correlation_id -> agent_response
+        self._completed_messages: List[ChatMessage] = []
+        self._current_correlation_id: Optional[str] = None
+        self._message_sequence = 0
+
+    def register_user_input(self, user_input: str) -> str:
+        """Register user input and return correlation_id for response matching"""
+        with self._lock:
+            correlation_id = f"{int(time.time() * 1000000)}_{self._message_sequence}"
+            self._message_sequence += 1
+            self._pending_inputs[correlation_id] = user_input.strip()
+            self._current_correlation_id = correlation_id
+            logger.info(f"🎯 SYNC: Registered user input with ID {correlation_id}: '{user_input[:50]}...'")
+            return correlation_id
+
+    def register_agent_response(self, response: str, correlation_id: Optional[str] = None) -> bool:
+        """Register agent response and attempt correlation with user input"""
+        with self._lock:
+            # Use current correlation ID if none provided
+            if not correlation_id:
+                correlation_id = self._current_correlation_id
+
+            if not correlation_id:
+                logger.warning(f"⚠️ SYNC: No correlation ID for response: '{response[:50]}...'")
+                return False
+
+            # Store response
+            self._pending_responses[correlation_id] = response.strip()
+
+            # Try to create complete message if both input and response exist
+            if correlation_id in self._pending_inputs:
+                user_input = self._pending_inputs[correlation_id]
+                chat_message = ChatMessage(
+                    user_input=user_input,
+                    agent_response=response.strip(),
+                    timestamp=int(time.time() * 1000),
+                    user_input_hash=hash(user_input),
+                    correlation_id=correlation_id
+                )
+
+                # Add to completed messages and clean up pending
+                self._completed_messages.append(chat_message)
+                del self._pending_inputs[correlation_id]
+                del self._pending_responses[correlation_id]
+
+                logger.info(f"✅ SYNC: Created complete message pair {correlation_id}")
+                logger.info(f"   Q: '{user_input[:50]}...'")
+                logger.info(f"   A: '{response[:50]}...'")
+                return True
+            else:
+                logger.info(f"🔄 SYNC: Stored response for {correlation_id}, waiting for input")
+                return False
+
+    def get_latest_response(self) -> Optional[str]:
+        """Get the latest agent response for speech synthesis"""
+        with self._lock:
+            if self._completed_messages:
+                return self._completed_messages[-1].agent_response
+            # Fallback to pending responses if no completed messages
+            elif self._pending_responses:
+                latest_id = max(self._pending_responses.keys())
+                return self._pending_responses[latest_id]
+            return None
+
+    def get_response_for_speech(self) -> Optional[ChatMessage]:
+        """Get and consume the next available response for speech synthesis"""
+        with self._lock:
+            # Prioritize completed messages first
+            if self._completed_messages:
+                message = self._completed_messages.pop(0)  # FIFO
+                logger.info(f"🎙️ SYNC: Serving completed message: '{message.agent_response[:50]}...'")
+                return message
+
+            return None
+
+    def cleanup_old_entries(self, max_age_seconds: int = 300):  # 5 minutes
+        """Clean up old pending entries to prevent memory leaks"""
+        with self._lock:
+            current_time = int(time.time() * 1000000)
+            cutoff_time = current_time - (max_age_seconds * 1000000)
+
+            # Clean pending inputs
+            old_input_ids = [cid for cid in self._pending_inputs.keys() if int(cid.split('_')[0]) < cutoff_time]
+            for old_id in old_input_ids:
+                del self._pending_inputs[old_id]
+
+            # Clean pending responses
+            old_response_ids = [cid for cid in self._pending_responses.keys() if int(cid.split('_')[0]) < cutoff_time]
+            for old_id in old_response_ids:
+                del self._pending_responses[old_id]
+
+            # Limit completed messages history
+            if len(self._completed_messages) > 100:
+                self._completed_messages = self._completed_messages[-50:]  # Keep last 50
+
+            if old_input_ids or old_response_ids:
+                logger.info(f"🧹 SYNC: Cleaned {len(old_input_ids)} old inputs, {len(old_response_ids)} old responses")
+
+
 class ChatEventHandler:
     """Event handler for chat logging and data channel communication"""
 
     # Store assistant reference for abort handling
     _assistant_instance = None
-    _last_agent_response = None  # Store the last agent response text
+
+    # NEW: Thread-safe chat synchronization
+    _chat_sync = ChatSynchronizer()
+
+    # Keep existing variables for backward compatibility
+    _last_agent_response = None  # Deprecated but maintained for compatibility
+    _pending_responses = {}  # Deprecated but maintained for compatibility
+    _current_user_input = None  # Deprecated but maintained for compatibility
+    _response_queue = []  # Deprecated but maintained for compatibility
+    _turn_detector_context = {}  # Still used for turn detection context
 
     # Manager API configuration
     _manager_api_url = "http://localhost:8002"
@@ -36,9 +162,102 @@ class ChatEventHandler:
 
     @staticmethod
     def set_last_response(response_text: str):
-        """Store the last agent response for logging"""
+        """Store the last agent response for logging - UPDATED with sync management"""
+        # NEW: Use thread-safe synchronization system
+        ChatEventHandler._chat_sync.register_agent_response(response_text)
+
+        # Maintain backward compatibility with existing code
         ChatEventHandler._last_agent_response = response_text
         logger.debug(f"Stored agent response for logging: {response_text[:100]}...")
+
+        # Clear old queue and add latest response (backward compatibility)
+        ChatEventHandler._response_queue.clear()
+        ChatEventHandler._response_queue.append(response_text)
+        logger.info(f"✅ RESPONSE SET (CLEARED QUEUE): {response_text[:50]}...")
+
+        # Maintain old hash correlation for compatibility
+        if ChatEventHandler._current_user_input:
+            user_hash = hash(ChatEventHandler._current_user_input)
+            ChatEventHandler._pending_responses[user_hash] = response_text
+            logger.info(f"🔗 CORRELATED: Q(hash {user_hash}): '{ChatEventHandler._current_user_input[:30]}...' -> A: '{response_text[:30]}...'")
+
+        # Cleanup old hash-based responses
+        if len(ChatEventHandler._pending_responses) > 3:
+            oldest_hash = min(ChatEventHandler._pending_responses.keys())
+            del ChatEventHandler._pending_responses[oldest_hash]
+
+        # Perform periodic cleanup of sync system
+        ChatEventHandler._chat_sync.cleanup_old_entries()
+
+    @staticmethod
+    def _extract_turn_context(log_data):
+        """Extract conversation context from turn detector logs and sync Q&A properly"""
+        try:
+            input_text = log_data.get('input', '')
+            eou_probability = log_data.get('eou_probability', 0)
+
+            if input_text and '<|im_start|>' in input_text:
+                # Parse the conversation format: <|im_start|><|assistant|>...text...<|im_end|><|im_start|><|user|>...text...
+                logger.debug(f"🔍 TURN CONTEXT: Parsing input: {input_text[:100]}...")
+
+                # Split by tokens to extract conversation turns
+                parts = input_text.split('<|im_start|>')
+                conversation = []
+
+                for part in parts[1:]:  # Skip first empty part
+                    if '<|assistant|>' in part:
+                        content = part.replace('<|assistant|>', '').replace('<|im_end|>', '').strip()
+                        if content:
+                            conversation.append({"role": "assistant", "content": content})
+                    elif '<|user|>' in part:
+                        content = part.replace('<|user|>', '').replace('<|im_end|>', '').strip()
+                        if content:
+                            conversation.append({"role": "user", "content": content})
+
+                # Store the conversation context
+                ChatEventHandler._turn_detector_context = {
+                    "conversation": conversation,
+                    "eou_probability": eou_probability,
+                    "timestamp": int(time.time() * 1000)
+                }
+
+                logger.info(f"📝 TURN CONTEXT: Updated with {len(conversation)} turns, EOU: {eou_probability}")
+
+                # Use turn detector context for perfect Q&A synchronization
+                ChatEventHandler._sync_from_turn_detector(conversation)
+
+        except Exception as e:
+            logger.warning(f"Error parsing turn detector context: {e}")
+
+    @staticmethod
+    def _sync_from_turn_detector(conversation):
+        """Use turn detector conversation history for perfect Q&A sync - UPDATED"""
+        try:
+            if len(conversation) >= 2:
+                # Get the latest user question from conversation
+                latest_user_turn = None
+                latest_assistant_turn = None
+
+                # Find the latest user and assistant turns
+                for turn in reversed(conversation):
+                    if turn['role'] == 'user' and not latest_user_turn:
+                        latest_user_turn = turn['content']
+                    elif turn['role'] == 'assistant' and not latest_assistant_turn:
+                        latest_assistant_turn = turn['content']
+
+                if latest_user_turn and latest_assistant_turn:
+                    # NEW: Use proper synchronization system
+                    # Register both input and response with turn detector context
+                    correlation_id = ChatEventHandler._chat_sync.register_user_input(latest_user_turn)
+                    ChatEventHandler._chat_sync.register_agent_response(latest_assistant_turn, correlation_id)
+
+                    # Maintain backward compatibility: clear old queue and add response
+                    ChatEventHandler._response_queue.clear()
+                    ChatEventHandler._response_queue.append(latest_assistant_turn)
+                    logger.info(f"🎯 PERFECT SYNC: Q: '{latest_user_turn[:50]}...' -> A: '{latest_assistant_turn[:50]}...'")
+
+        except Exception as e:
+            logger.warning(f"Error in turn detector sync: {e}")
 
     @staticmethod
     async def _handle_abort_playback(session, ctx):
@@ -70,7 +289,7 @@ class ChatEventHandler:
 
         @session.on("agent_state_changed")
         def _on_agent_state_changed(ev: AgentStateChangedEvent):
-            logger.info(f"Agent state changed: {ev}")
+            logger.info(f"🔄 Agent state changed: {ev.old_state} → {ev.new_state}")
 
             # Check if this state change should be suppressed due to music playback
             should_suppress = audio_state_manager.should_suppress_agent_state_change(
@@ -86,11 +305,21 @@ class ChatEventHandler:
                 "data": ev.dict()
             })
             asyncio.create_task(ctx.room.local_participant.publish_data(payload.encode("utf-8"), reliable=True))
-            logger.info("Sent agent_state_changed via data channel")
+            logger.info("📡 Sent agent_state_changed via data channel")
 
         @session.on("user_input_transcribed")
         def _on_user_input_transcribed(ev: UserInputTranscribedEvent):
-            logger.info(f"User said: {ev}")
+            logger.info(f"🎤 User said: {ev}")
+            logger.info(f"🔍 Turn detection - User input is_final: {ev.is_final}")
+
+            # NEW: Register user input with synchronization system
+            question_text = ev.transcript.strip()
+            correlation_id = ChatEventHandler._chat_sync.register_user_input(question_text)
+
+            # Maintain backward compatibility
+            ChatEventHandler._current_user_input = question_text
+            logger.info(f"📝 USER INPUT: '{question_text}' (ID: {correlation_id})")
+
             payload = json.dumps({
                 "type": "user_input_transcribed",
                 "data": ev.dict()
@@ -108,8 +337,6 @@ class ChatEventHandler:
                 session  # Pass session to update mac_address
             )
             asyncio.create_task(ChatEventHandler._send_chat_to_manager_api(chat_data))
-
-            enqueue_user_report(session, ev.transcript)
 
         @session.on("function_call_output")
         def _on_function_call_output(ev: FunctionCallOutputEvent):
@@ -139,14 +366,47 @@ class ChatEventHandler:
             asyncio.create_task(ctx.room.local_participant.publish_data(payload.encode("utf-8"), reliable=True))
             logger.info("Sent speech_created via data channel")
 
-            # Use the captured LLM response directly
-            speech_text = ChatEventHandler._last_agent_response
+            # NEW: Use thread-safe synchronized response retrieval
+            speech_text = None
+            chat_message = None
+
+            try:
+                # Primary: Use new synchronization system
+                chat_message = ChatEventHandler._chat_sync.get_response_for_speech()
+                if chat_message:
+                    speech_text = chat_message.agent_response
+                    logger.info(f"✅ SYNC SERVED: {speech_text[:50]}...")
+                    # Enqueue both user and agent reports
+                    enqueue_user_report(session, chat_message.user_input)
+                    enqueue_agent_report(session, speech_text)
+                else:
+                    # Fallback 1: Use legacy response queue (backward compatibility)
+                    if ChatEventHandler._response_queue:
+                        speech_text = ChatEventHandler._response_queue.pop(0)
+                        logger.info(f"✅ QUEUE SERVED: {speech_text[:50]}...")
+                        enqueue_agent_report(session, speech_text)
+
+                    # Fallback 2: Try legacy hash correlation (preserves original functionality)
+                    elif ChatEventHandler._pending_responses:
+                        latest_hash = max(ChatEventHandler._pending_responses.keys())
+                        speech_text = ChatEventHandler._pending_responses.get(latest_hash)
+                        if speech_text:
+                            logger.info(f"⚠️ HASH SERVED: Using correlated response for hash {latest_hash}: {speech_text[:50]}...")
+                            del ChatEventHandler._pending_responses[latest_hash]
+                            enqueue_agent_report(session, speech_text)
+            except Exception as e:
+                logger.warning(f"🔄 Error in response retrieval logic: {e}")
+
+            # Final fallback to global last response (preserves original functionality)
+            if not speech_text:
+                speech_text = ChatEventHandler._last_agent_response
+                if speech_text:
+                    logger.info(f"⚠️ GLOBAL FALLBACK: Using last response: {speech_text[:50]}...")
+                    enqueue_agent_report(session, speech_text)
 
             if not speech_text:
                 speech_text = "[Audio response generated]"
                 logger.warning("⚠️ No LLM response captured, using placeholder")
-            else:
-                logger.info(f"✅ Using captured LLM response: {speech_text[:100]}...")
 
             # Send real-time chat data to manager-api only for actual LLM responses
             speech_id = getattr(ev, 'id', None) or getattr(ev, 'speech_id', None)
@@ -168,8 +428,53 @@ class ChatEventHandler:
             )
             asyncio.create_task(ChatEventHandler._send_chat_to_manager_api(chat_data))
 
-            if speech_text:
-                enqueue_agent_report(session, speech_text)
+        # Hook into turn detector logs to extract conversation context
+        original_logger = logging.getLogger("livekit.plugins.turn_detector")
+        original_debug = original_logger.debug
+
+        def patched_debug(msg, *args, **kwargs):
+            # Call original debug first
+            original_debug(msg, *args, **kwargs)
+
+            # Extract turn detector context for chat sync - be more aggressive about capturing
+            try:
+                if "eou prediction" in str(msg) or "prediction" in str(msg) or "input" in str(kwargs):
+                    logger.info(f"🔍 TURN DEBUG: msg='{msg}', kwargs={kwargs}")
+                    ChatEventHandler._extract_turn_context(kwargs)
+            except Exception as e:
+                logger.warning(f"Failed to extract turn context: {e}")
+
+        original_logger.debug = patched_debug
+        logger.info("✅ Turn detector context extraction enabled")
+
+        # Try to add turn detection event handlers with generic approach
+        try:
+            @session.on("turn_started")
+            def _on_turn_started(ev):
+                logger.info(f"🎯 TURN DETECTION: Turn started - {ev}")
+        except:
+            logger.debug("turn_started event not available")
+
+        try:
+            @session.on("turn_ended")
+            def _on_turn_ended(ev):
+                logger.info(f"🎯 TURN DETECTION: Turn ended - {ev}")
+        except:
+            logger.debug("turn_ended event not available")
+
+        try:
+            @session.on("user_speech_started")
+            def _on_user_speech_started(ev):
+                logger.info(f"🎯 TURN DETECTION: User speech started - {ev}")
+        except:
+            logger.debug("user_speech_started event not available")
+
+        try:
+            @session.on("user_speech_ended")
+            def _on_user_speech_ended(ev):
+                logger.info(f"🎯 TURN DETECTION: User speech ended - {ev}")
+        except:
+            logger.debug("user_speech_ended event not available")
 
         # Add data channel message handler for abort signals
         @ctx.room.on("data_received")

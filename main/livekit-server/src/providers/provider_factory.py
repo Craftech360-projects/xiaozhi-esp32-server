@@ -1,3 +1,4 @@
+import logging
 import livekit.plugins.groq as groq
 import livekit.plugins.elevenlabs as elevenlabs
 import livekit.plugins.deepgram as deepgram
@@ -7,6 +8,8 @@ from livekit.plugins.turn_detector.english import EnglishModel
 
 # Import our custom EdgeTTS provider
 from .edge_tts_provider import EdgeTTS
+
+logger = logging.getLogger("provider_factory")
 
 class ProviderFactory:
     """Factory class for creating AI service providers"""
@@ -67,5 +70,15 @@ class ProviderFactory:
     @staticmethod
     def create_turn_detection():
         """Create turn detection model"""
-        # Disable turn detection to avoid model download timeouts
-        return None
+        try:
+            logger.info("PROVIDER: Loading English turn detection model...")
+            return EnglishModel()
+        except Exception as e:
+            logger.warning(f"PROVIDER: Failed to load English turn detection: {e}")
+            try:
+                logger.info("PROVIDER: Loading Multilingual turn detection model...")
+                return MultilingualModel()
+            except Exception as e2:
+                logger.warning(f"PROVIDER: Failed to load Multilingual turn detection: {e2}")
+                logger.info("PROVIDER: Turn detection disabled - using None")
+                return None

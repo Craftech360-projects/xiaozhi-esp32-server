@@ -1,3 +1,14 @@
+from src.handlers.report_handle import start_report_thread, stop_report_thread
+from src.config.manage_api_client import init_service as init_manage_api, manage_api_http_safe_close
+from src.services.unified_audio_player import UnifiedAudioPlayer
+from src.services.foreground_audio_player import ForegroundAudioPlayer
+from src.services.story_service import StoryService
+from src.services.music_service import MusicService
+from src.utils.helpers import UsageManager
+from src.handlers.chat_logger import ChatEventHandler
+from src.agent.main_agent import Assistant
+from src.providers.provider_factory import ProviderFactory
+from src.config.config_loader import ConfigLoader
 import logging
 import asyncio
 import os
@@ -16,7 +27,6 @@ from livekit.agents import (
 load_dotenv(".env")
 
 # Log some key environment variables to show what's loaded
-import os
 print("="*60)
 print("XIAOZHI LIVEKIT AGENT - Configuration Status")
 print("="*60)
@@ -24,25 +34,14 @@ print("Environment Variables (.env):")
 print(f"   LIVEKIT_URL: {os.getenv('LIVEKIT_URL', 'Not set')}")
 print(f"   GROQ_API_KEY: {'Set' if os.getenv('GROQ_API_KEY') else 'Not set'}")
 print(f"   TTS_PROVIDER: {os.getenv('TTS_PROVIDER', 'Not set')}")
-print(f"   REDIS_URL: {os.getenv('REDIS_URL', 'Not set')[:20]}..." if os.getenv('REDIS_URL') else "   REDIS_URL: Not set")
+print(f"   REDIS_URL: {os.getenv('REDIS_URL', 'Not set')[:20]}..." if os.getenv(
+    'REDIS_URL') else "   REDIS_URL: Not set")
 
 # Import our organized modules
-from src.config.config_loader import ConfigLoader
-from src.providers.provider_factory import ProviderFactory
-from src.agent.main_agent import Assistant
-from src.handlers.chat_logger import ChatEventHandler
-from src.utils.helpers import UsageManager
-from src.services.music_service import MusicService
-from src.services.story_service import StoryService
-from src.services.foreground_audio_player import ForegroundAudioPlayer
-from src.services.unified_audio_player import UnifiedAudioPlayer
-from src.config.manage_api_client import init_service as init_manage_api, manage_api_http_safe_close
-from src.handlers.report_handle import start_report_thread, stop_report_thread
 
 logger = logging.getLogger("agent")
 
 # Log configuration source at startup
-from src.config.config_loader import ConfigLoader
 startup_config = ConfigLoader._load_yaml_config()
 if startup_config.get('read_config_from_api', False):
     init_manage_api(startup_config)
@@ -57,6 +56,7 @@ else:
     print(f"   Mode: LOCAL CONFIG (Static)")
     print(f"   Status: DISABLED - Using local fallback models")
 print("="*60)
+
 
 def prewarm(proc: JobProcess):
     """Prewarm function to load VAD model and embedding models"""
@@ -73,7 +73,8 @@ def prewarm(proc: JobProcess):
             from sentence_transformers import SentenceTransformer
 
             # Load the embedding model (this is the heavy operation)
-            embedding_model_name = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+            embedding_model_name = os.getenv(
+                "EMBEDDING_MODEL", "all-MiniLM-L6-v2")
             embedding_model = SentenceTransformer(embedding_model_name)
             proc.userdata["embedding_model"] = embedding_model
 
@@ -91,7 +92,8 @@ def prewarm(proc: JobProcess):
                 proc.userdata["qdrant_client"] = qdrant_client
                 logger.info("PREWARM: Qdrant client prepared")
 
-            logger.info(f"PREWARM: Complete - Embedding model '{embedding_model_name}' loaded")
+            logger.info(
+                f"PREWARM: Complete - Embedding model '{embedding_model_name}' loaded")
 
         except Exception as e:
             logger.warning(f"PREWARM: Failed for embedding models: {e}")
@@ -103,6 +105,7 @@ def prewarm(proc: JobProcess):
         proc.userdata["embedding_model"] = None
         proc.userdata["qdrant_client"] = None
 
+
 async def entrypoint(ctx: JobContext):
     """Main entrypoint for the organized agent"""
     ctx.log_context_fields = {"room": ctx.room.name}
@@ -112,9 +115,11 @@ async def entrypoint(ctx: JobContext):
     logger.info("AGENT: Loading configuration from configured source...")
     groq_config = await ConfigLoader.get_groq_config()
     tts_config = await ConfigLoader.get_tts_config()
-    agent_config = ConfigLoader.get_agent_config()  # This one stays sync as it's for agent settings
+    # This one stays sync as it's for agent settings
+    agent_config = ConfigLoader.get_agent_config()
 
-    logger.info(f"AGENT: Configuration loaded - LLM={groq_config.get('llm_model')}, STT={groq_config.get('stt_model')}, TTS={tts_config.get('model')}")
+    logger.info(
+        f"AGENT: Configuration loaded - LLM={groq_config.get('llm_model')}, STT={groq_config.get('stt_model')}, TTS={tts_config.get('model')}")
 
     # Create providers using factory
     llm = ProviderFactory.create_llm(groq_config)
@@ -124,15 +129,21 @@ async def entrypoint(ctx: JobContext):
     turn_detection = ProviderFactory.create_turn_detection()
     vad = ctx.proc.userdata["vad"]
 
-    # Set up voice AI pipeline without turn detection to avoid timeout
+    # Set up voice AI pipeline with turn detection enabled
+    logger.info("AGENT: Enabling turn detection for better conversation flow")
+    logger.info(f"AGENT: Turn detection object: {turn_detection}")
+    logger.info(f"AGENT: VAD object: {vad}")
+
     session = AgentSession(
         llm=llm,
         stt=stt,
         tts=tts,
-        turn_detection=None,  # Explicitly disabled to avoid timeout
+        turn_detection=turn_detection,  # Enable turn detection
         vad=vad,
         preemptive_generation=agent_config['preemptive_generation'],
     )
+
+    logger.info(f"AGENT: AgentSession created with turn detection enabled: {turn_detection is not None}")
 
     session.session_id = ctx.room.name
     mac_address = "unknown-device"
@@ -159,20 +170,37 @@ async def entrypoint(ctx: JobContext):
     preloaded_qdrant_client = ctx.proc.userdata.get("qdrant_client")
 
     # Initialize music service with preloaded models, story service without semantic search
-    music_service = MusicService(preloaded_embedding_model, preloaded_qdrant_client)
+    music_service = MusicService(
+        preloaded_embedding_model, preloaded_qdrant_client)
     story_service = StoryService()  # No semantic search - simple initialization
     audio_player = ForegroundAudioPlayer()
     unified_audio_player = UnifiedAudioPlayer()
 
     # Create agent and inject services
     assistant = Assistant()
-    assistant.set_services(music_service, story_service, audio_player, unified_audio_player)
+    assistant.set_services(music_service, story_service,
+                           audio_player, unified_audio_player)
 
     # Setup event handlers and pass assistant reference for abort handling
     ChatEventHandler.set_assistant(assistant)
 
-    # Efficient approach: Hook directly into the LLM client's completion stream
-    # This captures the raw LLM output before any processing
+    # OPTIMIZED: Single-point response capture to avoid race conditions
+    # Priority order: session.say() > LLM stream > fallbacks
+    original_say = session.say
+
+    async def patched_say(text, **kwargs):
+        # PRIMARY: Capture response text at session.say() level (most reliable)
+        if text and text.strip() and text != "[Audio response generated]":
+            ChatEventHandler.set_last_response(text.strip())
+            logger.info(f"🎯 Session.say captured (PRIMARY): {text[:50]}...")
+
+        # Call original say method
+        return await original_say(text, **kwargs)
+
+    session.say = patched_say
+    logger.info("✅ Session.say hook installed successfully")
+
+    # SECONDARY: LLM stream capture as backup (lower priority to avoid conflicts)
     if hasattr(llm, '_client'):
         original_client = llm._client
         if hasattr(original_client, 'chat') and hasattr(original_client.chat, 'completions'):
@@ -181,15 +209,15 @@ async def entrypoint(ctx: JobContext):
             async def patched_create(*args, **kwargs):
                 # Call the original method to get the stream
                 stream = await original_create(*args, **kwargs)
-
                 # Create a wrapper to capture the response
                 return LLMStreamCapture(stream)
 
-            # Create wrapper class to capture streaming response
+            # Create wrapper class to capture streaming response (backup only)
             class LLMStreamCapture:
                 def __init__(self, original_stream):
                     self._stream = original_stream
                     self._captured_text = ""
+                    self._response_captured_by_say = False
 
                 def __aiter__(self):
                     return self
@@ -208,8 +236,14 @@ async def entrypoint(ctx: JobContext):
                         # Check if stream is complete
                         if hasattr(choice, 'finish_reason') and choice.finish_reason == 'stop':
                             if self._captured_text.strip():
-                                ChatEventHandler.set_last_response(self._captured_text.strip())
-                                logger.info(f"🎯 LLM output captured: {self._captured_text[:100]}...")
+                                # Check if session.say already captured this response
+                                latest_response = ChatEventHandler._chat_sync.get_latest_response()
+                                if not latest_response or latest_response != self._captured_text.strip():
+                                    # Only capture if session.say didn't already get it
+                                    ChatEventHandler.set_last_response(self._captured_text.strip())
+                                    logger.info(f"🔄 LLM stream captured (BACKUP): {self._captured_text[:50]}...")
+                                else:
+                                    logger.info(f"⏭️ LLM stream skipped (already captured by session.say)")
 
                     return chunk
 
@@ -223,7 +257,7 @@ async def entrypoint(ctx: JobContext):
                         return await self._stream.__aexit__(exc_type, exc_val, exc_tb)
 
             original_client.chat.completions.create = patched_create
-            logger.info("✅ LLM stream capture installed successfully")
+            logger.info("✅ LLM stream capture installed as backup")
     else:
         logger.warning("Could not find LLM client to hook into")
 
@@ -246,13 +280,15 @@ async def entrypoint(ctx: JobContext):
 
         if music_initialized:
             languages = await music_service.get_all_languages()
-            logger.info(f"Music service initialized with {len(languages)} languages")
+            logger.info(
+                f"Music service initialized with {len(languages)} languages")
         else:
             logger.warning("Music service initialization failed")
 
         if story_initialized:
             categories = await story_service.get_all_categories()
-            logger.info(f"Story service initialized with {len(categories)} categories")
+            logger.info(
+                f"Story service initialized with {len(categories)} categories")
         else:
             logger.warning("Story service initialization failed")
 
@@ -269,7 +305,8 @@ async def entrypoint(ctx: JobContext):
             logger.info("Noise cancellation enabled (requires LiveKit Cloud)")
         except Exception as e:
             logger.warning(f"Could not enable noise cancellation: {e}")
-            logger.info("Continuing without noise cancellation (local server mode)")
+            logger.info(
+                "Continuing without noise cancellation (local server mode)")
             room_options = None
     else:
         logger.info("Noise cancellation disabled by configuration")
@@ -290,7 +327,8 @@ async def entrypoint(ctx: JobContext):
         unified_audio_player.set_context(ctx)
         logger.info("Audio players integrated with session and context")
     except Exception as e:
-        logger.warning(f"Failed to integrate audio players with session/context: {e}")
+        logger.warning(
+            f"Failed to integrate audio players with session/context: {e}")
 
     await ctx.connect()
 
