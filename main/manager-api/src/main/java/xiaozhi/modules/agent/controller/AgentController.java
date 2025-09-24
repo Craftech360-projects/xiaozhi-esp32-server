@@ -27,6 +27,7 @@ import io.swagger.v3.oas.annotations.Parameters;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.AllArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import xiaozhi.common.constant.Constant;
 import xiaozhi.common.page.PageData;
 import xiaozhi.common.redis.RedisKeys;
@@ -57,6 +58,7 @@ import xiaozhi.modules.security.user.SecurityUser;
 @AllArgsConstructor
 @RestController
 @RequestMapping("/agent")
+@Slf4j
 public class AgentController {
     private final AgentService agentService;
     private final AgentTemplateService agentTemplateService;
@@ -270,6 +272,43 @@ public class AgentController {
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"play.wav\"")
                 .body(audioData);
+    }
+
+    @GetMapping("/prompt/{macAddress}")
+    @Operation(summary = "Get agent prompt by device MAC address")
+    public Result<String> getAgentPromptByMac(@PathVariable("macAddress") String macAddress) {
+        try {
+            // Clean MAC address (remove colons, hyphens, convert to lowercase)
+            String cleanMac = macAddress.replace(":", "").replace("-", "").toLowerCase();
+
+            // Find device by MAC address
+            DeviceEntity device = deviceService.getDeviceByMacAddress(cleanMac);
+            if (device == null) {
+                return new Result<String>().error("Device not found for MAC address: " + macAddress);
+            }
+
+            // Get associated agent
+            if (StringUtils.isBlank(device.getAgentId())) {
+                return new Result<String>().error("No agent associated with device: " + macAddress);
+            }
+
+            AgentEntity agent = agentService.selectById(device.getAgentId());
+            if (agent == null) {
+                return new Result<String>().error("Agent not found for device: " + macAddress);
+            }
+
+            // Return system prompt
+            String systemPrompt = agent.getSystemPrompt();
+            if (StringUtils.isBlank(systemPrompt)) {
+                return new Result<String>().error("No system prompt configured for agent: " + agent.getAgentName());
+            }
+
+            return new Result<String>().ok(systemPrompt);
+
+        } catch (Exception e) {
+            log.error("Error fetching agent prompt for MAC: " + macAddress, e);
+            return new Result<String>().error("Internal server error");
+        }
     }
 
 }

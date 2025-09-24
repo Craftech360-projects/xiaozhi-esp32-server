@@ -25,6 +25,7 @@ management:
       show-details: always
 
 
+
 spring:
   datasource:
     druid:

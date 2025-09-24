@@ -451,4 +451,27 @@ public class ConfigServiceImpl implements ConfigService {
         result.put("prompt", prompt);
         result.put("summaryMemory", summaryMemory);
     }
+
+    @Override
+    public String getAgentPrompt(String macAddress) {
+        // 根据MAC地址查找设备
+        DeviceEntity device = deviceService.getDeviceByMacAddress(macAddress);
+        if (device == null) {
+            throw new RenException(ErrorCode.OTA_DEVICE_NOT_FOUND, "Device not found for MAC: " + macAddress);
+        }
+
+        // 获取智能体信息
+        AgentEntity agent = agentService.selectById(device.getAgentId());
+        if (agent == null) {
+            throw new RenException("Agent not found for device: " + macAddress);
+        }
+
+        // 返回系统提示词
+        String systemPrompt = agent.getSystemPrompt();
+        if (StringUtils.isBlank(systemPrompt)) {
+            throw new RenException("No system prompt configured for agent: " + agent.getAgentName());
+        }
+
+        return systemPrompt;
+    }
 }

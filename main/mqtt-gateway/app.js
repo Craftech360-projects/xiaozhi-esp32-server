@@ -178,11 +178,21 @@ class LiveKitBridge extends Emitter {
 
   async connect(audio_params, features) {
     const { url, api_key, api_secret } = this.livekitConfig;
-    const roomName = this.uuid || this.macAddress;
+    // Include MAC address in room name for agent to extract device-specific prompt
+    const macForRoom = this.macAddress.replace(/:/g, ''); // Remove colons: 00:16:3e:ac:b5:38 → 00163eacb538
+    const roomName = `${this.uuid}_${macForRoom}`;
     const participantName = this.macAddress;
+
+    console.log(`🏠 [ROOM] Creating room with name: ${roomName} (UUID: ${this.uuid}, MAC: ${this.macAddress})`);
 
     const at = new AccessToken(api_key, api_secret, {
       identity: participantName,
+      // Add MAC address as custom attributes
+      attributes: {
+        device_mac: this.macAddress,
+        device_uuid: this.uuid || '',
+        room_type: 'device_session'
+      }
     });
     at.addGrant({
       room: roomName,
@@ -902,21 +912,41 @@ class LiveKitBridge extends Emitter {
     this.connection.sendMqttMessage(JSON.stringify(message));
   }
 
-  // Send initial greeting when agent joins
+  // Send device information and initial greeting when agent joins
   async sendInitialGreeting() {
     if (!this.connection) return;
 
     try {
-      // Send a data message to the agent to trigger an initial response
-      const initialMessage = {
-        type: "agent_ready",
-        message: "Say hello to the user",
+      // First send device information for prompt loading
+      const deviceInfoMessage = {
+        type: "device_info",
+        device_mac: this.macAddress,
+        device_uuid: this.uuid,
         timestamp: Date.now(),
         source: "mqtt_gateway"
       };
 
-      // Send via LiveKit data channel to trigger agent response
+      // Send device info via LiveKit data channel
       if (this.room && this.room.localParticipant) {
+        const deviceInfoString = JSON.stringify(deviceInfoMessage);
+        const deviceInfoData = new Uint8Array(Buffer.from(deviceInfoString, 'utf8'));
+        await this.room.localParticipant.publishData(
+          deviceInfoData,
+          { reliable: true }
+        );
+
+        console.log(
+          `📱 [DEVICE INFO] Sent device MAC (${this.macAddress}) to agent via data channel`
+        );
+
+        // Then send greeting trigger
+        const initialMessage = {
+          type: "agent_ready",
+          message: "Say hello to the user",
+          timestamp: Date.now(),
+          source: "mqtt_gateway"
+        };
+
         const messageString = JSON.stringify(initialMessage);
         const messageData = new Uint8Array(Buffer.from(messageString, 'utf8'));
         await this.room.localParticipant.publishData(
@@ -929,12 +959,12 @@ class LiveKitBridge extends Emitter {
         );
       } else {
         console.warn(
-          `⚠️ [AGENT READY] Cannot send initial greeting - room not ready for device: ${this.macAddress}`
+          `⚠️ [AGENT READY] Cannot send messages - room not ready for device: ${this.macAddress}`
         );
       }
     } catch (error) {
       console.error(
-        `❌ [AGENT READY] Error sending initial greeting trigger for device ${this.macAddress}:`, error
+        `❌ [AGENT READY] Error sending messages to agent for device ${this.macAddress}:`, error
       );
     }
   }

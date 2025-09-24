@@ -2,6 +2,7 @@ import logging
 import asyncio
 import os
 import aiohttp
+import json
 from dotenv import load_dotenv
 from livekit.agents import (
     AgentSession,
@@ -27,8 +28,12 @@ from src.services.music_service import MusicService
 from src.services.story_service import StoryService
 from src.services.foreground_audio_player import ForegroundAudioPlayer
 from src.services.unified_audio_player import UnifiedAudioPlayer
+
+from src.services.prompt_service import PromptService
+
 from src.utils.model_cache import model_cache
 from src.utils.model_preloader import model_preloader
+
 
 logger = logging.getLogger("agent")
 
@@ -143,6 +148,35 @@ async def entrypoint(ctx: JobContext):
     tts_config = ConfigLoader.get_tts_config()
     agent_config = ConfigLoader.get_agent_config()
 
+    # Extract MAC address from room name and fetch device-specific prompt
+    prompt_service = PromptService()
+    room_name = ctx.room.name
+
+    # Parse room name to extract MAC address (format: UUID_MAC)
+    device_mac = None
+    if '_' in room_name:
+        parts = room_name.split('_')
+        if len(parts) >= 2:
+            # Last part is MAC without colons
+            mac_part = parts[-1]
+            # Reconstruct MAC with colons: 00163eacb538 → 00:16:3e:ac:b5:38
+            if len(mac_part) == 12 and mac_part.isalnum():  # Valid MAC length and hex
+                device_mac = ':'.join(mac_part[i:i+2] for i in range(0, 12, 2))
+                logger.info(f"📱 Extracted MAC from room name: {device_mac}")
+
+    # Fetch device-specific prompt BEFORE creating assistant
+    if device_mac:
+        try:
+            agent_prompt = await prompt_service.get_prompt(room_name, device_mac)
+            logger.info(f"🎯 Using device-specific prompt for MAC: {device_mac} (length: {len(agent_prompt)} chars)")
+        except Exception as e:
+            logger.warning(f"Failed to fetch device prompt for MAC {device_mac}, using default: {e}")
+            agent_prompt = ConfigLoader.get_default_prompt()
+            logger.info(f"📄 Fallback to default prompt (length: {len(agent_prompt)} chars)")
+    else:
+        agent_prompt = ConfigLoader.get_default_prompt()
+        logger.info(f"📄 Using default prompt - no MAC in room name '{room_name}' (length: {len(agent_prompt)} chars)")
+
     # Get VAD first as it's needed for STT
     vad = ctx.proc.userdata["vad"]
 
@@ -185,13 +219,14 @@ async def entrypoint(ctx: JobContext):
     audio_player = ForegroundAudioPlayer()
     unified_audio_player = UnifiedAudioPlayer()
 
-    # Create agent and inject services
-    assistant = Assistant()
+    # Create agent with dynamic prompt and inject services
+    assistant = Assistant(instructions=agent_prompt)
     assistant.set_services(music_service, story_service, audio_player, unified_audio_player)
 
     # Setup event handlers and pass assistant reference for abort handling
     ChatEventHandler.set_assistant(assistant)
     ChatEventHandler.setup_session_handlers(session, ctx)
+
 
     # Setup usage tracking
     usage_manager = UsageManager()
