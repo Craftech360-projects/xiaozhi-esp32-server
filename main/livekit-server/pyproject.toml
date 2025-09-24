@@ -18,6 +18,7 @@ dependencies = [
     "paho-mqtt",
     "aiohttp",
     "pydub",
+    "edge-tts",
     "pytz",
     "qdrant-client>=1.7.0",
     "sentence-transformers>=2.2.0"

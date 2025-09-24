@@ -336,9 +336,10 @@ class LiveKitBridge extends Emitter {
                         console.log(`🔄 [FLUSH] Processing partial 24kHz 60ms PCM frame: ${this.frameBuffer.length}B`);
 
                         if (opusEncoder) {
+                          // Declare targetSize outside try block
+                          const targetSize = this.frameBuffer.length <= 1440 ? 1440 : 2880;
                           try {
                             // Pad to nearest valid frame size for 24kHz 60ms (1440 or 2880 bytes)
-                            const targetSize = this.frameBuffer.length <= 1440 ? 1440 : 2880;
                             const paddedBuffer = Buffer.alloc(targetSize);
                             this.frameBuffer.copy(paddedBuffer);
 
@@ -347,6 +348,7 @@ class LiveKitBridge extends Emitter {
                             console.log(`✅ [FLUSH] Encoded partial frame: ${this.frameBuffer.length}B → ${opusBuffer.length}B Opus`);
                           } catch (err) {
                             console.log(`⚠️ [FLUSH] Failed to encode partial frame: ${err.message}`);
+                            console.log(`🔍 [DEBUG] Partial frame size: ${this.frameBuffer.length}B, target: ${targetSize}B`);
                             // Fallback to PCM
                             this.connection.sendUdpMessage(this.frameBuffer, finalTimestamp);
                           }
@@ -970,10 +972,35 @@ class LiveKitBridge extends Emitter {
     }
   }
 
-  close() {
+  async close() {
     if (this.room) {
       console.log("[LiveKitBridge] Disconnecting from LiveKit room");
-      this.room.disconnect();
+
+      // First disconnect from the room
+      await this.room.disconnect();
+
+      // Send a final cleanup signal to ensure the agent side also cleans up
+      try {
+        const cleanupMessage = {
+          type: "cleanup_request",
+          session_id: this.connection.udp.session_id,
+          timestamp: Date.now(),
+          source: "mqtt_gateway"
+        };
+
+        if (this.room.localParticipant && this.room.isConnected) {
+          const messageString = JSON.stringify(cleanupMessage);
+          const messageData = new Uint8Array(Buffer.from(messageString, 'utf8'));
+          await this.room.localParticipant.publishData(
+            messageData,
+            { reliable: true }
+          );
+          console.log("🧹 Sent cleanup signal to agent before disconnect");
+        }
+      } catch (error) {
+        console.log("Note: Could not send cleanup signal (room already disconnected)");
+      }
+
       this.room = null;
     }
   }
@@ -1000,6 +1027,10 @@ class MQTTConnection {
       remoteSequence: 0,
     };
     this.headerBuffer = Buffer.alloc(16);
+
+    // Add inactivity timeout tracking
+    this.lastActivityTime = Date.now();
+    this.inactivityTimeoutMs = 1 * 60 * 1000; // 3 minutes in milliseconds
 
     // Create protocol handler and pass in socket
     this.protocol = new MQTTProtocol(socket);
@@ -1118,23 +1149,40 @@ class MQTTConnection {
     }
   }
 
+  updateActivityTime() {
+    this.lastActivityTime = Date.now();
+  }
+
   checkKeepAlive() {
     const now = Date.now();
+
+    // Check for inactivity timeout (3 minutes of no communication)
+    const timeSinceLastActivity = now - this.lastActivityTime;
+    if (timeSinceLastActivity > this.inactivityTimeoutMs) {
+      console.log(`🕒 [TIMEOUT] Closing connection due to 3-minute inactivity: ${this.clientId} (inactive for ${Math.round(timeSinceLastActivity / 1000)}s)`);
+      this.close();
+      return;
+    }
+
+    // Original keep-alive check
     const keepAliveInterval = this.protocol.getKeepAliveInterval();
     // If keepAliveInterval is 0, heartbeat check is not needed
     if (keepAliveInterval === 0 || !this.protocol.isConnected) return;
 
-    const lastActivity = this.protocol.getLastActivity();
-    const timeSinceLastActivity = now - lastActivity;
+    const protocolLastActivity = this.protocol.getLastActivity();
+    const timeSinceProtocolActivity = now - protocolLastActivity;
 
     // If heartbeat interval is exceeded, close connection
-    if (timeSinceLastActivity > keepAliveInterval) {
+    if (timeSinceProtocolActivity > keepAliveInterval) {
       debug("Heartbeat timeout, closing connection:", this.clientId);
       this.close();
     }
   }
 
   handlePublish(publishData) {
+    // Update activity timestamp on any MQTT message receipt
+    this.updateActivityTime();
+
     debug("Received publish message:", {
       clientId: this.clientId,
       topic: publishData.topic,
@@ -1260,10 +1308,18 @@ class MQTTConnection {
       console.log(
         `Call ended: ${this.clientId} Session: ${this.udp.session_id} Duration: ${seconds}s`
       );
+
+      // Send goodbye to device
       this.sendMqttMessage(
         JSON.stringify({ type: "goodbye", session_id: this.udp.session_id })
       );
+
+      // Clean up the bridge reference
       this.bridge = null;
+
+      // Log room cleanup
+      console.log(`🧹 LiveKit room cleanup initiated for session: ${this.udp.session_id}`);
+
       if (this.closing) {
         this.protocol.close();
       }
@@ -1339,6 +1395,9 @@ class MQTTConnection {
   }
 
   onUdpMessage(rinfo, message, payloadLength, timestamp, sequence) {
+    // Update activity timestamp on any UDP message receipt
+    this.updateActivityTime();
+
     if (!this.bridge) {
       // console.log(
       //   `📡 [UDP RECV] No bridge available for ${this.clientId}, dropping message`
@@ -1423,6 +1482,10 @@ class VirtualMQTTConnection {
     this.headerBuffer = Buffer.alloc(16);
     this.closing = false;
 
+    // Add inactivity timeout tracking
+    this.lastActivityTime = Date.now();
+    this.inactivityTimeoutMs = 1 * 60 * 1000; // 3 minutes in milliseconds
+
     // Parse device info from hello message
     if (helloPayload.clientId) {
       const parts = helloPayload.clientId.split("@@@");
@@ -1476,7 +1539,14 @@ class VirtualMQTTConnection {
     debug(`Virtual connection created for device: ${this.deviceId}`);
   }
 
+  updateActivityTime() {
+    this.lastActivityTime = Date.now();
+  }
+
   handlePublish(publishData) {
+    // Update activity timestamp on any MQTT message receipt
+    this.updateActivityTime();
+
     try {
       const json = JSON.parse(publishData.payload);
       if (json.type === "hello") {
@@ -1587,10 +1657,18 @@ class VirtualMQTTConnection {
       console.log(
         `Call ended: ${this.deviceId} Session: ${this.udp.session_id} Duration: ${seconds}s`
       );
+
+      // Send goodbye to device
       this.sendMqttMessage(
         JSON.stringify({ type: "goodbye", session_id: this.udp.session_id })
       );
+
+      // Clean up the bridge reference
       this.bridge = null;
+
+      // Log room cleanup
+      console.log(`🧹 LiveKit room cleanup initiated for virtual session: ${this.udp.session_id}`);
+
       if (this.closing) {
         // Remove from gateway connections
         this.gateway.connections.delete(this.connectionId);
@@ -1670,6 +1748,9 @@ class VirtualMQTTConnection {
   }
 
   onUdpMessage(rinfo, message, payloadLength, timestamp, sequence) {
+    // Update activity timestamp on any UDP message receipt
+    this.updateActivityTime();
+
     if (!this.bridge) {
       return;
     }
@@ -1707,6 +1788,16 @@ class VirtualMQTTConnection {
   }
 
   checkKeepAlive() {
+    const now = Date.now();
+
+    // Check for inactivity timeout (3 minutes of no communication)
+    const timeSinceLastActivity = now - this.lastActivityTime;
+    if (timeSinceLastActivity > this.inactivityTimeoutMs) {
+      console.log(`🕒 [TIMEOUT] Closing virtual connection due to 3-minute inactivity: ${this.deviceId} (inactive for ${Math.round(timeSinceLastActivity / 1000)}s)`);
+      this.close();
+      return;
+    }
+
     // Virtual connections don't need traditional keep-alive since EMQX handles it
   }
 

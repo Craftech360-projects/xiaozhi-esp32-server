@@ -29,6 +29,7 @@ RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     python3-dev \
+    ffmpeg \
   && rm -rf /var/lib/apt/lists/*
 
 # Create a new directory for our application code

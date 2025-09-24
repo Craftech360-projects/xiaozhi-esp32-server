@@ -6,3 +6,10 @@ aiohttp
 # Optional dependencies for enhanced semantic search
 qdrant-client
 sentence-transformers
+
+# EdgeTTS support
+edge-tts
+
+# Room management and JWT for API calls
+livekit-api
+PyJWT

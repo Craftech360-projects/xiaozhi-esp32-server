@@ -17,7 +17,6 @@ class StoryService:
     """Service for handling story playback and search"""
 
     def __init__(self):
-        self.metadata = {}
         self.cloudfront_domain = os.getenv("CLOUDFRONT_DOMAIN", "")
         self.s3_base_url = os.getenv("S3_BASE_URL", "")
         self.use_cdn = os.getenv("USE_CDN", "true").lower() == "true"
@@ -27,7 +26,7 @@ class StoryService:
         """Initialize story service with simple search (no semantic search)"""
         try:
             # Simple initialization without semantic search
-            logger.info("✅ Story service initialized with simple search (semantic search disabled)")
+            logger.info("[STORY] Story service initialized with simple search (semantic search disabled)")
             self.is_initialized = True
             return True
 
