@@ -18,7 +18,6 @@ class MusicService:
     """Service for handling music playback and search"""
 
     def __init__(self, preloaded_model=None, preloaded_client=None):
-        self.metadata = {}
         self.cloudfront_domain = os.getenv("CLOUDFRONT_DOMAIN", "")
         self.s3_base_url = os.getenv("S3_BASE_URL", "")
         self.use_cdn = os.getenv("USE_CDN", "true").lower() == "true"
@@ -26,24 +25,18 @@ class MusicService:
         self.semantic_search = QdrantSemanticSearch(preloaded_model, preloaded_client)
 
     async def initialize(self) -> bool:
-        """Initialize music service using only Qdrant cloud API"""
+        """Initialize music service using Qdrant cloud API"""
         try:
-            # Initialize semantic search without local metadata - purely cloud-based
-            try:
-                initialized = await self.semantic_search.initialize()
-                if initialized:
-                    logger.info("✅ Music service initialized with Qdrant cloud API (no local metadata)")
-                    self.is_initialized = True
-                    return True
-                else:
-                    logger.warning("⚠️ Qdrant initialization failed, music service unavailable")
-                    return False
-            except Exception as e:
-                logger.error(f"Failed to initialize Qdrant semantic search: {e}")
+            initialized = await self.semantic_search.initialize()
+            if initialized:
+                logger.info("[MUSIC] Music service initialized with Qdrant cloud API")
+                self.is_initialized = True
+                return True
+            else:
+                logger.warning("[MUSIC] Qdrant initialization failed, music service unavailable")
                 return False
-
         except Exception as e:
-            logger.error(f"Failed to initialize music service: {e}")
+            logger.error(f"[MUSIC] Failed to initialize music service: {e}")
             return False
 
     def get_song_url(self, filename: str, language: str = "English") -> str:

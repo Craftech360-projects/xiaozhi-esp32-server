@@ -47,37 +47,6 @@ services:
     networks:
       - manager-api-network
 
-  # Redis Commander (Optional - Web UI for Redis)
-  redis-commander:
-    image: rediscommander/redis-commander:latest
-    container_name: manager-api-redis-commander
-    restart: unless-stopped
-    environment:
-      REDIS_HOSTS: local:manager-api-redis:6379:0:redispassword
-    ports:
-      - "8081:8081"
-    depends_on:
-      - manager-api-redis
-    networks:
-      - manager-api-network
-
-  # phpMyAdmin (Optional - Web UI for MySQL)
-  phpmyadmin:
-    image: phpmyadmin/phpmyadmin
-    container_name: manager-api-phpmyadmin
-    restart: unless-stopped
-    environment:
-      PMA_HOST: manager-api-db
-      PMA_PORT: 3306
-      PMA_USER: root
-      PMA_PASSWORD: rootpassword
-      MYSQL_ROOT_PASSWORD: rootpassword
-    ports:
-      - "8080:80"
-    depends_on:
-      - manager-api-db
-    networks:
-      - manager-api-network
 
 volumes:
   mysql_data:
