@@ -155,13 +155,13 @@ async def entrypoint(ctx: JobContext):
 
     start_report_thread(session)
 
-    def stop_reporting():
-        stop_report_thread(session)
+    async def stop_reporting():
+        await asyncio.to_thread(stop_report_thread, session)
 
     ctx.add_shutdown_callback(stop_reporting)
 
-    def close_api_client():
-        manage_api_http_safe_close()
+    async def close_api_client():
+        await asyncio.to_thread(manage_api_http_safe_close)
 
     ctx.add_shutdown_callback(close_api_client)
 
