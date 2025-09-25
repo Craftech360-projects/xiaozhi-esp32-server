@@ -240,6 +240,13 @@ class LiveKitBridge extends Emitter {
                 // Send TTS stop message to device
                 this.sendTtsStopMessage();
               }
+              else if(
+                data.data.old_state === "listening" &&
+                data.data.new_state === "thinking"
+              )
+              {
+                  this.sendLLMThinkMessage();
+              }
               break;
             case "user_input_transcribed":
               // console.log(`Transcription: ${JSON.stringify(data.data)}`);
@@ -450,9 +457,9 @@ class LiveKitBridge extends Emitter {
             console.log(`🤖 [AGENT] Agent joined the room: ${participant.identity}`);
 
             // Send initial greeting message to let user know agent is ready
-            setTimeout(() => {
-              this.sendInitialGreeting();
-            }, 1000); // Small delay to ensure connection is stable
+            // setTimeout(() => {
+            //   this.sendInitialGreeting();
+            // }, 1000); // Small delay to ensure connection is stable
           }
         });
 
@@ -857,6 +864,20 @@ class LiveKitBridge extends Emitter {
     const message = {
       type: "tts",
       state: "stop",
+      session_id: this.connection.udp.session_id,
+    };
+
+    console.log(`📤 [MQTT OUT] Sending TTS stop to device: ${this.macAddress}`);
+    this.connection.sendMqttMessage(JSON.stringify(message));
+  }
+
+
+  sendLLMThinkMessage(){
+     if (!this.connection) return;
+    console.log("Sending LLM think message");
+    const message = {
+      type: "llm",
+      state: "think",
       session_id: this.connection.udp.session_id,
     };
 
