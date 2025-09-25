@@ -94,12 +94,16 @@ public class SysParamsController {
     @Operation(summary = "Modify")
     @LogOperation("修改")
     @RequiresPermissions("sys:role:superAdmin")
-    public Result<Void> update(@RequestBody SysParamsDTO dto) {
+    public Result<Void> update(@RequestBody SysParamsDTO dto,
+                              @RequestParam(value = "skipValidation", required = false, defaultValue = "false") Boolean skipValidation) {
+        // Debug logging
+        System.out.println("🔧 UPDATE PARAM - paramCode: " + dto.getParamCode() + ", skipValidation: " + skipValidation);
+
         // 效验数据
         ValidatorUtils.validateEntity(dto, UpdateGroup.class, DefaultGroup.class);
 
-        // 验证WebSocket地址列表
-        validateWebSocketUrls(dto.getParamCode(), dto.getParamValue());
+        // 验证WebSocket地址列表 (可选择跳过)
+        validateWebSocketUrls(dto.getParamCode(), dto.getParamValue(), skipValidation);
 
         // 验证OTA地址
         validateOtaUrl(dto.getParamCode(), dto.getParamValue());
@@ -118,13 +122,18 @@ public class SysParamsController {
     /**
      * 验证WebSocket地址列表
      *
+     * @param paramCode 参数编码
      * @param urls WebSocket地址列表，以分号分隔
+     * @param skipValidation 是否跳过连接测试验证
      * @return 验证结果
      */
-    private void validateWebSocketUrls(String paramCode, String urls) {
+    private void validateWebSocketUrls(String paramCode, String urls, Boolean skipValidation) {
         if (!paramCode.equals(Constant.SERVER_WEBSOCKET)) {
             return;
         }
+
+        System.out.println("🔧 WEBSOCKET VALIDATION - paramCode: " + paramCode + ", skipValidation: " + skipValidation);
+
         String[] wsUrls = urls.split("\\;");
         if (wsUrls.length == 0) {
             throw new RenException("WebSocket地址列表不能为空");
@@ -141,9 +150,11 @@ public class SysParamsController {
                     throw new RenException("WebSocket地址格式不正确: " + url);
                 }
 
-                // 测试WebSocket连接
-                if (!WebSocketValidator.testConnection(url)) {
+                // 测试WebSocket连接 (可选择跳过)
+                if (!skipValidation && !WebSocketValidator.testConnection(url)) {
                     throw new RenException("WebSocket连接测试失败: " + url);
+                } else if (skipValidation) {
+                    System.out.println("🚀 SKIPPING WebSocket connection test for: " + url);
                 }
             }
         }

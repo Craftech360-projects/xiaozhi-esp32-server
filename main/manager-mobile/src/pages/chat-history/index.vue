@@ -74,6 +74,17 @@ async function loadChatSessions(page = 1, isRefresh = false) {
       limit: pageSize,
     })
 
+    // Debug logging for frontend timestamps
+    if (response.list && response.list.length > 0) {
+      const firstSession = response.list[0]
+      console.log('🔥 SIDEBAR TIMESTAMP DEBUG:', {
+        sessionId: firstSession.sessionId,
+        sessionCreatedAt: firstSession.createdAt,
+        type: typeof firstSession.createdAt,
+        formatted: formatTime(firstSession.createdAt)
+      })
+    }
+
     if (page === 1) {
       sessionList.value = response.list || []
     }
@@ -112,52 +123,10 @@ async function loadMore() {
   await loadChatSessions(currentPage.value + 1)
 }
 
-// 格式化时间
+// Format time to match chat detail display format (HH:MM) - EXACT COPY
 function formatTime(timeStr: string) {
-  if (!timeStr)
-    return '未知时间'
-    
-  // 处理时间字符串，确保格式正确
-  const date = new Date(timeStr.replace(' ', 'T')) // 转换为ISO格式
-  const now = new Date()
-  
-  // 检查日期是否有效
-  if (Number.isNaN(date.getTime())) {
-    return timeStr // 如果解析失败，直接返回原字符串
-  }
-  
-  const diff = now.getTime() - date.getTime()
-  
-  // 小于1分钟
-  if (diff < 60000)
-    return '刚刚'
-    
-  // 小于1小时
-  if (diff < 3600000)
-    return `${Math.floor(diff / 60000)}分钟前`
-    
-  // 小于1天（24小时）
-  if (diff < 86400000)
-    return `${Math.floor(diff / 3600000)}小时前`
-    
-  // 小于7天
-  if (diff < 604800000) {
-    const days = Math.floor(diff / 86400000)
-    return `${days}天前`
-  }
-  
-  // 超过7天，显示具体日期
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  const currentYear = now.getFullYear()
-  
-  // 如果是当前年份，不显示年份
-  if (year === currentYear) {
-    return `${month}-${day}`
-  }
-  
-  return `${year}-${month}-${day}`
+  const date = new Date(timeStr)
+  return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`
 }
 
 // 进入聊天详情

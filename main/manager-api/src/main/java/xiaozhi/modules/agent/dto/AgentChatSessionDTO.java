@@ -1,6 +1,6 @@
 package xiaozhi.modules.agent.dto;
 
-import java.time.LocalDateTime;
+import java.util.Date;
 
 import lombok.Data;
 
@@ -17,7 +17,7 @@ public class AgentChatSessionDTO {
     /**
      * 会话时间
      */
-    private LocalDateTime createdAt;
+    private Date createdAt;
 
     /**
      * 聊天条数

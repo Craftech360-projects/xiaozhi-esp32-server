@@ -157,8 +157,18 @@ export default {
     },
     // 修改
     updateParam(data, callback) {
+        // Check if this is a WebSocket parameter that needs validation skip
+        const isWebSocketParam = data.paramCode && data.paramCode === 'server.websocket';
+        let url = `${getServiceUrl()}/admin/params`;
+
+        // Add skipValidation=true for WebSocket parameters to avoid connection validation
+        if (isWebSocketParam) {
+            url += '?skipValidation=true';
+            console.log('Detected WebSocket parameter, adding skipValidation=true to URL:', url);
+        }
+
         RequestService.sendRequest()
-            .url(`${getServiceUrl()}/admin/params`)
+            .url(url)
             .method('PUT')
             .data(data)
             .success((res) => {

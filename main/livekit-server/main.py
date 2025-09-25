@@ -1,3 +1,17 @@
+from src.utils.model_preloader import model_preloader
+from src.utils.model_cache import model_cache
+from src.utils.database_helper import DatabaseHelper
+from src.services.chat_history_service import ChatHistoryService
+from src.services.prompt_service import PromptService
+from src.services.unified_audio_player import UnifiedAudioPlayer
+from src.services.foreground_audio_player import ForegroundAudioPlayer
+from src.services.story_service import StoryService
+from src.services.music_service import MusicService
+from src.utils.helpers import UsageManager
+from src.handlers.chat_logger import ChatEventHandler
+from src.agent.main_agent import Assistant
+from src.providers.provider_factory import ProviderFactory
+from src.config.config_loader import ConfigLoader
 import logging
 import asyncio
 import os
@@ -20,36 +34,23 @@ from livekit.plugins import noise_cancellation
 load_dotenv(".env")
 
 # Import our organized modules
-from src.config.config_loader import ConfigLoader
-from src.providers.provider_factory import ProviderFactory
-from src.agent.main_agent import Assistant
-from src.handlers.chat_logger import ChatEventHandler
-from src.utils.helpers import UsageManager
-from src.services.music_service import MusicService
-from src.services.story_service import StoryService
-from src.services.foreground_audio_player import ForegroundAudioPlayer
-from src.services.unified_audio_player import UnifiedAudioPlayer
-
-from src.services.prompt_service import PromptService
-from src.services.chat_history_service import ChatHistoryService
-from src.utils.database_helper import DatabaseHelper
-
-from src.utils.model_cache import model_cache
-from src.utils.model_preloader import model_preloader
 
 
 logger = logging.getLogger("agent")
+
 
 async def delete_livekit_room(room_name: str):
     """Delete a LiveKit room using the API"""
     try:
         # Get LiveKit credentials from environment
-        livekit_url = os.getenv("LIVEKIT_URL", "").replace("ws://", "http://").replace("wss://", "https://")
+        livekit_url = os.getenv("LIVEKIT_URL", "").replace(
+            "ws://", "http://").replace("wss://", "https://")
         api_key = os.getenv("LIVEKIT_API_KEY")
         api_secret = os.getenv("LIVEKIT_API_SECRET")
 
         if not all([livekit_url, api_key, api_secret]):
-            logger.warning("LiveKit credentials not configured for room deletion")
+            logger.warning(
+                "LiveKit credentials not configured for room deletion")
             return
 
         # For LiveKit Cloud, use the management API
@@ -70,7 +71,8 @@ async def delete_livekit_room(room_name: str):
         logger.info(f"🗑️ Successfully deleted room: {room_name}")
 
     except ImportError:
-        logger.warning("LiveKit API client not available, using HTTP API directly")
+        logger.warning(
+            "LiveKit API client not available, using HTTP API directly")
         # Fallback to direct HTTP API call
         try:
             import jwt
@@ -97,15 +99,18 @@ async def delete_livekit_room(room_name: str):
 
                     async with session.post(url, json=payload, headers=headers) as resp:
                         if resp.status == 200:
-                            logger.info(f"🗑️ Successfully deleted room via API: {room_name}")
+                            logger.info(
+                                f"🗑️ Successfully deleted room via API: {room_name}")
                         else:
-                            logger.error(f"Failed to delete room: {resp.status}")
+                            logger.error(
+                                f"Failed to delete room: {resp.status}")
                 finally:
                     await session.close()
         except Exception as e:
             logger.error(f"Failed to delete room via HTTP API: {e}")
     except Exception as e:
         logger.error(f"Failed to delete room: {e}")
+
 
 def prewarm(proc: JobProcess):
     """Fast prewarm function using cached models"""
@@ -134,12 +139,14 @@ def prewarm(proc: JobProcess):
 
     # Log cache status
     stats = model_cache.get_cache_stats()
-    logger.info(f"[PREWARM] Fast prewarm complete: {stats['cache_size']} models cached")
+    logger.info(
+        f"[PREWARM] Fast prewarm complete: {stats['cache_size']} models cached")
 
     # Optional: Wait briefly for background loading (non-blocking)
     if not model_preloader.is_ready():
         logger.info("[PREWARM] Background model loading in progress...")
         # Don't wait - let the session start immediately
+
 
 async def entrypoint(ctx: JobContext):
     """Main entrypoint for the organized agent"""
@@ -172,8 +179,10 @@ async def entrypoint(ctx: JobContext):
     if device_mac:
         try:
             # Get Manager API configuration
-            manager_api_url = os.getenv("MANAGER_API_URL", "http://192.168.1.101:8002/toy")
-            manager_api_secret = os.getenv("MANAGER_API_SECRET", "a3c1734a-1efe-4ab7-8f43-98f88b874e4b")
+            manager_api_url = os.getenv(
+                "MANAGER_API_URL")
+            manager_api_secret = os.getenv(
+                "MANAGER_API_SECRET")
 
             # Create database helper and get agent_id
             db_helper = DatabaseHelper(manager_api_url, manager_api_secret)
@@ -190,8 +199,10 @@ async def entrypoint(ctx: JobContext):
 
             # Start periodic sending
             chat_history_service.start_periodic_sending()
-            logger.info(f"📝✅ Chat history service initialized for MAC: {device_mac}, Agent ID: {agent_id}")
-            logger.info(f"📝📊 Service config: batch_size={chat_history_service.batch_size}, interval={chat_history_service.send_interval}s")
+            logger.info(
+                f"📝✅ Chat history service initialized for MAC: {device_mac}, Agent ID: {agent_id}")
+            logger.info(
+                f"📝📊 Service config: batch_size={chat_history_service.batch_size}, interval={chat_history_service.send_interval}s")
 
         except Exception as e:
             logger.error(f"📝❌ Failed to initialize chat history service: {e}")
@@ -201,17 +212,22 @@ async def entrypoint(ctx: JobContext):
     if device_mac:
         try:
             agent_prompt = await prompt_service.get_prompt(room_name, device_mac)
-            logger.info(f"🎯 Using device-specific prompt for MAC: {device_mac} (length: {len(agent_prompt)} chars)")
+            logger.info(
+                f"🎯 Using device-specific prompt for MAC: {device_mac} (length: {len(agent_prompt)} chars)")
             # Log first few lines of the fetched prompt for verification
             prompt_lines = agent_prompt.split('\n')[:5]  # First 5 lines
-            logger.info(f"📝 Fetched prompt preview: {' | '.join(line.strip()[:50] for line in prompt_lines if line.strip())}")
+            logger.info(
+                f"📝 Fetched prompt preview: {' | '.join(line.strip()[:50] for line in prompt_lines if line.strip())}")
         except Exception as e:
-            logger.warning(f"Failed to fetch device prompt for MAC {device_mac}, using default: {e}")
+            logger.warning(
+                f"Failed to fetch device prompt for MAC {device_mac}, using default: {e}")
             agent_prompt = ConfigLoader.get_default_prompt()
-            logger.info(f"📄 Fallback to default prompt (length: {len(agent_prompt)} chars)")
+            logger.info(
+                f"📄 Fallback to default prompt (length: {len(agent_prompt)} chars)")
     else:
         agent_prompt = ConfigLoader.get_default_prompt()
-        logger.info(f"📄 Using default prompt - no MAC in room name '{room_name}' (length: {len(agent_prompt)} chars)")
+        logger.info(
+            f"📄 Using default prompt - no MAC in room name '{room_name}' (length: {len(agent_prompt)} chars)")
 
     # Get VAD first as it's needed for STT
     vad = ctx.proc.userdata["vad"]
@@ -221,9 +237,11 @@ async def entrypoint(ctx: JobContext):
 
     # Log LLM info for debugging (but don't hook into it - use conversation events instead)
     if chat_history_service:
-        logger.debug(f"🧠 Using LLM type: {type(llm)} (will capture responses via conversation_item_added event)")
+        logger.debug(
+            f"🧠 Using LLM type: {type(llm)} (will capture responses via conversation_item_added event)")
 
-    stt = ProviderFactory.create_stt(groq_config, vad)  # Pass VAD to STT factory
+    stt = ProviderFactory.create_stt(
+        groq_config, vad)  # Pass VAD to STT factory
     tts = ProviderFactory.create_tts(groq_config, tts_config)
     # Disable turn detection to avoid timeout issues
     turn_detection = ProviderFactory.create_turn_detection()
@@ -254,7 +272,8 @@ async def entrypoint(ctx: JobContext):
     else:
         logger.info("[INIT] Creating new music and story services...")
         # Create new services with preloaded models
-        music_service = MusicService(preloaded_embedding_model, preloaded_qdrant_client)
+        music_service = MusicService(
+            preloaded_embedding_model, preloaded_qdrant_client)
         story_service = StoryService()
 
     audio_player = ForegroundAudioPlayer()
@@ -262,11 +281,13 @@ async def entrypoint(ctx: JobContext):
 
     # Create agent with dynamic prompt and inject services
     assistant = Assistant(instructions=agent_prompt)
-    assistant.set_services(music_service, story_service, audio_player, unified_audio_player)
+    assistant.set_services(music_service, story_service,
+                           audio_player, unified_audio_player)
 
     # Log session info (responses will be captured via conversation_item_added event)
     if chat_history_service:
-        logger.debug("🎯 Chat history service ready - will capture via conversation_item_added and session.history")
+        logger.debug(
+            "🎯 Chat history service ready - will capture via conversation_item_added and session.history")
 
     # Setup event handlers and pass assistant reference for abort handling
     ChatEventHandler.set_assistant(assistant)
@@ -274,9 +295,9 @@ async def entrypoint(ctx: JobContext):
         ChatEventHandler.set_chat_history_service(chat_history_service)
         logger.info(f"📝🔗 Chat history service connected to event handlers")
     else:
-        logger.warning(f"📝⚠️ No chat history service available - events will not be captured")
+        logger.warning(
+            f"📝⚠️ No chat history service available - events will not be captured")
     ChatEventHandler.setup_session_handlers(session, ctx)
-
 
     # Setup usage tracking
     usage_manager = UsageManager()
@@ -299,7 +320,8 @@ async def entrypoint(ctx: JobContext):
                 # Cache the initialized service
                 model_cache.cache_service("music_service", music_service)
                 languages = await music_service.get_all_languages()
-                logger.info(f"[INIT] Music service initialized with {len(languages)} languages")
+                logger.info(
+                    f"[INIT] Music service initialized with {len(languages)} languages")
             else:
                 logger.warning("[INIT] Music service initialization failed")
 
@@ -307,22 +329,26 @@ async def entrypoint(ctx: JobContext):
                 # Cache the initialized service
                 model_cache.cache_service("story_service", story_service)
                 categories = await story_service.get_all_categories()
-                logger.info(f"[INIT] Story service initialized with {len(categories)} categories")
+                logger.info(
+                    f"[INIT] Story service initialized with {len(categories)} categories")
             else:
                 logger.warning("[INIT] Story service initialization failed")
 
         except Exception as e:
-            logger.error(f"[INIT] Failed to initialize music/story services: {e}")
+            logger.error(
+                f"[INIT] Failed to initialize music/story services: {e}")
     else:
         # Services are from cache, just log their status
         try:
             if music_service and music_service.is_initialized:
                 languages = await music_service.get_all_languages()
-                logger.info(f"[FAST] Music service ready with {len(languages)} languages")
+                logger.info(
+                    f"[FAST] Music service ready with {len(languages)} languages")
 
             if story_service and story_service.is_initialized:
                 categories = await story_service.get_all_categories()
-                logger.info(f"[FAST] Story service ready with {len(categories)} categories")
+                logger.info(
+                    f"[FAST] Story service ready with {len(categories)} categories")
         except Exception as e:
             logger.warning(f"[FAST] Error checking cached services: {e}")
 
@@ -336,7 +362,8 @@ async def entrypoint(ctx: JobContext):
             logger.info("Noise cancellation enabled (requires LiveKit Cloud)")
         except Exception as e:
             logger.warning(f"Could not enable noise cancellation: {e}")
-            logger.info("Continuing without noise cancellation (local server mode)")
+            logger.info(
+                "Continuing without noise cancellation (local server mode)")
             room_options = None
     else:
         logger.info("Noise cancellation disabled by configuration")
@@ -370,24 +397,30 @@ async def entrypoint(ctx: JobContext):
                     # Use the documented method to save conversation history
                     with open(filepath, 'w', encoding='utf-8') as f:
                         history_dict = session.history.to_dict()
-                        json.dump(history_dict, f, indent=2, ensure_ascii=False)
+                        json.dump(history_dict, f, indent=2,
+                                  ensure_ascii=False)
 
                     message_count = len(history_dict.get('messages', []))
-                    logger.info(f"💾✅ Session history saved: {filepath} ({message_count} messages)")
+                    logger.info(
+                        f"💾✅ Session history saved: {filepath} ({message_count} messages)")
 
                     # Log a sample of the conversation for verification
                     if message_count > 0:
                         messages = history_dict.get('messages', [])
-                        for i, msg in enumerate(messages[-3:]):  # Last 3 messages
+                        # Last 3 messages
+                        for i, msg in enumerate(messages[-3:]):
                             role = msg.get('role', 'unknown')
                             content = msg.get('content', '')
                             if isinstance(content, list):
                                 # Handle content as list (some formats)
-                                content = ' '.join(str(item) for item in content)
-                            logger.debug(f"💾 Message {i}: {role} - '{str(content)[:50]}...'")
+                                content = ' '.join(str(item)
+                                                   for item in content)
+                            logger.debug(
+                                f"💾 Message {i}: {role} - '{str(content)[:50]}...'")
 
                 else:
-                    logger.warning(f"💾⚠️ Session history not available or empty for backup")
+                    logger.warning(
+                        f"💾⚠️ Session history not available or empty for backup")
             except Exception as e:
                 logger.error(f"💾❌ Failed to save session history: {e}")
                 import traceback
@@ -407,7 +440,8 @@ async def entrypoint(ctx: JobContext):
                     logger.info("Ending agent session")
                     await session.aclose()
             except Exception as e:
-                logger.warning(f"Session close error (expected during shutdown): {e}")
+                logger.warning(
+                    f"Session close error (expected during shutdown): {e}")
 
             # 4. Stop audio services
             try:
@@ -433,7 +467,8 @@ async def entrypoint(ctx: JobContext):
                     logger.info("Disconnecting from LiveKit room")
                     await ctx.room.disconnect()
             except Exception as e:
-                logger.warning(f"Room disconnect error (may already be disconnected): {e}")
+                logger.warning(
+                    f"Room disconnect error (may already be disconnected): {e}")
 
             # 7. Request room deletion via API (requires admin token)
             try:
@@ -452,7 +487,8 @@ async def entrypoint(ctx: JobContext):
     def on_participant_disconnected(participant: rtc.RemoteParticipant):
         nonlocal participant_count
         participant_count -= 1
-        logger.info(f"👤 Participant disconnected: {participant.identity}, remaining: {participant_count}")
+        logger.info(
+            f"👤 Participant disconnected: {participant.identity}, remaining: {participant_count}")
 
         # If no participants left, cleanup room and session
         if participant_count == 0:
@@ -463,7 +499,8 @@ async def entrypoint(ctx: JobContext):
     def on_participant_connected(participant: rtc.RemoteParticipant):
         nonlocal participant_count
         participant_count += 1
-        logger.info(f"👤 Participant connected: {participant.identity}, total: {participant_count}")
+        logger.info(
+            f"👤 Participant connected: {participant.identity}, total: {participant_count}")
 
     # Monitor room disconnection
     @ctx.room.on("disconnected")
@@ -490,7 +527,8 @@ async def entrypoint(ctx: JobContext):
         unified_audio_player.set_context(ctx)
         logger.info("Audio players integrated with session and context")
     except Exception as e:
-        logger.warning(f"Failed to integrate audio players with session/context: {e}")
+        logger.warning(
+            f"Failed to integrate audio players with session/context: {e}")
 
     await ctx.connect()
 
