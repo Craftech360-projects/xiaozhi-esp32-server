@@ -10,7 +10,7 @@ knife4j:
 
 # Server configuration
 server:
-  secret: 08838126-5cae-46b8-a64c-99d8ca51f170
+  secret: a3c1734a-1efe-4ab7-8f43-98f88b874e4b
 spring:
   datasource:
     druid:

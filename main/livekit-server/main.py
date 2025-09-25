@@ -128,7 +128,9 @@ async def entrypoint(ctx: JobContext):
         if education_service:
             assistant.education_service = education_service
             assistant.is_service_initialized = True
-            logger.info("✅ Using prewarmed educational RAG system")
+            # Ensure Grade 6 Science context is set
+            await education_service.set_student_context(6, "science")
+            logger.info("✅ Using prewarmed educational RAG system with Grade 6 Science context")
         else:
             # Create a lightweight education service for this client
             logger.info("🔧 Creating educational service for client...")
@@ -140,7 +142,9 @@ async def entrypoint(ctx: JobContext):
             if success:
                 assistant.education_service = education_service
                 assistant.is_service_initialized = True
-                logger.info("✅ Educational service ready for client")
+                # Set Grade 6 Science context
+                await education_service.set_student_context(6, "science")
+                logger.info("✅ Educational service ready for client with Grade 6 Science context")
             else:
                 logger.warning("⚠️ Failed to initialize educational service for client")
     else:

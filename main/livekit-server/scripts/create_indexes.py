@@ -35,11 +35,11 @@ async def create_indexes():
     qdrant_manager = QdrantEducationManager()
 
     try:
-        # Create indexes for all collections
-        success = await qdrant_manager.create_indexes_for_all_collections()
+        # Create indexes for science collections (grade_06_science and grade_10_science)
+        success = await qdrant_manager.create_indexes_for_science_collections()
 
         if success:
-            logger.info("✅ All payload indexes created successfully!")
+            logger.info("✅ Science collection payload indexes created successfully!")
         else:
             logger.error("❌ Failed to create some payload indexes")
 

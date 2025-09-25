@@ -242,7 +242,7 @@ public interface Constant {
     /**
      * 无效固件URL
      */
-    String INVALID_FIRMWARE_URL = "http://64.227.170.31:8001/toy/otaMag/download/NOT_ACTIVATED_FIRMWARE_THIS_IS_A_INVALID_URL";
+    String INVALID_FIRMWARE_URL = "http://192.168.1.101:8001/otaMag/download/NOT_ACTIVATED_FIRMWARE_THIS_IS_A_INVALID_URL";
 
     /**
      * 字典类型

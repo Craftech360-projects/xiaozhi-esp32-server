@@ -224,6 +224,8 @@ class QdrantEducationManager:
                 ("grade", PayloadSchemaType.INTEGER),
                 ("subject", PayloadSchemaType.KEYWORD),
                 ("page_number", PayloadSchemaType.INTEGER),
+                ("chapter_number", PayloadSchemaType.INTEGER),  # Added for chapter-based filtering
+                ("chapter", PayloadSchemaType.KEYWORD),  # Added for chapter title search
                 ("textbook_name", PayloadSchemaType.KEYWORD),
                 ("cognitive_level", PayloadSchemaType.KEYWORD),
                 ("keywords", PayloadSchemaType.KEYWORD),
