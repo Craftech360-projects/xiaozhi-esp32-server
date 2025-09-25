@@ -12,6 +12,7 @@ from ..rag.qdrant_manager import QdrantEducationManager
 from ..rag.embeddings import EmbeddingManager
 from ..rag.retriever import EducationalRetriever, RetrievalResult
 from ..education.textbook_ingestion import TextbookIngestionPipeline
+from .shared_component_manager import get_shared_educational_components, SharedEducationalComponents
 
 logger = logging.getLogger(__name__)
 
@@ -34,43 +35,56 @@ class EducationService:
         self.default_retrieval_limit = 5
         self.min_score_threshold = 0.5  # Lowered for better Grade 6 content retrieval
 
-    async def initialize(self) -> bool:
+    async def initialize(self, use_shared_components: bool = True) -> bool:
         """Initialize the education service"""
         try:
             logger.info("Initializing Education Service...")
 
-            # Initialize Qdrant manager (for both grade_06_science and grade_10_science)
-            qdrant_success = await self.qdrant_manager.initialize_grade6_and_grade10_science()
-            if not qdrant_success:
-                logger.error("Failed to initialize Qdrant collections")
-                return False
+            # Check if we can use shared components to avoid expensive initialization
+            if use_shared_components and SharedEducationalComponents.is_initialized():
+                logger.info("Using shared educational components...")
+                
+                # Get shared components
+                components = get_shared_educational_components()
+                self.qdrant_manager = components['qdrant_manager']
+                self.embedding_manager = components['embedding_manager']
+                self.ingestion_pipeline = components['ingestion_pipeline']
+            else:
+                logger.info("Initializing components individually...")
+                
+                # Initialize Qdrant manager (for both grade_06_science and grade_10_science)
+                qdrant_success = await self.qdrant_manager.initialize_grade6_and_grade10_science()
+                if not qdrant_success:
+                    logger.error("Failed to initialize Qdrant collections")
+                    return False
 
-            # Initialize embedding manager
-            embedding_success = await self.embedding_manager.initialize()
-            if not embedding_success:
-                logger.error("Failed to initialize embedding manager")
-                return False
+                # Initialize embedding manager
+                embedding_success = await self.embedding_manager.initialize()
+                if not embedding_success:
+                    logger.error("Failed to initialize embedding manager")
+                    return False
 
-            # Initialize retriever
+                # Initialize ingestion pipeline (lightweight - reuse components)
+                self.ingestion_pipeline = TextbookIngestionPipeline()
+                self.ingestion_pipeline.qdrant_manager = self.qdrant_manager  # Reuse initialized manager
+                self.ingestion_pipeline.embedding_manager = self.embedding_manager  # Reuse initialized manager
+                self.ingestion_pipeline.is_initialized = True  # Skip duplicate initialization
+                logger.info("Textbook ingestion pipeline configured (reusing components)")
+
+            # Initialize retriever with the (potentially shared) components
             self.retriever = EducationalRetriever(
                 self.qdrant_manager.client,
                 self.embedding_manager
             )
 
-            # Initialize ingestion pipeline (lightweight - reuse components)
-            self.ingestion_pipeline = TextbookIngestionPipeline()
-            self.ingestion_pipeline.qdrant_manager = self.qdrant_manager  # Reuse initialized manager
-            self.ingestion_pipeline.embedding_manager = self.embedding_manager  # Reuse initialized manager
-            self.ingestion_pipeline.is_initialized = True  # Skip duplicate initialization
-            logger.info("Textbook ingestion pipeline configured (reusing components)")
-
             self.is_initialized = True
             logger.info("Education Service initialized successfully")
 
-            # Log collection statistics
-            stats = await self.qdrant_manager.get_collection_stats()
-            logger.info(f"Available collections: {stats['total_collections']}")
-            logger.info(f"Total educational content points: {stats['total_points']}")
+            # Log collection statistics only if not using shared components
+            if not (use_shared_components and SharedEducationalComponents.is_initialized()):
+                stats = await self.qdrant_manager.get_collection_stats()
+                logger.info(f"Available collections: {stats['total_collections']}")
+                logger.info(f"Total educational content points: {stats['total_points']}")
 
             return True
 

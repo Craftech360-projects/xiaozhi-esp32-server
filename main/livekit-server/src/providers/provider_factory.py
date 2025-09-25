@@ -45,5 +45,6 @@ class ProviderFactory:
     @staticmethod
     def create_turn_detection():
         """Create turn detection model"""
-       # return MultilingualModel()
-        return  EnglishModel()
+        # return MultilingualModel()
+        from livekit.plugins.turn_detector.english import EnglishModel
+        return EnglishModel()

@@ -40,41 +40,69 @@ else:
 
 def prewarm(proc: JobProcess):
     """Prewarm function to load VAD model and initialize education service"""
+    # Load configuration (environment variables already loaded at module level)
+    groq_config = ConfigLoader.get_groq_config()
+    tts_config = ConfigLoader.get_tts_config()
+    agent_config = ConfigLoader.get_agent_config()
+    
+    logger.info("🔥 Starting prewarm process...")
+    
+    # Preload VAD model
     proc.userdata["vad"] = ProviderFactory.create_vad()
+    logger.info("✅ VAD model prewarmed")
 
-    # Initialize education service if enabled and not already done
+    # Preload LLM model
+    try:
+        proc.userdata["llm"] = ProviderFactory.create_llm(groq_config)
+        logger.info("✅ LLM model prewarmed")
+    except Exception as e:
+        logger.error(f"❌ Error prewarming LLM: {e}")
+        proc.userdata["llm"] = None
+
+    # Preload STT model
+    try:
+        proc.userdata["stt"] = ProviderFactory.create_stt(groq_config)
+        logger.info("✅ STT model prewarmed")
+    except Exception as e:
+        logger.error(f"❌ Error prewarming STT: {e}")
+        proc.userdata["stt"] = None
+
+    # Preload TTS model
+    try:
+        proc.userdata["tts"] = ProviderFactory.create_tts(groq_config, tts_config)
+        logger.info("✅ TTS model prewarmed")
+    except Exception as e:
+        logger.error(f"❌ Error prewarming TTS: {e}")
+        proc.userdata["tts"] = None
+
+    # Turn detection model cannot be prewarmed (requires job context)
+    # So we set it to None and let it be created during entrypoint
+    proc.userdata["turn_detection"] = None
+    logger.info("⚠️ Turn detection model cannot be prewarmed (requires job context)")
+
+    # Initialize education service if enabled
     if ENABLE_EDUCATION:
-        # Check if already prewarmed using a simple file flag
-        prewarm_flag_file = "education_prewarmed.flag"
-
-        if os.path.exists(prewarm_flag_file):
-            logger.info("📚 Educational system already prewarmed, skipping...")
-            proc.userdata["education_service"] = None  # Will be initialized fresh per client
-            return
-
         try:
             import asyncio
-            from src.services.education_service import EducationService
+            from src.services.shared_component_manager import initialize_shared_components
 
-            logger.info("🔥 Prewarming educational RAG system...")
+            logger.info("🔥 Prewarming educational shared components...")
 
-            # Create and initialize education service
-            education_service = EducationService()
-
-            # Run async initialization in sync context
+            # Initialize shared educational components that can be reused across clients
+            # Run the async initialization in a new event loop since prewarm is sync
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
-                success = loop.run_until_complete(education_service.initialize())
+                success = loop.run_until_complete(initialize_shared_components())
                 if success:
-                    proc.userdata["education_service"] = education_service
-                    logger.info("✅ Educational RAG system prewarmed successfully")
-
-                    # Create flag file to prevent future prewarms
-                    with open(prewarm_flag_file, "w") as f:
-                        f.write("prewarmed")
+                    logger.info("✅ Educational shared components prewarmed successfully")
+                    
+                    # No need to create an educational service instance during prewarm
+                    # Each client will create their own instance using shared components
+                    proc.userdata["education_service"] = None
+                    logger.info("ℹ️ Educational service instances will be created per client using shared components")
                 else:
-                    logger.error("❌ Failed to prewarm educational system")
+                    logger.error("❌ Failed to prewarm educational shared components")
                     proc.userdata["education_service"] = None
             finally:
                 loop.close()
@@ -82,6 +110,8 @@ def prewarm(proc: JobProcess):
         except Exception as e:
             logger.error(f"❌ Error prewarming education service: {e}")
             proc.userdata["education_service"] = None
+
+    logger.info("🎉 Prewarm process completed")
 
 async def entrypoint(ctx: JobContext):
     """Main entrypoint for the organized agent"""
@@ -93,13 +123,29 @@ async def entrypoint(ctx: JobContext):
     tts_config = ConfigLoader.get_tts_config()
     agent_config = ConfigLoader.get_agent_config()
 
-    # Create providers using factory
-    llm = ProviderFactory.create_llm(groq_config)
-    stt = ProviderFactory.create_stt(groq_config)
-    tts = ProviderFactory.create_tts(groq_config, tts_config)
-    # Disable turn detection to avoid timeout issues
-    turn_detection = ProviderFactory.create_turn_detection()
+    # Use prewarmed providers from process userdata
+    llm = ctx.proc.userdata.get("llm")
+    stt = ctx.proc.userdata.get("stt")
+    tts = ctx.proc.userdata.get("tts")
+    turn_detection = ctx.proc.userdata.get("turn_detection")
     vad = ctx.proc.userdata["vad"]
+
+    # Fallback to factory creation if prewarm failed
+    if not llm:
+        logger.warning("LLM not prewarmed, creating now...")
+        llm = ProviderFactory.create_llm(groq_config)
+
+    if not stt:
+        logger.warning("STT not prewarmed, creating now...")
+        stt = ProviderFactory.create_stt(groq_config)
+
+    if not tts:
+        logger.warning("TTS not prewarmed, creating now...")
+        tts = ProviderFactory.create_tts(groq_config, tts_config)
+
+    if not turn_detection:
+        logger.info("Creating turn detection model (cannot be prewarmed)...")
+        turn_detection = ProviderFactory.create_turn_detection()
 
     # Set up voice AI pipeline
     session = AgentSession(
@@ -123,30 +169,32 @@ async def entrypoint(ctx: JobContext):
     # Create agent based on mode
     if ENABLE_EDUCATION:
         assistant = EducationalAssistant()
-        # Use the prewarmed education service from userdata, or create fresh if needed
-        education_service = ctx.proc.userdata.get("education_service")
-        if education_service:
+        # Create a new instance with shared components for each client
+        logger.info("🔧 Creating educational service for client with shared components...")
+        from src.services.education_service import EducationService
+
+        education_service = EducationService()
+        # Initialize using shared components (much faster than individual initialization)
+        success = await education_service.initialize(use_shared_components=True)
+        if success:
             assistant.education_service = education_service
             assistant.is_service_initialized = True
-            # Ensure Grade 6 Science context is set
+            # Set Grade 6 Science context for this client
             await education_service.set_student_context(6, "science")
-            logger.info("✅ Using prewarmed educational RAG system with Grade 6 Science context")
+            logger.info("✅ Educational service ready for client with Grade 6 Science context (using shared components)")
         else:
-            # Create a lightweight education service for this client
-            logger.info("🔧 Creating educational service for client...")
-            from src.services.education_service import EducationService
-
+            logger.warning("⚠️ Failed to initialize educational service for client, falling back to individual initialization...")
+            # Try with individual components if shared components failed
             education_service = EducationService()
-            # Quick initialization - should be fast due to global class flags
-            success = await education_service.initialize()
+            success = await education_service.initialize(use_shared_components=False)
             if success:
                 assistant.education_service = education_service
                 assistant.is_service_initialized = True
                 # Set Grade 6 Science context
                 await education_service.set_student_context(6, "science")
-                logger.info("✅ Educational service ready for client with Grade 6 Science context")
+                logger.info("✅ Educational service ready for client with Grade 6 Science context (using individual components)")
             else:
-                logger.warning("⚠️ Failed to initialize educational service for client")
+                logger.warning("⚠️ Failed to initialize educational service for client (even with individual components)")
     else:
         assistant = Assistant()
 
