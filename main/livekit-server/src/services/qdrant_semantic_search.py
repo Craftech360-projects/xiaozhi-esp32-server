@@ -5,6 +5,7 @@ Enhanced semantic search using vector database
 
 import logging
 import asyncio
+import os
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 
@@ -73,10 +74,11 @@ class QdrantSemanticSearch:
             collections = self.client.get_collections()
             logger.info("Connected to Qdrant successfully")
 
-            # Initialize embedding model
-            logger.info(f"Loading embedding model: {self.config['embedding_model']}")
-            self.model = SentenceTransformer(self.config["embedding_model"])
-            logger.info(f"Loaded embedding model: {self.config['embedding_model']}")
+            # Initialize embedding model from cache
+            logger.info(f"Loading embedding model from cache: {self.config['embedding_model']}")
+            from ..utils.model_cache import model_cache
+            self.model = model_cache.get_embedding_model(self.config["embedding_model"])
+            logger.info(f"✅ Loaded embedding model from cache: {self.config['embedding_model']}")
 
             # Check if collections exist and have data
             await self._ensure_collections_exist()

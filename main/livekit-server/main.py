@@ -254,6 +254,8 @@ async def entrypoint(ctx: JobContext):
         turn_detection=turn_detection,  # Disabled to avoid timeout
         vad=vad,
         preemptive_generation=agent_config['preemptive_generation'],
+        min_endpointing_delay=1.2,      # Increase from 500ms to 1.2s
+        min_interruption_duration=1.0,   # Require longer pause
     )
 
     # Get preloaded models from prewarm
@@ -272,9 +274,10 @@ async def entrypoint(ctx: JobContext):
     else:
         logger.info("[INIT] Creating new music and story services...")
         # Create new services with preloaded models
-        music_service = MusicService(
-            preloaded_embedding_model, preloaded_qdrant_client)
-        story_service = StoryService()
+
+        music_service = MusicService(preloaded_embedding_model, preloaded_qdrant_client)
+        story_service = StoryService(preloaded_embedding_model, preloaded_qdrant_client)
+
 
     audio_player = ForegroundAudioPlayer()
     unified_audio_player = UnifiedAudioPlayer()

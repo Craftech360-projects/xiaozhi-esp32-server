@@ -77,11 +77,12 @@ class QdrantSemanticSearch:
             return False
 
         try:
-            # Use preloaded model if available, otherwise load it
+            # Use preloaded model if available, otherwise load it from cache
             if self.model is None:
-                logger.info(f"Loading embedding model: {self.config['embedding_model']}")
-                self.model = SentenceTransformer(self.config["embedding_model"])
-                logger.info(f"✅ Loaded embedding model: {self.config['embedding_model']}")
+                logger.info(f"Loading embedding model from cache: {self.config['embedding_model']}")
+                from ..utils.model_cache import model_cache
+                self.model = model_cache.get_embedding_model(self.config["embedding_model"])
+                logger.info(f"✅ Loaded embedding model from cache: {self.config['embedding_model']}")
             else:
                 logger.info("✅ Using preloaded embedding model from prewarm")
 
