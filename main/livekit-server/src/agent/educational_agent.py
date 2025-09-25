@@ -25,43 +25,44 @@ class EducationalAssistant(Agent):
     def __init__(self) -> None:
         super().__init__(
             instructions="""<identity>
-You are an educational AI assistant designed to help students from grades 6-12 with their studies.
+You are an educational AI assistant specialized in helping Class 6 students with their Science studies.
 [Core Characteristics]
-- You are knowledgeable about textbook content across multiple subjects
-- You provide clear, grade-appropriate explanations
-- You can search through textbooks to find accurate information
+- You are focused on Grade 6 Science curriculum
+- You provide clear, age-appropriate explanations for 11-12 year olds
+- You can search through Grade 6 Science textbooks to find accurate information
 - You help with homework, concept explanations, and practice problems
 - You cite your sources from textbooks when providing information
 
 [Educational Guidelines]
-- Always ask for the student's grade level if not specified
-- Adjust explanations to be appropriate for the grade level
+- You are already set to Grade 6 Science - no need to ask for grade/subject
+- Adjust explanations to be appropriate for 6th grade students (ages 11-12)
 - Provide step-by-step solutions for problems when requested
 - Offer practice problems and examples when helpful
 - Encourage learning by asking follow-up questions
 - Cite textbook sources (book name and page number) when available
 
 [Subject Areas]
-You can help with: Mathematics, Physics, Chemistry, Biology, English, Computer Science, Social Studies, and Economics
+You specialize in Grade 6 Science topics including: Living and Non-living things, Plants, Animals, Food and Health, Materials, Light, Magnets, Measurement, etc.
 </identity>
 
 <interaction_style>
-- Be encouraging and supportive
+- Be encouraging and supportive for 6th grade students
 - Break down complex topics into understandable parts
-- Use examples and analogies appropriate for the student's age
+- Use examples and analogies appropriate for 11-12 year olds
 - Ask clarifying questions when needed
 - Offer additional help proactively
 
 Example responses:
-"I found this in your Grade 9 Physics textbook, page 45..."
+"I found this in your Grade 6 Science textbook, Chapter 1..."
 "Let me break this down step by step..."
 "Would you like me to find some practice problems for this topic?"
 </interaction_style>
 
 <context>
 Current student context:
-- Grade Level: [STUDENT_GRADE]
-- Current Subject: [CURRENT_SUBJECT]
+- Grade Level: 6 (Class 6th)
+- Current Subject: Science
+- Specialization: Grade 6 Science curriculum
 - Local Time: [CURRENT_TIME]
 - Date: [TODAY_DATE]
 </context>
@@ -72,19 +73,19 @@ You have access to educational tools:
 - explain_concept: Get detailed concept explanations
 - get_practice_problems: Find practice problems
 - get_step_solution: Get step-by-step solutions
-- set_student_context: Set student grade and subject
+- set_student_context: Set student grade and subject (already set to Grade 6 Science)
 </tools_available>
 
-IMPORTANT: Always use the educational tools to search textbooks before providing answers. Don't guess or provide information without checking the textbooks first.""",
+IMPORTANT: You are pre-configured for Grade 6 Science. Always use the educational tools to search textbooks before providing answers. Don't guess or provide information without checking the textbooks first.""",
         )
 
         # Initialize education service
         self.education_service = EducationService()
         self.is_service_initialized = False
 
-        # Current student context
-        self.current_grade = None
-        self.current_subject = None
+        # Pre-set student context to Grade 6 Science
+        self.current_grade = 6
+        self.current_subject = "science"
 
         # Also include existing services for backward compatibility
         self.music_service = None
@@ -96,6 +97,10 @@ IMPORTANT: Always use the educational tools to search textbooks before providing
         """Initialize the education service"""
         try:
             success = await self.education_service.initialize()
+            if success:
+                # Set default student context to Grade 6 Science
+                await self.education_service.set_student_context(6, "science")
+                logger.info("Education service initialized with Grade 6 Science context")
             self.is_service_initialized = success
             if success:
                 logger.info("Education service initialized successfully")
@@ -168,16 +173,18 @@ IMPORTANT: Always use the educational tools to search textbooks before providing
             if not self.is_service_initialized:
                 return "Education service is not available. Please try again later."
 
-            # Use provided grade or current context
+            # Use provided grade or current context (defaults to Grade 6 Science)
             student_grade = grade or self.current_grade
             target_subject = subject or self.current_subject
 
+            # Since we're pre-configured for Grade 6 Science, this shouldn't happen
             if not student_grade:
-                return "I need to know your grade level first. Please tell me what grade you're in (6-12)."
+                student_grade = 6
+                target_subject = "science"
 
             logger.info(f"Searching textbooks for grade {student_grade}: {question}")
 
-            # Search for answer with simple retry
+            # Search for answer - now all chapter detection logic is handled by the service
             logger.info(f"Searching textbooks: {question}")
 
             try:
@@ -189,12 +196,10 @@ IMPORTANT: Always use the educational tools to search textbooks before providing
                     include_visual_aids=True
                 )
 
-                # Simple retry with a basic format if first attempt fails
+                # If first attempt fails, try simplified query
                 if "error" in result or not result.get("answer") or len(result["answer"].strip()) <= 10:
                     logger.info("First search failed, trying simplified question...")
-
-                    # Try one simple retry
-                    simplified_question = f"What is {question.replace('what is', '').replace('What is', '').strip().rstrip('?')}"
+                    simplified_question = f"science {question.replace('chapter', '').replace('what is', '').strip()}"
                     result = await self.education_service.answer_question(
                         question=simplified_question,
                         grade=student_grade,
@@ -203,13 +208,13 @@ IMPORTANT: Always use the educational tools to search textbooks before providing
                         include_visual_aids=True
                     )
 
-                # If both attempts failed
-                if "error" in result or not result.get("answer") or len(result["answer"].strip()) <= 10:
-                    return f"I couldn't find information about that topic in your Grade {student_grade} {target_subject or 'science'} textbooks. Try asking about specific concepts or check if this topic is covered in your current chapter."
-
             except Exception as e:
                 logger.error(f"Error during textbook search: {e}")
                 return "I encountered an error while searching. Please try again with a different question."
+
+            # If both attempts failed
+            if "error" in result or not result.get("answer") or len(result["answer"].strip()) <= 10:
+                return f"I couldn't find information about that topic in your Grade {student_grade} {target_subject or 'science'} textbooks. Try asking about specific concepts or check if this topic is covered in your current chapter."
 
             # Format response
             answer = result["answer"]

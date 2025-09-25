@@ -26,12 +26,13 @@ class EducationService:
         self.ingestion_pipeline = None
 
         self.is_initialized = False
-        self.current_student_grade = None
-        self.current_subject = None
+        # Always default to Grade 6 Science
+        self.current_student_grade = 6
+        self.current_subject = "science"
 
         # Default settings
         self.default_retrieval_limit = 5
-        self.min_score_threshold = 0.7
+        self.min_score_threshold = 0.5  # Lowered for better Grade 6 content retrieval
 
     async def initialize(self) -> bool:
         """Initialize the education service"""
@@ -112,12 +113,58 @@ class EducationService:
             student_grade = grade or self.current_student_grade
             target_subject = subject or self.current_subject
 
-            if not student_grade:
-                return {"error": "No grade specified. Please set student context first."}
+            # Always ensure we're working with Grade 6 science
+            student_grade = 6
+            target_subject = "science"
 
-            logger.info(f"Answering question for Grade {student_grade}: {question}")
+            logger.info(f"Answering Grade 6 science question: {question}")
 
-            # Retrieve relevant content
+            # Enhanced detection logic - check for chapter and/or activity queries
+            import re
+            chapter_match = re.search(r'chapter\s*(\d+)', question.lower())
+            activity_match = re.search(r'activity\s*(\d+(?:\.\d+)?)', question.lower())
+
+            if chapter_match:
+                chapter_number = int(chapter_match.group(1))
+
+                if activity_match:
+                    # Both chapter and activity specified - use specific activity search
+                    activity_number = activity_match.group(1)
+                    logger.info(f"🎯 SERVICE: Detected chapter + activity query: Chapter {chapter_number}, Activity {activity_number}")
+
+                    # Use combined chapter + activity search
+                    activity_result = await self.search_by_chapter_and_activity(
+                        chapter_number=chapter_number,
+                        activity_number=activity_number,
+                        grade=student_grade,
+                        subject=target_subject
+                    )
+
+                    # If we found specific activity content, return it
+                    if activity_result and "error" not in activity_result and len(activity_result.get("answer", "")) > 50:
+                        logger.info(f"✅ SERVICE: Successfully retrieved Chapter {chapter_number} Activity {activity_number} content")
+                        return activity_result
+                    else:
+                        logger.info(f"⚠️ SERVICE: Activity {activity_number} not found in Chapter {chapter_number}, falling back to chapter search")
+
+                # Chapter-only query or activity search failed
+                logger.info(f"🎯 SERVICE: Detected chapter query: Chapter {chapter_number}")
+
+                # Use metadata filtering to get chapter content directly
+                chapter_result = await self.search_by_chapter(
+                    chapter_number=chapter_number,
+                    grade=student_grade,
+                    subject=target_subject
+                )
+
+                # If we found good chapter content, return it
+                if chapter_result and "error" not in chapter_result and len(chapter_result.get("answer", "")) > 100:
+                    logger.info(f"✅ SERVICE: Successfully retrieved Chapter {chapter_number} content via metadata")
+                    return chapter_result
+                else:
+                    logger.info(f"⚠️ SERVICE: Chapter {chapter_number} metadata search failed, falling back to semantic search")
+
+            # Retrieve relevant content using semantic search
             results = await self.retriever.retrieve(
                 query=question,
                 grade=student_grade,
@@ -128,7 +175,7 @@ class EducationService:
 
             if not results:
                 return {
-                    "answer": "I couldn't find information about that in your textbooks. Could you please rephrase your question or be more specific?",
+                    "answer": "Hmm, that's a great question! I don't have information about that specific topic in my science books right now. Can you ask me about living things, plants, animals, magnets, materials, or other 6th grade science topics? I'd love to help you learn!",
                     "confidence": 0.0,
                     "sources": [],
                     "suggestions": await self._get_topic_suggestions(question, student_grade, target_subject)
@@ -139,7 +186,7 @@ class EducationService:
 
             if not high_confidence_results:
                 return {
-                    "answer": "I found some related content, but I'm not confident it answers your question exactly. Could you please be more specific?",
+                    "answer": "I found some science topics that might be related, but I want to make sure I give you the best answer! Can you ask your question in a different way? For example, you could ask 'What are living things?' or 'How do magnets work?'",
                     "confidence": max([r.score for r in results]) if results else 0.0,
                     "sources": [],
                     "suggestions": await self._get_topic_suggestions(question, student_grade, target_subject)
@@ -582,39 +629,395 @@ class EducationService:
         return steps[:10]  # Limit to 10 steps
 
     def _format_answer_for_grade(self, content_pieces: List[str], grade: int) -> str:
-        """Format answer appropriately for grade level"""
+        """Format answer appropriately for Grade 6 students"""
         # Combine content pieces
         combined_content = " ".join(content_pieces)
 
-        # Format chemical formulas and equations for better TTS pronunciation
-        formatted_content = self._format_chemical_content_for_audio(combined_content)
+        # Always simplify for Grade 6 science (ages 11-12)
+        simplified_content = self._simplify_language(combined_content)
 
-        # Adjust language complexity based on grade
-        if grade <= 8:
-            # Simplify for middle school
-            return self._simplify_language(formatted_content)
-        else:
-            # Keep more sophisticated language for high school
-            return formatted_content
+        # Add examples for complex topics
+        with_examples = self._add_examples_for_complex_topics(simplified_content)
+
+        # Add encouraging and age-appropriate language
+        grade6_friendly = self._make_grade6_friendly(with_examples)
+
+        # Make TTS-friendly for Indian English
+        tts_friendly = self._make_tts_friendly_indian_english(grade6_friendly)
+
+        return tts_friendly
 
     def _simplify_language(self, text: str) -> str:
-        """Simplify language for younger students"""
-        # Simple replacements for common complex terms
+        """Simplify language for Grade 6 students (ages 11-12)"""
+        # Extensive replacements for Grade 6 appropriate language
         replacements = {
+            # Academic terms to simpler ones
             "utilize": "use",
             "demonstrate": "show",
             "consequently": "so",
             "furthermore": "also",
             "therefore": "so",
             "however": "but",
-            "approximately": "about"
+            "approximately": "about",
+            "acquire": "get",
+            "accumulate": "collect",
+            "adequate": "enough",
+            "adjacent": "next to",
+            "alternative": "other choice",
+            "analyze": "study",
+            "apparatus": "equipment",
+            "appropriate": "right",
+            "ascertain": "find out",
+            "calculate": "work out",
+            "commence": "start",
+            "comprehend": "understand",
+            "conclude": "end",
+            "construct": "build",
+            "determine": "find",
+            "establish": "set up",
+            "evaluate": "judge",
+            "examine": "look at",
+            "exceed": "go over",
+            "fundamental": "basic",
+            "illustrate": "show",
+            "implement": "do",
+            "indicate": "show",
+            "investigate": "look into",
+            "maintain": "keep",
+            "obtain": "get",
+            "participate": "take part",
+            "previously": "before",
+            "procedure": "steps",
+            "remainder": "what's left",
+            "represent": "stand for",
+            "require": "need",
+            "subsequently": "then",
+            "sufficient": "enough",
+            "technique": "way",
+            "terminate": "stop",
+            "transform": "change",
+            # Science-specific terms for Grade 6
+            "organism": "living thing",
+            "habitat": "home where animals live",
+            "environment": "everything around us",
+            "characteristic": "special thing about",
+            "observation": "what you see",
+            "experiment": "test to find out",
+            "microscope": "tool to see tiny things",
+            "photosynthesis": "how plants make food from sunlight",
+            "respiration": "breathing",
+            "reproduction": "making babies",
+            "classify": "put into groups",
+            "temperature": "how hot or cold",
+            "magnetic": "can stick to magnets",
+            "transparent": "see-through",
+            "opaque": "cannot see through",
+            "dissolve": "mix completely with water",
+            "evaporation": "water turning into air",
+            "condensation": "water drops forming",
+            "nutrients": "good things in food",
+            "vertebrate": "animal with backbone",
+            "invertebrate": "animal without backbone"
         }
 
         simplified = text
         for complex_word, simple_word in replacements.items():
-            simplified = simplified.replace(complex_word, simple_word)
+            # Use word boundaries to avoid partial replacements
+            import re
+            pattern = r'\b' + re.escape(complex_word) + r'\b'
+            simplified = re.sub(pattern, simple_word, simplified, flags=re.IGNORECASE)
 
         return simplified
+
+    def _make_grade6_friendly(self, text: str) -> str:
+        """Make content friendly and encouraging for 6th grade students"""
+
+        # Add encouraging phrases at the beginning
+        encouraging_starters = [
+            "Great question! Let me explain this in a simple way.",
+            "This is a fun science topic! Here's what you need to know:",
+            "You're learning something really cool! Here's how it works:",
+            "This is easier than it looks! Let me break it down:",
+            "Nice thinking! Let me help you understand this:",
+            "Science is amazing! Here's what's happening:",
+            "That's a wonderful science question! Let me explain:"
+        ]
+
+        # Check if text already starts with an encouraging phrase
+        starts_with_encouragement = any(
+            text.strip().startswith(starter.split('!')[0])
+            for starter in encouraging_starters
+        )
+
+        if not starts_with_encouragement and len(text.strip()) > 20:
+            import random
+            starter = random.choice(encouraging_starters)
+            text = f"{starter} {text}"
+
+        # Make sentences shorter and clearer
+        sentences = text.split('.')
+        improved_sentences = []
+
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+
+            # Break very long sentences
+            if len(sentence) > 100 and ',' in sentence:
+                parts = sentence.split(',')
+                for i, part in enumerate(parts):
+                    part = part.strip()
+                    if i == 0:
+                        improved_sentences.append(part)
+                    else:
+                        improved_sentences.append(f"Also, {part}")
+            else:
+                improved_sentences.append(sentence)
+
+        # Join sentences back with proper punctuation
+        result = '. '.join(improved_sentences)
+        if result and not result.endswith('.'):
+            result += '.'
+
+        # Add encouraging endings for explanations
+        if len(result) > 100:
+            encouraging_endings = [
+                " Keep practicing and you'll get even better at this!",
+                " You're doing great learning science!",
+                " Science can be fun when you understand it like this!",
+                " Great job working through this topic!",
+                " You've got this - keep up the good work!",
+                " Science is all around us - keep exploring!"
+            ]
+
+            if not any(result.endswith(ending.strip()) for ending in encouraging_endings):
+                import random
+                ending = random.choice(encouraging_endings)
+                result += ending
+
+        return result
+
+    def _add_examples_for_complex_topics(self, text: str, topic_results: list = None) -> str:
+        """Add simple examples to help explain complex science topics"""
+
+        # Add examples for common complex topics
+        example_mappings = {
+            "magnet": "For example, a magnet can pick up paper clips or stick to your refrigerator.",
+            "living things": "For example, plants, animals, and people are all living things because they grow, need food, and can have babies.",
+            "non-living things": "For example, rocks, water, and toys are non-living because they don't grow or need food.",
+            "states of matter": "For example, ice is solid water, regular water is liquid, and steam from hot water is gas.",
+            "solid": "For example, ice cubes, rocks, and books are all solids because they keep their shape.",
+            "liquid": "For example, water, milk, and juice are liquids because they can flow and take the shape of their container.",
+            "gas": "For example, the air we breathe and the steam from hot soup are gases that float around.",
+            "temperature": "For example, ice cream is cold (low temperature) and hot cocoa is warm (high temperature).",
+            "measuring": "For example, we use a ruler to measure how long something is, or a scale to see how heavy it is.",
+            "healthy food": "For example, fruits like apples, vegetables like carrots, and milk are healthy foods that help you grow strong.",
+            "materials": "For example, wood comes from trees, metal comes from rocks in the ground, and plastic is made in factories.",
+            "roots": "For example, carrots and radishes are roots we can eat, and tree roots help the tree get water from soil.",
+            "leaves": "For example, lettuce and spinach are leaves we eat, and tree leaves make food for the tree using sunlight.",
+            "stems": "For example, celery is a stem we can eat, and tree trunks are thick stems that hold up the tree.",
+            "flowers": "For example, roses and daisies are flowers that smell nice and help plants make seeds.",
+            "seeds": "For example, apple seeds can grow into apple trees, and bean seeds can grow into bean plants."
+        }
+
+        enhanced_text = text
+
+        # Check if the text discusses any topics that could use examples
+        for topic, example in example_mappings.items():
+            if topic.lower() in enhanced_text.lower() and example not in enhanced_text:
+                # Find a good place to insert the example
+                sentences = enhanced_text.split('. ')
+                for i, sentence in enumerate(sentences):
+                    if topic.lower() in sentence.lower() and len(sentence) > 20:
+                        # Insert example after this sentence
+                        sentences.insert(i + 1, example)
+                        enhanced_text = '. '.join(sentences)
+                        break
+
+        return enhanced_text
+
+    def _make_tts_friendly_indian_english(self, text: str) -> str:
+        """Make content TTS-friendly for Indian English pronunciation"""
+
+        # Remove all emojis and special characters
+        import re
+
+        # Remove emojis
+        emoji_pattern = re.compile("["
+                                 u"\U0001F600-\U0001F64F"  # emoticons
+                                 u"\U0001F300-\U0001F5FF"  # symbols & pictographs
+                                 u"\U0001F680-\U0001F6FF"  # transport & map
+                                 u"\U0001F1E0-\U0001F1FF"  # flags (iOS)
+                                 u"\U00002702-\U000027B0"
+                                 u"\U000024C2-\U0001F251"
+                                 u"\u2600-\u26FF"         # miscellaneous symbols
+                                 u"\u2700-\u27BF"         # dingbats
+                                 "]+", flags=re.UNICODE)
+
+        text = emoji_pattern.sub('', text)
+
+        # Remove checkmarks and other symbols
+        text = text.replace('✅', '').replace('❌', '').replace('➤', '')
+        text = text.replace('•', '').replace('◆', '').replace('★', '')
+
+        # Convert scientific formulas and equations for Indian English TTS
+        text = self._format_scientific_content_for_indian_tts(text)
+
+        # Fix pronunciation for Indian English
+        pronunciations = {
+            # Numbers and measurements
+            "0°C": "zero degrees Celsius",
+            "100°C": "hundred degrees Celsius",
+            "37°C": "thirty seven degrees Celsius",
+            "°F": "degrees Fahrenheit",
+            "cm": "centimetre",
+            "mm": "millimetre",
+            "km": "kilometre",
+            "kg": "kilogram",
+            "mg": "milligram",
+            "ml": "millilitre",
+            "pH": "pee aitch",
+
+            # Common Indian English corrections for TTS
+            "can't": "cannot",
+            "won't": "will not",
+            "don't": "do not",
+            "isn't": "is not",
+            "aren't": "are not",
+            "wasn't": "was not",
+            "weren't": "were not",
+            "hasn't": "has not",
+            "haven't": "have not",
+            "doesn't": "does not",
+
+            # Scientific terms with clear pronunciation
+            "vs": "versus",
+            "etc": "etcetera",
+            "i.e.": "that is",
+            "e.g.": "for example",
+            "&": "and",
+            "%": "percent",
+
+            # Fix common mispronunciations in Indian TTS
+            "iron": "eye-ron",
+            "recipe": "res-i-pee",
+            "vehicle": "vee-hi-kul",
+            "adult": "a-dult",
+            "debris": "deb-ree",
+            "route": "root",
+        }
+
+        for term, pronunciation in pronunciations.items():
+            # Use word boundaries to avoid partial replacements
+            pattern = r'\b' + re.escape(term) + r'\b'
+            text = re.sub(pattern, pronunciation, text, flags=re.IGNORECASE)
+
+        # Clean up multiple spaces
+        text = re.sub(r'\s+', ' ', text).strip()
+
+        return text
+
+    def _format_scientific_content_for_indian_tts(self, text: str) -> str:
+        """Format scientific formulas and content for Indian English TTS"""
+        import re
+
+        # Chemical formulas with Indian pronunciation
+        chemical_formulas = {
+            "H2O": "H two O",
+            "CO2": "carbon dioxide",
+            "O2": "oxygen gas",
+            "H2": "hydrogen gas",
+            "N2": "nitrogen gas",
+            "CO": "carbon monoxide",
+            "NaCl": "sodium chloride",
+            "CaCO3": "calcium carbonate",
+            "H2SO4": "sulphuric acid",
+            "HCl": "hydrochloric acid",
+            "NaOH": "sodium hydroxide",
+            "KOH": "potassium hydroxide",
+            "NH3": "ammonia",
+            "CH4": "methane",
+            "Ca(OH)2": "calcium hydroxide",
+            "MgO": "magnesium oxide",
+            "CaO": "calcium oxide",
+            "Fe2O3": "iron oxide",
+            "Al2O3": "aluminium oxide"
+        }
+
+        # Replace chemical formulas
+        for formula, pronunciation in chemical_formulas.items():
+            text = text.replace(formula, pronunciation)
+
+        # Handle mathematical expressions
+        math_patterns = {
+            r'\b(\d+)\s*\+\s*(\d+)\s*=\s*(\d+)\b': r'\1 plus \2 equal to \3',
+            r'\b(\d+)\s*-\s*(\d+)\s*=\s*(\d+)\b': r'\1 minus \2 equal to \3',
+            r'\b(\d+)\s*×\s*(\d+)\s*=\s*(\d+)\b': r'\1 multiplied by \2 equal to \3',
+            r'\b(\d+)\s*÷\s*(\d+)\s*=\s*(\d+)\b': r'\1 divided by \2 equal to \3',
+            r'\b(\d+)/(\d+)\b': r'\1 by \2',  # fractions
+            r'\b(\d+)²\b': r'\1 squared',
+            r'\b(\d+)³\b': r'\1 cubed',
+        }
+
+        for pattern, replacement in math_patterns.items():
+            text = re.sub(pattern, replacement, text)
+
+        # Handle units and measurements for Indian pronunciation
+        unit_patterns = {
+            r'(\d+)\s*m\b': r'\1 metre',
+            r'(\d+)\s*cm\b': r'\1 centimetre',
+            r'(\d+)\s*mm\b': r'\1 millimetre',
+            r'(\d+)\s*km\b': r'\1 kilometre',
+            r'(\d+)\s*g\b': r'\1 gram',
+            r'(\d+)\s*kg\b': r'\1 kilogram',
+            r'(\d+)\s*mg\b': r'\1 milligram',
+            r'(\d+)\s*l\b': r'\1 litre',
+            r'(\d+)\s*ml\b': r'\1 millilitre',
+        }
+
+        for pattern, replacement in unit_patterns.items():
+            text = re.sub(pattern, replacement, text)
+
+        # Handle temperature readings
+        temp_patterns = {
+            r'(\d+)°C': r'\1 degrees Celsius',
+            r'(\d+)°F': r'\1 degrees Fahrenheit',
+            r'(\d+)\s*degrees?\s*C\b': r'\1 degrees Celsius',
+            r'(\d+)\s*degrees?\s*F\b': r'\1 degrees Fahrenheit',
+        }
+
+        for pattern, replacement in temp_patterns.items():
+            text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+
+        # Replace mathematical symbols
+        symbol_replacements = {
+            '→': ' leads to ',
+            '←': ' comes from ',
+            '↑': ' goes up ',
+            '↓': ' goes down ',
+            '∞': ' infinity ',
+            '=': ' equal to ',
+            '≈': ' approximately equal to ',
+            '≠': ' does not equal ',
+            '≥': ' greater than or equal to ',
+            '≤': ' less than or equal to ',
+            '>': ' greater than ',
+            '<': ' less than ',
+            '±': ' plus or minus ',
+            '∆': ' delta ',
+            'α': ' alpha ',
+            'β': ' beta ',
+            'γ': ' gamma ',
+        }
+
+        for symbol, replacement in symbol_replacements.items():
+            text = text.replace(symbol, replacement)
+
+        # Handle scientific notation
+        text = re.sub(r'(\d+(?:\.\d+)?)\s*×\s*10\^?([+-]?\d+)', r'\1 times ten to the power \2', text)
+
+        return text
 
     def _format_chemical_content_for_audio(self, text: str) -> str:
         """Format chemical formulas and equations for better TTS pronunciation"""
@@ -767,6 +1170,247 @@ class EducationService:
         except Exception as e:
             logger.error(f"Failed to get topic suggestions: {e}")
             return ["Try asking about a specific topic", "Be more specific in your question"]
+
+    async def search_by_chapter_and_activity(
+        self,
+        chapter_number: int,
+        activity_number: str,
+        grade: Optional[int] = None,
+        subject: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Search for specific activity content within a chapter using combined metadata filtering"""
+        try:
+            student_grade = grade or self.current_student_grade
+            target_subject = subject or self.current_subject
+
+            if not student_grade or not target_subject:
+                return {"error": "Grade and subject must be specified"}
+
+            from qdrant_client.models import Filter, FieldCondition, MatchValue, MatchText
+
+            collection_name = f"grade_{student_grade:02d}_{target_subject}"
+
+            # First, try to find content that mentions the specific activity within the chapter
+            search_result = await asyncio.to_thread(
+                self.qdrant_manager.client.scroll,
+                collection_name=collection_name,
+                scroll_filter=Filter(
+                    must=[
+                        FieldCondition(key="chapter_number", match=MatchValue(value=chapter_number)),
+                        FieldCondition(key="grade", match=MatchValue(value=student_grade)),
+                        FieldCondition(key="subject", match=MatchValue(value=target_subject))
+                    ]
+                ),
+                limit=50,  # Get more content to search through
+                with_payload=True,
+                with_vectors=False
+            )
+
+            points = search_result[0]
+            if not points:
+                return {"error": f"No content found for Chapter {chapter_number}"}
+
+            # Filter points that contain the activity number in their content
+            activity_points = []
+
+            # Enhanced patterns for different activity types found in Grade 6 Science
+            if activity_number.lower() in ['1', '2', '3', '4', '5']:
+                activity_patterns = [
+                    # Direct activity patterns
+                    f"activity {activity_number}",
+                    f"activity{activity_number}",
+                    f"activity 3.{activity_number}",  # Chapter 3 specific
+
+                    # "Let us" patterns from Chapter 3
+                    f"let us record",          # Activity 3.1
+                    f"let us explore",         # Activity 3.2
+                    f"let us interact",        # Activity 3.3
+                    f"let us investigate",     # Activities 3.5, 3.6, 3.7
+                    f"let us find out",        # Activity 3.8
+
+                    # Experiment patterns
+                    f"experiment {activity_number}",
+                    f"experiment{activity_number}",
+
+                    # Question patterns
+                    f"question {activity_number}",
+                    f"question{activity_number}",
+
+                    # General science activity patterns
+                    "observe",
+                    "experiment",
+                    "investigation",
+                    "first, we observe",
+                    "thought-provoking experiments",
+                    "record your observations",
+                    "starch test",
+                    "protein test",
+                    "fat test"
+                ]
+            else:
+                # For decimal numbers like 1.1, 1.2, etc.
+                activity_patterns = [
+                    f"activity {activity_number}",
+                    f"activity{activity_number}",
+                    f"experiment {activity_number}",
+                    f"question {activity_number}"
+                ]
+
+            for point in points:
+                content = point.payload.get("content", "").lower()
+                # Check if any activity pattern matches
+                if any(pattern in content for pattern in activity_patterns):
+                    activity_points.append(point)
+
+            if not activity_points:
+                logger.info(f"No Activity {activity_number} found in Chapter {chapter_number} content")
+                return {"error": f"Activity {activity_number} not found in Chapter {chapter_number}"}
+
+            # Get chapter title from first point
+            chapter_title = points[0].payload.get("chapter", f"Chapter {chapter_number}")
+
+            # Combine activity content
+            activity_content_pieces = []
+            for point in activity_points[:3]:  # Use top 3 matching chunks
+                content = point.payload.get("content", "")
+                if content and len(content.strip()) > 10:
+                    activity_content_pieces.append(content)
+
+            if not activity_content_pieces:
+                return {"error": f"No substantial Activity {activity_number} content found in Chapter {chapter_number}"}
+
+            # Create a focused answer about the specific activity
+            combined_content = " ".join(activity_content_pieces)
+            formatted_answer = self._format_answer_for_grade(combined_content.split(), student_grade)
+
+            return {
+                "answer": f"Activity {activity_number} in Chapter {chapter_number}: {chapter_title}\n\n{formatted_answer}",
+                "confidence": 1.0,  # High confidence since we found it by specific search
+                "sources": [{
+                    "textbook": activity_points[0].payload.get("textbook_name", "Unknown"),
+                    "chapter": chapter_title,
+                    "page": activity_points[0].payload.get("page_number", "Unknown"),
+                    "activity": activity_number
+                }],
+                "chapter_title": chapter_title,
+                "chapter_number": chapter_number,
+                "activity_number": activity_number
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to search for Activity {activity_number} in Chapter {chapter_number}: {e}")
+            return {"error": f"Failed to search activity content: {str(e)}"}
+
+    async def search_by_chapter(self, chapter_number: int, grade: Optional[int] = None, subject: Optional[str] = None) -> Dict[str, Any]:
+        """Search for content by chapter number using metadata filtering"""
+        try:
+            student_grade = grade or self.current_student_grade
+            target_subject = subject or self.current_subject
+
+            if not student_grade or not target_subject:
+                return {"error": "Grade and subject must be specified"}
+
+            from qdrant_client.models import Filter, FieldCondition, MatchValue
+
+            # Use metadata filtering to find chapter content
+            collection_name = f"grade_{student_grade:02d}_{target_subject}"
+
+            # Search with chapter number filter
+            search_result = await asyncio.to_thread(
+                self.qdrant_manager.client.scroll,
+                collection_name=collection_name,
+                scroll_filter=Filter(
+                    must=[
+                        FieldCondition(key="chapter_number", match=MatchValue(value=chapter_number)),
+                        FieldCondition(key="grade", match=MatchValue(value=student_grade)),
+                        FieldCondition(key="subject", match=MatchValue(value=target_subject))
+                    ]
+                ),
+                limit=10,  # Get first 10 chunks from this chapter
+                with_payload=True,
+                with_vectors=False
+            )
+
+            points = search_result[0]
+            if not points:
+                return {"error": f"No content found for Chapter {chapter_number}"}
+
+            # Get chapter title from first point
+            chapter_title = points[0].payload.get("chapter", f"Chapter {chapter_number}")
+
+            # Combine content from multiple chunks
+            content_pieces = []
+            for point in points:
+                content = point.payload.get("content", "")
+                if content and len(content.strip()) > 10:  # Skip very short content
+                    content_pieces.append(content)
+
+            if not content_pieces:
+                return {"error": f"No substantial content found for Chapter {chapter_number}"}
+
+            # Create a comprehensive answer
+            combined_content = " ".join(content_pieces[:5])  # Use first 5 chunks
+            formatted_answer = self._format_answer_for_grade(combined_content.split(), student_grade)
+
+            return {
+                "answer": f"Chapter {chapter_number}: {chapter_title}\n\n{formatted_answer}",
+                "confidence": 1.0,  # High confidence since we found it by metadata
+                "sources": [{
+                    "textbook": points[0].payload.get("textbook_name", "Unknown"),
+                    "chapter": chapter_title,
+                    "page": points[0].payload.get("page_number", "Unknown")
+                }],
+                "chapter_title": chapter_title,
+                "chapter_number": chapter_number
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to search by chapter {chapter_number}: {e}")
+            return {"error": f"Failed to search chapter content: {str(e)}"}
+
+    async def get_chapter_mapping(self, grade: int, subject: str) -> Dict[int, str]:
+        """Get dynamic chapter mapping from Qdrant metadata"""
+        try:
+            from qdrant_client.models import Filter, FieldCondition, MatchValue
+
+            # Get all unique chapters for this grade and subject
+            collection_name = f"grade_{grade:02d}_{subject}" if grade < 10 else f"grade_{grade}_{subject}"
+
+            # Query Qdrant for all unique chapter numbers and titles
+            scroll_result = await asyncio.to_thread(
+                self.qdrant_manager.client.scroll,
+                collection_name=collection_name,
+                scroll_filter=Filter(
+                    must=[
+                        FieldCondition(key="grade", match=MatchValue(value=grade)),
+                        FieldCondition(key="subject", match=MatchValue(value=subject))
+                    ]
+                ),
+                limit=1000,  # Should be enough to get all chapters
+                with_payload=True,
+                with_vectors=False
+            )
+
+            # Extract unique chapter mappings
+            chapter_mapping = {}
+            seen_chapters = set()
+
+            for point in scroll_result[0]:
+                payload = point.payload
+                chapter_number = payload.get("chapter_number")
+                chapter_title = payload.get("chapter")
+
+                if chapter_number and chapter_title and chapter_number not in seen_chapters:
+                    chapter_mapping[chapter_number] = chapter_title
+                    seen_chapters.add(chapter_number)
+
+            logger.info(f"Found {len(chapter_mapping)} chapters for Grade {grade} {subject}")
+            return chapter_mapping
+
+        except Exception as e:
+            logger.error(f"Failed to get chapter mapping: {e}")
+            # Fallback to empty mapping
+            return {}
 
     async def get_service_stats(self) -> Dict[str, Any]:
         """Get service statistics and health information"""
