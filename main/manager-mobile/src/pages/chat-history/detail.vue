@@ -76,6 +76,18 @@ async function loadChatHistory() {
   try {
     loading.value = true
     const response = await getChatHistory(agentId.value, sessionId.value)
+
+    // Debug logging for chat messages
+    if (response && response.length > 0) {
+      const firstMessage = response[0]
+      console.log('💬 CHAT TIMESTAMP DEBUG:', {
+        sessionId: sessionId.value,
+        firstMessageCreatedAt: firstMessage.createdAt,
+        type: typeof firstMessage.createdAt,
+        formatted: formatTime(firstMessage.createdAt)
+      })
+    }
+
     messageList.value = response
   }
   catch (error) {

@@ -1,6 +1,7 @@
 package xiaozhi.modules.agent.service.impl;
 
-import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -43,26 +44,54 @@ public class AgentChatHistoryServiceImpl extends ServiceImpl<AiAgentChatHistoryD
         int page = Integer.parseInt(params.get(Constant.PAGE).toString());
         int limit = Integer.parseInt(params.get(Constant.LIMIT).toString());
 
-        // 构建查询条件
-        QueryWrapper<AgentChatHistoryEntity> wrapper = new QueryWrapper<>();
-        wrapper.select("session_id", "MAX(created_at) as created_at", "COUNT(*) as chat_count")
-                .eq("agent_id", agentId)
-                .groupBy("session_id")
+        // Get all messages for this agent, then group by session manually
+        QueryWrapper<AgentChatHistoryEntity> allMessagesWrapper = new QueryWrapper<>();
+        allMessagesWrapper.eq("agent_id", agentId)
                 .orderByDesc("created_at");
 
-        // 执行分页查询
-        Page<Map<String, Object>> pageParam = new Page<>(page, limit);
-        IPage<Map<String, Object>> result = this.baseMapper.selectMapsPage(pageParam, wrapper);
+        List<AgentChatHistoryEntity> allMessages = list(allMessagesWrapper);
 
-        List<AgentChatSessionDTO> records = result.getRecords().stream().map(map -> {
-            AgentChatSessionDTO dto = new AgentChatSessionDTO();
-            dto.setSessionId((String) map.get("session_id"));
-            dto.setCreatedAt((LocalDateTime) map.get("created_at"));
-            dto.setChatCount(((Number) map.get("chat_count")).intValue());
-            return dto;
-        }).collect(Collectors.toList());
+        // Group by session ID and get unique session IDs in order of latest message
+        Map<String, List<AgentChatHistoryEntity>> sessionGroups = allMessages.stream()
+                .collect(Collectors.groupingBy(AgentChatHistoryEntity::getSessionId,
+                        LinkedHashMap::new, Collectors.toList()));
 
-        return new PageData<>(records, result.getTotal());
+        List<String> sessionIds = new ArrayList<>(sessionGroups.keySet());
+
+        // Calculate pagination manually
+        int totalSessions = sessionIds.size();
+        int startIndex = (page - 1) * limit;
+        int endIndex = Math.min(startIndex + limit, totalSessions);
+
+        List<String> paginatedSessionIds = sessionIds.subList(startIndex, endIndex);
+
+        List<AgentChatSessionDTO> records = new ArrayList<>();
+
+        // For each paginated session, get the earliest message time (same logic as chat detail)
+        for (String sessionId : paginatedSessionIds) {
+            List<AgentChatHistoryEntity> sessionMessages = sessionGroups.get(sessionId);
+
+            if (!sessionMessages.isEmpty()) {
+                // Find session creation time (earliest message) - SAME LOGIC AS CHAT DETAIL
+                java.util.Date sessionCreationTime = sessionMessages.stream()
+                    .map(AgentChatHistoryEntity::getCreatedAt)
+                    .min(java.util.Date::compareTo)
+                    .orElse(new java.util.Date());
+
+                AgentChatSessionDTO dto = new AgentChatSessionDTO();
+                dto.setSessionId(sessionId);
+                dto.setCreatedAt(sessionCreationTime);
+                dto.setChatCount(sessionMessages.size());
+
+                System.out.println("🔥 BACKEND SIDEBAR TIME - SessionID: " + sessionId +
+                                 ", Session creation time: " + sessionCreationTime +
+                                 ", Messages: " + sessionMessages.size());
+
+                records.add(dto);
+            }
+        }
+
+        return new PageData<>(records, totalSessions);
     }
 
     @Override
@@ -77,7 +106,27 @@ public class AgentChatHistoryServiceImpl extends ServiceImpl<AiAgentChatHistoryD
         List<AgentChatHistoryEntity> historyList = list(wrapper);
 
         // 转换为DTO
-        return ConvertUtils.sourceToTarget(historyList, AgentChatHistoryDTO.class);
+        List<AgentChatHistoryDTO> dtoList = ConvertUtils.sourceToTarget(historyList, AgentChatHistoryDTO.class);
+
+        // Get session creation time (MIN(created_at)) to match sidebar
+        if (!historyList.isEmpty()) {
+            // Find the earliest message timestamp (session creation time)
+            java.util.Date sessionCreationTime = historyList.stream()
+                .map(AgentChatHistoryEntity::getCreatedAt)
+                .min(java.util.Date::compareTo)
+                .orElse(new java.util.Date());
+
+            // Set all messages to use session creation time to match sidebar
+            for (AgentChatHistoryDTO dto : dtoList) {
+                dto.setCreatedAt(sessionCreationTime);
+            }
+
+            System.out.println("💬 BACKEND CHAT TIME - SessionID: " + sessionId +
+                             ", Using session creation time for all messages: " + sessionCreationTime +
+                             ", Total messages: " + dtoList.size());
+        }
+
+        return dtoList;
     }
 
     @Override
