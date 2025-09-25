@@ -177,6 +177,7 @@ class LiveKitBridge extends Emitter {
   }
 
   async connect(audio_params, features) {
+    console.log(`🔍 [DEBUG] LiveKitBridge.connect() called - UUID: ${this.uuid}, MAC: ${this.macAddress}`);
     const { url, api_key, api_secret } = this.livekitConfig;
     // Include MAC address in room name for agent to extract device-specific prompt
     const macForRoom = this.macAddress.replace(/:/g, ''); // Remove colons: 00:16:3e:ac:b5:38 → 00163eacb538
