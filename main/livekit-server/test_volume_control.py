@@ -35,7 +35,10 @@ class MockParticipant:
         import json
         try:
             message = json.loads(data.decode())
-            print(f"[MOCK DATA CHANNEL] Topic: {topic}, Message: {message}")
+            print(f"[MOCK DATA CHANNEL] Topic: {topic}")
+            print(f"MQTT Message Format:")
+            print(json.dumps(message, indent=2))
+            print("-" * 40)
             return True
         except Exception as e:
             print(f"[MOCK ERROR] Failed to decode data: {e}")

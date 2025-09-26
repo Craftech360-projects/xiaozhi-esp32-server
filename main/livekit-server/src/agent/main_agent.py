@@ -761,3 +761,80 @@ class Assistant(Agent):
         except Exception as e:
             logger.error(f"Error formatting news response: {e}")
             return f"News item received from {source} but formatting failed."
+
+    # Volume Control Function Tools
+    @function_tool
+    async def self_set_volume(self, context: RunContext, volume: int):
+        """Set device volume to a specific level (0-100)
+
+        Args:
+            volume: Volume level between 0 and 100
+        """
+        if not self.device_control_service:
+            return "Volume control is not available right now."
+
+        # Set context if not already set
+        if not self.device_control_service.context:
+            self.device_control_service.set_context(context)
+
+        return await self.device_control_service.set_volume(volume)
+
+    @function_tool
+    async def self_get_volume(self, context: RunContext):
+        """Get current device volume level"""
+        if not self.device_control_service:
+            return "Volume control is not available right now."
+
+        # Set context if not already set
+        if not self.device_control_service.context:
+            self.device_control_service.set_context(context)
+
+        return await self.device_control_service.get_volume()
+
+    @function_tool
+    async def self_volume_up(self, context: RunContext):
+        """Increase device volume"""
+        if not self.device_control_service:
+            return "Volume control is not available right now."
+
+        # Set context if not already set
+        if not self.device_control_service.context:
+            self.device_control_service.set_context(context)
+
+        return await self.device_control_service.volume_up()
+
+    @function_tool
+    async def self_volume_down(self, context: RunContext):
+        """Decrease device volume"""
+        if not self.device_control_service:
+            return "Volume control is not available right now."
+
+        # Set context if not already set
+        if not self.device_control_service.context:
+            self.device_control_service.set_context(context)
+
+        return await self.device_control_service.volume_down()
+
+    @function_tool
+    async def self_mute(self, context: RunContext):
+        """Mute the device"""
+        if not self.device_control_service:
+            return "Volume control is not available right now."
+
+        # Set context if not already set
+        if not self.device_control_service.context:
+            self.device_control_service.set_context(context)
+
+        return await self.device_control_service.mute()
+
+    @function_tool
+    async def self_unmute(self, context: RunContext):
+        """Unmute the device"""
+        if not self.device_control_service:
+            return "Volume control is not available right now."
+
+        # Set context if not already set
+        if not self.device_control_service.context:
+            self.device_control_service.set_context(context)
+
+        return await self.device_control_service.unmute()

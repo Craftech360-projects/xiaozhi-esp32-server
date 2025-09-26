@@ -18,14 +18,13 @@ class DeviceControlService:
         """Set the agent context for sending data channel messages"""
         self.context = context
 
-    async def _send_device_command(self, command: str, value: Any = None, extra_data: Dict = None) -> Dict:
+    async def _send_function_call(self, function_name: str, arguments: Dict = None) -> Dict:
         """
-        Send a device control command via LiveKit data channel
+        Send a function call command via LiveKit data channel using xiaozhi format
 
         Args:
-            command: The control command (e.g., 'set_volume', 'get_volume')
-            value: The value for the command (e.g., volume level)
-            extra_data: Additional data to include in the message
+            function_name: The function name (e.g., 'self_set_volume', 'self_get_volume')
+            arguments: The function arguments dictionary
 
         Returns:
             Dict with the message that was sent
@@ -42,30 +41,28 @@ class DeviceControlService:
             logger.error("Device control context does not have room attribute")
             raise Exception("Device control service cannot access room")
 
+        # Use the xiaozhi WebSocket/MQTT format from stable2 branch
         message = {
-            "type": "device_control",
-            "command": command,
+            "type": "function_call",
+            "function_call": {
+                "name": function_name,
+                "arguments": arguments or {}
+            },
             "timestamp": datetime.now().isoformat(),
-            "source": "livekit_agent"
+            "request_id": f"req_{int(datetime.now().timestamp() * 1000)}"
         }
-
-        if value is not None:
-            message["value"] = value
-
-        if extra_data:
-            message.update(extra_data)
 
         try:
             await room.local_participant.publish_data(
                 json.dumps(message).encode(),
-                topic="device_control",
+                topic="xiaozhi_function_call",
                 reliable=True
             )
-            logger.info(f"Sent device control command: {command} = {value}")
+            logger.info(f"Sent function call: {function_name} with arguments: {arguments}")
             return message
 
         except Exception as e:
-            logger.error(f"Failed to send device control command: {e}")
+            logger.error(f"Failed to send function call: {e}")
             raise
 
     async def set_volume(self, level: int) -> str:
@@ -83,7 +80,7 @@ class DeviceControlService:
             return "Volume level must be between 0 and 100."
 
         try:
-            await self._send_device_command("set_volume", level)
+            await self._send_function_call("self_set_volume", {"volume": level})
             self._current_volume = level  # Cache the value
 
             # Return appropriate response based on level
@@ -108,7 +105,7 @@ class DeviceControlService:
             Current volume status message
         """
         try:
-            await self._send_device_command("get_volume")
+            await self._send_function_call("self_get_volume")
 
             # If we have cached volume, return it immediately
             if self._current_volume is not None:
@@ -131,7 +128,7 @@ class DeviceControlService:
             Status message for user feedback
         """
         try:
-            await self._send_device_command("volume_up", step)
+            await self._send_function_call("self_volume_up")
 
             # If we have cached volume, calculate new level
             if self._current_volume is not None:
@@ -156,7 +153,7 @@ class DeviceControlService:
             Status message for user feedback
         """
         try:
-            await self._send_device_command("volume_down", step)
+            await self._send_function_call("self_volume_down")
 
             # If we have cached volume, calculate new level
             if self._current_volume is not None:
@@ -175,24 +172,33 @@ class DeviceControlService:
 
     async def mute(self) -> str:
         """
-        Mute the device (set volume to 0)
+        Mute the device
 
         Returns:
             Status message for user feedback
         """
-        return await self.set_volume(0)
+        try:
+            await self._send_function_call("self_mute")
+            self._current_volume = 0  # Cache the muted state
+            return "Device muted."
+        except Exception as e:
+            logger.error(f"Error muting device: {e}")
+            return "Sorry, I couldn't mute the device right now."
 
     async def unmute(self, level: int = 50) -> str:
         """
-        Unmute the device (set volume to specified level)
-
-        Args:
-            level: Volume level to restore to (default 50)
+        Unmute the device
 
         Returns:
             Status message for user feedback
         """
-        return await self.set_volume(level)
+        try:
+            await self._send_function_call("self_unmute")
+            self._current_volume = level  # Cache the restored level
+            return f"Device unmuted and volume restored."
+        except Exception as e:
+            logger.error(f"Error unmuting device: {e}")
+            return "Sorry, I couldn't unmute the device right now."
 
     def update_volume_cache(self, level: int):
         """
