@@ -75,6 +75,7 @@ databaseChangeLog:
   - changeSet:
       id: 202504251422
       author: jiangkunyin
+      validCheckSum: 8:6eeed09ceda7ee70395962cd8dfa12ed
       changes:
         - sqlFile:
             encoding: utf8
