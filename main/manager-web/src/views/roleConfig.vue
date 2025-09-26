@@ -479,7 +479,7 @@ export default {
       if (!this.selectedTemplate) return false;
 
       return (
-        this.form.agentName !== this.selectedTemplate.agentName ||
+        // Agent name changes are not tracked since we preserve original names
         this.form.systemPrompt !== this.selectedTemplate.systemPrompt ||
         this.form.summaryMemory !== this.selectedTemplate.summaryMemory ||
         this.form.model.asrModelId !== this.selectedTemplate.asrModelId ||
@@ -566,7 +566,7 @@ export default {
     applyTemplateData(templateData) {
       this.form = {
         ...this.form,
-        agentName: templateData.agentName || this.form.agentName,
+        // Keep original agent name - don't override with template name
         ttsVoiceId: templateData.ttsVoiceId || this.form.ttsVoiceId,
         chatHistoryConf:
           templateData.chatHistoryConf !== undefined ? templateData.chatHistoryConf : 1,
