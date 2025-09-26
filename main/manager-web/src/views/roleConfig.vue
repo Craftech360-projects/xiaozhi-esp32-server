@@ -12,19 +12,28 @@
           <el-card class="config-card" shadow="never">
             <div class="config-header">
               <div class="header-icon">
-                <img loading="lazy" src="@/assets/home/setting-user.png" alt="">
+                <img
+                  loading="lazy"
+                  src="@/assets/home/setting-user.png"
+                  alt=""
+                />
               </div>
               <span class="header-title">{{ form.agentName }}</span>
               <div class="header-actions">
                 <div class="hint-text">
-                  <img loading="lazy" src="@/assets/home/info.png" alt="">
-                  <span>After saving the configuration, you need to restart the device for the new configuration to take effect.</span>
+                  <img loading="lazy" src="@/assets/home/info.png" alt="" />
+                  <span
+                    >After saving the configuration, you need to restart the
+                    device for the new configuration to take effect.</span
+                  >
                 </div>
-                <el-button type="primary" class="save-btn" @click="saveConfig">Save Configuration</el-button>
-                <el-button class="reset-btn" @click="resetConfig">Reset</el-button>
-                <button class="custom-close-btn" @click="goToHome">
-                  ×
-                </button>
+                <el-button type="primary" class="save-btn" @click="saveConfig"
+                  >Save Configuration</el-button
+                >
+                <el-button class="reset-btn" @click="resetConfig"
+                  >Reset</el-button
+                >
+                <button class="custom-close-btn" @click="goToHome">×</button>
               </div>
             </div>
             <div class="divider"></div>
@@ -34,92 +43,211 @@
                 <div class="form-grid">
                   <div class="form-column">
                     <el-form-item label="Assistant Name:">
-                      <el-input v-model="form.agentName" class="form-input" maxlength="10" />
+                      <el-input
+                        v-model="form.agentName"
+                        class="form-input"
+                        maxlength="10"
+                      />
                     </el-form-item>
                     <el-form-item label="Role Template:">
                       <div class="template-container">
-                        <div v-for="(template, index) in templates" :key="`template-${index}`" class="template-item"
-                          :class="{ 'template-loading': loadingTemplate }" @click="selectTemplate(template)">
+                        <div
+                          v-for="(template, index) in templates"
+                          :key="`template-${index}`"
+                          class="template-item"
+                          :class="{ 'template-loading': loadingTemplate }"
+                          @click="selectTemplate(template)"
+                        >
                           {{ template.agentName }}
                         </div>
                       </div>
                     </el-form-item>
                     <el-form-item label="Role Description:">
-                      <el-input type="textarea" rows="9" resize="none" placeholder="Enter content" v-model="form.systemPrompt"
-                        maxlength="2000" show-word-limit class="form-textarea" />
+                      <el-input
+                        type="textarea"
+                        rows="9"
+                        resize="none"
+                        placeholder="Enter content"
+                        v-model="form.systemPrompt"
+                        maxlength="4000"
+                        show-word-limit
+                        class="form-textarea"
+                      />
                     </el-form-item>
 
                     <el-form-item label="Memory:">
-                      <el-input type="textarea" rows="6" resize="none" v-model="form.summaryMemory" maxlength="2000"
-                        show-word-limit class="form-textarea"
-                        :disabled="form.model.memModelId !== 'Memory_mem_local_short'" />
+                      <el-input
+                        type="textarea"
+                        rows="6"
+                        resize="none"
+                        v-model="form.summaryMemory"
+                        maxlength="2000"
+                        show-word-limit
+                        class="form-textarea"
+                        :disabled="
+                          form.model.memModelId !== 'Memory_mem_local_short'
+                        "
+                      />
                     </el-form-item>
-                    <el-form-item label="Language Code:" style="display: none;">
-                      <el-input v-model="form.langCode" placeholder="Enter language code, e.g. zh_CN" maxlength="10" show-word-limit
-                        class="form-input" />
+                    <el-form-item label="Language Code:" style="display: none">
+                      <el-input
+                        v-model="form.langCode"
+                        placeholder="Enter language code, e.g. zh_CN"
+                        maxlength="10"
+                        show-word-limit
+                        class="form-input"
+                      />
                     </el-form-item>
-                    <el-form-item label="Interaction Language:" style="display: none;">
-                      <el-input v-model="form.language" placeholder="Enter interaction language, e.g. Chinese" maxlength="10" show-word-limit
-                        class="form-input" />
+                    <el-form-item
+                      label="Interaction Language:"
+                      style="display: none"
+                    >
+                      <el-input
+                        v-model="form.language"
+                        placeholder="Enter interaction language, e.g. Chinese"
+                        maxlength="10"
+                        show-word-limit
+                        class="form-input"
+                      />
                     </el-form-item>
                   </div>
                   <div class="form-column">
                     <div class="model-row">
-                      <el-form-item label="Voice Activity Detection (VAD)" class="model-item">
+                      <el-form-item
+                        label="Voice Activity Detection (VAD)"
+                        class="model-item"
+                      >
                         <div class="model-select-wrapper">
-                          <el-select v-model="form.model.vadModelId" filterable placeholder="Please select" class="form-select"
-                            @change="handleModelChange('VAD', $event)">
-                            <el-option v-for="(item, optionIndex) in modelOptions['VAD']"
-                              :key="`option-vad-${optionIndex}`" :label="item.label" :value="item.value" />
+                          <el-select
+                            v-model="form.model.vadModelId"
+                            filterable
+                            placeholder="Please select"
+                            class="form-select"
+                            @change="handleModelChange('VAD', $event)"
+                          >
+                            <el-option
+                              v-for="(item, optionIndex) in modelOptions['VAD']"
+                              :key="`option-vad-${optionIndex}`"
+                              :label="item.label"
+                              :value="item.value"
+                            />
                           </el-select>
                         </div>
                       </el-form-item>
-                      <el-form-item label="Speech Recognition (ASR)" class="model-item">
+                      <el-form-item
+                        label="Speech Recognition (ASR)"
+                        class="model-item"
+                      >
                         <div class="model-select-wrapper">
-                          <el-select v-model="form.model.asrModelId" filterable placeholder="Please select" class="form-select"
-                            @change="handleModelChange('ASR', $event)">
-                            <el-option v-for="(item, optionIndex) in modelOptions['ASR']"
-                              :key="`option-asr-${optionIndex}`" :label="item.label" :value="item.value" />
+                          <el-select
+                            v-model="form.model.asrModelId"
+                            filterable
+                            placeholder="Please select"
+                            class="form-select"
+                            @change="handleModelChange('ASR', $event)"
+                          >
+                            <el-option
+                              v-for="(item, optionIndex) in modelOptions['ASR']"
+                              :key="`option-asr-${optionIndex}`"
+                              :label="item.label"
+                              :value="item.value"
+                            />
                           </el-select>
                         </div>
                       </el-form-item>
                     </div>
-                    <el-form-item v-for="(model, index) in models.slice(2).filter(m => m.type !== 'VLLM')" :key="`model-${index}`" :label="model.label"
-                      class="model-item">
+                    <el-form-item
+                      v-for="(model, index) in models
+                        .slice(2)
+                        .filter((m) => m.type !== 'VLLM')"
+                      :key="`model-${index}`"
+                      :label="model.label"
+                      class="model-item"
+                    >
                       <div class="model-select-wrapper">
-                        <el-select v-model="form.model[model.key]" filterable placeholder="Please select" class="form-select"
-                          @change="handleModelChange(model.type, $event)">
-                          <el-option v-for="(item, optionIndex) in modelOptions[model.type]" v-if="!item.isHidden"
-                            :key="`option-${index}-${optionIndex}`" :label="item.label" :value="item.value" />
+                        <el-select
+                          v-model="form.model[model.key]"
+                          filterable
+                          placeholder="Please select"
+                          class="form-select"
+                          @change="handleModelChange(model.type, $event)"
+                        >
+                          <el-option
+                            v-for="(item, optionIndex) in modelOptions[
+                              model.type
+                            ]"
+                            v-if="!item.isHidden"
+                            :key="`option-${index}-${optionIndex}`"
+                            :label="item.label"
+                            :value="item.value"
+                          />
                         </el-select>
-                        <div v-if="showFunctionIcons(model.type)" class="function-icons">
-                          <el-tooltip v-for="func in currentFunctions" :key="func.name" effect="dark" placement="top"
-                            popper-class="custom-tooltip">
+                        <div
+                          v-if="showFunctionIcons(model.type)"
+                          class="function-icons"
+                        >
+                          <el-tooltip
+                            v-for="func in currentFunctions"
+                            :key="func.name"
+                            effect="dark"
+                            placement="top"
+                            popper-class="custom-tooltip"
+                          >
                             <div slot="content">
-                              <div><strong>Function Name:</strong> {{ func.name }}</div>
+                              <div>
+                                <strong>Function Name:</strong> {{ func.name }}
+                              </div>
                             </div>
-                            <div class="icon-dot" :style="{ backgroundColor: getFunctionColor(func.name) }">
+                            <div
+                              class="icon-dot"
+                              :style="{
+                                backgroundColor: getFunctionColor(func.name),
+                              }"
+                            >
                               {{ func.name.charAt(0) }}
                             </div>
                           </el-tooltip>
-                          <el-button class="edit-function-btn" @click="openFunctionDialog"
-                            :class="{ 'active-btn': showFunctionDialog }">
+                          <el-button
+                            class="edit-function-btn"
+                            @click="openFunctionDialog"
+                            :class="{ 'active-btn': showFunctionDialog }"
+                          >
                             Edit Functions
                           </el-button>
                         </div>
-                        <div v-if="model.type === 'Memory' && form.model.memModelId !== 'Memory_nomem'"
-                          class="chat-history-options">
-                          <el-radio-group v-model="form.chatHistoryConf" @change="updateChatHistoryConf">
-                            <el-radio-button :label="1">Report Text</el-radio-button>
-                            <el-radio-button :label="2">Report Text + Audio</el-radio-button>
+                        <div
+                          v-if="
+                            model.type === 'Memory' &&
+                            form.model.memModelId !== 'Memory_nomem'
+                          "
+                          class="chat-history-options"
+                        >
+                          <el-radio-group
+                            v-model="form.chatHistoryConf"
+                            @change="updateChatHistoryConf"
+                          >
+                            <el-radio-button :label="1"
+                              >Report Text</el-radio-button
+                            >
+                            <el-radio-button :label="2"
+                              >Report Text + Audio</el-radio-button
+                            >
                           </el-radio-group>
                         </div>
                       </div>
                     </el-form-item>
                     <el-form-item label="Voice Type:">
-                      <el-select v-model="form.ttsVoiceId" placeholder="Please select" class="form-select">
-                        <el-option v-for="(item, index) in voiceOptions" :key="`voice-${index}`" :label="item.label"
-                          :value="item.value" />
+                      <el-select
+                        v-model="form.ttsVoiceId"
+                        placeholder="Please select"
+                        class="form-select"
+                      >
+                        <el-option
+                          v-for="(item, index) in voiceOptions"
+                          :key="`voice-${index}`"
+                          :label="item.label"
+                          :value="item.value"
+                        />
                       </el-select>
                     </el-form-item>
                   </div>
@@ -130,18 +258,24 @@
         </div>
       </div>
     </div>
-    <function-dialog v-model="showFunctionDialog" :functions="currentFunctions" :all-functions="allFunctions"
-      :agent-id="$route.query.agentId" @update-functions="handleUpdateFunctions" @dialog-closed="handleDialogClosed" />
+    <function-dialog
+      v-model="showFunctionDialog"
+      :functions="currentFunctions"
+      :all-functions="allFunctions"
+      :agent-id="$route.query.agentId"
+      @update-functions="handleUpdateFunctions"
+      @dialog-closed="handleDialogClosed"
+    />
   </div>
 </template>
 
 <script>
-import Api from '@/apis/api';
+import Api from "@/apis/api";
 import FunctionDialog from "@/components/FunctionDialog.vue";
 import HeaderBar from "@/components/HeaderBar.vue";
 
 export default {
-  name: 'RoleConfigPage',
+  name: "RoleConfigPage",
   components: { HeaderBar, FunctionDialog },
   data() {
     return {
@@ -149,7 +283,7 @@ export default {
         agentCode: "",
         agentName: "",
         ttsVoiceId: "",
-        chatHistoryConf: 0,
+        chatHistoryConf: 1,
         systemPrompt: "",
         summaryMemory: "",
         langCode: "",
@@ -161,18 +295,30 @@ export default {
           asrModelId: "",
           llmModelId: "",
           vllmModelId: "",
-          memModelId: "",
+          memModelId: "Memory_mem_local_short",
           intentModelId: "",
-        }
+        },
       },
       models: [
-        { label: 'Voice Activity Detection (VAD)', key: 'vadModelId', type: 'VAD' },
-        { label: 'Speech Recognition (ASR)', key: 'asrModelId', type: 'ASR' },
-        { label: 'Large Language Model (LLM)', key: 'llmModelId', type: 'LLM' },
-        { label: 'Vision Language Model (VLLM)', key: 'vllmModelId', type: 'VLLM' },
-        { label: 'Intent Recognition (Intent)', key: 'intentModelId', type: 'Intent' },
-        { label: 'Memory', key: 'memModelId', type: 'Memory' },
-        { label: 'Text-to-Speech (TTS)', key: 'ttsModelId', type: 'TTS' }
+        {
+          label: "Voice Activity Detection (VAD)",
+          key: "vadModelId",
+          type: "VAD",
+        },
+        { label: "Speech Recognition (ASR)", key: "asrModelId", type: "ASR" },
+        { label: "Large Language Model (LLM)", key: "llmModelId", type: "LLM" },
+        {
+          label: "Vision Language Model (VLLM)",
+          key: "vllmModelId",
+          type: "VLLM",
+        },
+        {
+          label: "Intent Recognition (Intent)",
+          key: "intentModelId",
+          type: "Intent",
+        },
+        { label: "Memory", key: "memModelId", type: "Memory" },
+        { label: "Text-to-Speech (TTS)", key: "ttsModelId", type: "TTS" },
       ],
       llmModeTypeMap: new Map(),
       modelOptions: {},
@@ -183,16 +329,21 @@ export default {
       showFunctionDialog: false,
       currentFunctions: [],
       functionColorMap: [
-        '#FF6B6B', '#4ECDC4', '#45B7D1',
-        '#96CEB4', '#FFEEAD', '#D4A5A5', '#A2836E'
+        "#FF6B6B",
+        "#4ECDC4",
+        "#45B7D1",
+        "#96CEB4",
+        "#FFEEAD",
+        "#D4A5A5",
+        "#A2836E",
       ],
       allFunctions: [],
       originalFunctions: [],
-    }
+    };
   },
   methods: {
     goToHome() {
-      this.$router.push('/home');
+      this.$router.push("/home");
     },
     saveConfig() {
       const configData = {
@@ -212,30 +363,36 @@ export default {
         langCode: this.form.langCode,
         language: this.form.language,
         sort: this.form.sort,
-        functions: this.currentFunctions.map(item => {
-          return ({
+        functions: this.currentFunctions.map((item) => {
+          return {
             pluginId: item.id,
-            paramInfo: item.params
-          })
-        })
+            paramInfo: item.params,
+          };
+        }),
       };
 
       // Check if we need to update template
       if (this.selectedTemplate && this.hasTemplateChanges()) {
-        this.$confirm('Do you want to save changes to the template as well? This will affect all future uses of this template.', 'Update Template', {
-          confirmButtonText: 'Update Template',
-          cancelButtonText: 'Keep Template Unchanged',
-          type: 'question',
-          distinguishCancelAndClose: true
-        }).then(() => {
-          // User wants to update template
-          this.saveConfigAndTemplate(configData);
-        }).catch((action) => {
-          if (action === 'cancel') {
-            // User wants to save config only
-            this.saveConfigOnly(configData);
+        this.$confirm(
+          "Do you want to save changes to the template as well? This will affect all future uses of this template.",
+          "Update Template",
+          {
+            confirmButtonText: "Update Template",
+            cancelButtonText: "Keep Template Unchanged",
+            type: "question",
+            distinguishCancelAndClose: true,
           }
-        });
+        )
+          .then(() => {
+            // User wants to update template
+            this.saveConfigAndTemplate(configData);
+          })
+          .catch((action) => {
+            if (action === "cancel") {
+              // User wants to save config only
+              this.saveConfigOnly(configData);
+            }
+          });
       } else {
         // No template changes, save config only
         this.saveConfigOnly(configData);
@@ -243,70 +400,84 @@ export default {
     },
 
     saveConfigOnly(configData) {
-      Api.agent.updateAgentConfig(this.$route.query.agentId, configData, ({ data }) => {
-        if (data.code === 0) {
-          this.$message.success({
-            message: 'Configuration saved successfully',
-            showClose: true
-          });
-        } else {
-          this.$message.error({
-            message: data.msg || 'Failed to save configuration',
-            showClose: true
-          });
+      Api.agent.updateAgentConfig(
+        this.$route.query.agentId,
+        configData,
+        ({ data }) => {
+          if (data.code === 0) {
+            this.$message.success({
+              message: "Configuration saved successfully",
+              showClose: true,
+            });
+          } else {
+            this.$message.error({
+              message: data.msg || "Failed to save configuration",
+              showClose: true,
+            });
+          }
         }
-      });
+      );
     },
 
     saveConfigAndTemplate(configData) {
       // First save the agent config
-      Api.agent.updateAgentConfig(this.$route.query.agentId, configData, ({ data }) => {
-        if (data.code === 0) {
-          // Then update the template
-          const templateData = {
-            agentName: this.form.agentName,
-            systemPrompt: this.form.systemPrompt,
-            summaryMemory: this.form.summaryMemory,
-            asrModelId: this.form.model.asrModelId,
-            vadModelId: this.form.model.vadModelId,
-            llmModelId: this.form.model.llmModelId,
-            vllmModelId: this.form.model.vllmModelId,
-            ttsModelId: this.form.model.ttsModelId,
-            ttsVoiceId: this.form.ttsVoiceId,
-            memModelId: this.form.model.memModelId,
-            intentModelId: this.form.model.intentModelId,
-            chatHistoryConf: this.form.chatHistoryConf,
-            langCode: this.form.langCode,
-            language: this.form.language
-          };
+      Api.agent.updateAgentConfig(
+        this.$route.query.agentId,
+        configData,
+        ({ data }) => {
+          if (data.code === 0) {
+            // Then update the template
+            const templateData = {
+              agentName: this.form.agentName,
+              systemPrompt: this.form.systemPrompt,
+              summaryMemory: this.form.summaryMemory,
+              asrModelId: this.form.model.asrModelId,
+              vadModelId: this.form.model.vadModelId,
+              llmModelId: this.form.model.llmModelId,
+              vllmModelId: this.form.model.vllmModelId,
+              ttsModelId: this.form.model.ttsModelId,
+              ttsVoiceId: this.form.ttsVoiceId,
+              memModelId: this.form.model.memModelId,
+              intentModelId: this.form.model.intentModelId,
+              chatHistoryConf: this.form.chatHistoryConf,
+              langCode: this.form.langCode,
+              language: this.form.language,
+            };
 
-          Api.agent.updateAgentTemplate(this.selectedTemplate.id, templateData, ({ data: templateResult }) => {
-            if (templateResult.code === 0) {
-              this.$message.success({
-                message: 'Configuration and template saved successfully',
-                showClose: true
-              });
-              // Refresh templates to reflect changes
-              this.fetchTemplates();
-            } else {
-              this.$message.warning({
-                message: 'Configuration saved but template update failed: ' + (templateResult.msg || 'Unknown error'),
-                showClose: true
-              });
-            }
-          });
-        } else {
-          this.$message.error({
-            message: data.msg || 'Failed to save configuration',
-            showClose: true
-          });
+            Api.agent.updateAgentTemplate(
+              this.selectedTemplate.id,
+              templateData,
+              ({ data: templateResult }) => {
+                if (templateResult.code === 0) {
+                  this.$message.success({
+                    message: "Configuration and template saved successfully",
+                    showClose: true,
+                  });
+                  // Refresh templates to reflect changes
+                  this.fetchTemplates();
+                } else {
+                  this.$message.warning({
+                    message:
+                      "Configuration saved but template update failed: " +
+                      (templateResult.msg || "Unknown error"),
+                    showClose: true,
+                  });
+                }
+              }
+            );
+          } else {
+            this.$message.error({
+              message: data.msg || "Failed to save configuration",
+              showClose: true,
+            });
+          }
         }
-      });
+      );
     },
 
     hasTemplateChanges() {
       if (!this.selectedTemplate) return false;
-      
+
       return (
         this.form.agentName !== this.selectedTemplate.agentName ||
         this.form.systemPrompt !== this.selectedTemplate.systemPrompt ||
@@ -325,45 +496,50 @@ export default {
       );
     },
     resetConfig() {
-      this.$confirm('Are you sure you want to reset the configuration?', 'Confirm', {
-        confirmButtonText: 'Confirm',
-        cancelButtonText: 'Cancel',
-        type: 'warning'
-      }).then(() => {
-        this.form = {
-          agentCode: "",
-          agentName: "",
-          ttsVoiceId: "",
-          chatHistoryConf: 0,
-          systemPrompt: "",
-          summaryMemory: "",
-          langCode: "",
-          language: "",
-          sort: "",
-          model: {
-            ttsModelId: "",
-            vadModelId: "",
-            asrModelId: "",
-            llmModelId: "",
-            vllmModelId: "",
-            memModelId: "",
-            intentModelId: "",
-          }
+      this.$confirm(
+        "Are you sure you want to reset the configuration?",
+        "Confirm",
+        {
+          confirmButtonText: "Confirm",
+          cancelButtonText: "Cancel",
+          type: "warning",
         }
-        this.currentFunctions = [];
-        this.$message.success({
-          message: 'Configuration has been reset',
-          showClose: true
+      )
+        .then(() => {
+          this.form = {
+            agentCode: "",
+            agentName: "",
+            ttsVoiceId: "",
+            chatHistoryConf: 1,
+            systemPrompt: "",
+            summaryMemory: "",
+            langCode: "",
+            language: "",
+            sort: "",
+            model: {
+              ttsModelId: "",
+              vadModelId: "",
+              asrModelId: "",
+              llmModelId: "",
+              vllmModelId: "",
+              memModelId: "Memory_mem_local_short",
+              intentModelId: "",
+            },
+          };
+          this.currentFunctions = [];
+          this.$message.success({
+            message: "Configuration has been reset",
+            showClose: true,
+          });
         })
-      }).catch(() => {
-      });
+        .catch(() => {});
     },
     fetchTemplates() {
       Api.agent.getAgentTemplate(({ data }) => {
         if (data.code === 0) {
           this.templates = data.data;
         } else {
-          this.$message.error(data.msg || 'Failed to get template list');
+          this.$message.error(data.msg || "Failed to get template list");
         }
       });
     },
@@ -375,14 +551,14 @@ export default {
         this.applyTemplateData(template);
         this.$message.success({
           message: `"${template.agentName}" template applied`,
-          showClose: true
+          showClose: true,
         });
       } catch (error) {
         this.$message.error({
-          message: 'Failed to apply template',
-          showClose: true
+          message: "Failed to apply template",
+          showClose: true,
         });
-        console.error('Failed to apply template:', error);
+        console.error("Failed to apply template:", error);
       } finally {
         this.loadingTemplate = false;
       }
@@ -392,7 +568,8 @@ export default {
         ...this.form,
         agentName: templateData.agentName || this.form.agentName,
         ttsVoiceId: templateData.ttsVoiceId || this.form.ttsVoiceId,
-        chatHistoryConf: templateData.chatHistoryConf || this.form.chatHistoryConf,
+        chatHistoryConf:
+          templateData.chatHistoryConf !== undefined ? templateData.chatHistoryConf : 1,
         systemPrompt: templateData.systemPrompt || this.form.systemPrompt,
         summaryMemory: templateData.summaryMemory || this.form.summaryMemory,
         langCode: templateData.langCode || this.form.langCode,
@@ -403,8 +580,9 @@ export default {
           llmModelId: templateData.llmModelId || this.form.model.llmModelId,
           vllmModelId: templateData.vllmModelId || this.form.model.vllmModelId,
           memModelId: templateData.memModelId || this.form.model.memModelId,
-          intentModelId: templateData.intentModelId || this.form.model.intentModelId
-        }
+          intentModelId:
+            templateData.intentModelId || this.form.model.intentModelId,
+        },
       };
     },
     fetchAgentConfig(agentId) {
@@ -420,8 +598,8 @@ export default {
               llmModelId: data.data.llmModelId,
               vllmModelId: data.data.vllmModelId,
               memModelId: data.data.memModelId,
-              intentModelId: data.data.intentModelId
-            }
+              intentModelId: data.data.intentModelId,
+            },
           };
           // 后端只给了最小映射：[{ id, agentId, pluginId }, ...]
           const savedMappings = data.data.functions || [];
@@ -433,65 +611,77 @@ export default {
 
           ensureFuncs.then(() => {
             // 合并：按照 pluginId（id 字段）把全量元数据信息补齐
-            this.currentFunctions = savedMappings.map(mapping => {
-              const meta = this.allFunctions.find(f => f.id === mapping.pluginId);
+            this.currentFunctions = savedMappings.map((mapping) => {
+              const meta = this.allFunctions.find(
+                (f) => f.id === mapping.pluginId
+              );
               if (!meta) {
                 // 插件定义没找到，退化处理
-                return { id: mapping.pluginId, name: mapping.pluginId, params: {} };
+                return {
+                  id: mapping.pluginId,
+                  name: mapping.pluginId,
+                  params: {},
+                };
               }
               return {
                 id: mapping.pluginId,
                 name: meta.name,
                 // 后端如果还有 paramInfo 字段就用 mapping.paramInfo，否则用 meta.params 默认值
                 params: mapping.paramInfo || { ...meta.params },
-                fieldsMeta: meta.fieldsMeta  // 保留以便对话框渲染 tooltip
+                fieldsMeta: meta.fieldsMeta, // 保留以便对话框渲染 tooltip
               };
             });
             // 备份原始，以备取消时恢复
-            this.originalFunctions = JSON.parse(JSON.stringify(this.currentFunctions));
+            this.originalFunctions = JSON.parse(
+              JSON.stringify(this.currentFunctions)
+            );
 
             // 确保意图识别选项的可见性正确
             this.updateIntentOptionsVisibility();
           });
         } else {
-          this.$message.error(data.msg || 'Failed to get configuration');
+          this.$message.error(data.msg || "Failed to get configuration");
         }
       });
     },
     fetchModelOptions() {
-      this.models.forEach(model => {
+      this.models.forEach((model) => {
         if (model.type != "LLM") {
-          Api.model.getModelNames(model.type, '', ({ data }) => {
+          Api.model.getModelNames(model.type, "", ({ data }) => {
             if (data.code === 0) {
-              this.$set(this.modelOptions, model.type, data.data.map(item => ({
-                value: item.id,
-                label: item.modelName,
-                isHidden: false
-              })));
+              this.$set(
+                this.modelOptions,
+                model.type,
+                data.data.map((item) => ({
+                  value: item.id,
+                  label: item.modelName,
+                  isHidden: false,
+                }))
+              );
 
               // 如果是意图识别选项，需要根据当前LLM类型更新可见性
-              if (model.type === 'Intent') {
+              if (model.type === "Intent") {
                 this.updateIntentOptionsVisibility();
               }
             } else {
-              this.$message.error(data.msg || 'Failed to get model list');
+              this.$message.error(data.msg || "Failed to get model list");
             }
           });
         } else {
-          Api.model.getLlmModelCodeList('', ({ data }) => {
+          Api.model.getLlmModelCodeList("", ({ data }) => {
             if (data.code === 0) {
-              let LLMdata = []
-              data.data.forEach(item => {
+              let LLMdata = [];
+              data.data.forEach((item) => {
                 LLMdata.push({
                   value: item.id,
                   label: item.modelName,
-                  isHidden: false
-                })
-                this.llmModeTypeMap.set(item.id, item.type)
-              })
+                  isHidden: false,
+                });
+                this.llmModeTypeMap.set(item.id, item.type);
+              });
               this.$set(this.modelOptions, model.type, LLMdata);
             } else {
-              this.$message.error(data.msg || 'Failed to get LLM model list');
+              this.$message.error(data.msg || "Failed to get LLM model list");
             }
           });
         }
@@ -502,11 +692,11 @@ export default {
         this.voiceOptions = [];
         return;
       }
-      Api.model.getModelVoices(modelId, '', ({ data }) => {
+      Api.model.getModelVoices(modelId, "", ({ data }) => {
         if (data.code === 0 && data.data) {
-          this.voiceOptions = data.data.map(voice => ({
+          this.voiceOptions = data.data.map((voice) => ({
             value: voice.id,
-            label: voice.name
+            label: voice.name,
           }));
         } else {
           this.voiceOptions = [];
@@ -518,20 +708,28 @@ export default {
       return this.functionColorMap[hash % this.functionColorMap.length];
     },
     showFunctionIcons(type) {
-      return type === 'Intent' &&
-        this.form.model.intentModelId !== 'Intent_nointent';
+      return (
+        type === "Intent" && this.form.model.intentModelId !== "Intent_nointent"
+      );
     },
     handleModelChange(type, value) {
-      if (type === 'Intent' && value !== 'Intent_nointent') {
+      if (type === "Intent" && value !== "Intent_nointent") {
         this.fetchAllFunctions();
       }
-      if (type === 'Memory' && value === 'Memory_nomem') {
+      if (type === "Memory" && value === "Memory_nomem") {
         this.form.chatHistoryConf = 0;
       }
-      if (type === 'Memory' && value !== 'Memory_nomem' && (this.form.chatHistoryConf === 0 || this.form.chatHistoryConf === null)) {
-        this.form.chatHistoryConf = 2;
+      if (type === "Memory" && value !== "Memory_nomem") {
+        // For any enabled memory type (Local Short Term or Mem0AI), default to Report Text
+        if (this.form.chatHistoryConf === 0 || this.form.chatHistoryConf === null || this.form.chatHistoryConf === undefined) {
+          this.form.chatHistoryConf = 1;
+        }
+        // Explicitly ensure Mem0AI also defaults to Report Text
+        if (value === "Memory_mem0ai" && (this.form.chatHistoryConf === 0 || this.form.chatHistoryConf === null || this.form.chatHistoryConf === undefined)) {
+          this.form.chatHistoryConf = 1;
+        }
       }
-      if (type === 'LLM') {
+      if (type === "LLM") {
         // 当LLM类型改变时，更新意图识别选项的可见性
         this.updateIntentOptionsVisibility();
       }
@@ -540,8 +738,8 @@ export default {
       return new Promise((resolve, reject) => {
         Api.model.getPluginFunctionList(null, ({ data }) => {
           if (data.code === 0) {
-            this.allFunctions = data.data.map(item => {
-              const meta = JSON.parse(item.fields || '[]');
+            this.allFunctions = data.data.map((item) => {
+              const meta = JSON.parse(item.fields || "[]");
               const params = meta.reduce((m, f) => {
                 m[f.key] = f.default;
                 return m;
@@ -550,7 +748,7 @@ export default {
             });
             resolve();
           } else {
-            this.$message.error(data.msg || 'Failed to get plugin list');
+            this.$message.error(data.msg || "Failed to get plugin list");
             reject();
           }
         });
@@ -559,7 +757,7 @@ export default {
     openFunctionDialog() {
       // 显示编辑对话框时，确保 allFunctions 已经加载
       if (this.allFunctions.length === 0) {
-        this.fetchAllFunctions().then(() => this.showFunctionDialog = true);
+        this.fetchAllFunctions().then(() => (this.showFunctionDialog = true));
       } else {
         this.showFunctionDialog = true;
       }
@@ -569,21 +767,25 @@ export default {
     },
     handleDialogClosed(saved) {
       if (!saved) {
-        this.currentFunctions = JSON.parse(JSON.stringify(this.originalFunctions));
+        this.currentFunctions = JSON.parse(
+          JSON.stringify(this.originalFunctions)
+        );
       } else {
-        this.originalFunctions = JSON.parse(JSON.stringify(this.currentFunctions));
+        this.originalFunctions = JSON.parse(
+          JSON.stringify(this.currentFunctions)
+        );
       }
       this.showFunctionDialog = false;
     },
     updateIntentOptionsVisibility() {
       // 根据当前选择的LLM类型更新意图识别选项的可见性
       const currentLlmId = this.form.model.llmModelId;
-      if (!currentLlmId || !this.modelOptions['Intent']) return;
+      if (!currentLlmId || !this.modelOptions["Intent"]) return;
 
       const llmType = this.llmModeTypeMap.get(currentLlmId);
       if (!llmType) return;
 
-      this.modelOptions['Intent'].forEach(item => {
+      this.modelOptions["Intent"].forEach((item) => {
         if (item.value === "Intent_function_call") {
           // 如果llmType是openai或ollama，允许选择function_call
           // 否则隐藏function_call选项
@@ -599,35 +801,53 @@ export default {
       });
 
       // 如果当前选择的意图识别是function_call，但LLM类型不支持，则设置为可选的第一项
-      if (this.form.model.intentModelId === "Intent_function_call" &&
-        llmType !== "openai" && llmType !== "ollama") {
+      if (
+        this.form.model.intentModelId === "Intent_function_call" &&
+        llmType !== "openai" &&
+        llmType !== "ollama"
+      ) {
         // 找到第一个可见的选项
-        const firstVisibleOption = this.modelOptions['Intent'].find(item => !item.isHidden);
+        const firstVisibleOption = this.modelOptions["Intent"].find(
+          (item) => !item.isHidden
+        );
         if (firstVisibleOption) {
           this.form.model.intentModelId = firstVisibleOption.value;
         } else {
           // 如果没有可见选项，设置为Intent_nointent
-          this.form.model.intentModelId = 'Intent_nointent';
+          this.form.model.intentModelId = "Intent_nointent";
         }
       }
     },
     updateChatHistoryConf() {
-      if (this.form.model.memModelId === 'Memory_nomem') {
+      if (this.form.model.memModelId === "Memory_nomem") {
         this.form.chatHistoryConf = 0;
+      } else if (this.form.model.memModelId === "Memory_mem0ai" || this.form.model.memModelId === "Memory_mem_local_short") {
+        // Ensure enabled memory types default to Report Text if not already set
+        if (this.form.chatHistoryConf === 0 || this.form.chatHistoryConf === null || this.form.chatHistoryConf === undefined) {
+          this.form.chatHistoryConf = 1;
+        }
       }
     },
   },
   watch: {
-    'form.model.ttsModelId': {
+    "form.model.ttsModelId": {
       handler(newVal, oldVal) {
         if (oldVal && newVal !== oldVal) {
-          this.form.ttsVoiceId = '';
+          this.form.ttsVoiceId = "";
           this.fetchVoiceOptions(newVal);
         } else {
           this.fetchVoiceOptions(newVal);
         }
       },
-      immediate: true
+      immediate: true,
+    },
+    "form.model.memModelId": {
+      handler(newVal, oldVal) {
+        if (newVal && newVal !== oldVal) {
+          this.updateChatHistoryConf();
+        }
+      },
+      immediate: true,
     },
     voiceOptions: {
       handler(newVal) {
@@ -635,8 +855,8 @@ export default {
           this.form.ttsVoiceId = newVal[0].value;
         }
       },
-      immediate: true
-    }
+      immediate: true,
+    },
   },
   mounted() {
     const agentId = this.$route.query.agentId;
@@ -646,8 +866,8 @@ export default {
     }
     this.fetchModelOptions();
     this.fetchTemplates();
-  }
-}
+  },
+};
 </script>
 
 <style scoped>
@@ -888,8 +1108,8 @@ export default {
 }
 
 .custom-close-btn:hover {
-  color: #409EFF;
-  border-color: #409EFF;
+  color: #409eff;
+  border-color: #409eff;
 }
 
 .edit-function-btn {

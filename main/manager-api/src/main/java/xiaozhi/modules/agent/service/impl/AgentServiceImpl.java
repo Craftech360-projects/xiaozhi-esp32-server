@@ -80,8 +80,10 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
 
         if (agent.getMemModelId() != null && agent.getMemModelId().equals(Constant.MEMORY_NO_MEM)) {
             agent.setChatHistoryConf(Constant.ChatHistoryConfEnum.IGNORE.getCode());
+        } else {
+            // If memory is enabled and chatHistoryConf is null, default to RECORD_TEXT (1)
             if (agent.getChatHistoryConf() == null) {
-                agent.setChatHistoryConf(Constant.ChatHistoryConfEnum.RECORD_TEXT_AUDIO.getCode());
+                agent.setChatHistoryConf(Constant.ChatHistoryConfEnum.RECORD_TEXT.getCode());
             }
         }
         // 无需额外查询插件列表，已通过SQL查询出来
@@ -103,6 +105,16 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
         // 如果排序字段为空，设置默认值0
         if (entity.getSort() == null) {
             entity.setSort(0);
+        }
+
+        // 如果聊天记录配置为空，设置默认值1（仅记录文本）
+        if (entity.getChatHistoryConf() == null) {
+            entity.setChatHistoryConf(1);
+        }
+
+        // 如果记忆模型为空，设置默认值为本地短期记忆
+        if (entity.getMemModelId() == null || entity.getMemModelId().trim().isEmpty()) {
+            entity.setMemModelId("Memory_mem_local_short");
         }
 
         return super.insert(entity);
@@ -432,8 +444,10 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
             entity.setLangCode(template.getLangCode());
             entity.setLanguage(template.getLanguage());
             
-            // Override with custom defaults for memory and voice
-            entity.setMemModelId("Memory_mem0ai");  // Always use memoAI for memory
+            // Override with Cheeko defaults
+            entity.setAgentName("Cheeko");  // Always use Cheeko name
+            entity.setMemModelId("Memory_mem_local_short");  // Always use Local Short Term memory
+            entity.setChatHistoryConf(1);  // Always enable Report Text
             entity.setTtsModelId("TTS_EdgeTTS");  // Always use EdgeTTS model
             entity.setTtsVoiceId("TTS_EdgeTTS_Ana");  // Always use EdgeTTS Ana voice (en-US-AnaNeural)
             
