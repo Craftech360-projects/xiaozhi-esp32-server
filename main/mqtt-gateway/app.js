@@ -264,6 +264,11 @@ class LiveKitBridge extends Emitter {
               console.log(`🎛️ [DEVICE CONTROL] Received action: ${data.action}`);
               this.sendDeviceControlMessage(data);
               break;
+            case "function_call":
+              // Handle xiaozhi function calls (volume controls, etc.)
+              console.log(`🔧 [FUNCTION CALL] Received function: ${data.function_call?.name}`);
+              this.handleFunctionCall(data);
+              break;
             // case "metrics_collected":
             //   console.log(`Metrics: ${JSON.stringify(data.data)}`);
             //   break;
@@ -935,9 +940,78 @@ class LiveKitBridge extends Emitter {
 
     // Simulate device response for testing (remove in production)
     // This should be replaced by actual device response handling
-    setTimeout(() => {
-      this.simulateDeviceControlResponse(controlData);
-    }, 100);
+    // setTimeout(() => {
+    //   this.simulateDeviceControlResponse(controlData);
+    // }, 100);
+  }
+
+  // Handle xiaozhi function calls (volume controls, etc.)
+  handleFunctionCall(functionData) {
+    if (!this.connection) return;
+
+    const functionCall = functionData.function_call;
+    if (!functionCall || !functionCall.name) {
+      console.error(`❌ [FUNCTION CALL] Invalid function call data:`, functionData);
+      return;
+    }
+
+    // Map xiaozhi function names to device control actions
+    const functionToActionMap = {
+      'self_set_volume': 'set_volume',
+      'self_get_volume': 'get_volume',
+      'self_volume_up': 'volume_up',
+      'self_volume_down': 'volume_down',
+      'self_mute': 'mute',
+      'self_unmute': 'unmute'
+    };
+
+    const action = functionToActionMap[functionCall.name];
+    if (!action) {
+      console.log(`⚠️ [FUNCTION CALL] Unknown function: ${functionCall.name}, forwarding as-is`);
+      // Forward unknown functions as-is to device
+      this.sendFunctionCallToDevice(functionData);
+      return;
+    }
+
+    // Create device control message in xiaozhi-server compatible format
+    const message = {
+      type: "function_call",
+      function_call: {
+        name: functionCall.name,
+        arguments: functionCall.arguments || {}
+      },
+      session_id: this.connection.udp.session_id,
+      timestamp: functionData.timestamp || new Date().toISOString(),
+      request_id: functionData.request_id || `req_${Date.now()}`
+    };
+
+    console.log(
+      `🔧 [FUNCTION CALL] Sending to device: ${this.macAddress} - Function: ${functionCall.name}, Args: ${JSON.stringify(functionCall.arguments)}`
+    );
+    this.connection.sendMqttMessage(JSON.stringify(message));
+
+    // Simulate device response for testing (remove in production)
+    // setTimeout(() => {
+    //   this.simulateFunctionCallResponse(functionData);
+    // }, 100);
+  }
+
+  // Send unknown function calls directly to device
+  sendFunctionCallToDevice(functionData) {
+    if (!this.connection) return;
+
+    const message = {
+      type: "function_call",
+      function_call: functionData.function_call,
+      session_id: this.connection.udp.session_id,
+      timestamp: functionData.timestamp || new Date().toISOString(),
+      request_id: functionData.request_id || `req_${Date.now()}`
+    };
+
+    console.log(
+      `📤 [FUNCTION FORWARD] Forwarding unknown function to device: ${this.macAddress} - ${functionData.function_call?.name}`
+    );
+    this.connection.sendMqttMessage(JSON.stringify(message));
   }
 
   // Simulate device control response (for testing - remove in production)
@@ -989,6 +1063,68 @@ class LiveKitBridge extends Emitter {
       console.log(`🎛️ [DEVICE RESPONSE] Simulated response: Action ${action}, Success: ${success}, Value: ${currentValue}`);
     } catch (error) {
       console.error(`❌ [DEVICE RESPONSE] Error simulating device response:`, error);
+    }
+  }
+
+  // Simulate function call response (for testing - remove in production)
+  simulateFunctionCallResponse(originalFunction) {
+    if (!this.room || !this.room.localParticipant) return;
+
+    try {
+      const functionCall = originalFunction.function_call;
+      if (!functionCall) return;
+
+      let success = true;
+      let result = {};
+      let errorMessage = null;
+
+      // Simulate responses based on function name
+      switch (functionCall.name) {
+        case 'self_set_volume':
+          const volume = functionCall.arguments?.volume || 50;
+          result = { new_volume: volume };
+          break;
+        case 'self_get_volume':
+          result = { current_volume: 65 }; // Simulated current volume
+          break;
+        case 'self_volume_up':
+          result = { new_volume: Math.min(100, 65 + 10) };
+          break;
+        case 'self_volume_down':
+          result = { new_volume: Math.max(0, 65 - 10) };
+          break;
+        case 'self_mute':
+          result = { muted: true, previous_volume: 65 };
+          break;
+        case 'self_unmute':
+          result = { muted: false, current_volume: 65 };
+          break;
+        default:
+          success = false;
+          errorMessage = `Unknown function: ${functionCall.name}`;
+      }
+
+      const responseMessage = {
+        type: "function_response",
+        request_id: originalFunction.request_id || "unknown",
+        function_name: functionCall.name,
+        success: success,
+        result: result,
+        error: errorMessage,
+        timestamp: new Date().toISOString()
+      };
+
+      // Send response back to agent via data channel
+      const messageString = JSON.stringify(responseMessage);
+      const messageData = new Uint8Array(Buffer.from(messageString, 'utf8'));
+      this.room.localParticipant.publishData(
+        messageData,
+        { reliable: true }
+      );
+
+      console.log(`🔧 [FUNCTION RESPONSE] Simulated response: Function ${functionCall.name}, Success: ${success}, Result: ${JSON.stringify(result)}`);
+    } catch (error) {
+      console.error(`❌ [FUNCTION RESPONSE] Error simulating function response:`, error);
     }
   }
 
