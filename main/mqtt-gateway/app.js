@@ -260,9 +260,9 @@ class LiveKitBridge extends Emitter {
               this.sendTtsStartMessage(data.data.text);
               break;
             case "device_control":
-              // Handle device control commands from agent
+              // Convert device_control commands to MCP function calls
               console.log(`🎛️ [DEVICE CONTROL] Received action: ${data.action}`);
-              this.sendDeviceControlMessage(data);
+              this.convertDeviceControlToMcp(data);
               break;
             case "function_call":
               // Handle xiaozhi function calls (volume controls, etc.)
@@ -912,37 +912,52 @@ class LiveKitBridge extends Emitter {
     this.connection.sendMqttMessage(JSON.stringify(message));
   }
 
-  // Send device control command to device
-  sendDeviceControlMessage(controlData) {
+  // Convert device_control commands to MCP function calls
+  convertDeviceControlToMcp(controlData) {
     if (!this.connection) return;
 
-    // Create message in xiaozhi-server compatible format
-    const message = {
-      type: "device_control",
-      action: controlData.action || controlData.command, // Support both formats
-      session_id: this.connection.udp.session_id
+    const action = controlData.action || controlData.command;
+
+    // Map device control actions to xiaozhi function names
+    const actionToFunctionMap = {
+      'set_volume': 'self_set_volume',
+      'volume_up': 'self_volume_up',
+      'volume_down': 'self_volume_down',
+      'get_volume': 'self_get_volume',
+      'mute': 'self_mute',
+      'unmute': 'self_unmute'
     };
 
-    // Add specific parameters based on action type
-    if (controlData.action === "set_volume" || controlData.command === "set_volume") {
-      message.volume = controlData.volume || controlData.value;
-    } else if (controlData.action === "volume_up" || controlData.command === "volume_up") {
-      message.step = controlData.step || controlData.value || 10;
-    } else if (controlData.action === "volume_down" || controlData.command === "volume_down") {
-      message.step = controlData.step || controlData.value || 10;
+    const functionName = actionToFunctionMap[action];
+    if (!functionName) {
+      console.error(`❌ [DEVICE CONTROL] Unknown action: ${action}`);
+      return;
     }
-    // get_volume doesn't need additional parameters
+
+    // Prepare function arguments based on action type
+    let functionArguments = {};
+    if (action === "set_volume") {
+      functionArguments.volume = controlData.volume || controlData.value;
+    } else if (action === "volume_up" || action === "volume_down") {
+      functionArguments.step = controlData.step || controlData.value || 10;
+    }
+
+    // Create function call data in the same format as handleFunctionCall expects
+    const functionCallData = {
+      function_call: {
+        name: functionName,
+        arguments: functionArguments
+      },
+      timestamp: controlData.timestamp || new Date().toISOString(),
+      request_id: controlData.request_id || `req_${Date.now()}`
+    };
 
     console.log(
-      `📤 [MQTT OUT] Sending device control to device: ${this.macAddress} - Action: ${message.action}, Value: ${message.volume || message.step || 'N/A'}`
+      `🔄 [DEVICE CONTROL] Converting to MCP: ${action} -> ${functionName}, Args: ${JSON.stringify(functionArguments)}`
     );
-    this.connection.sendMqttMessage(JSON.stringify(message));
 
-    // Simulate device response for testing (remove in production)
-    // This should be replaced by actual device response handling
-    // setTimeout(() => {
-    //   this.simulateDeviceControlResponse(controlData);
-    // }, 100);
+    // Use existing handleFunctionCall method to send as MCP format
+    this.handleFunctionCall(functionCallData);
   }
 
   // Handle xiaozhi function calls (volume controls, etc.)
@@ -955,38 +970,44 @@ class LiveKitBridge extends Emitter {
       return;
     }
 
-    // Map xiaozhi function names to device control actions
-    const functionToActionMap = {
-      'self_set_volume': 'set_volume',
-      'self_get_volume': 'get_volume',
-      'self_volume_up': 'volume_up',
-      'self_volume_down': 'volume_down',
-      'self_mute': 'mute',
-      'self_unmute': 'unmute'
+    // Map xiaozhi function names to MCP tool names for ESP32 firmware
+    const functionToMcpToolMap = {
+      'self_set_volume': 'self.audio_speaker.set_volume',
+      'self_get_volume': 'self.get_device_status',
+      'self_volume_up': 'self.audio_speaker.volume_up',
+      'self_volume_down': 'self.audio_speaker.volume_down',
+      'self_mute': 'self.audio_speaker.mute',
+      'self_unmute': 'self.audio_speaker.unmute'
     };
 
-    const action = functionToActionMap[functionCall.name];
-    if (!action) {
-      console.log(`⚠️ [FUNCTION CALL] Unknown function: ${functionCall.name}, forwarding as-is`);
-      // Forward unknown functions as-is to device
-      this.sendFunctionCallToDevice(functionData);
+    const mcpToolName = functionToMcpToolMap[functionCall.name];
+    if (!mcpToolName) {
+      console.log(`⚠️ [FUNCTION CALL] Unknown function: ${functionCall.name}, forwarding as MCP message`);
+      // Forward unknown functions as MCP tool calls
+      this.sendMcpMessage(functionCall.name, functionCall.arguments || {});
       return;
     }
 
-    // Create device control message in xiaozhi-server compatible format
+    // Create MCP message format expected by ESP32 firmware (JSON-RPC 2.0)
+    const requestId = parseInt(functionData.request_id?.replace('req_', '') || Date.now());
     const message = {
-      type: "function_call",
-      function_call: {
-        name: functionCall.name,
-        arguments: functionCall.arguments || {}
+      type: "mcp",
+      payload: {
+        jsonrpc: "2.0",
+        method: "tools/call",
+        params: {
+          name: mcpToolName,
+          arguments: functionCall.arguments || {}
+        },
+        id: requestId
       },
       session_id: this.connection.udp.session_id,
       timestamp: functionData.timestamp || new Date().toISOString(),
-      request_id: functionData.request_id || `req_${Date.now()}`
+      request_id: `req_${requestId}`
     };
 
     console.log(
-      `🔧 [FUNCTION CALL] Sending to device: ${this.macAddress} - Function: ${functionCall.name}, Args: ${JSON.stringify(functionCall.arguments)}`
+      `🔧 [MCP] Sending to device: ${this.macAddress} - Tool: ${mcpToolName}, Args: ${JSON.stringify(functionCall.arguments)}`
     );
     this.connection.sendMqttMessage(JSON.stringify(message));
 
@@ -996,7 +1017,7 @@ class LiveKitBridge extends Emitter {
     // }, 100);
   }
 
-  // Send unknown function calls directly to device
+  // Send unknown function calls directly to device (deprecated - use sendMcpMessage)
   sendFunctionCallToDevice(functionData) {
     if (!this.connection) return;
 
@@ -1010,6 +1031,33 @@ class LiveKitBridge extends Emitter {
 
     console.log(
       `📤 [FUNCTION FORWARD] Forwarding unknown function to device: ${this.macAddress} - ${functionData.function_call?.name}`
+    );
+    this.connection.sendMqttMessage(JSON.stringify(message));
+  }
+
+  // Send MCP tool call message to device
+  sendMcpMessage(toolName, toolArgs = {}) {
+    if (!this.connection) return;
+
+    const requestId = Date.now();
+    const message = {
+      type: "mcp",
+      payload: {
+        jsonrpc: "2.0",
+        method: "tools/call",
+        params: {
+          name: toolName,
+          arguments: toolArgs
+        },
+        id: requestId
+      },
+      session_id: this.connection.udp.session_id,
+      timestamp: new Date().toISOString(),
+      request_id: `req_${requestId}`
+    };
+
+    console.log(
+      `📤 [MCP] Sending MCP tool call to device: ${this.macAddress} - Tool: ${toolName}, Args: ${JSON.stringify(toolArgs)}`
     );
     this.connection.sendMqttMessage(JSON.stringify(message));
   }
