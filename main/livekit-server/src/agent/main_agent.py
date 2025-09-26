@@ -30,16 +30,18 @@ class Assistant(Agent):
         self.audio_player = None
         self.unified_audio_player = None
         self.device_control_service = None
+        self.mcp_executor = None
         
 
 
-    def set_services(self, music_service, story_service, audio_player, unified_audio_player=None, device_control_service=None):
-        """Set the music, story, and device control services"""
+    def set_services(self, music_service, story_service, audio_player, unified_audio_player=None, device_control_service=None, mcp_executor=None):
+        """Set the music, story, device control services, and MCP executor"""
         self.music_service = music_service
         self.story_service = story_service
         self.audio_player = audio_player
         self.unified_audio_player = unified_audio_player
         self.device_control_service = device_control_service
+        self.mcp_executor = mcp_executor
 
     @function_tool
     async def lookup_weather(self, context: RunContext, location: str):
@@ -275,62 +277,13 @@ class Assistant(Agent):
         Args:
             volume: Volume level from 0 (mute) to 100 (maximum)
         """
-        try:
-            if not self.device_control_service:
-                return "Sorry, device control is not available right now."
+        if not self.mcp_executor:
+            return "Sorry, device control is not available right now."
 
-            # Validate volume level
-            if not isinstance(volume, int) or volume < 0 or volume > 100:
-                return "Volume level must be between 0 and 100."
+        # Always set context for each call to ensure correct room access
+        self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
 
-            # Get room using the same pattern as existing functions
-            room = None
-            if hasattr(context, 'room'):
-                room = context.room
-            elif self.unified_audio_player and self.unified_audio_player.context:
-                room = self.unified_audio_player.context.room
-            elif self.audio_player and self.audio_player.context:
-                room = self.audio_player.context.room
-
-            if not room:
-                logger.error("Cannot access room for device control")
-                return "Sorry, I couldn't access the device right now."
-
-            # Send device control command directly
-            import json
-            from datetime import datetime
-
-            # Use device_control format that MQTT gateway expects
-            message = {
-                "type": "device_control",
-                "action": "set_volume",
-                "volume": volume,
-                "session_id": "livekit_session"  # This should be extracted from context if available
-            }
-
-            await room.local_participant.publish_data(
-                json.dumps(message).encode(),
-                topic="device_control",
-                reliable=True
-            )
-
-            logger.info(f"Sent device control command: set_volume = {volume}")
-
-            # Update cache and return appropriate response
-            self.device_control_service.update_volume_cache(volume)
-
-            if volume == 0:
-                return "Volume set to mute."
-            elif volume <= 30:
-                return f"Volume set to {volume}% (low)."
-            elif volume <= 70:
-                return f"Volume set to {volume}% (medium)."
-            else:
-                return f"Volume set to {volume}% (high)."
-
-        except Exception as e:
-            logger.error(f"Error setting device volume: {e}")
-            return "Sorry, I couldn't adjust the volume right now."
+        return await self.mcp_executor.set_volume(volume)
 
     @function_tool
     async def adjust_device_volume(self, context: RunContext, action: str, step: int = 10):
@@ -340,152 +293,25 @@ class Assistant(Agent):
             action: Either "up", "down", "increase", "decrease"
             step: Volume step size (default 10)
         """
-        try:
-            if not self.device_control_service:
-                return "Sorry, device control is not available right now."
+        if not self.mcp_executor:
+            return "Volume control is not available right now."
 
-            # Validate action and step
-            action = action.lower()
-            if action not in ["up", "increase", "down", "decrease"]:
-                return "Please specify 'up' or 'down' to adjust the volume."
+        # Always set context for each call to ensure correct room access
+        self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
 
-            if not isinstance(step, int) or step < 1 or step > 100:
-                return "Volume step must be between 1 and 100."
-
-            # Get room using the same pattern as existing functions
-            room = None
-            if hasattr(context, 'room'):
-                room = context.room
-            elif self.unified_audio_player and self.unified_audio_player.context:
-                room = self.unified_audio_player.context.room
-            elif self.audio_player and self.audio_player.context:
-                room = self.audio_player.context.room
-
-            if not room:
-                logger.error("Cannot access room for device control")
-                return "Sorry, I couldn't access the device right now."
-
-            # Send device control command directly
-            import json
-            from datetime import datetime
-
-            command = "volume_up" if action in ["up", "increase"] else "volume_down"
-
-            # Use device_control format that MQTT gateway expects
-            message = {
-                "type": "device_control",
-                "action": command,  # volume_up or volume_down
-                "step": step,
-                "session_id": "livekit_session"  # This should be extracted from context if available
-            }
-
-            await room.local_participant.publish_data(
-                json.dumps(message).encode(),
-                topic="device_control",
-                reliable=True
-            )
-
-            logger.info(f"Sent device control command: {command} = {step}")
-
-            # Calculate estimated new volume if we have cached value
-            cached_volume = self.device_control_service.get_cached_volume()
-            if cached_volume is not None:
-                if action in ["up", "increase"]:
-                    new_level = min(100, cached_volume + step)
-                    self.device_control_service.update_volume_cache(new_level)
-                    return f"Volume increased to {new_level}%."
-                else:
-                    new_level = max(0, cached_volume - step)
-                    self.device_control_service.update_volume_cache(new_level)
-                    if new_level == 0:
-                        return "Volume muted."
-                    else:
-                        return f"Volume decreased to {new_level}%."
-            else:
-                if action in ["up", "increase"]:
-                    return f"Volume increased by {step}%."
-                else:
-                    return f"Volume decreased by {step}%."
-
-        except Exception as e:
-            logger.error(f"Error adjusting device volume: {e}")
-            return "Sorry, I couldn't adjust the volume right now."
+        return await self.mcp_executor.adjust_volume(action, step)
 
     @function_tool
     async def get_device_volume(self, context: RunContext):
         """Get current device volume level"""
-        try:
-            if not self.device_control_service:
-                return "Sorry, device control is not available right now."
+        if not self.mcp_executor:
+            return "Volume control is not available right now."
 
-            # Get room using the same pattern as existing functions
-            room = None
-            if hasattr(context, 'room'):
-                room = context.room
-            elif self.unified_audio_player and self.unified_audio_player.context:
-                room = self.unified_audio_player.context.room
-            elif self.audio_player and self.audio_player.context:
-                room = self.audio_player.context.room
+        # Always set context for each call to ensure correct room access
+        self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
 
-            if not room:
-                logger.error("Cannot access room for device control")
-                return "Sorry, I couldn't access the device right now."
+        return await self.mcp_executor.get_volume()
 
-            # Send device control command directly
-            import json
-            from datetime import datetime
-
-            # Use device_control format that MQTT gateway expects
-            message = {
-                "type": "device_control",
-                "action": "get_volume",
-                "session_id": "livekit_session"  # This should be extracted from context if available
-            }
-
-            await room.local_participant.publish_data(
-                json.dumps(message).encode(),
-                topic="device_control",
-                reliable=True
-            )
-
-            logger.info("Sent device control command: get_volume")
-
-            # Return cached volume if available, otherwise indicate we're checking
-            cached_volume = self.device_control_service.get_cached_volume()
-            if cached_volume is not None:
-                return f"Current volume is {cached_volume}%."
-            else:
-                return "Checking current volume level..."
-
-        except Exception as e:
-            logger.error(f"Error getting device volume: {e}")
-            return "Sorry, I couldn't check the volume right now."
-
-    @function_tool
-    async def mute_device(self, context: RunContext):
-        """Mute the device (set volume to 0)"""
-        try:
-            # Just call set_device_volume with 0
-            return await self.set_device_volume(context, 0)
-
-        except Exception as e:
-            logger.error(f"Error muting device: {e}")
-            return "Sorry, I couldn't mute the device right now."
-
-    @function_tool
-    async def unmute_device(self, context: RunContext, level: int = 50):
-        """Unmute the device and set volume to specified level
-
-        Args:
-            level: Volume level to restore to (default 50)
-        """
-        try:
-            # Just call set_device_volume with the specified level
-            return await self.set_device_volume(context, level)
-
-        except Exception as e:
-            logger.error(f"Error unmuting device: {e}")
-            return "Sorry, I couldn't unmute the device right now."
 
     @function_tool
     async def get_time_date(
@@ -770,71 +596,65 @@ class Assistant(Agent):
         Args:
             volume: Volume level between 0 and 100
         """
-        if not self.device_control_service:
+        if not self.mcp_executor:
             return "Volume control is not available right now."
 
-        # Set context if not already set
-        if not self.device_control_service.context:
-            self.device_control_service.set_context(context)
+        # Always set context for each call to ensure correct room access
+        self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
 
-        return await self.device_control_service.set_volume(volume)
+        return await self.mcp_executor.set_volume(volume)
 
     @function_tool
     async def self_get_volume(self, context: RunContext):
         """Get current device volume level"""
-        if not self.device_control_service:
+        if not self.mcp_executor:
             return "Volume control is not available right now."
 
-        # Set context if not already set
-        if not self.device_control_service.context:
-            self.device_control_service.set_context(context)
+        # Always set context for each call to ensure correct room access
+        self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
 
-        return await self.device_control_service.get_volume()
+        return await self.mcp_executor.get_volume()
 
     @function_tool
     async def self_volume_up(self, context: RunContext):
         """Increase device volume"""
-        if not self.device_control_service:
+        if not self.mcp_executor:
             return "Volume control is not available right now."
 
-        # Set context if not already set
-        if not self.device_control_service.context:
-            self.device_control_service.set_context(context)
+        # Always set context for each call to ensure correct room access
+        self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
 
-        return await self.device_control_service.volume_up()
+        return await self.mcp_executor.adjust_volume("up")
 
     @function_tool
     async def self_volume_down(self, context: RunContext):
         """Decrease device volume"""
-        if not self.device_control_service:
+        if not self.mcp_executor:
             return "Volume control is not available right now."
 
-        # Set context if not already set
-        if not self.device_control_service.context:
-            self.device_control_service.set_context(context)
+        # Always set context for each call to ensure correct room access
+        self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
 
-        return await self.device_control_service.volume_down()
+        return await self.mcp_executor.adjust_volume("down")
 
     @function_tool
     async def self_mute(self, context: RunContext):
         """Mute the device"""
-        if not self.device_control_service:
+        if not self.mcp_executor:
             return "Volume control is not available right now."
 
-        # Set context if not already set
-        if not self.device_control_service.context:
-            self.device_control_service.set_context(context)
+        # Always set context for each call to ensure correct room access
+        self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
 
-        return await self.device_control_service.mute()
+        return await self.mcp_executor.mute_device()
 
     @function_tool
     async def self_unmute(self, context: RunContext):
         """Unmute the device"""
-        if not self.device_control_service:
+        if not self.mcp_executor:
             return "Volume control is not available right now."
 
-        # Set context if not already set
-        if not self.device_control_service.context:
-            self.device_control_service.set_context(context)
+        # Always set context for each call to ensure correct room access
+        self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
 
-        return await self.device_control_service.unmute()
+        return await self.mcp_executor.unmute_device()

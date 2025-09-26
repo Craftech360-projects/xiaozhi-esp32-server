@@ -55,7 +55,7 @@ class DeviceControlService:
         try:
             await room.local_participant.publish_data(
                 json.dumps(message).encode(),
-                topic="xiaozhi_function_call",
+                topic="mcp_function_call",
                 reliable=True
             )
             logger.info(f"Sent function call: {function_name} with arguments: {arguments}")
