@@ -259,6 +259,11 @@ class LiveKitBridge extends Emitter {
               // Send TTS start message to device
               this.sendTtsStartMessage(data.data.text);
               break;
+            case "device_control":
+              // Handle device control commands from agent
+              console.log(`🎛️ [DEVICE CONTROL] Received action: ${data.action}`);
+              this.sendDeviceControlMessage(data);
+              break;
             // case "metrics_collected":
             //   console.log(`Metrics: ${JSON.stringify(data.data)}`);
             //   break;
@@ -458,9 +463,9 @@ class LiveKitBridge extends Emitter {
             console.log(`🤖 [AGENT] Agent joined the room: ${participant.identity}`);
 
             // Send initial greeting message to let user know agent is ready
-            // setTimeout(() => {
-            //   this.sendInitialGreeting();
-            // }, 1000); // Small delay to ensure connection is stable
+            setTimeout(() => {
+              this.sendInitialGreeting();
+            }, 1000); // Small delay to ensure connection is stable
           }
         });
 
@@ -900,6 +905,91 @@ class LiveKitBridge extends Emitter {
       `📤 [MQTT OUT] Sending STT result to device: ${this.macAddress} - "${text}"`
     );
     this.connection.sendMqttMessage(JSON.stringify(message));
+  }
+
+  // Send device control command to device
+  sendDeviceControlMessage(controlData) {
+    if (!this.connection) return;
+
+    // Create message in xiaozhi-server compatible format
+    const message = {
+      type: "device_control",
+      action: controlData.action || controlData.command, // Support both formats
+      session_id: this.connection.udp.session_id
+    };
+
+    // Add specific parameters based on action type
+    if (controlData.action === "set_volume" || controlData.command === "set_volume") {
+      message.volume = controlData.volume || controlData.value;
+    } else if (controlData.action === "volume_up" || controlData.command === "volume_up") {
+      message.step = controlData.step || controlData.value || 10;
+    } else if (controlData.action === "volume_down" || controlData.command === "volume_down") {
+      message.step = controlData.step || controlData.value || 10;
+    }
+    // get_volume doesn't need additional parameters
+
+    console.log(
+      `📤 [MQTT OUT] Sending device control to device: ${this.macAddress} - Action: ${message.action}, Value: ${message.volume || message.step || 'N/A'}`
+    );
+    this.connection.sendMqttMessage(JSON.stringify(message));
+
+    // Simulate device response for testing (remove in production)
+    // This should be replaced by actual device response handling
+    setTimeout(() => {
+      this.simulateDeviceControlResponse(controlData);
+    }, 100);
+  }
+
+  // Simulate device control response (for testing - remove in production)
+  simulateDeviceControlResponse(originalCommand) {
+    if (!this.room || !this.room.localParticipant) return;
+
+    try {
+      let currentValue = null;
+      let success = true;
+      let errorMessage = null;
+
+      // Simulate responses based on action type
+      const action = originalCommand.action || originalCommand.command;
+      switch (action) {
+        case 'set_volume':
+          currentValue = originalCommand.volume || originalCommand.value || 50;
+          break;
+        case 'get_volume':
+          currentValue = 65; // Simulated current volume
+          break;
+        case 'volume_up':
+          currentValue = Math.min(100, 65 + (originalCommand.step || originalCommand.value || 10));
+          break;
+        case 'volume_down':
+          currentValue = Math.max(0, 65 - (originalCommand.step || originalCommand.value || 10));
+          break;
+        default:
+          success = false;
+          errorMessage = `Unknown action: ${action}`;
+      }
+
+      const responseMessage = {
+        type: "device_control_response",
+        action: action,
+        success: success,
+        current_value: currentValue,
+        error: errorMessage,
+        session_id: originalCommand.session_id || "unknown"
+      };
+
+      // Send response back to agent via data channel
+      const messageString = JSON.stringify(responseMessage);
+      const messageData = new Uint8Array(Buffer.from(messageString, 'utf8'));
+      this.room.localParticipant.publishData(
+        messageData,
+        { reliable: true }
+      );
+
+      console.log(`🎛️ [DEVICE RESPONSE] Simulated response: Action ${action}, Success: ${success}, Value: ${currentValue}`);
+    } catch (error) {
+      console.error(`❌ [DEVICE RESPONSE] Error simulating device response:`, error);
+    }
   }
 
   // Send LLM response to device

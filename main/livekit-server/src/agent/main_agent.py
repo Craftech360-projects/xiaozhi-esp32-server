@@ -29,15 +29,17 @@ class Assistant(Agent):
         self.story_service = None
         self.audio_player = None
         self.unified_audio_player = None
+        self.device_control_service = None
         
 
 
-    def set_services(self, music_service, story_service, audio_player, unified_audio_player=None):
-        """Set the music and story services"""
+    def set_services(self, music_service, story_service, audio_player, unified_audio_player=None, device_control_service=None):
+        """Set the music, story, and device control services"""
         self.music_service = music_service
         self.story_service = story_service
         self.audio_player = audio_player
         self.unified_audio_player = unified_audio_player
+        self.device_control_service = device_control_service
 
     @function_tool
     async def lookup_weather(self, context: RunContext, location: str):
@@ -265,6 +267,225 @@ class Assistant(Agent):
         except Exception as e:
             logger.error(f"Error stopping audio: {e}")
             return "Sorry, I encountered an error while trying to stop audio."
+
+    @function_tool
+    async def set_device_volume(self, context: RunContext, volume: int):
+        """Set device volume to a specific level (0-100)
+
+        Args:
+            volume: Volume level from 0 (mute) to 100 (maximum)
+        """
+        try:
+            if not self.device_control_service:
+                return "Sorry, device control is not available right now."
+
+            # Validate volume level
+            if not isinstance(volume, int) or volume < 0 or volume > 100:
+                return "Volume level must be between 0 and 100."
+
+            # Get room using the same pattern as existing functions
+            room = None
+            if hasattr(context, 'room'):
+                room = context.room
+            elif self.unified_audio_player and self.unified_audio_player.context:
+                room = self.unified_audio_player.context.room
+            elif self.audio_player and self.audio_player.context:
+                room = self.audio_player.context.room
+
+            if not room:
+                logger.error("Cannot access room for device control")
+                return "Sorry, I couldn't access the device right now."
+
+            # Send device control command directly
+            import json
+            from datetime import datetime
+
+            # Use device_control format that MQTT gateway expects
+            message = {
+                "type": "device_control",
+                "action": "set_volume",
+                "volume": volume,
+                "session_id": "livekit_session"  # This should be extracted from context if available
+            }
+
+            await room.local_participant.publish_data(
+                json.dumps(message).encode(),
+                topic="device_control",
+                reliable=True
+            )
+
+            logger.info(f"Sent device control command: set_volume = {volume}")
+
+            # Update cache and return appropriate response
+            self.device_control_service.update_volume_cache(volume)
+
+            if volume == 0:
+                return "Volume set to mute."
+            elif volume <= 30:
+                return f"Volume set to {volume}% (low)."
+            elif volume <= 70:
+                return f"Volume set to {volume}% (medium)."
+            else:
+                return f"Volume set to {volume}% (high)."
+
+        except Exception as e:
+            logger.error(f"Error setting device volume: {e}")
+            return "Sorry, I couldn't adjust the volume right now."
+
+    @function_tool
+    async def adjust_device_volume(self, context: RunContext, action: str, step: int = 10):
+        """Adjust device volume up or down
+
+        Args:
+            action: Either "up", "down", "increase", "decrease"
+            step: Volume step size (default 10)
+        """
+        try:
+            if not self.device_control_service:
+                return "Sorry, device control is not available right now."
+
+            # Validate action and step
+            action = action.lower()
+            if action not in ["up", "increase", "down", "decrease"]:
+                return "Please specify 'up' or 'down' to adjust the volume."
+
+            if not isinstance(step, int) or step < 1 or step > 100:
+                return "Volume step must be between 1 and 100."
+
+            # Get room using the same pattern as existing functions
+            room = None
+            if hasattr(context, 'room'):
+                room = context.room
+            elif self.unified_audio_player and self.unified_audio_player.context:
+                room = self.unified_audio_player.context.room
+            elif self.audio_player and self.audio_player.context:
+                room = self.audio_player.context.room
+
+            if not room:
+                logger.error("Cannot access room for device control")
+                return "Sorry, I couldn't access the device right now."
+
+            # Send device control command directly
+            import json
+            from datetime import datetime
+
+            command = "volume_up" if action in ["up", "increase"] else "volume_down"
+
+            # Use device_control format that MQTT gateway expects
+            message = {
+                "type": "device_control",
+                "action": command,  # volume_up or volume_down
+                "step": step,
+                "session_id": "livekit_session"  # This should be extracted from context if available
+            }
+
+            await room.local_participant.publish_data(
+                json.dumps(message).encode(),
+                topic="device_control",
+                reliable=True
+            )
+
+            logger.info(f"Sent device control command: {command} = {step}")
+
+            # Calculate estimated new volume if we have cached value
+            cached_volume = self.device_control_service.get_cached_volume()
+            if cached_volume is not None:
+                if action in ["up", "increase"]:
+                    new_level = min(100, cached_volume + step)
+                    self.device_control_service.update_volume_cache(new_level)
+                    return f"Volume increased to {new_level}%."
+                else:
+                    new_level = max(0, cached_volume - step)
+                    self.device_control_service.update_volume_cache(new_level)
+                    if new_level == 0:
+                        return "Volume muted."
+                    else:
+                        return f"Volume decreased to {new_level}%."
+            else:
+                if action in ["up", "increase"]:
+                    return f"Volume increased by {step}%."
+                else:
+                    return f"Volume decreased by {step}%."
+
+        except Exception as e:
+            logger.error(f"Error adjusting device volume: {e}")
+            return "Sorry, I couldn't adjust the volume right now."
+
+    @function_tool
+    async def get_device_volume(self, context: RunContext):
+        """Get current device volume level"""
+        try:
+            if not self.device_control_service:
+                return "Sorry, device control is not available right now."
+
+            # Get room using the same pattern as existing functions
+            room = None
+            if hasattr(context, 'room'):
+                room = context.room
+            elif self.unified_audio_player and self.unified_audio_player.context:
+                room = self.unified_audio_player.context.room
+            elif self.audio_player and self.audio_player.context:
+                room = self.audio_player.context.room
+
+            if not room:
+                logger.error("Cannot access room for device control")
+                return "Sorry, I couldn't access the device right now."
+
+            # Send device control command directly
+            import json
+            from datetime import datetime
+
+            # Use device_control format that MQTT gateway expects
+            message = {
+                "type": "device_control",
+                "action": "get_volume",
+                "session_id": "livekit_session"  # This should be extracted from context if available
+            }
+
+            await room.local_participant.publish_data(
+                json.dumps(message).encode(),
+                topic="device_control",
+                reliable=True
+            )
+
+            logger.info("Sent device control command: get_volume")
+
+            # Return cached volume if available, otherwise indicate we're checking
+            cached_volume = self.device_control_service.get_cached_volume()
+            if cached_volume is not None:
+                return f"Current volume is {cached_volume}%."
+            else:
+                return "Checking current volume level..."
+
+        except Exception as e:
+            logger.error(f"Error getting device volume: {e}")
+            return "Sorry, I couldn't check the volume right now."
+
+    @function_tool
+    async def mute_device(self, context: RunContext):
+        """Mute the device (set volume to 0)"""
+        try:
+            # Just call set_device_volume with 0
+            return await self.set_device_volume(context, 0)
+
+        except Exception as e:
+            logger.error(f"Error muting device: {e}")
+            return "Sorry, I couldn't mute the device right now."
+
+    @function_tool
+    async def unmute_device(self, context: RunContext, level: int = 50):
+        """Unmute the device and set volume to specified level
+
+        Args:
+            level: Volume level to restore to (default 50)
+        """
+        try:
+            # Just call set_device_volume with the specified level
+            return await self.set_device_volume(context, level)
+
+        except Exception as e:
+            logger.error(f"Error unmuting device: {e}")
+            return "Sorry, I couldn't unmute the device right now."
 
     @function_tool
     async def get_time_date(

@@ -13,7 +13,8 @@ file_paths = [
     r"C:\Users\Acer\Cheeko-esp32-server\main\livekit-server\.env",
     r"C:\Users\Acer\Cheeko-esp32-server\main\mqtt-gateway\.env",
 ]
-# ======================
+ 
+
 
 def replace_in_file(path: Path, old_ip: str, new_ip: str):
     pattern = re.compile(rf'(?<!\d){re.escape(old_ip)}(?!\d)')

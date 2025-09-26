@@ -1,0 +1,21 @@
+Database tables:
+DATABASECHANGELOG: 62 records
+DATABASECHANGELOGLOCK: 1 records
+ai_agent: 5 records
+ai_agent_chat_audio: 0 records
+ai_agent_chat_history: 117 records
+ai_agent_plugin_mapping: 8 records
+ai_agent_template: 15 records
+ai_agent_voice_print: 0 records
+ai_device: 8 records
+ai_model_config: 68 records
+ai_model_provider: 56 records
+ai_ota: 2 records
+ai_tts_voice: 137 records
+ai_voiceprint: 0 records
+parent_profile: 0 records
+sys_dict_data: 93 records
+sys_dict_type: 2 records
+sys_params: 38 records
+sys_user: 2 records
+sys_user_token: 2 records
