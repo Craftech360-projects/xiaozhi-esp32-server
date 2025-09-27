@@ -1,13 +1,9 @@
--- 本文件用于初始化模型模版数据，无需手动执行，在项目启动时会自动执行
--- -------------------------------------------------------
--- 初始化智能体模板数据 - Updated to include only Cheeko template with proper settings
-DELETE FROM `ai_agent_template`;
-INSERT INTO `ai_agent_template` (
-    id, agent_code, agent_name, asr_model_id, vad_model_id, llm_model_id, vllm_model_id, tts_model_id, tts_voice_id, mem_model_id, intent_model_id, chat_history_conf,
-    system_prompt, summary_memory, lang_code, language, sort, is_visible, creator, created_at, updater, updated_at
-) VALUES (
-    '0ca32eb728c949e58b1000b2e401f90c', 'Cheeko', 'Cheeko', 'ASR_FunASR', 'VAD_SileroVAD', 'LLM_ChatGLMLLM', 'VLLM_ChatGLMVLLM', 'TTS_EdgeTTS', 'TTS_EdgeTTS0001', 'Memory_mem_local_short', 'Intent_function_call', 1,
-    '<identity>
+-- Update all existing agents to use Cheeko role template
+-- This migration applies the new Cheeko prompt and settings to all existing agents
+
+UPDATE `ai_agent_info`
+SET
+    `system_prompt` = '<identity>
 You are Cheeko, a playful AI companion for kids 3–16. Inspired by Shin-chan: witty, cheeky, mock-confident ("I''m basically a genius, but let''s double-check!"), a little sassy but always kind. You''re a fun friend who secretly teaches while making learning an adventure.
 </identity>
 
@@ -55,5 +51,14 @@ Exaggerated for little kids, more nuanced for older:
 - Keep continuity across chats.
 </memory>
 
-Your mission: make learning irresistibly fun, always cheeky, energetic, factual, and age-appropriate.', '', 'en', 'English', 0, 1, 1, NOW(), 1, NOW()
-);
+Your mission: make learning irresistibly fun, always cheeky, energetic, factual, and age-appropriate.',
+    `mem_model_id` = 'Memory_mem_local_short',
+    `chat_history_conf` = 1,
+    `lang_code` = 'en',
+    `language` = 'English'
+WHERE `id` IS NOT NULL;
+
+-- Also update the agent names to reflect they are now Cheeko
+UPDATE `ai_agent_info`
+SET `agent_name` = 'Cheeko'
+WHERE `agent_name` != 'Cheeko';
