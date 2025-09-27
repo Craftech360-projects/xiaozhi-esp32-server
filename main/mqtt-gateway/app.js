@@ -388,6 +388,18 @@ class LiveKitBridge extends Emitter {
 
                       // Clear the buffer
                       this.frameBuffer = Buffer.alloc(0);
+
+                      // Notify connection that audio stream has ended
+                      if (this.connection && this.connection.isEnding) {
+                        console.log(`✅ [END-COMPLETE] Audio stream completed, closing connection: ${this.connection.clientId || this.connection.deviceId}`);
+                        // Use setTimeout to allow TTS stop message to be sent first
+                        setTimeout(() => {
+                          if (this.connection && this.connection.isEnding) {
+                            this.connection.close();
+                          }
+                        }, 1000); // 1 second delay to ensure TTS stop is processed
+                      }
+
                       break;
                     }
 
@@ -1298,6 +1310,40 @@ class LiveKitBridge extends Emitter {
     }
   }
 
+  async sendEndPrompt(sessionId) {
+    /**
+     * Send end prompt signal to LiveKit agent via data channel
+     * This tells the agent to say goodbye using the end prompt before session ends
+     */
+    if (!this.room || !this.room.localParticipant) {
+      throw new Error("Room not connected or no local participant");
+    }
+
+    try {
+      const endMessage = {
+        type: "end_prompt",
+        session_id: sessionId,
+        prompt: "You must end this conversation now. Start with 'Time flies so fast' and say a SHORT goodbye in 1-2 sentences maximum. Do NOT ask questions or suggest activities. Just say goodbye emotionally and end the conversation.",
+        timestamp: Date.now(),
+        source: "mqtt_gateway"
+      };
+
+      // Send via LiveKit data channel to the agent
+      // Convert to Uint8Array as required by LiveKit Node SDK
+      const messageString = JSON.stringify(endMessage);
+      const messageData = new Uint8Array(Buffer.from(messageString, 'utf8'));
+      await this.room.localParticipant.publishData(
+        messageData,
+        { reliable: true }
+      );
+
+      console.log(`👋 [END-PROMPT] Sent end prompt to LiveKit agent via data channel`);
+    } catch (error) {
+      console.error(`[LiveKitBridge] Failed to send end prompt:`, error);
+      throw error;
+    }
+  }
+
   async close() {
     if (this.room) {
       console.log("[LiveKitBridge] Disconnecting from LiveKit room");
@@ -1356,7 +1402,9 @@ class MQTTConnection {
 
     // Add inactivity timeout tracking
     this.lastActivityTime = Date.now();
-    this.inactivityTimeoutMs = 1 * 60 * 1000; // 3 minutes in milliseconds
+    this.inactivityTimeoutMs = 60 * 1000; // 1 minute in milliseconds
+    this.isEnding = false; // Track if end prompt has been sent
+    this.endPromptSentTime = null; // Track when end prompt was sent
 
     // Create protocol handler and pass in socket
     this.protocol = new MQTTProtocol(socket);
@@ -1477,17 +1525,67 @@ class MQTTConnection {
 
   updateActivityTime() {
     this.lastActivityTime = Date.now();
+
+    // Don't reset ending state during goodbye sequence
+    if (this.isEnding) {
+      console.log(`📱 [ENDING-IGNORE] Activity during goodbye sequence ignored for device: ${this.clientId}`);
+      return; // Don't log timer reset during ending
+    }
+
+    console.log(`⏱️ [TIMER-RESET] Activity timer reset for device: ${this.clientId}`);
   }
 
   checkKeepAlive() {
     const now = Date.now();
 
-    // Check for inactivity timeout (3 minutes of no communication)
+    // If we're in ending phase, check for final timeout
+    if (this.isEnding && this.endPromptSentTime) {
+      const timeSinceEndPrompt = now - this.endPromptSentTime;
+      const maxEndWaitTime = 30 * 1000; // 30 seconds max wait for end prompt audio
+
+      if (timeSinceEndPrompt > maxEndWaitTime) {
+        console.log(`🕒 [END-TIMEOUT] End prompt timeout reached, force closing connection: ${this.clientId} (waited ${Math.round(timeSinceEndPrompt / 1000)}s)`);
+        this.close();
+        return;
+      }
+
+      // Show countdown for end prompt completion
+      if (timeSinceEndPrompt % 5000 < 1000) {
+        const remainingSeconds = Math.round((maxEndWaitTime - timeSinceEndPrompt) / 1000);
+        console.log(`⏳ [END-WAIT] Device ${this.clientId}: ${remainingSeconds}s until force disconnect`);
+      }
+      return; // Don't do normal timeout check while ending
+    }
+
+    // Check for inactivity timeout (1 minute of no communication)
     const timeSinceLastActivity = now - this.lastActivityTime;
     if (timeSinceLastActivity > this.inactivityTimeoutMs) {
-      console.log(`🕒 [TIMEOUT] Closing connection due to 3-minute inactivity: ${this.clientId} (inactive for ${Math.round(timeSinceLastActivity / 1000)}s)`);
-      this.close();
-      return;
+      // Send end prompt instead of immediate close
+      if (!this.isEnding && this.bridge) {
+        this.isEnding = true;
+        this.endPromptSentTime = now;
+        console.log(`👋 [END-PROMPT] Sending goodbye message before timeout: ${this.clientId} (inactive for ${Math.round(timeSinceLastActivity / 1000)}s)`);
+
+        try {
+          this.bridge.sendEndPrompt(this.udp.session_id);
+        } catch (error) {
+          console.error(`Failed to send end prompt: ${error.message}`);
+          // If end prompt fails, close immediately
+          this.close();
+        }
+        return;
+      } else {
+        // No bridge available, close immediately
+        console.log(`🕒 [TIMEOUT] Closing connection due to 1-minute inactivity: ${this.clientId} (inactive for ${Math.round(timeSinceLastActivity / 1000)}s)`);
+        this.close();
+        return;
+      }
+    }
+
+    // Log remaining time until timeout (only show every 30 seconds to avoid spam)
+    if (timeSinceLastActivity % 30000 < 1000) {
+      const remainingSeconds = Math.round((this.inactivityTimeoutMs - timeSinceLastActivity) / 1000);
+      console.log(`⏰ [TIMER-CHECK] Device ${this.clientId}: ${remainingSeconds}s until timeout`);
     }
 
     // Original keep-alive check
@@ -1507,6 +1605,7 @@ class MQTTConnection {
 
   handlePublish(publishData) {
     // Update activity timestamp on any MQTT message receipt
+    console.log(`📨 [ACTIVITY] MQTT message received from ${this.clientId}, resetting inactivity timer`);
     this.updateActivityTime();
 
     debug("Received publish message:", {
@@ -1699,6 +1798,7 @@ class MQTTConnection {
     }
 
     if (json.type === "goodbye") {
+      console.log(`👋 [GOODBYE-MAC] Received goodbye message from device: ${this.macAddress}, session: ${json.session_id}`);
       this.bridge.close();
       this.bridge = null;
       return;
@@ -1721,8 +1821,7 @@ class MQTTConnection {
   }
 
   onUdpMessage(rinfo, message, payloadLength, timestamp, sequence) {
-    // Update activity timestamp on any UDP message receipt
-    this.updateActivityTime();
+    // UDP messages do not reset inactivity timer - only MQTT messages do
 
     if (!this.bridge) {
       // console.log(
@@ -1810,7 +1909,9 @@ class VirtualMQTTConnection {
 
     // Add inactivity timeout tracking
     this.lastActivityTime = Date.now();
-    this.inactivityTimeoutMs = 1 * 60 * 1000; // 3 minutes in milliseconds
+    this.inactivityTimeoutMs = 60 * 1000; // 1 minute in milliseconds
+    this.isEnding = false; // Track if end prompt has been sent
+    this.endPromptSentTime = null; // Track when end prompt was sent
 
     // Parse device info from hello message
     if (helloPayload.clientId) {
@@ -1867,10 +1968,19 @@ class VirtualMQTTConnection {
 
   updateActivityTime() {
     this.lastActivityTime = Date.now();
+
+    // Don't reset ending state during goodbye sequence
+    if (this.isEnding) {
+      console.log(`📱 [ENDING-IGNORE] Activity during goodbye sequence ignored for virtual device: ${this.deviceId}`);
+      return; // Don't log timer reset during ending
+    }
+
+    console.log(`⏱️ [TIMER-RESET] Activity timer reset for virtual device: ${this.deviceId}`);
   }
 
   handlePublish(publishData) {
     // Update activity timestamp on any MQTT message receipt
+    console.log(`📨 [ACTIVITY] MQTT message received from virtual device ${this.deviceId}, resetting inactivity timer`);
     this.updateActivityTime();
 
     try {
@@ -2053,8 +2163,11 @@ class VirtualMQTTConnection {
     }
 
     if (json.type === "goodbye") {
-      this.bridge.close();
-      this.bridge = null;
+      console.log(`👋 [GOODBYE-DEVICEID] Received goodbye message from device: ${this.deviceId}, session: ${json.session_id}`);
+      // this.bridge.close();
+      // this.bridge = null;
+      //commet temporarly, dgoodby message is not working well
+      
       return;
     }
 
@@ -2074,8 +2187,7 @@ class VirtualMQTTConnection {
   }
 
   onUdpMessage(rinfo, message, payloadLength, timestamp, sequence) {
-    // Update activity timestamp on any UDP message receipt
-    this.updateActivityTime();
+    // UDP messages do not reset inactivity timer - only MQTT messages do
 
     if (!this.bridge) {
       return;
@@ -2116,12 +2228,54 @@ class VirtualMQTTConnection {
   checkKeepAlive() {
     const now = Date.now();
 
-    // Check for inactivity timeout (3 minutes of no communication)
+    // If we're in ending phase, check for final timeout
+    if (this.isEnding && this.endPromptSentTime) {
+      const timeSinceEndPrompt = now - this.endPromptSentTime;
+      const maxEndWaitTime = 30 * 1000; // 30 seconds max wait for end prompt audio
+
+      if (timeSinceEndPrompt > maxEndWaitTime) {
+        console.log(`🕒 [END-TIMEOUT] End prompt timeout reached, force closing virtual connection: ${this.deviceId} (waited ${Math.round(timeSinceEndPrompt / 1000)}s)`);
+        this.close();
+        return;
+      }
+
+      // Show countdown for end prompt completion
+      if (timeSinceEndPrompt % 5000 < 1000) {
+        const remainingSeconds = Math.round((maxEndWaitTime - timeSinceEndPrompt) / 1000);
+        console.log(`⏳ [END-WAIT] Virtual device ${this.deviceId}: ${remainingSeconds}s until force disconnect`);
+      }
+      return; // Don't do normal timeout check while ending
+    }
+
+    // Check for inactivity timeout (1 minute of no communication)
     const timeSinceLastActivity = now - this.lastActivityTime;
     if (timeSinceLastActivity > this.inactivityTimeoutMs) {
-      console.log(`🕒 [TIMEOUT] Closing virtual connection due to 3-minute inactivity: ${this.deviceId} (inactive for ${Math.round(timeSinceLastActivity / 1000)}s)`);
-      this.close();
-      return;
+      // Send end prompt instead of immediate close
+      if (!this.isEnding && this.bridge) {
+        this.isEnding = true;
+        this.endPromptSentTime = now;
+        console.log(`👋 [END-PROMPT] Sending goodbye message before timeout: ${this.deviceId} (inactive for ${Math.round(timeSinceLastActivity / 1000)}s)`);
+
+        try {
+          this.bridge.sendEndPrompt(this.udp.session_id);
+        } catch (error) {
+          console.error(`Failed to send end prompt: ${error.message}`);
+          // If end prompt fails, close immediately
+          this.close();
+        }
+        return;
+      } else {
+        // No bridge available, close immediately
+        console.log(`🕒 [TIMEOUT] Closing virtual connection due to 1-minute inactivity: ${this.deviceId} (inactive for ${Math.round(timeSinceLastActivity / 1000)}s)`);
+        this.close();
+        return;
+      }
+    }
+
+    // Log remaining time until timeout (only show every 30 seconds to avoid spam)
+    if (timeSinceLastActivity % 30000 < 1000) {
+      const remainingSeconds = Math.round((this.inactivityTimeoutMs - timeSinceLastActivity) / 1000);
+      console.log(`⏰ [TIMER-CHECK] Virtual device ${this.deviceId}: ${remainingSeconds}s until timeout`);
     }
 
     // Virtual connections don't need traditional keep-alive since EMQX handles it

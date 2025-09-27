@@ -111,6 +111,20 @@ class ChatEventHandler:
             logger.error(f"Error handling device control response: {e}")
 
     @staticmethod
+    async def _handle_end_prompt(session, ctx, end_prompt):
+        """Handle end prompt signal from MQTT gateway - trigger goodbye message"""
+        try:
+            logger.info(f"👋 Generating goodbye message using end prompt")
+
+            # Generate the goodbye message using the provided prompt
+            session.generate_reply(instructions=end_prompt)
+
+            logger.info("✅ End prompt message generation triggered successfully")
+
+        except Exception as e:
+            logger.error(f"Error handling end prompt: {e}")
+
+    @staticmethod
     def setup_session_handlers(session, ctx):
         """Setup all event handlers for the agent session"""
 
@@ -470,6 +484,12 @@ class ChatEventHandler:
                 elif message.get('type') == 'device_control_response':
                     logger.info("🎛️ Processing device control response from MQTT gateway")
                     asyncio.create_task(ChatEventHandler._handle_device_control_response(session, ctx, message))
+
+                # Handle end prompt message from MQTT gateway
+                elif message.get('type') == 'end_prompt':
+                    logger.info("👋 Processing end prompt signal from MQTT gateway")
+                    end_prompt = message.get('prompt', 'You must end this conversation now. Start with "Time flies so fast" and say a SHORT goodbye in 1-2 sentences maximum. Do NOT ask questions or suggest activities. Just say goodbye emotionally and end the conversation.')
+                    asyncio.create_task(ChatEventHandler._handle_end_prompt(session, ctx, end_prompt))
 
             except Exception as e:
                 logger.error(f"Error processing data channel message: {e}")
