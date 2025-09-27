@@ -417,4 +417,11 @@ databaseChangeLog:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202509061300_add_ana_voice.sql
+  - changeSet:
+      id: 202509271500
+      author: claude
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202509271500_add_doit_ai_01_kit.sql
 

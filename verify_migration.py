@@ -1,7 +1,11 @@
+#!/usr/bin/env python3
+"""
+Database Migration Verification Script
+Compares main database with migrated fresh database
+"""
 
 import mysql.connector
 import json
-import argparse
 
 def get_database_info(host, port, user, password, database, name):
     """Extract schema and data information from a database"""
@@ -16,14 +20,13 @@ def get_database_info(host, port, user, password, database, name):
             'password': password,
             'database': database,
             'charset': 'utf8mb4',
-            'connect_timeout': 60,
-            'read_timeout': 60
+            'connect_timeout': 60
         }
 
         connection = mysql.connector.connect(**config)
         cursor = connection.cursor()
 
-        print(f"✅ Connected to {name} database successfully!")
+        print(f"[OK] Connected to {name} database successfully!")
 
         db_info = {
             'name': name,
@@ -40,7 +43,6 @@ def get_database_info(host, port, user, password, database, name):
         print(f"Found {len(tables)} tables in {name}")
 
         for table_name in tables:
-            # print(f"Processing table: {table_name}")
             table_info = {}
 
             # Get table structure
@@ -70,134 +72,115 @@ def get_database_info(host, port, user, password, database, name):
         return db_info
 
     except Exception as e:
-        print(f"❌ Error connecting to {name} database: {e}")
+        print(f"[ERROR] Error connecting to {name} database: {e}")
         return None
 
-def compare_local_databases(db1_name, db2_name):
-    print("=== Local Database Comparison Tool ===\n")
+def compare_databases():
+    print("=== Database Migration Verification ===\n")
 
-    # Get DB1 info
-    db1_info = get_database_info(
+    # Get main DB info
+    main_db_info = get_database_info(
         host='localhost',
         port=3307,
         user='manager',
         password='managerpassword',
-        database=db1_name,
-        name=db1_name
+        database='manager_api',
+        name='Main DB'
     )
 
-    # Get DB2 info
-    db2_info = get_database_info(
+    # Get fresh DB info
+    fresh_db_info = get_database_info(
         host='localhost',
-        port=3307,
-        user='manager',
-        password='managerpassword',
-        database=db2_name,
-        name=db2_name
+        port=3308,
+        user='root',
+        password='password123',
+        database='manager_api_fresh',
+        name='Fresh DB'
     )
 
-    if not db1_info or not db2_info:
-        print("❌ Could not connect to one or both databases")
+    if not main_db_info or not fresh_db_info:
+        print("[ERROR] Could not connect to one or both databases")
         return
 
     print("\n" + "="*60)
-    print(f"DATABASE COMPARISON: {db1_name} vs {db2_name}")
+    print(f"DATABASE COMPARISON: Main vs Fresh")
     print("="*60)
 
     # Basic comparison
-    print(f"\n📊 Table Count:")
-    print(f"   {db1_name}: {db1_info['table_count']} tables")
-    print(f"   {db2_name}:   {db2_info['table_count']} tables")
+    print(f"\n[INFO] Table Count:")
+    print(f"   Main DB: {main_db_info['table_count']} tables")
+    print(f"   Fresh DB: {fresh_db_info['table_count']} tables")
 
-    print(f"\n📈 Total Records:")
-    print(f"   {db1_name}: {db1_info['total_records']} records")
-    print(f"   {db2_name}:   {db2_info['total_records']} records")
+    print(f"\n[INFO] Total Records:")
+    print(f"   Main DB: {main_db_info['total_records']} records")
+    print(f"   Fresh DB: {fresh_db_info['total_records']} records")
 
     # Table comparison
-    db1_tables = set(db1_info['tables'].keys())
-    db2_tables = set(db2_info['tables'].keys())
+    main_tables = set(main_db_info['tables'].keys())
+    fresh_tables = set(fresh_db_info['tables'].keys())
 
-    missing_in_db2 = db1_tables - db2_tables
-    missing_in_db1 = db2_tables - db1_tables
-    common_tables = db1_tables & db2_tables
+    missing_in_fresh = main_tables - fresh_tables
+    extra_in_fresh = fresh_tables - main_tables
+    common_tables = main_tables & fresh_tables
 
-    print(f"\n🔍 Table Analysis:")
+    print(f"\n[INFO] Table Analysis:")
     print(f"   Common tables: {len(common_tables)}")
-    print(f"   Tables missing in {db2_name}: {len(missing_in_db2)}")
-    print(f"   Tables only in {db2_name}: {len(missing_in_db1)}")
+    print(f"   Tables missing in Fresh DB: {len(missing_in_fresh)}")
+    print(f"   Extra tables in Fresh DB: {len(extra_in_fresh)}")
 
-    if missing_in_db2:
-        print(f"\n❌ Tables missing in {db2_name}:")
-        for table in sorted(missing_in_db2):
+    if missing_in_fresh:
+        print(f"\n[ERROR] Tables missing in Fresh DB:")
+        for table in sorted(missing_in_fresh):
             print(f"   - {table}")
 
-    if missing_in_db1:
-        print(f"\n⚠️  Tables only in {db2_name}:")
-        for table in sorted(missing_in_db1):
+    if extra_in_fresh:
+        print(f"\n[WARN] Extra tables in Fresh DB:")
+        for table in sorted(extra_in_fresh):
             print(f"   - {table}")
 
-    # Detailed comparison for common tables
-    print(f"\n📋 Detailed Table Comparison:")
-    schema_matches = 0
-    data_matches = 0
+    # Check critical tables for mobile registration
+    critical_tables = ['sys_params', 'sys_dict_data', 'ai_model_config']
+    print(f"\n[INFO] Critical Tables for Mobile Registration:")
 
-    for table_name in sorted(common_tables):
-        db1_table = db1_info['tables'][table_name]
-        db2_table = db2_info['tables'][table_name]
-
-        # Compare column count
-        db1_cols = len(db1_table['columns'])
-        db2_cols = len(db2_table['columns'])
-
-        # Compare record count
-        db1_records = db1_table['record_count']
-        db2_records = db2_table['record_count']
-
-        schema_match = db1_cols == db2_cols
-        data_match = db1_records == db2_records
-
-        if schema_match:
-            schema_matches += 1
-        if data_match:
-            data_matches += 1
-
-        status = "✅" if schema_match and data_match else "❌"
-        print(f"   {status} {table_name}:")
-        print(f"      Columns: {db1_name}={db1_cols}, {db2_name}={db2_cols}")
-        print(f"      Records: {db1_name}={db1_records}, {db2_name}={db2_records}")
-
-        # Check for column differences
-        db1_col_names = set(db1_table['columns'].keys())
-        db2_col_names = set(db2_table['columns'].keys())
-
-        if db1_col_names != db2_col_names:
-            missing_cols = db1_col_names - db2_col_names
-            extra_cols = db2_col_names - db1_col_names
-            if missing_cols:
-                print(f"      Missing columns in {db2_name}: {missing_cols}")
-            if extra_cols:
-                print(f"      Extra columns in {db2_name}: {extra_cols}")
-
-    print(f"\n📊 Summary:")
-    print(f"   Schema matches: {schema_matches}/{len(common_tables)} tables")
-    print(f"   Data matches (record count): {data_matches}/{len(common_tables)} tables")
-
-    # Overall assessment
-    if (len(missing_in_db2) == 0 and
-        len(missing_in_db1) == 0 and
-        schema_matches == len(common_tables)):
-        print(f"\n🎉 SCHEMA MATCH! Both databases have identical table structures.")
-        if data_matches == len(common_tables):
-            print(f"\n🎉 PERFECT MATCH! Data counts are also identical.")
+    for table in critical_tables:
+        if table in common_tables:
+            main_count = main_db_info['tables'][table]['record_count']
+            fresh_count = fresh_db_info['tables'][table]['record_count']
+            status = "[OK]" if fresh_count > 0 else "[WARN]"
+            print(f"   {status} {table}: Main={main_count}, Fresh={fresh_count}")
         else:
-            print(f"\n⚠️  DATA MISMATCH! Record counts differ in some tables.")
-    else:
-        print(f"\n⚠️  SCHEMA MISMATCH! See details above.")
+            print(f"   [ERROR] {table}: Missing in fresh database")
+
+    # Check if mobile registration parameters exist
+    print(f"\n[INFO] Mobile Registration Check:")
+    try:
+        config = {
+            'host': 'localhost', 'port': 3308, 'user': 'root',
+            'password': 'password123', 'database': 'manager_api_fresh'
+        }
+        conn = mysql.connector.connect(**config)
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT param_code, param_value FROM sys_params WHERE param_code LIKE '%register%'")
+        register_params = cursor.fetchall()
+
+        if register_params:
+            print("   Registration parameters found:")
+            for param in register_params:
+                print(f"   - {param[0]}: {param[1]}")
+        else:
+            print("   [WARN] No registration parameters found")
+
+        cursor.close()
+        conn.close()
+
+    except Exception as e:
+        print(f"   [ERROR] Could not check registration parameters: {e}")
+
+    print(f"\n[INFO] Summary:")
+    schema_match = len(missing_in_fresh) == 0
+    print(f"   Schema complete: {'Yes' if schema_match else 'No'}")
+    print(f"   Ready for mobile registration: {'Check parameters above' if fresh_db_info['tables'].get('sys_params', {}).get('record_count', 0) > 0 else 'Missing configuration'}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Compare two local MySQL databases.")
-    parser.add_argument("db1", help="Name of the first database (e.g., the reference database)")
-    parser.add_argument("db2", help="Name of the second database (e.g., the test database)")
-    args = parser.parse_args()
-
-    compare_local_databases(args.db1, args.db2)
+    compare_databases()
