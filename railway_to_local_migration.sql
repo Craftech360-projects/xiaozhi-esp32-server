@@ -3506,7 +3506,7 @@ INSERT INTO `ai_model_provider` (`id`, `model_type`, `provider_code`, `name`, `f
 
 -- Add GroqLLM Model Configuration  
 DELETE FROM `ai_model_config` WHERE id = 'LLM_GroqLLM';
-INSERT INTO `ai_model_config` VALUES ('LLM_GroqLLM', 'LLM', 'GroqLLM', 'Groq LLM', 0, 1, '{"type": "openai", "api_key": "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", "model_name": "openai/gpt-oss-20b", "base_url": "https://api.groq.com/openai/v1", "temperature": 0.7, "max_tokens": 2048, "top_p": 1.0, "frequency_penalty": 0, "timeout": 15, "max_retries": 2, "retry_delay": 1}', NULL, NULL, 16, NULL, NULL, NULL, NULL);
+INSERT INTO `ai_model_config` VALUES ('LLM_GroqLLM', 'LLM', 'GroqLLM', 'Groq LLM', 0, 1, '{"type": "openai", "api_key": "YOUR_GROQ_API_KEY", "model_name": "openai/gpt-oss-20b", "base_url": "https://api.groq.com/openai/v1", "temperature": 0.7, "max_tokens": 2048, "top_p": 1.0, "frequency_penalty": 0, "timeout": 15, "max_retries": 2, "retry_delay": 1}', NULL, NULL, 16, NULL, NULL, NULL, NULL);
 
 -- Update GroqLLM Configuration Documentation
 UPDATE `ai_model_config` SET 

@@ -25,13 +25,17 @@ management:
       show-details: always
 
 spring:
+  # Disable Liquibase since we have a pre-migrated database
+  liquibase:
+    enabled: false
+
   datasource:
     druid:
-      # Local Azure database (same as Azure VM configuration)
+      # Fresh database configuration
       driver-class-name: com.mysql.cj.jdbc.Driver
-      url: jdbc:mysql://localhost:3307/manager_api?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&nullCatalogMeansCurrent=true&useSSL=false&allowPublicKeyRetrieval=true
-      username: manager
-      password: managerpassword
+      url: jdbc:mysql://localhost:3308/manager_api_fresh?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&nullCatalogMeansCurrent=true&useSSL=false&allowPublicKeyRetrieval=true
+      username: root
+      password: password123
 
       initial-size: 5
       max-active: 20

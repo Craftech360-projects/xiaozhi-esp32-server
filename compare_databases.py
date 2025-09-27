@@ -15,19 +15,14 @@ def get_database_info(host, port, user, password, database, name):
             'password': password,
             'database': database,
             'charset': 'utf8mb4',
-            'connect_timeout': 60,
-            'read_timeout': 60
+            'use_unicode': True,
+            'autocommit': True
         }
-
-        # Add SSL settings for Railway
-        if 'proxy.rlwy.net' in host:
-            config['ssl_disabled'] = False
-            config['autocommit'] = True
 
         connection = mysql.connector.connect(**config)
         cursor = connection.cursor()
 
-        print(f"✅ Connected to {name} database successfully!")
+        print(f"[OK] Connected to {name} database successfully!")
 
         db_info = {
             'name': name,
@@ -101,136 +96,136 @@ def get_database_info(host, port, user, password, database, name):
         return db_info
 
     except Exception as e:
-        print(f"❌ Error connecting to {name} database: {e}")
+        print(f"[ERROR] Error connecting to {name} database: {e}")
         return None
 
 def compare_databases():
     print("=== Database Comparison Tool ===\n")
 
-    # Get Railway database info
-    railway_info = get_database_info(
-        host='crossover.proxy.rlwy.net',
-        port=56145,
-        user='root',
-        password='XjOWQwtGNcoMIELTjoMoaaBTfKiBjVcA',
-        database='railway',
-        name='Railway'
-    )
-
-    # Get Local database info
-    local_info = get_database_info(
+    # Get Original database info (manager_api on port 3307)
+    original_info = get_database_info(
         host='localhost',
         port=3307,
         user='manager',
         password='managerpassword',
         database='manager_api',
-        name='Local'
+        name='Original'
     )
 
-    if not railway_info or not local_info:
-        print("❌ Could not connect to one or both databases")
+    # Get Fresh database info (manager_api_fresh on port 3308)
+    fresh_info = get_database_info(
+        host='localhost',
+        port=3308,
+        user='root',
+        password='password123',
+        database='manager_api_fresh',
+        name='Fresh'
+    )
+
+    if not original_info or not fresh_info:
+        print("[ERROR] Could not connect to one or both databases")
         return
 
     print("\n" + "="*60)
-    print("DATABASE COMPARISON RESULTS")
+    print("DATABASE MIGRATION VERIFICATION")
     print("="*60)
 
     # Basic comparison
-    print(f"\n📊 Table Count:")
-    print(f"   Railway: {railway_info['table_count']} tables")
-    print(f"   Local:   {local_info['table_count']} tables")
+    print(f"\n[INFO] Table Count:")
+    print(f"   Original: {original_info['table_count']} tables")
+    print(f"   Fresh:    {fresh_info['table_count']} tables")
 
-    print(f"\n📈 Total Records:")
-    print(f"   Railway: {railway_info['total_records']} records")
-    print(f"   Local:   {local_info['total_records']} records")
+    print(f"\n[INFO] Total Records:")
+    print(f"   Original: {original_info['total_records']} records")
+    print(f"   Fresh:    {fresh_info['total_records']} records")
 
     # Table comparison
-    railway_tables = set(railway_info['tables'].keys())
-    local_tables = set(local_info['tables'].keys())
+    original_tables = set(original_info['tables'].keys())
+    fresh_tables = set(fresh_info['tables'].keys())
 
-    missing_in_local = railway_tables - local_tables
-    missing_in_railway = local_tables - railway_tables
-    common_tables = railway_tables & local_tables
+    missing_in_fresh = original_tables - fresh_tables
+    missing_in_original = fresh_tables - original_tables
+    common_tables = original_tables & fresh_tables
 
-    print(f"\n🔍 Table Analysis:")
+    print(f"\n[INFO] Table Analysis:")
     print(f"   Common tables: {len(common_tables)}")
-    print(f"   Missing in Local: {len(missing_in_local)}")
-    print(f"   Missing in Railway: {len(missing_in_railway)}")
+    print(f"   Missing in Fresh: {len(missing_in_fresh)}")
+    print(f"   Missing in Original: {len(missing_in_original)}")
 
-    if missing_in_local:
-        print(f"\n❌ Tables missing in Local database:")
-        for table in sorted(missing_in_local):
+    if missing_in_fresh:
+        print(f"\n[ERROR] Tables missing in Fresh database:")
+        for table in sorted(missing_in_fresh):
             print(f"   - {table}")
 
-    if missing_in_railway:
-        print(f"\n⚠️  Tables only in Local database:")
-        for table in sorted(missing_in_railway):
+    if missing_in_original:
+        print(f"\n[WARNING] Tables only in Fresh database:")
+        for table in sorted(missing_in_original):
             print(f"   - {table}")
 
     # Detailed comparison for common tables
-    print(f"\n📋 Detailed Table Comparison:")
+    print(f"\n[INFO] Detailed Table Comparison:")
     schema_matches = 0
     data_matches = 0
 
     for table_name in sorted(common_tables):
-        railway_table = railway_info['tables'][table_name]
-        local_table = local_info['tables'][table_name]
+        original_table = original_info['tables'][table_name]
+        fresh_table = fresh_info['tables'][table_name]
 
         # Compare column count
-        railway_cols = len(railway_table['columns'])
-        local_cols = len(local_table['columns'])
+        original_cols = len(original_table['columns'])
+        fresh_cols = len(fresh_table['columns'])
 
         # Compare record count
-        railway_records = railway_table['record_count']
-        local_records = local_table['record_count']
+        original_records = original_table['record_count']
+        fresh_records = fresh_table['record_count']
 
-        schema_match = railway_cols == local_cols
-        data_match = railway_records == local_records
+        schema_match = original_cols == fresh_cols
+        data_match = original_records == fresh_records
 
         if schema_match:
             schema_matches += 1
         if data_match:
             data_matches += 1
 
-        status = "✅" if schema_match and data_match else "❌"
+        status = "[OK]" if schema_match and data_match else "[DIFF]"
         print(f"   {status} {table_name}:")
-        print(f"      Columns: Railway={railway_cols}, Local={local_cols}")
-        print(f"      Records: Railway={railway_records}, Local={local_records}")
+        print(f"      Columns: Original={original_cols}, Fresh={fresh_cols}")
+        print(f"      Records: Original={original_records}, Fresh={fresh_records}")
 
         # Check for column differences
-        railway_col_names = set(railway_table['columns'].keys())
-        local_col_names = set(local_table['columns'].keys())
+        original_col_names = set(original_table['columns'].keys())
+        fresh_col_names = set(fresh_table['columns'].keys())
 
-        if railway_col_names != local_col_names:
-            missing_cols = railway_col_names - local_col_names
-            extra_cols = local_col_names - railway_col_names
+        if original_col_names != fresh_col_names:
+            missing_cols = original_col_names - fresh_col_names
+            extra_cols = fresh_col_names - original_col_names
             if missing_cols:
-                print(f"      Missing columns in Local: {missing_cols}")
+                print(f"      Missing columns in Fresh: {missing_cols}")
             if extra_cols:
-                print(f"      Extra columns in Local: {extra_cols}")
+                print(f"      Extra columns in Fresh: {extra_cols}")
 
-    print(f"\n📊 Summary:")
+    print(f"\n[INFO] Summary:")
     print(f"   Schema matches: {schema_matches}/{len(common_tables)} tables")
     print(f"   Data matches: {data_matches}/{len(common_tables)} tables")
 
     # Overall assessment
-    if (len(missing_in_local) == 0 and
+    if (len(missing_in_fresh) == 0 and
         schema_matches == len(common_tables) and
         data_matches == len(common_tables)):
-        print(f"\n🎉 PERFECT MATCH! Local database is identical to Railway database.")
-    elif len(missing_in_local) == 0 and schema_matches == len(common_tables):
-        print(f"\n✅ SCHEMA MATCH! All table structures are identical. Only data counts differ.")
+        print(f"\n[SUCCESS] PERFECT MATCH! Fresh database is identical to Original database.")
+    elif len(missing_in_fresh) == 0 and schema_matches == len(common_tables):
+        print(f"\n[OK] SCHEMA MATCH! All table structures are identical. Only data counts differ.")
     else:
-        print(f"\n⚠️  DIFFERENCES FOUND! See details above.")
+        print(f"\n[WARNING] DIFFERENCES FOUND! See details above.")
 
     # Save detailed comparison to file
     comparison_data = {
-        'railway': railway_info,
-        'local': local_info,
+        'original': original_info,
+        'fresh': fresh_info,
         'analysis': {
             'common_tables': list(common_tables),
-            'missing_in_local': list(missing_in_local),
-            'missing_in_railway': list(missing_in_railway),
+            'missing_in_fresh': list(missing_in_fresh),
+            'missing_in_original': list(missing_in_original),
             'schema_matches': schema_matches,
             'data_matches': data_matches
         }
@@ -239,7 +234,41 @@ def compare_databases():
     with open('database_comparison_report.json', 'w', encoding='utf-8') as f:
         json.dump(comparison_data, f, indent=2, ensure_ascii=False, default=str)
 
-    print(f"\n📄 Detailed report saved to: database_comparison_report.json")
+    print(f"\n[INFO] Detailed report saved to: database_comparison_report.json")
+
+    # Special check for Cheeko template
+    print(f"\n[INFO] Cheeko Template Analysis:")
+    if 'ai_agent_template' in common_tables:
+        try:
+            # Check original database for Cheeko
+            orig_cheeko = None
+            for table_name, table_info in original_info['tables'].items():
+                if table_name == 'ai_agent_template' and 'sample_data' in table_info:
+                    for row in table_info['sample_data']:
+                        if isinstance(row, list) and len(row) > 1 and 'Cheeko' in str(row):
+                            orig_cheeko = row
+                            break
+
+            # Check fresh database for Cheeko
+            fresh_cheeko = None
+            for table_name, table_info in fresh_info['tables'].items():
+                if table_name == 'ai_agent_template' and 'sample_data' in table_info:
+                    for row in table_info['sample_data']:
+                        if isinstance(row, list) and len(row) > 1 and 'Cheeko' in str(row):
+                            fresh_cheeko = row
+                            break
+
+            if orig_cheeko and fresh_cheeko:
+                print(f"   [OK] Cheeko template found in both databases")
+            elif fresh_cheeko:
+                print(f"   [OK] Cheeko template found in Fresh database")
+                print(f"   [WARNING] Cheeko template not found in Original database")
+            else:
+                print(f"   [ERROR] Cheeko template not found in either database")
+        except Exception as e:
+            print(f"   [WARNING] Error checking Cheeko template: {e}")
+    else:
+        print(f"   [ERROR] ai_agent_template table not found in common tables")
 
 if __name__ == "__main__":
     compare_databases()
