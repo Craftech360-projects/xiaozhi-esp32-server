@@ -458,9 +458,9 @@ class LiveKitBridge extends Emitter {
             console.log(`🤖 [AGENT] Agent joined the room: ${participant.identity}`);
 
             // Send initial greeting message to let user know agent is ready
-            // setTimeout(() => {
-            //   this.sendInitialGreeting();
-            // }, 1000); // Small delay to ensure connection is stable
+            setTimeout(() => {
+              this.sendInitialGreeting();
+            }, 1000); // Small delay to ensure connection is stable
           }
         });
 

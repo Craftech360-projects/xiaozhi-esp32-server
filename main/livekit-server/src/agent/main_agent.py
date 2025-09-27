@@ -11,18 +11,19 @@ from livekit.agents import (
     RunContext,
     function_tool,
 )
+from .filtered_agent import FilteredAgent
 
 logger = logging.getLogger("agent")
 
-class Assistant(Agent):
-    """Main AI Assistant agent class"""
+class Assistant(FilteredAgent):
+    """Main AI Assistant agent class with TTS text filtering"""
 
-    def __init__(self, instructions: str = None) -> None:
+    def __init__(self, instructions: str = None, tts_provider=None) -> None:
         # Use provided instructions or fallback to a basic prompt
         if instructions is None:
             instructions = "You are a helpful AI assistant."
 
-        super().__init__(instructions=instructions)
+        super().__init__(instructions=instructions, tts_provider=tts_provider)
 
         # These will be injected by main.py
         self.music_service = None

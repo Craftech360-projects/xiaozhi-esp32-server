@@ -250,7 +250,7 @@ async def entrypoint(ctx: JobContext):
     session = AgentSession(
         llm=llm,
         stt=stt,
-        tts=tts,
+        tts=tts,  # Re-enabled TTS to fix userdata errors
         turn_detection=turn_detection,  # Disabled to avoid timeout
         vad=vad,
         preemptive_generation=agent_config['preemptive_generation'],
@@ -283,7 +283,7 @@ async def entrypoint(ctx: JobContext):
     unified_audio_player = UnifiedAudioPlayer()
 
     # Create agent with dynamic prompt and inject services
-    assistant = Assistant(instructions=agent_prompt)
+    assistant = Assistant(instructions=agent_prompt, tts_provider=tts)
     assistant.set_services(music_service, story_service,
                            audio_player, unified_audio_player)
 
