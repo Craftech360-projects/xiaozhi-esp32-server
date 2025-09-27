@@ -1356,7 +1356,7 @@ class MQTTConnection {
 
     // Add inactivity timeout tracking
     this.lastActivityTime = Date.now();
-    this.inactivityTimeoutMs = 1 * 60 * 1000; // 3 minutes in milliseconds
+    this.inactivityTimeoutMs = 3 * 60 * 1000; // 3 minutes in milliseconds
 
     // Create protocol handler and pass in socket
     this.protocol = new MQTTProtocol(socket);
@@ -1477,6 +1477,7 @@ class MQTTConnection {
 
   updateActivityTime() {
     this.lastActivityTime = Date.now();
+    console.log(`⏱️ [TIMER-RESET] Activity timer reset for device: ${this.clientId}`);
   }
 
   checkKeepAlive() {
@@ -1488,6 +1489,12 @@ class MQTTConnection {
       console.log(`🕒 [TIMEOUT] Closing connection due to 3-minute inactivity: ${this.clientId} (inactive for ${Math.round(timeSinceLastActivity / 1000)}s)`);
       this.close();
       return;
+    }
+
+    // Log remaining time until timeout (only show every 30 seconds to avoid spam)
+    if (timeSinceLastActivity % 30000 < 1000) {
+      const remainingSeconds = Math.round((this.inactivityTimeoutMs - timeSinceLastActivity) / 1000);
+      console.log(`⏰ [TIMER-CHECK] Device ${this.clientId}: ${remainingSeconds}s until timeout`);
     }
 
     // Original keep-alive check
@@ -1507,6 +1514,7 @@ class MQTTConnection {
 
   handlePublish(publishData) {
     // Update activity timestamp on any MQTT message receipt
+    console.log(`📨 [ACTIVITY] MQTT message received from ${this.clientId}, resetting inactivity timer`);
     this.updateActivityTime();
 
     debug("Received publish message:", {
@@ -1699,6 +1707,7 @@ class MQTTConnection {
     }
 
     if (json.type === "goodbye") {
+      console.log(`👋 [GOODBYE-MAC] Received goodbye message from device: ${this.macAddress}, session: ${json.session_id}`);
       this.bridge.close();
       this.bridge = null;
       return;
@@ -1721,8 +1730,7 @@ class MQTTConnection {
   }
 
   onUdpMessage(rinfo, message, payloadLength, timestamp, sequence) {
-    // Update activity timestamp on any UDP message receipt
-    this.updateActivityTime();
+    // UDP messages do not reset inactivity timer - only MQTT messages do
 
     if (!this.bridge) {
       // console.log(
@@ -1810,7 +1818,7 @@ class VirtualMQTTConnection {
 
     // Add inactivity timeout tracking
     this.lastActivityTime = Date.now();
-    this.inactivityTimeoutMs = 1 * 60 * 1000; // 3 minutes in milliseconds
+    this.inactivityTimeoutMs = 3 * 60 * 1000; // 3 minutes in milliseconds
 
     // Parse device info from hello message
     if (helloPayload.clientId) {
@@ -1867,10 +1875,12 @@ class VirtualMQTTConnection {
 
   updateActivityTime() {
     this.lastActivityTime = Date.now();
+    console.log(`⏱️ [TIMER-RESET] Activity timer reset for virtual device: ${this.deviceId}`);
   }
 
   handlePublish(publishData) {
     // Update activity timestamp on any MQTT message receipt
+    console.log(`📨 [ACTIVITY] MQTT message received from virtual device ${this.deviceId}, resetting inactivity timer`);
     this.updateActivityTime();
 
     try {
@@ -2053,8 +2063,11 @@ class VirtualMQTTConnection {
     }
 
     if (json.type === "goodbye") {
-      this.bridge.close();
-      this.bridge = null;
+      console.log(`👋 [GOODBYE-DEVICEID] Received goodbye message from device: ${this.deviceId}, session: ${json.session_id}`);
+      // this.bridge.close();
+      // this.bridge = null;
+      //commet temporarly, dgoodby message is not working well
+      
       return;
     }
 
@@ -2074,8 +2087,7 @@ class VirtualMQTTConnection {
   }
 
   onUdpMessage(rinfo, message, payloadLength, timestamp, sequence) {
-    // Update activity timestamp on any UDP message receipt
-    this.updateActivityTime();
+    // UDP messages do not reset inactivity timer - only MQTT messages do
 
     if (!this.bridge) {
       return;
@@ -2122,6 +2134,12 @@ class VirtualMQTTConnection {
       console.log(`🕒 [TIMEOUT] Closing virtual connection due to 3-minute inactivity: ${this.deviceId} (inactive for ${Math.round(timeSinceLastActivity / 1000)}s)`);
       this.close();
       return;
+    }
+
+    // Log remaining time until timeout (only show every 30 seconds to avoid spam)
+    if (timeSinceLastActivity % 30000 < 1000) {
+      const remainingSeconds = Math.round((this.inactivityTimeoutMs - timeSinceLastActivity) / 1000);
+      console.log(`⏰ [TIMER-CHECK] Virtual device ${this.deviceId}: ${remainingSeconds}s until timeout`);
     }
 
     // Virtual connections don't need traditional keep-alive since EMQX handles it
