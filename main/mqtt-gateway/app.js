@@ -259,6 +259,16 @@ class LiveKitBridge extends Emitter {
               // Send TTS start message to device
               this.sendTtsStartMessage(data.data.text);
               break;
+            case "device_control":
+              // Convert device_control commands to MCP function calls
+              console.log(`🎛️ [DEVICE CONTROL] Received action: ${data.action}`);
+              this.convertDeviceControlToMcp(data);
+              break;
+            case "function_call":
+              // Handle xiaozhi function calls (volume controls, etc.)
+              console.log(`🔧 [FUNCTION CALL] Received function: ${data.function_call?.name}`);
+              this.handleFunctionCall(data);
+              break;
             // case "metrics_collected":
             //   console.log(`Metrics: ${JSON.stringify(data.data)}`);
             //   break;
@@ -458,9 +468,9 @@ class LiveKitBridge extends Emitter {
             console.log(`🤖 [AGENT] Agent joined the room: ${participant.identity}`);
 
             // Send initial greeting message to let user know agent is ready
-            // setTimeout(() => {
-            //   this.sendInitialGreeting();
-            // }, 1000); // Small delay to ensure connection is stable
+            setTimeout(() => {
+              this.sendInitialGreeting();
+            }, 1000); // Small delay to ensure connection is stable
           }
         });
 
@@ -900,6 +910,270 @@ class LiveKitBridge extends Emitter {
       `📤 [MQTT OUT] Sending STT result to device: ${this.macAddress} - "${text}"`
     );
     this.connection.sendMqttMessage(JSON.stringify(message));
+  }
+
+  // Convert device_control commands to MCP function calls
+  convertDeviceControlToMcp(controlData) {
+    if (!this.connection) return;
+
+    const action = controlData.action || controlData.command;
+
+    // Map device control actions to xiaozhi function names
+    const actionToFunctionMap = {
+      'set_volume': 'self_set_volume',
+      'volume_up': 'self_volume_up',
+      'volume_down': 'self_volume_down',
+      'get_volume': 'self_get_volume',
+      'mute': 'self_mute',
+      'unmute': 'self_unmute'
+    };
+
+    const functionName = actionToFunctionMap[action];
+    if (!functionName) {
+      console.error(`❌ [DEVICE CONTROL] Unknown action: ${action}`);
+      return;
+    }
+
+    // Prepare function arguments based on action type
+    let functionArguments = {};
+    if (action === "set_volume") {
+      functionArguments.volume = controlData.volume || controlData.value;
+    } else if (action === "volume_up" || action === "volume_down") {
+      functionArguments.step = controlData.step || controlData.value || 10;
+    }
+
+    // Create function call data in the same format as handleFunctionCall expects
+    const functionCallData = {
+      function_call: {
+        name: functionName,
+        arguments: functionArguments
+      },
+      timestamp: controlData.timestamp || new Date().toISOString(),
+      request_id: controlData.request_id || `req_${Date.now()}`
+    };
+
+    console.log(
+      `🔄 [DEVICE CONTROL] Converting to MCP: ${action} -> ${functionName}, Args: ${JSON.stringify(functionArguments)}`
+    );
+
+    // Use existing handleFunctionCall method to send as MCP format
+    this.handleFunctionCall(functionCallData);
+  }
+
+  // Handle xiaozhi function calls (volume controls, etc.)
+  handleFunctionCall(functionData) {
+    if (!this.connection) return;
+
+    const functionCall = functionData.function_call;
+    if (!functionCall || !functionCall.name) {
+      console.error(`❌ [FUNCTION CALL] Invalid function call data:`, functionData);
+      return;
+    }
+
+    // Map xiaozhi function names to MCP tool names for ESP32 firmware
+    const functionToMcpToolMap = {
+      'self_set_volume': 'self.audio_speaker.set_volume',
+      'self_get_volume': 'self.get_device_status',
+      'self_volume_up': 'self.audio_speaker.volume_up',
+      'self_volume_down': 'self.audio_speaker.volume_down',
+      'self_mute': 'self.audio_speaker.mute',
+      'self_unmute': 'self.audio_speaker.unmute'
+    };
+
+    const mcpToolName = functionToMcpToolMap[functionCall.name];
+    if (!mcpToolName) {
+      console.log(`⚠️ [FUNCTION CALL] Unknown function: ${functionCall.name}, forwarding as MCP message`);
+      // Forward unknown functions as MCP tool calls
+      this.sendMcpMessage(functionCall.name, functionCall.arguments || {});
+      return;
+    }
+
+    // Create MCP message format expected by ESP32 firmware (JSON-RPC 2.0)
+    const requestId = parseInt(functionData.request_id?.replace('req_', '') || Date.now());
+    const message = {
+      type: "mcp",
+      payload: {
+        jsonrpc: "2.0",
+        method: "tools/call",
+        params: {
+          name: mcpToolName,
+          arguments: functionCall.arguments || {}
+        },
+        id: requestId
+      },
+      session_id: this.connection.udp.session_id,
+      timestamp: functionData.timestamp || new Date().toISOString(),
+      request_id: `req_${requestId}`
+    };
+
+    console.log(
+      `🔧 [MCP] Sending to device: ${this.macAddress} - Tool: ${mcpToolName}, Args: ${JSON.stringify(functionCall.arguments)}`
+    );
+    this.connection.sendMqttMessage(JSON.stringify(message));
+
+    // Simulate device response for testing (remove in production)
+    // setTimeout(() => {
+    //   this.simulateFunctionCallResponse(functionData);
+    // }, 100);
+  }
+
+  // Send unknown function calls directly to device (deprecated - use sendMcpMessage)
+  sendFunctionCallToDevice(functionData) {
+    if (!this.connection) return;
+
+    const message = {
+      type: "function_call",
+      function_call: functionData.function_call,
+      session_id: this.connection.udp.session_id,
+      timestamp: functionData.timestamp || new Date().toISOString(),
+      request_id: functionData.request_id || `req_${Date.now()}`
+    };
+
+    console.log(
+      `📤 [FUNCTION FORWARD] Forwarding unknown function to device: ${this.macAddress} - ${functionData.function_call?.name}`
+    );
+    this.connection.sendMqttMessage(JSON.stringify(message));
+  }
+
+  // Send MCP tool call message to device
+  sendMcpMessage(toolName, toolArgs = {}) {
+    if (!this.connection) return;
+
+    const requestId = Date.now();
+    const message = {
+      type: "mcp",
+      payload: {
+        jsonrpc: "2.0",
+        method: "tools/call",
+        params: {
+          name: toolName,
+          arguments: toolArgs
+        },
+        id: requestId
+      },
+      session_id: this.connection.udp.session_id,
+      timestamp: new Date().toISOString(),
+      request_id: `req_${requestId}`
+    };
+
+    console.log(
+      `📤 [MCP] Sending MCP tool call to device: ${this.macAddress} - Tool: ${toolName}, Args: ${JSON.stringify(toolArgs)}`
+    );
+    this.connection.sendMqttMessage(JSON.stringify(message));
+  }
+
+  // Simulate device control response (for testing - remove in production)
+  simulateDeviceControlResponse(originalCommand) {
+    if (!this.room || !this.room.localParticipant) return;
+
+    try {
+      let currentValue = null;
+      let success = true;
+      let errorMessage = null;
+
+      // Simulate responses based on action type
+      const action = originalCommand.action || originalCommand.command;
+      switch (action) {
+        case 'set_volume':
+          currentValue = originalCommand.volume || originalCommand.value || 50;
+          break;
+        case 'get_volume':
+          currentValue = 65; // Simulated current volume
+          break;
+        case 'volume_up':
+          currentValue = Math.min(100, 65 + (originalCommand.step || originalCommand.value || 10));
+          break;
+        case 'volume_down':
+          currentValue = Math.max(0, 65 - (originalCommand.step || originalCommand.value || 10));
+          break;
+        default:
+          success = false;
+          errorMessage = `Unknown action: ${action}`;
+      }
+
+      const responseMessage = {
+        type: "device_control_response",
+        action: action,
+        success: success,
+        current_value: currentValue,
+        error: errorMessage,
+        session_id: originalCommand.session_id || "unknown"
+      };
+
+      // Send response back to agent via data channel
+      const messageString = JSON.stringify(responseMessage);
+      const messageData = new Uint8Array(Buffer.from(messageString, 'utf8'));
+      this.room.localParticipant.publishData(
+        messageData,
+        { reliable: true }
+      );
+
+      console.log(`🎛️ [DEVICE RESPONSE] Simulated response: Action ${action}, Success: ${success}, Value: ${currentValue}`);
+    } catch (error) {
+      console.error(`❌ [DEVICE RESPONSE] Error simulating device response:`, error);
+    }
+  }
+
+  // Simulate function call response (for testing - remove in production)
+  simulateFunctionCallResponse(originalFunction) {
+    if (!this.room || !this.room.localParticipant) return;
+
+    try {
+      const functionCall = originalFunction.function_call;
+      if (!functionCall) return;
+
+      let success = true;
+      let result = {};
+      let errorMessage = null;
+
+      // Simulate responses based on function name
+      switch (functionCall.name) {
+        case 'self_set_volume':
+          const volume = functionCall.arguments?.volume || 50;
+          result = { new_volume: volume };
+          break;
+        case 'self_get_volume':
+          result = { current_volume: 65 }; // Simulated current volume
+          break;
+        case 'self_volume_up':
+          result = { new_volume: Math.min(100, 65 + 10) };
+          break;
+        case 'self_volume_down':
+          result = { new_volume: Math.max(0, 65 - 10) };
+          break;
+        case 'self_mute':
+          result = { muted: true, previous_volume: 65 };
+          break;
+        case 'self_unmute':
+          result = { muted: false, current_volume: 65 };
+          break;
+        default:
+          success = false;
+          errorMessage = `Unknown function: ${functionCall.name}`;
+      }
+
+      const responseMessage = {
+        type: "function_response",
+        request_id: originalFunction.request_id || "unknown",
+        function_name: functionCall.name,
+        success: success,
+        result: result,
+        error: errorMessage,
+        timestamp: new Date().toISOString()
+      };
+
+      // Send response back to agent via data channel
+      const messageString = JSON.stringify(responseMessage);
+      const messageData = new Uint8Array(Buffer.from(messageString, 'utf8'));
+      this.room.localParticipant.publishData(
+        messageData,
+        { reliable: true }
+      );
+
+      console.log(`🔧 [FUNCTION RESPONSE] Simulated response: Function ${functionCall.name}, Success: ${success}, Result: ${JSON.stringify(result)}`);
+    } catch (error) {
+      console.error(`❌ [FUNCTION RESPONSE] Error simulating function response:`, error);
+    }
   }
 
   // Send LLM response to device

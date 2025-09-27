@@ -19,9 +19,9 @@ import opuslib
 
 # --- Configuration ---
 
-SERVER_IP = "192.168.1.101" # !!! UPDATE with your server's local IP address !!!
+SERVER_IP = "192.168.1.101" 
 OTA_PORT = 8002
-MQTT_BROKER_HOST = "192.168.1.101"  # Your EMQX instance
+MQTT_BROKER_HOST = "192.168.1.101"  
 
 
 

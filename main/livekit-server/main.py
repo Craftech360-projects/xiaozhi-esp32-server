@@ -7,6 +7,8 @@ from src.services.unified_audio_player import UnifiedAudioPlayer
 from src.services.foreground_audio_player import ForegroundAudioPlayer
 from src.services.story_service import StoryService
 from src.services.music_service import MusicService
+from src.mcp.device_control_service import DeviceControlService
+from src.mcp.mcp_executor import LiveKitMCPExecutor
 from src.utils.helpers import UsageManager
 from src.handlers.chat_logger import ChatEventHandler
 from src.agent.main_agent import Assistant
@@ -282,10 +284,15 @@ async def entrypoint(ctx: JobContext):
     audio_player = ForegroundAudioPlayer()
     unified_audio_player = UnifiedAudioPlayer()
 
+    # Create device control service and MCP executor
+    device_control_service = DeviceControlService()
+    mcp_executor = LiveKitMCPExecutor()
+    logger.info("🎛️ Device control service and MCP executor created")
+
     # Create agent with dynamic prompt and inject services
     assistant = Assistant(instructions=agent_prompt)
     assistant.set_services(music_service, story_service,
-                           audio_player, unified_audio_player)
+                           audio_player, unified_audio_player, device_control_service, mcp_executor)
 
     # Log session info (responses will be captured via conversation_item_added event)
     if chat_history_service:

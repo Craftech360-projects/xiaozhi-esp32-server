@@ -29,15 +29,19 @@ class Assistant(Agent):
         self.story_service = None
         self.audio_player = None
         self.unified_audio_player = None
+        self.device_control_service = None
+        self.mcp_executor = None
         
 
 
-    def set_services(self, music_service, story_service, audio_player, unified_audio_player=None):
-        """Set the music and story services"""
+    def set_services(self, music_service, story_service, audio_player, unified_audio_player=None, device_control_service=None, mcp_executor=None):
+        """Set the music, story, device control services, and MCP executor"""
         self.music_service = music_service
         self.story_service = story_service
         self.audio_player = audio_player
         self.unified_audio_player = unified_audio_player
+        self.device_control_service = device_control_service
+        self.mcp_executor = mcp_executor
 
     @function_tool
     async def lookup_weather(self, context: RunContext, location: str):
@@ -265,6 +269,49 @@ class Assistant(Agent):
         except Exception as e:
             logger.error(f"Error stopping audio: {e}")
             return "Sorry, I encountered an error while trying to stop audio."
+
+    @function_tool
+    async def set_device_volume(self, context: RunContext, volume: int):
+        """Set device volume to a specific level (0-100)
+
+        Args:
+            volume: Volume level from 0 (mute) to 100 (maximum)
+        """
+        if not self.mcp_executor:
+            return "Sorry, device control is not available right now."
+
+        # Always set context for each call to ensure correct room access
+        self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
+
+        return await self.mcp_executor.set_volume(volume)
+
+    @function_tool
+    async def adjust_device_volume(self, context: RunContext, action: str, step: int = 10):
+        """Adjust device volume up or down
+
+        Args:
+            action: Either "up", "down", "increase", "decrease"
+            step: Volume step size (default 10)
+        """
+        if not self.mcp_executor:
+            return "Volume control is not available right now."
+
+        # Always set context for each call to ensure correct room access
+        self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
+
+        return await self.mcp_executor.adjust_volume(action, step)
+
+    @function_tool
+    async def get_device_volume(self, context: RunContext):
+        """Get current device volume level"""
+        if not self.mcp_executor:
+            return "Volume control is not available right now."
+
+        # Always set context for each call to ensure correct room access
+        self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
+
+        return await self.mcp_executor.get_volume()
+
 
     @function_tool
     async def get_time_date(
@@ -540,3 +587,74 @@ class Assistant(Agent):
         except Exception as e:
             logger.error(f"Error formatting news response: {e}")
             return f"News item received from {source} but formatting failed."
+
+    # Volume Control Function Tools
+    @function_tool
+    async def self_set_volume(self, context: RunContext, volume: int):
+        """Set device volume to a specific level (0-100)
+
+        Args:
+            volume: Volume level between 0 and 100
+        """
+        if not self.mcp_executor:
+            return "Volume control is not available right now."
+
+        # Always set context for each call to ensure correct room access
+        self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
+
+        return await self.mcp_executor.set_volume(volume)
+
+    @function_tool
+    async def self_get_volume(self, context: RunContext):
+        """Get current device volume level"""
+        if not self.mcp_executor:
+            return "Volume control is not available right now."
+
+        # Always set context for each call to ensure correct room access
+        self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
+
+        return await self.mcp_executor.get_volume()
+
+    @function_tool
+    async def self_volume_up(self, context: RunContext):
+        """Increase device volume"""
+        if not self.mcp_executor:
+            return "Volume control is not available right now."
+
+        # Always set context for each call to ensure correct room access
+        self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
+
+        return await self.mcp_executor.adjust_volume("up")
+
+    @function_tool
+    async def self_volume_down(self, context: RunContext):
+        """Decrease device volume"""
+        if not self.mcp_executor:
+            return "Volume control is not available right now."
+
+        # Always set context for each call to ensure correct room access
+        self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
+
+        return await self.mcp_executor.adjust_volume("down")
+
+    @function_tool
+    async def self_mute(self, context: RunContext):
+        """Mute the device"""
+        if not self.mcp_executor:
+            return "Volume control is not available right now."
+
+        # Always set context for each call to ensure correct room access
+        self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
+
+        return await self.mcp_executor.mute_device()
+
+    @function_tool
+    async def self_unmute(self, context: RunContext):
+        """Unmute the device"""
+        if not self.mcp_executor:
+            return "Volume control is not available right now."
+
+        # Always set context for each call to ensure correct room access
+        self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
+
+        return await self.mcp_executor.unmute_device()

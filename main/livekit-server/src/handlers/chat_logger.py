@@ -80,6 +80,37 @@ class ChatEventHandler:
             logger.error(f"Error handling device info: {e}")
 
     @staticmethod
+    async def _handle_device_control_response(session, ctx, message):
+        """Handle device control response from MQTT gateway"""
+        try:
+            action = message.get('action') or message.get('command')  # Support both formats
+            success = message.get('success', False)
+            current_value = message.get('current_value')
+            error_message = message.get('error')
+
+            logger.info(f"Device control response - Action: {action}, Success: {success}, Value: {current_value}")
+
+            # Update volume cache if we have the assistant instance and it has device control service
+            if (ChatEventHandler._assistant_instance and
+                hasattr(ChatEventHandler._assistant_instance, 'device_control_service') and
+                ChatEventHandler._assistant_instance.device_control_service):
+
+                device_service = ChatEventHandler._assistant_instance.device_control_service
+
+                if action in ['set_volume', 'get_volume', 'volume_up', 'volume_down'] and current_value is not None:
+                    device_service.update_volume_cache(current_value)
+                    logger.info(f"Updated volume cache to {current_value}%")
+
+            # If the command failed, we could optionally trigger a response to inform the user
+            if not success and error_message:
+                logger.warning(f"Device control action failed: {error_message}")
+                # Optionally, you could trigger an agent response here:
+                # session.generate_reply(instructions=f"Inform the user that the volume control failed: {error_message}")
+
+        except Exception as e:
+            logger.error(f"Error handling device control response: {e}")
+
+    @staticmethod
     def setup_session_handlers(session, ctx):
         """Setup all event handlers for the agent session"""
 
@@ -327,7 +358,7 @@ class ChatEventHandler:
             nonlocal last_message_count
             try:
                 if hasattr(session, 'history'):
-                    logger.debug(f"📚 Session has history attribute: {type(session.history)}")
+                    # logger.debug(f"📚 Session has history attribute: {type(session.history)}")
 
                     if session.history and hasattr(session.history, 'messages'):
                         current_messages = session.history.messages
@@ -335,13 +366,13 @@ class ChatEventHandler:
                         logger.debug(f"📚 Session history: {current_count} messages")
 
                         if current_count > last_message_count:
-                            logger.info(f"📚 NEW MESSAGES: Session history has {current_count} messages (was {last_message_count})")
+                            # logger.info(f"📚 NEW MESSAGES: Session history has {current_count} messages (was {last_message_count})")
 
                             # Check new messages
                             new_messages = current_messages[last_message_count:]
                             for i, msg in enumerate(new_messages):
                                 try:
-                                    logger.debug(f"📚 Message {i}: type={type(msg)}, attrs={[attr for attr in dir(msg) if not attr.startswith('_')]}")
+                                    # logger.debug(f"📚 Message {i}: type={type(msg)}, attrs={[attr for attr in dir(msg) if not attr.startswith('_')]}")
 
                                     # Try to get message info
                                     role = getattr(msg, 'role', 'unknown')
@@ -434,6 +465,11 @@ class ChatEventHandler:
                     logger.info("🧹 Processing cleanup request from MQTT gateway")
                     # This will trigger our participant disconnect logic
                     # The room cleanup will be handled by the event handlers in main.py
+
+                # Handle device control response from MQTT gateway
+                elif message.get('type') == 'device_control_response':
+                    logger.info("🎛️ Processing device control response from MQTT gateway")
+                    asyncio.create_task(ChatEventHandler._handle_device_control_response(session, ctx, message))
 
             except Exception as e:
                 logger.error(f"Error processing data channel message: {e}")
