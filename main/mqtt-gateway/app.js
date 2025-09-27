@@ -88,6 +88,7 @@ class LiveKitBridge extends Emitter {
     this.room = null;
     this.audioSource = new AudioSource(16000, 1);
     this.protocolVersion = protocolVersion;
+    this.isAudioPlaying = false; // Track if audio is actively playing
 
     // Initialize audio resampler for 48kHz -> 24kHz conversion (outgoing: LiveKit -> ESP32)
     this.audioResampler = new AudioResampler(48000, 24000, 1, AudioResamplerQuality.QUICK);
@@ -238,6 +239,9 @@ class LiveKitBridge extends Emitter {
                 data.data.old_state === "speaking" &&
                 data.data.new_state === "listening"
               ) {
+                // Set audio playing flag to false
+                this.isAudioPlaying = false;
+                console.log(`🎵 [AUDIO-STOP] TTS stopped for device: ${this.macAddress}`);
                 // Send TTS stop message to device
                 this.sendTtsStopMessage();
               }
@@ -256,6 +260,12 @@ class LiveKitBridge extends Emitter {
               break;
             case "speech_created":
               // console.log(`Speech created: ${JSON.stringify(data.data)}`);
+              // Set audio playing flag and reset inactivity timer
+              this.isAudioPlaying = true;
+              if (this.connection && this.connection.updateActivityTime) {
+                this.connection.updateActivityTime();
+                console.log(`🎵 [AUDIO-START] TTS started, timer reset for device: ${this.macAddress}`);
+              }
               // Send TTS start message to device
               this.sendTtsStartMessage(data.data.text);
               break;
@@ -1559,6 +1569,15 @@ class MQTTConnection {
 
     // Check for inactivity timeout (1 minute of no communication)
     const timeSinceLastActivity = now - this.lastActivityTime;
+
+    // Skip timeout check if audio is actively playing
+    if (this.bridge && this.bridge.isAudioPlaying) {
+      // Reset the timer while audio is playing to prevent timeout
+      this.lastActivityTime = now;
+      console.log(`🎵 [AUDIO-ACTIVE] Resetting timer - audio is playing for device: ${this.clientId}`);
+      return;
+    }
+
     if (timeSinceLastActivity > this.inactivityTimeoutMs) {
       // Send end prompt instead of immediate close
       if (!this.isEnding && this.bridge) {
@@ -2249,6 +2268,15 @@ class VirtualMQTTConnection {
 
     // Check for inactivity timeout (1 minute of no communication)
     const timeSinceLastActivity = now - this.lastActivityTime;
+
+    // Skip timeout check if audio is actively playing
+    if (this.bridge && this.bridge.isAudioPlaying) {
+      // Reset the timer while audio is playing to prevent timeout
+      this.lastActivityTime = now;
+      console.log(`🎵 [AUDIO-ACTIVE] Resetting timer - audio is playing for virtual device: ${this.deviceId}`);
+      return;
+    }
+
     if (timeSinceLastActivity > this.inactivityTimeoutMs) {
       // Send end prompt instead of immediate close
       if (!this.isEnding && this.bridge) {
