@@ -1329,6 +1329,12 @@ class LiveKitBridge extends Emitter {
       throw new Error("Room not connected or no local participant");
     }
 
+    // Check if the room is still connected before trying to send data
+    if (!this.room.isConnected) {
+      console.log(`👋 [END-PROMPT] Room already disconnected, skipping end prompt`);
+      return;
+    }
+
     try {
       const endMessage = {
         type: "end_prompt",
@@ -1350,7 +1356,8 @@ class LiveKitBridge extends Emitter {
       console.log(`👋 [END-PROMPT] Sent end prompt to LiveKit agent via data channel`);
     } catch (error) {
       console.error(`[LiveKitBridge] Failed to send end prompt:`, error);
-      throw error;
+      // Don't throw the error - just log it and continue with cleanup
+      console.log(`👋 [END-PROMPT] Continuing with connection cleanup despite end prompt failure`);
     }
   }
 
@@ -1542,10 +1549,10 @@ class MQTTConnection {
       return; // Don't log timer reset during ending
     }
 
-    console.log(`⏱️ [TIMER-RESET] Activity timer reset for device: ${this.clientId}`);
+    console.log(`⏱️ [TIMER-RESET] Activity timer reset for device: ${this.clientId} at ${new Date().toISOString()}`);
   }
 
-  checkKeepAlive() {
+  async checkKeepAlive() {
     const now = Date.now();
 
     // If we're in ending phase, check for final timeout
@@ -1583,10 +1590,10 @@ class MQTTConnection {
       if (!this.isEnding && this.bridge) {
         this.isEnding = true;
         this.endPromptSentTime = now;
-        console.log(`👋 [END-PROMPT] Sending goodbye message before timeout: ${this.clientId} (inactive for ${Math.round(timeSinceLastActivity / 1000)}s)`);
+        console.log(`👋 [END-PROMPT] Sending goodbye message before timeout: ${this.clientId} (inactive for ${Math.round(timeSinceLastActivity / 1000)}s) - Last activity: ${new Date(this.lastActivityTime).toISOString()}, Now: ${new Date(now).toISOString()}`);
 
         try {
-          this.bridge.sendEndPrompt(this.udp.session_id);
+          await this.bridge.sendEndPrompt(this.udp.session_id);
         } catch (error) {
           console.error(`Failed to send end prompt: ${error.message}`);
           // If end prompt fails, close immediately
@@ -1994,7 +2001,7 @@ class VirtualMQTTConnection {
       return; // Don't log timer reset during ending
     }
 
-    console.log(`⏱️ [TIMER-RESET] Activity timer reset for virtual device: ${this.deviceId}`);
+    console.log(`⏱️ [TIMER-RESET] Activity timer reset for virtual device: ${this.deviceId} at ${new Date().toISOString()}`);
   }
 
   handlePublish(publishData) {
@@ -2244,7 +2251,7 @@ class VirtualMQTTConnection {
     this.udp.remoteSequence = sequence;
   }
 
-  checkKeepAlive() {
+  async checkKeepAlive() {
     const now = Date.now();
 
     // If we're in ending phase, check for final timeout
@@ -2282,10 +2289,10 @@ class VirtualMQTTConnection {
       if (!this.isEnding && this.bridge) {
         this.isEnding = true;
         this.endPromptSentTime = now;
-        console.log(`👋 [END-PROMPT] Sending goodbye message before timeout: ${this.deviceId} (inactive for ${Math.round(timeSinceLastActivity / 1000)}s)`);
+        console.log(`👋 [END-PROMPT] Sending goodbye message before timeout: ${this.deviceId} (inactive for ${Math.round(timeSinceLastActivity / 1000)}s) - Last activity: ${new Date(this.lastActivityTime).toISOString()}, Now: ${new Date(now).toISOString()}`);
 
         try {
-          this.bridge.sendEndPrompt(this.udp.session_id);
+          await this.bridge.sendEndPrompt(this.udp.session_id);
         } catch (error) {
           console.error(`Failed to send end prompt: ${error.message}`);
           // If end prompt fails, close immediately
@@ -2331,7 +2338,7 @@ class MQTTGateway {
     this.publicIp = process.env.PUBLIC_IP || "127.0.0.1";
     this.connections = new Map(); // clientId -> MQTTConnection
     this.keepAliveTimer = null;
-    this.keepAliveCheckInterval = 1000; // Check every 1 second by default
+    this.keepAliveCheckInterval = 15000; // Check every 15 seconds
     this.headerBuffer = Buffer.alloc(16);
     this.mqttClient = null;
     this.deviceConnections = new Map(); // deviceId -> connection info
@@ -2576,10 +2583,10 @@ class MQTTGateway {
     this.lastActiveConnectionCount = 0;
 
     // Set new timer
-    this.keepAliveTimer = setInterval(() => {
+    this.keepAliveTimer = setInterval(async () => {
       // Check heartbeat status of all connections
       for (const connection of this.connections.values()) {
-        connection.checkKeepAlive();
+        await connection.checkKeepAlive();
       }
 
       const activeCount = Array.from(this.connections.values()).filter(

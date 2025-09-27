@@ -26,6 +26,7 @@ databaseChangeLog:
   - changeSet:
       id: 202504092335
       author: John
+      validCheckSum: 8:678b9fce8ee142d17e90ffb870f66f21
       changes:
         - sqlFile:
             encoding: utf8
@@ -357,6 +358,7 @@ databaseChangeLog:
   - changeSet:
       id: 202508291545
       author: claude
+      validCheckSum: 8:acf1d104d3d31520079bb2ff93cdc882
       changes:
         - sqlFile:
             encoding: utf8
@@ -421,6 +423,7 @@ databaseChangeLog:
   - changeSet:
       id: 202509271500
       author: claude
+      validCheckSum: ANY
       changes:
         - sqlFile:
             encoding: utf8

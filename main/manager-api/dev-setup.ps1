@@ -61,7 +61,7 @@ Write-Host "📋 Container Status:" -ForegroundColor Cyan
 docker-compose ps
 
 Write-Host "`n🌐 Service URLs:" -ForegroundColor Cyan
-Write-Host "   • API Documentation: http://localhost:8002/xiaozhi/doc.html" -ForegroundColor White
+Write-Host "   • API Documentation: http://localhost:8002/toy/doc.html" -ForegroundColor White
 Write-Host "   • Application: http://localhost:8002/toy" -ForegroundColor White
 Write-Host "   • phpMyAdmin: http://localhost:8080" -ForegroundColor White
 Write-Host "   • Redis Commander: http://localhost:8081" -ForegroundColor White

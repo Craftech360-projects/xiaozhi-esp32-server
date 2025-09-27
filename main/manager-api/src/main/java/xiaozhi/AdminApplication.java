@@ -32,6 +32,6 @@ public class AdminApplication {
             System.out.println("========================================");
         }
         
-        System.out.println("Server started: http://localhost:8002/xiaozhi/doc.html\n");
+        System.out.println("Server started: http://localhost:8002/toy/doc.html\n");
     }
 }

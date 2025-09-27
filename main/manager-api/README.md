@@ -64,7 +64,7 @@ The `docker-compose.yml` includes the following services:
 
 ## Access Points
 
-- **API Documentation**: http://localhost:8002/xiaozhi/doc.html
+- **API Documentation**: http://localhost:8002/toy/doc.html
 - **Application Base URL**: http://localhost:8002/toy
 - **phpMyAdmin**: http://localhost:8080
 - **Redis Commander**: http://localhost:8081
