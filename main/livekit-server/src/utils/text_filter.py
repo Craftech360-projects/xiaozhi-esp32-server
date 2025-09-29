@@ -27,7 +27,7 @@ class TextFilter:
             flags=re.UNICODE
         )
 
-        # Pattern for special markdown/formatting characters
+        # Pattern for special markdown/formatting characters (excluding & and @ for natural expressions)
         self.markdown_pattern = re.compile(r'[*_`~\[\]{}#|\\]')
 
         # Pattern for excessive punctuation (more than 3 consecutive)
@@ -36,11 +36,11 @@ class TextFilter:
         # Pattern for excessive spaces/newlines
         self.whitespace_pattern = re.compile(r'\s+')
 
-        # Pattern for common TTS-unfriendly characters (preserve math symbols)
-        self.special_chars_pattern = re.compile(r'[^\w\s.,!?;:()\'+\-*/=<>%$]', re.UNICODE)
+        # Pattern for common TTS-unfriendly characters (preserve math symbols and common symbols)
+        self.special_chars_pattern = re.compile(r'[^\w\s.,!?;:()\'+\-*/=<>%$^&@°:]', re.UNICODE)
 
         # Keep these punctuation marks for natural speech rhythm and math
-        self.speech_punctuation = {'.', ',', '!', '?', ';', ':', '(', ')', '-', "'", '+', '*', '/', '=', '<', '>', '%', '$'}
+        self.speech_punctuation = {'.', ',', '!', '?', ';', ':', '(', ')', '-', "'", '+', '*', '/', '=', '<', '>', '%', '$', '^', '&', '@', '°'}
 
     def filter_for_tts(self, text: str) -> str:
         """
@@ -62,10 +62,16 @@ class TextFilter:
             # Look for actual math patterns, not just isolated symbols
             import re as regex_mod
             math_patterns = [
-                r'\d+\s*[\+\-\*/=]\s*\d+',      # Numbers with operators: 2+2, 10*5
-                r'\w+\s*[\+\-\*/=]\s*\w+',      # Variables with operators: x+y, a=b
-                r'calculate|computation|solve|equation|formula|result\s*=|answer\s*=',  # Math keywords
-                r'\([^)]*[\+\-\*/=][^)]*\)',    # Math in parentheses: (x+y)
+                r'\d+\s*[\+\-\*/=^]\s*\d+',     # Numbers with operators: 2+2, 10*5, 2^3
+                r'\w+\s*[\+\-\*/=^]\s*\w+',     # Variables with operators: x+y, a=b, x^2
+                r'\d+\s*[\+\-\*/=^]\s*\w+',     # Mixed: 2+x, 3*y
+                r'\w+\s*[\+\-\*/=^]\s*\d+',     # Mixed: x+2, y*3
+                r'calculate|computation|solve|equation|formula|result\s*=|answer\s*=|math|mathematics',  # Math keywords
+                r'\([^)]*[\+\-\*/=^][^)]*\)',   # Math in parentheses: (x+y), (a+b)
+                r'\w+\s*=\s*\w+[\+\-\*/^]\w+',  # Equations: E=mc^2, a=b+c
+                r'[\w\d]+\^[\w\d]+',            # Exponents: 2^3, x^2, E^2
+                r'\(\s*[\w\d]+\s*,\s*[\w\d]+\s*\)',  # Coordinates: (x,y), (10,20)
+                r'[\w\d]+\s*[\+\-\*/=]\s*[\w\d]+\s*[\+\-\*/=]\s*[\w\d]+',  # Complex: 1+2+3, a*b/c
             ]
             has_math_context = any(regex_mod.search(pattern, text.lower()) for pattern in math_patterns)
 
@@ -74,11 +80,11 @@ class TextFilter:
 
             # Step 2: Handle markdown formatting (be smart about * in math context)
             if has_math_context:
-                # Only remove non-math markdown characters
+                # Only remove non-math markdown characters, preserve & and @
                 text = re.sub(r'[_`~\[\]{}#|\\]', '', text)
             else:
-                # Remove all markdown including *
-                text = self.markdown_pattern.sub('', text)
+                # Remove all markdown including * but preserve & and @ for natural expressions
+                text = re.sub(r'[*_`~\[\]{}#|\\]', '', text)
 
             # Step 3: Handle excessive punctuation (keep rhythm but reduce noise)
             text = self.excessive_punct_pattern.sub(r'\1\1\1', text)  # Max 3 consecutive
@@ -143,15 +149,25 @@ class TextFilter:
         """
         # Only convert symbols when they're clearly not part of math expressions
 
-        # Check if text seems to contain mathematical expressions
-        math_indicators = ['=', '+', '-', '*', '/', '(', ')', 'calculate', 'math', 'equation', 'solve']
-        has_math_context = any(indicator in text.lower() for indicator in math_indicators)
+        # Check if text seems to contain mathematical expressions (using same logic as main filter)
+        import re as regex_mod
+        math_patterns = [
+            r'\d+\s*[\+\-\*/=^]\s*\d+',
+            r'\w+\s*[\+\-\*/=^]\s*\w+',
+            r'calculate|computation|solve|equation|formula|result\s*=|answer\s*=|math|mathematics',
+            r'\([^)]*[\+\-\*/=^][^)]*\)',
+            r'[\w\d]+\^[\w\d]+',
+        ]
+        has_math_context = any(regex_mod.search(pattern, text.lower()) for pattern in math_patterns)
+
+        # Check for email patterns to preserve @
+        email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+        has_email = regex_mod.search(email_pattern, text)
 
         if not has_math_context:
-            # Safe to convert symbols to speech forms
+            # Safe to convert symbols to speech forms, but preserve @ in emails
             replacements = {
                 ' & ': ' and ',
-                ' @ ': ' at ',
                 ' + ': ' plus ',
                 ' = ': ' equals ',
                 ' % ': ' percent ',
@@ -159,15 +175,22 @@ class TextFilter:
                 ' # ': ' number ',
             }
 
+            # Only convert @ if not in email context
+            if not has_email:
+                replacements[' @ '] = ' at '
+
             for old, new in replacements.items():
                 text = text.replace(old, new)
         else:
-            # Preserve math symbols but convert non-math ones
+            # Preserve math symbols but convert non-math ones, still preserve @ in emails
             replacements = {
                 ' & ': ' and ',
-                ' @ ': ' at ',
                 ' # ': ' number ',
             }
+
+            # Only convert @ if not in email context
+            if not has_email:
+                replacements[' @ '] = ' at '
 
             for old, new in replacements.items():
                 text = text.replace(old, new)
