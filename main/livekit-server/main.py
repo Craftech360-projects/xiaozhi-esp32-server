@@ -546,6 +546,6 @@ if __name__ == "__main__":
     cli.run_app(WorkerOptions(
         entrypoint_fnc=entrypoint,
         prewarm_fnc=prewarm,
-        num_idle_processes=0,  # Disable process pooling to avoid initialization issues
+        num_idle_processes=2,  # Disable process pooling to avoid initialization issues
         initialize_process_timeout=30.0,  # Increase timeout to 30 seconds
     ))
