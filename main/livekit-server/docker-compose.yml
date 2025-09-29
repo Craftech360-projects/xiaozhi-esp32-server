@@ -10,11 +10,11 @@ services:
       - "50000-50200:50000-50200/udp"
     environment:
       LIVEKIT_KEYS: "devkey: secret"
-      REDIS_URL: "redis://:redispassword@manager-api-redis:6379"
+      REDIS_URL: "redis://:redispassword@redis-container:6379"
     networks:
-      - manager-api_manager-api-network
+      - bridge
 
 networks:
-  # Use existing manager-api network
-  manager-api_manager-api-network:
+  # Use default bridge network where redis-container is running
+  bridge:
     external: true

@@ -292,15 +292,24 @@ class LiveKitBridge extends Emitter {
     );
 
     return new Promise(async (resolve, reject) => {
-      try {
-        console.log(`[LiveKitBridge] Connecting to LiveKit room: ${roomName}`);
-        await this.room.connect(url, token, {
-          autoSubscribe: true,
-          dynacast: true,
-        });
-        console.log(`✅ [ROOM] Connected to LiveKit room: ${roomName}`);
-        console.log(`🔗 [CONNECTION] State: ${this.room.connectionState}`);
-        console.log(`🟢 [STATUS] Is connected: ${this.room.isConnected}`);
+      const maxRetries = 3;
+      let retryDelay = 2000; // Start with 2 seconds
+
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          console.log(`[LiveKitBridge] Connecting to LiveKit room: ${roomName} (attempt ${attempt}/${maxRetries})`);
+          await this.room.connect(url, token, {
+            autoSubscribe: true,
+            dynacast: true,
+          });
+          console.log(`✅ [ROOM] Connected to LiveKit room: ${roomName}`);
+          console.log(`🔗 [CONNECTION] State: ${this.room.connectionState}`);
+          console.log(`🟢 [STATUS] Is connected: ${this.room.isConnected}`);
+
+          // Force agent to join by sending a wake-up signal
+          setTimeout(() => {
+            this.sendAgentWakeUpSignal(roomName);
+          }, 2000);
 
         // Log existing participants in the room
         console.log(
@@ -535,11 +544,23 @@ class LiveKitBridge extends Emitter {
             format: "opus"
           }
         });
-      } catch (error) {
-        console.error("[LiveKitBridge] Error connecting to LiveKit:", error);
-        console.error("[LiveKitBridge] Error name:", error.name);
-        console.error("[LiveKitBridge] Error message:", error.message);
-        reject(error);
+        return; // Successfully connected, exit retry loop
+
+        } catch (error) {
+          console.error(`[LiveKitBridge] Connection attempt ${attempt}/${maxRetries} failed:`, error);
+          console.error("[LiveKitBridge] Error name:", error.name);
+          console.error("[LiveKitBridge] Error message:", error.message);
+
+          if (attempt === maxRetries) {
+            console.error("[LiveKitBridge] All retry attempts exhausted");
+            reject(error);
+            return;
+          }
+
+          console.log(`[LiveKitBridge] Retrying in ${retryDelay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+          retryDelay = Math.floor(retryDelay * 1.5); // Exponential backoff
+        }
       }
     });
   }
@@ -1228,6 +1249,36 @@ class LiveKitBridge extends Emitter {
       `📤 [MQTT OUT] Sending record stop to device: ${this.macAddress}`
     );
     this.connection.sendMqttMessage(JSON.stringify(message));
+  }
+
+  // Force agent to join the room by sending wake-up signal
+  async sendAgentWakeUpSignal(roomName) {
+    if (!this.room || !this.room.localParticipant) {
+      console.log(`⚠️ [AGENT-WAKEUP] Room not ready, cannot send wake-up signal`);
+      return;
+    }
+
+    try {
+      const wakeUpMessage = {
+        type: "agent_wakeup",
+        room_name: roomName,
+        device_mac: this.macAddress,
+        device_uuid: this.uuid,
+        timestamp: Date.now(),
+        source: "mqtt_gateway",
+        message: "Agent please join this room immediately"
+      };
+
+      const messageString = JSON.stringify(wakeUpMessage);
+      const messageData = new Uint8Array(Buffer.from(messageString, 'utf8'));
+      await this.room.localParticipant.publishData(
+        messageData,
+        { reliable: true }
+      );
+      console.log(`🚨 [AGENT-WAKEUP] Sent wake-up signal to force agent join: ${roomName}`);
+    } catch (error) {
+      console.error(`[AGENT-WAKEUP] Failed to send wake-up signal:`, error);
+    }
   }
 
   // Send device information and initial greeting when agent joins
