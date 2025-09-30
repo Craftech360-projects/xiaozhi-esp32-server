@@ -279,6 +279,15 @@ class LiveKitBridge extends Emitter {
               console.log(`🔧 [FUNCTION CALL] Received function: ${data.function_call?.name}`);
               this.handleFunctionCall(data);
               break;
+            case "mobile_music_request":
+              // Handle music play request from mobile app
+              console.log(`🎵 [MOBILE] Music play request received from mobile app`);
+              console.log(`   📱 Device: ${this.macAddress}`);
+              console.log(`   🎵 Song: ${data.song_name}`);
+              console.log(`   🗂️ Type: ${data.content_type}`);
+              console.log(`   🌐 Language: ${data.language || 'Not specified'}`);
+              this.handleMobileMusicRequest(data);
+              break;
             // case "metrics_collected":
             //   console.log(`Metrics: ${JSON.stringify(data.data)}`);
             //   break;
@@ -1037,6 +1046,70 @@ class LiveKitBridge extends Emitter {
     // setTimeout(() => {
     //   this.simulateFunctionCallResponse(functionData);
     // }, 100);
+  }
+
+  // Handle mobile app music play requests
+  async handleMobileMusicRequest(requestData) {
+    try {
+      console.log(`🎵 [MOBILE] Processing music request...`);
+
+      if (!this.room || !this.room.localParticipant) {
+        console.error(`❌ [MOBILE] Room not connected, cannot forward request`);
+        return;
+      }
+
+      // Determine function name based on content type
+      const functionName = requestData.content_type === "story" ? "play_story" : "play_music";
+
+      // Prepare function arguments
+      const functionArguments = {};
+
+      if (requestData.content_type === "music") {
+        // For music: song_name and language
+        if (requestData.song_name) {
+          functionArguments.song_name = requestData.song_name;
+        }
+        if (requestData.language) {
+          functionArguments.language = requestData.language;
+        }
+      } else if (requestData.content_type === "story") {
+        // For stories: story_name and category
+        if (requestData.song_name) {
+          functionArguments.story_name = requestData.song_name;
+        }
+        if (requestData.language) {
+          functionArguments.category = requestData.language;
+        }
+      }
+
+      // Create function call message for LiveKit agent
+      const functionCallMessage = {
+        type: "function_call",
+        function_call: {
+          name: functionName,
+          arguments: functionArguments
+        },
+        source: "mobile_app",
+        timestamp: Date.now(),
+        request_id: `mobile_req_${Date.now()}`
+      };
+
+      // Forward to LiveKit agent via data channel
+      const messageString = JSON.stringify(functionCallMessage);
+      const messageData = new Uint8Array(Buffer.from(messageString, 'utf8'));
+
+      await this.room.localParticipant.publishData(
+        messageData,
+        { reliable: true }
+      );
+
+      console.log(`✅ [MOBILE] Music request forwarded to LiveKit agent`);
+      console.log(`   🎯 Function: ${functionName}`);
+      console.log(`   📝 Arguments: ${JSON.stringify(functionArguments)}`);
+    } catch (error) {
+      console.error(`❌ [MOBILE] Failed to forward music request: ${error.message}`);
+      console.error(`   Stack: ${error.stack}`);
+    }
   }
 
   // Send unknown function calls directly to device (deprecated - use sendMcpMessage)

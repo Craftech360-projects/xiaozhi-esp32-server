@@ -27,6 +27,7 @@ This document provides a comprehensive analysis of the MQTT gateway communicatio
 ## 📤 Message Flow Triggers
 
 ### 1. Client → MQTT Gateway → Server
+
 Clients publish to the `"device-server"` topic, which the MQTT gateway forwards to the main server via WebSocket:
 
 ```javascript
@@ -40,19 +41,23 @@ mqtt_client.publish("device-server", JSON.stringify({
 }))
 ```
 
-### 2. Server → MQTT Gateway → Client  
+### 2. Server → MQTT Gateway → Client
+
 The server sends messages via WebSocket to the MQTT gateway, which publishes to the client's unique P2P topic:
 
 ```javascript
 // Gateway publishes to client's P2P topic: "devices/p2p/{mac_address}"
-connection.sendMqttMessage(JSON.stringify({
-    "type": "tts",
-    "state": "start", 
-    "session_id": session_id
-}))
+connection.sendMqttMessage(
+  JSON.stringify({
+    type: "tts",
+    state: "start",
+    session_id: session_id,
+  })
+);
 ```
 
 ### 3. Audio Streaming (Server ↔ Client)
+
 Real-time audio data bypasses MQTT and flows directly via encrypted UDP packets for low latency.
 
 ## 📨 Complete MQTT Message Types
@@ -60,10 +65,12 @@ Real-time audio data bypasses MQTT and flows directly via encrypted UDP packets 
 ### 🔄 Connection & Session Management
 
 #### 1. `hello` - Session Initiation
+
 **Direction**: Client → Server, Server → Client  
 **Purpose**: Establish session and exchange capabilities
 
 **Client Request:**
+
 ```json
 {
   "type": "hello",
@@ -80,6 +87,7 @@ Real-time audio data bypasses MQTT and flows directly via encrypted UDP packets 
 ```
 
 **Server Response:**
+
 ```json
 {
   "type": "hello",
@@ -87,7 +95,7 @@ Real-time audio data bypasses MQTT and flows directly via encrypted UDP packets 
   "session_id": "db4ead3e-c5e2-4dd4-bbf1-0295195e5058",
   "transport": "udp",
   "udp": {
-    "server": "64.227.170.31",
+    "server": "139.59.5.142",
     "port": 8884,
     "encryption": "aes-128-ctr",
     "key": "b6e228c4e0f5d0b93e6fac787786d303",
@@ -103,6 +111,7 @@ Real-time audio data bypasses MQTT and flows directly via encrypted UDP packets 
 ```
 
 #### 2. `goodbye` - Session Termination
+
 **Direction**: Client ↔ Server  
 **Purpose**: Clean session termination
 
@@ -116,6 +125,7 @@ Real-time audio data bypasses MQTT and flows directly via encrypted UDP packets 
 ### 🎤 Speech Recognition Messages
 
 #### 3. `stt` - Speech-to-Text Results
+
 **Direction**: Server → Client  
 **Purpose**: Send transcribed speech back to client
 
@@ -128,6 +138,7 @@ Real-time audio data bypasses MQTT and flows directly via encrypted UDP packets 
 ```
 
 #### 4. `listen` - Request Speech Processing
+
 **Direction**: Client → Server  
 **Purpose**: Request server to start listening/processing speech
 
@@ -143,12 +154,14 @@ Real-time audio data bypasses MQTT and flows directly via encrypted UDP packets 
 ### 🔊 Text-to-Speech Control Messages
 
 #### 5. `tts` - TTS Playback Control
+
 **Direction**: Server → Client  
 **Purpose**: Control TTS playback states
 
 **Available States**: `start`, `sentence_start`, `stop`
 
 **TTS Start:**
+
 ```json
 {
   "type": "tts",
@@ -158,6 +171,7 @@ Real-time audio data bypasses MQTT and flows directly via encrypted UDP packets 
 ```
 
 **Sentence Start (with text preview):**
+
 ```json
 {
   "type": "tts",
@@ -168,6 +182,7 @@ Real-time audio data bypasses MQTT and flows directly via encrypted UDP packets 
 ```
 
 **TTS Stop:**
+
 ```json
 {
   "type": "tts",
@@ -181,6 +196,7 @@ Real-time audio data bypasses MQTT and flows directly via encrypted UDP packets 
 ### 🤖 AI Response Messages
 
 #### 6. `llm` - Large Language Model Response
+
 **Direction**: Server → Client  
 **Purpose**: Send AI-generated response with emotion context
 
@@ -196,6 +212,7 @@ Real-time audio data bypasses MQTT and flows directly via encrypted UDP packets 
 ### ⏹️ Control Messages
 
 #### 7. `abort` - Abort Current Operation
+
 **Direction**: Client → Server  
 **Purpose**: Stop current TTS playback or processing
 
@@ -207,6 +224,7 @@ Real-time audio data bypasses MQTT and flows directly via encrypted UDP packets 
 ```
 
 #### 8. `record_stop` - Stop Audio Recording
+
 **Direction**: Server → Client  
 **Purpose**: Instruct client to stop recording audio
 
@@ -220,17 +238,20 @@ Real-time audio data bypasses MQTT and flows directly via encrypted UDP packets 
 ## 🎯 Server Message Trigger Points
 
 ### In `core/handle/sendAudioHandle.py`:
+
 - **`send_tts_message()`**: Triggers TTS state messages (`start`, `sentence_start`, `stop`)
 - **`send_stt_message()`**: Triggers STT transcription messages
 - **`sendAudioMessage()`**: Coordinates TTS playback with state messages
 - Called during the audio processing pipeline
 
 ### In `core/handle/helloHandle.py`:
+
 - **`handleHelloMessage()`**: Triggers the initial hello response with session details
 - **`checkWakeupWords()`**: Can trigger STT and TTS messages for wake word responses
 - **`wakeupWordsResponse()`**: Generates dynamic wake word responses
 
 ### In MQTT Gateway (`mqtt-gateway/app.js`):
+
 - **`parseHelloMessage()`**: Processes hello messages and sends session details
 - **`parseOtherMessage()`**: Forwards messages between server and client
 - **`sendMqttMessage()`**: Publishes messages to client's P2P topic
@@ -239,6 +260,7 @@ Real-time audio data bypasses MQTT and flows directly via encrypted UDP packets 
 ## 📊 Typical Message Flow Sequence
 
 ### 1. Session Establishment
+
 ```
 Client → MQTT Gateway: hello (with capabilities)
 MQTT Gateway → Server: hello (forwarded via WebSocket)
@@ -247,12 +269,14 @@ MQTT Gateway → Client: hello (published to P2P topic)
 ```
 
 ### 2. Audio Setup
+
 ```
 Client: Establishes UDP connection using provided encryption keys
 Client: Sends UDP ping to confirm connection
 ```
 
 ### 3. Conversation Flow
+
 ```
 Client → Server: listen (request to start conversation)
 Server → Client: stt (transcription of client speech)
@@ -264,6 +288,7 @@ Server → Client: tts (state: "stop")
 ```
 
 ### 4. Session Termination
+
 ```
 Client → Server: goodbye
 Server → Client: goodbye (acknowledgment)
@@ -272,21 +297,25 @@ Server → Client: goodbye (acknowledgment)
 ## 🔧 Implementation Details
 
 ### MQTT Topics
+
 - **Uplink**: `device-server` (client to server messages)
 - **Downlink**: `devices/p2p/{mac_address}` (server to specific client)
 
 ### Audio Streaming
+
 - **Protocol**: UDP with AES-128-CTR encryption
 - **Format**: Opus codec, 24kHz, mono
 - **Frame Duration**: 20ms per packet
 - **Encryption**: Header used as nonce, payload encrypted
 
 ### Session Management
+
 - **Session ID**: UUID generated for each connection
 - **Authentication**: HMAC-SHA256 signed client credentials
 - **Keep-alive**: MQTT ping/pong mechanism
 
 ### Error Handling
+
 - **Timeout**: Automatic retry for failed messages
 - **Connection Loss**: Graceful degradation and reconnection
 - **Audio Issues**: Buffer management for packet loss
@@ -305,19 +334,23 @@ Server → Client: goodbye (acknowledgment)
 ## 📚 Related Files
 
 ### Server-side:
+
 - `core/handle/sendAudioHandle.py` - TTS/STT message handling
 - `core/handle/helloHandle.py` - Session establishment
 - `core/websocket_server.py` - WebSocket connection management
 
 ### MQTT Gateway:
+
 - `mqtt-gateway/app.js` - Main gateway implementation
 - `mqtt-gateway/mqtt-protocol.js` - MQTT protocol handling
 - `mqtt-gateway/utils/mqtt_config_v2.js` - Client authentication
 
 ### Client:
+
 - `client.py` - Test client implementation
 - Client logs show actual message flow in practice
 
 ---
-*Generated on: 2025-09-12*  
-*Analysis based on xiaozhi-esp32-server codebase and client logs*
+
+_Generated on: 2025-09-12_  
+_Analysis based on xiaozhi-esp32-server codebase and client logs_
