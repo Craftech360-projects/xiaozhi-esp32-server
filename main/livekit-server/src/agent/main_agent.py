@@ -658,3 +658,58 @@ class Assistant(Agent):
         self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
 
         return await self.mcp_executor.unmute_device()
+
+    @function_tool
+    async def set_light_color(self, context: RunContext, color: str):
+        """Set device light color
+
+        Args:
+            color: Color name (red, blue, green, white, yellow, purple, pink, etc.)
+        """
+        if not self.mcp_executor:
+            return "Light control is not available right now."
+
+        self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
+        return await self.mcp_executor.set_light_color(color)
+
+    @function_tool
+    async def get_battery_status(self, context: RunContext):
+        """Get current battery percentage level
+
+        Returns:
+            Battery percentage status
+        """
+        if not self.mcp_executor:
+            return "Battery status is not available right now."
+
+        # Always set context for each call to ensure correct room access
+        self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
+
+        return await self.mcp_executor.get_battery_status()
+    
+    
+    @function_tool
+    async def set_light_mode(self, context: RunContext, mode: str):
+        """Set device light mode
+
+        Args:
+            mode: Mode name (rainbow, default, custom)
+        """
+        if not self.mcp_executor:
+            return "Light Mode control is not available right now."
+
+        self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
+        return await self.mcp_executor.set_light_mode(mode)
+    
+    @function_tool
+    async def set_rainbow_speed(self, context: RunContext, speed_ms: str):
+        """Set rainbow mode speed
+
+       Args:
+            mode: Mode speed (integer, 50-1000)
+        """
+        if not self.mcp_executor:
+            return "rainbow Mode speed control is not available right now."
+
+        self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
+        return await self.mcp_executor.set_rainbow_speed(speed_ms)

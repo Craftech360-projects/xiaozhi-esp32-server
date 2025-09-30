@@ -129,3 +129,55 @@ async def handle_volume_mute(mcp_client: LiveKitMCPClient, mute: bool = True) ->
         raise ValueError("Invalid mute/unmute parameters")
 
     return await send_mcp_function_call(mcp_client, function_name)
+
+
+# Light control handler
+async def handle_light_color_set(mcp_client: LiveKitMCPClient, rgb_color: dict) -> Dict:
+    """Handle set light color command"""
+    if not validate_function_call("self_set_light_color", {"color": rgb_color}):
+        raise ValueError("Invalid light color parameters")
+
+    return await send_mcp_function_call(mcp_client, "self_set_light_color", {
+        "red": rgb_color["red"],
+        "green": rgb_color["green"],
+        "blue": rgb_color["blue"]
+    })
+
+
+# Battery status handler
+async def handle_battery_status_get(mcp_client: LiveKitMCPClient) -> Dict:
+    """Handle get battery status command"""
+    if not validate_function_call("self_get_battery_status"):
+        raise ValueError("Invalid battery status parameters")
+
+    return await send_mcp_function_call(mcp_client, "self_get_battery_status")
+
+async def handle_light_mode_set(mcp_client, mode: str):
+    """
+    Handle light mode setting
+
+    Args:
+        mcp_client: The MCP client instance
+        mode: Mode name (rainbow, default, custom, etc.)
+    """
+    arguments = {
+        "mode": mode
+    }
+    logger.info(f"Sent light mode command: {mode}")
+    return await send_mcp_function_call(mcp_client, "self_set_light_mode",arguments)
+
+async def handle_rainbow_speed_set(mcp_client, speed_ms: int):
+      """
+      Handle rainbow speed setting
+
+      Args:
+          mcp_client: The MCP client instance
+          speed_ms: Speed in milliseconds (50-1000)
+      """
+      arguments = {
+          "speed_ms": speed_ms
+      }
+
+      await mcp_client.send_function_call("set_rainbow_speed", arguments)
+      logger.info(f"Sent rainbow speed command: {speed_ms}ms")
+    

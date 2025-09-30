@@ -975,7 +975,11 @@ class LiveKitBridge extends Emitter {
       'volume_down': 'self_volume_down',
       'get_volume': 'self_get_volume',
       'mute': 'self_mute',
-      'unmute': 'self_unmute'
+      'unmute': 'self_unmute',
+      'set_light_color': 'self_set_light_color',
+      'get_battery_status': 'self_get_battery_status',
+      'set_light_mode': 'self_set_light_mode',
+      'set_rainbow_speed': 'self_set_rainbow_speed'
     };
 
     const functionName = actionToFunctionMap[action];
@@ -1027,7 +1031,12 @@ class LiveKitBridge extends Emitter {
       'self_volume_up': 'self.audio_speaker.volume_up',
       'self_volume_down': 'self.audio_speaker.volume_down',
       'self_mute': 'self.audio_speaker.mute',
-      'self_unmute': 'self.audio_speaker.unmute'
+      'self_unmute': 'self.audio_speaker.unmute',
+      'self_set_light_color': 'self.led.set_color',
+      'self_get_battery_status': 'self.battery.get_status',
+      'self_set_light_mode': 'self.led.set_mode',
+      'self_set_rainbow_speed': 'self.led.set_rainbow_speed'
+      
     };
 
     const mcpToolName = functionToMcpToolMap[functionCall.name];
