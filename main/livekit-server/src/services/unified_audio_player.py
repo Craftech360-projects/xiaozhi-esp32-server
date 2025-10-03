@@ -19,6 +19,8 @@ except ImportError:
 try:
     from pydub import AudioSegment
     PYDUB_AVAILABLE = True
+    # Suppress pydub's verbose DEBUG logs from ffmpeg
+    logging.getLogger("pydub.converter").setLevel(logging.WARNING)
 except ImportError:
     PYDUB_AVAILABLE = False
 
@@ -138,14 +140,15 @@ class UnifiedAudioPlayer:
             audio_state_manager.force_stop_music()
             logger.info(f"🎵 UNIFIED: Finished playing: {title}")
 
-            # Send music end signal via data channel
+            # Send music end signal via data channel FIRST (most important!)
             await self._send_music_end_signal()
-
-            # Send completion message via TTS now that music is done
-            await self._send_completion_message(title)
 
             # Send agent state change to listening mode (like normal TTS does)
             await self._send_agent_state_to_listening()
+
+            # NOTE: Removed completion message to prevent race condition
+            # The completion message was causing the agent to go back to "speaking" state
+            # which could trap the system if the state change gets suppressed
 
     async def _stream_download_and_convert(self, url: str, title: str) -> Optional[AsyncIterator[rtc.AudioFrame]]:
         """Stream audio chunks and convert to frames on-the-fly (OPTIMIZED: no full download!)"""
@@ -388,6 +391,10 @@ class StreamingAudioIterator:
         return self
 
     async def __anext__(self):
+        # Check if already finished
+        if self.is_finished:
+            raise StopAsyncIteration
+
         # Check stop event first
         if self.stop_event.is_set():
             await self._cleanup()
@@ -412,7 +419,9 @@ class StreamingAudioIterator:
             await self._cleanup()
             raise StopAsyncIteration
         except Exception as e:
-            logger.error(f"🎵 STREAMING: Error getting frame: {e}")
+            # Only log actual errors, not normal end-of-stream conditions
+            if str(e):
+                logger.error(f"🎵 STREAMING: Error getting frame: {e}")
             await self._cleanup()
             raise StopAsyncIteration
 
@@ -532,10 +541,14 @@ class StreamingAudioIterator:
                     pass
 
             try:
-                if hasattr(self.response, 'close') and callable(self.response.close):
-                    await self.response.close()
-                if hasattr(self.session, 'close') and callable(self.session.close):
-                    await self.session.close()
+                if self.response and hasattr(self.response, 'close'):
+                    close_result = self.response.close()
+                    if close_result is not None:
+                        await close_result
+                if self.session and hasattr(self.session, 'close'):
+                    close_result = self.session.close()
+                    if close_result is not None:
+                        await close_result
             except Exception as e:
                 logger.debug(f"🎵 STREAMING: Cleanup error: {e}")
 

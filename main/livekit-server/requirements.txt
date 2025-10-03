@@ -13,3 +13,6 @@ edge-tts
 # Room management and JWT for API calls
 livekit-api
 PyJWT
+
+# Memory provider
+mem0

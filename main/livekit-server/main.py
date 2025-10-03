@@ -14,6 +14,7 @@ from src.handlers.chat_logger import ChatEventHandler
 from src.agent.main_agent import Assistant
 from src.providers.provider_factory import ProviderFactory
 from src.config.config_loader import ConfigLoader
+from src.memory.mem0_provider import Mem0MemoryProvider
 import logging
 import asyncio
 import os
@@ -231,6 +232,44 @@ async def entrypoint(ctx: JobContext):
         logger.info(
             f"📄 Using default prompt - no MAC in room name '{room_name}' (length: {len(agent_prompt)} chars)")
 
+    # Initialize mem0 memory provider and conversation buffer
+    mem0_provider = None
+    conversation_messages = []  # Buffer to store conversation messages
+
+    mem0_enabled = os.getenv("MEM0_ENABLED", "false").lower() == "true"
+    logger.info(f"💭 Mem0 config - Enabled: {mem0_enabled}, Device MAC: {device_mac}")
+
+    if device_mac and mem0_enabled:
+        try:
+            mem0_api_key = os.getenv("MEM0_API_KEY")
+            logger.info(f"💭 MEM0_API_KEY present: {bool(mem0_api_key and mem0_api_key != 'your_mem0_api_key_here')}")
+
+            if mem0_api_key and mem0_api_key != "your_mem0_api_key_here":
+                logger.info(f"💭 Initializing Mem0MemoryProvider for MAC: {device_mac}")
+                mem0_provider = Mem0MemoryProvider(
+                    api_key=mem0_api_key,
+                    role_id=device_mac
+                )
+
+                # Fetch existing memories and inject into prompt
+                logger.info("💭 Querying mem0 for existing memories...")
+                memories = await mem0_provider.query_memory("conversation history and user preferences")
+
+                if memories:
+                    agent_prompt = agent_prompt.replace("<memory>", f"<memory>\n{memories}")
+                    logger.info(f"💭✅ Loaded memories from mem0 ({len(memories)} chars)")
+                else:
+                    logger.info("💭 No existing memories found in mem0")
+            else:
+                logger.warning("💭⚠️ MEM0_API_KEY not configured properly")
+        except Exception as e:
+            logger.error(f"💭❌ Failed to initialize mem0: {e}")
+            import traceback
+            logger.error(f"💭❌ Traceback: {traceback.format_exc()}")
+            mem0_provider = None
+    else:
+        logger.info(f"💭 Mem0 disabled - MEM0_ENABLED: {mem0_enabled}, Device MAC present: {bool(device_mac)}")
+
     # Get VAD first as it's needed for STT
     vad = ctx.proc.userdata["vad"]
 
@@ -310,6 +349,30 @@ async def entrypoint(ctx: JobContext):
         logger.warning(
             f"📝⚠️ No chat history service available - events will not be captured")
     ChatEventHandler.setup_session_handlers(session, ctx)
+
+    # Add mem0 conversation capture event handler
+    if mem0_provider:
+        @session.on("conversation_item_added")
+        def _on_mem0_conversation_item(ev):
+            try:
+                item = ev.item
+                if hasattr(item, 'role') and hasattr(item, 'content'):
+                    role = item.role
+                    content = item.content
+                    # Extract text from content (might be list or string)
+                    if isinstance(content, list):
+                        content = ' '.join(str(c) for c in content)
+
+                    if role in ['user', 'assistant'] and content:
+                        conversation_messages.append({
+                            'role': role,
+                            'content': content
+                        })
+                        logger.debug(f"💭 Captured {role} message for mem0 (buffer size: {len(conversation_messages)})")
+            except Exception as e:
+                logger.error(f"💭 Failed to capture message for mem0: {e}")
+
+        logger.info("💭 Mem0 conversation capture enabled")
 
     # Setup usage tracking
     usage_manager = UsageManager()
@@ -394,49 +457,38 @@ async def entrypoint(ctx: JobContext):
         try:
             logger.info("🔴 Initiating room and session cleanup")
 
-            # 1. Save session history to JSON file (using documented method)
+            # 1. Save conversation to mem0 cloud (using captured messages buffer)
             try:
-                if session and hasattr(session, 'history') and session.history:
-                    current_date = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    filename = f"transcript_{ctx.room.name}_{current_date}.json"
+                if mem0_provider and conversation_messages:
+                    message_count = len(conversation_messages)
 
-                    logger.info(f"💾 Saving session history to: {filename}")
+                    logger.info(f"💭 Saving {message_count} messages to mem0 cloud")
 
-                    # Create transcripts directory if it doesn't exist
-                    os.makedirs("transcripts", exist_ok=True)
-                    filepath = os.path.join("transcripts", filename)
+                    # Create history dict from conversation buffer
+                    history_dict = {'messages': conversation_messages}
 
-                    # Use the documented method to save conversation history
-                    with open(filepath, 'w', encoding='utf-8') as f:
-                        history_dict = session.history.to_dict()
-                        json.dump(history_dict, f, indent=2,
-                                  ensure_ascii=False)
+                    # Save to mem0
+                    await mem0_provider.save_memory(history_dict)
 
-                    message_count = len(history_dict.get('messages', []))
-                    logger.info(
-                        f"💾✅ Session history saved: {filepath} ({message_count} messages)")
+                    logger.info(f"💭✅ Session saved to mem0 cloud ({message_count} messages)")
 
-                    # Log a sample of the conversation for verification
+                    # Log sample for verification
                     if message_count > 0:
-                        messages = history_dict.get('messages', [])
-                        # Last 3 messages
-                        for i, msg in enumerate(messages[-3:]):
+                        for i, msg in enumerate(conversation_messages[-3:]):
                             role = msg.get('role', 'unknown')
                             content = msg.get('content', '')
                             if isinstance(content, list):
-                                # Handle content as list (some formats)
-                                content = ' '.join(str(item)
-                                                   for item in content)
-                            logger.debug(
-                                f"💾 Message {i}: {role} - '{str(content)[:50]}...'")
-
+                                content = ' '.join(str(item) for item in content)
+                            logger.debug(f"💭 Message {i}: {role} - '{str(content)[:50]}...'")
                 else:
-                    logger.warning(
-                        f"💾⚠️ Session history not available or empty for backup")
+                    if mem0_provider:
+                        logger.warning(f"💭⚠️ No conversation messages captured (buffer size: {len(conversation_messages)})")
+                    else:
+                        logger.info("💭 Mem0 not enabled")
             except Exception as e:
-                logger.error(f"💾❌ Failed to save session history: {e}")
+                logger.error(f"💭❌ Failed to save to mem0: {e}")
                 import traceback
-                logger.debug(f"💾❌ Traceback: {traceback.format_exc()}")
+                logger.debug(f"💭❌ Traceback: {traceback.format_exc()}")
 
             # 2. Cleanup chat history service
             try:
@@ -455,12 +507,17 @@ async def entrypoint(ctx: JobContext):
                 logger.warning(
                     f"Session close error (expected during shutdown): {e}")
 
-            # 4. Stop audio services
+            # 4. Stop audio services and clear audio state
             try:
                 if audio_player:
                     await audio_player.stop()
                 if unified_audio_player:
                     await unified_audio_player.stop()
+
+                # CRITICAL: Force clear audio state manager to prevent stuck state
+                from src.utils.audio_state_manager import audio_state_manager
+                audio_state_manager.force_stop_music()
+                logger.info("🎵 Cleared audio state manager on disconnect")
             except Exception as e:
                 logger.warning(f"Audio service stop error: {e}")
 
