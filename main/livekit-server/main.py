@@ -505,12 +505,17 @@ async def entrypoint(ctx: JobContext):
                 logger.warning(
                     f"Session close error (expected during shutdown): {e}")
 
-            # 4. Stop audio services
+            # 4. Stop audio services and clear audio state
             try:
                 if audio_player:
                     await audio_player.stop()
                 if unified_audio_player:
                     await unified_audio_player.stop()
+
+                # CRITICAL: Force clear audio state manager to prevent stuck state
+                from src.utils.audio_state_manager import audio_state_manager
+                audio_state_manager.force_stop_music()
+                logger.info("🎵 Cleared audio state manager on disconnect")
             except Exception as e:
                 logger.warning(f"Audio service stop error: {e}")
 

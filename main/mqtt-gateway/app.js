@@ -218,6 +218,9 @@ class LiveKitBridge extends Emitter {
 
     this.room.on("disconnected", (reason) => {
       console.log(`[LiveKitBridge] Room disconnected: ${reason}`);
+      // CRITICAL: Clear audio flag on disconnect to prevent stuck state
+      this.isAudioPlaying = false;
+      console.log(`🎵 [CLEANUP] Cleared audio flag on room disconnect for device: ${this.macAddress}`);
     });
 
     this.room.on(
@@ -1409,6 +1412,10 @@ class LiveKitBridge extends Emitter {
     if (this.room) {
       console.log("[LiveKitBridge] Disconnecting from LiveKit room");
 
+      // CRITICAL: Clear audio flag before disconnect to prevent stuck state
+      this.isAudioPlaying = false;
+      console.log(`🎵 [CLEANUP] Cleared audio flag on bridge close for device: ${this.macAddress}`);
+
       // First disconnect from the room
       await this.room.disconnect();
 
@@ -1576,7 +1583,11 @@ class MQTTConnection {
 
   close() {
     this.closing = true;
+
+    // CRITICAL: Clear audio playing flag to prevent stuck state
     if (this.bridge) {
+      this.bridge.isAudioPlaying = false;
+      console.log(`🎵 [CLEANUP] Cleared audio flag on close for device: ${this.clientId}`);
       this.bridge.close();
       this.bridge = null;
     } else {
