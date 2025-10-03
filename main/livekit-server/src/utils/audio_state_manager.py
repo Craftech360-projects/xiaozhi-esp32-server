@@ -66,6 +66,15 @@ class AudioStateManager:
         if not self.is_music_playing:
             return False
 
+        # FAILSAFE: If music has been playing for > 15 minutes, force clear
+        # This prevents permanent stuck state if cleanup fails
+        if self.music_start_time:
+            elapsed = asyncio.get_event_loop().time() - self.music_start_time
+            if elapsed > 900:  # 15 minutes
+                logger.warning(f"🎵 FAILSAFE: Music playing for {elapsed:.0f}s - forcing clear!")
+                self.force_stop_music()
+                return False
+
         # Suppress transition from speaking to listening while music is playing
         if old_state == "speaking" and new_state == "listening":
             logger.info(f"🎵 Suppressing agent state change from {old_state} to {new_state} - music is playing")

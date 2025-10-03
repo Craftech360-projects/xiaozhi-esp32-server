@@ -279,6 +279,13 @@ class LiveKitBridge extends Emitter {
               console.log(`🔧 [FUNCTION CALL] Received function: ${data.function_call?.name}`);
               this.handleFunctionCall(data);
               break;
+            case "music_playback_stopped":
+              // Handle music playback stopped - force clear audio playing flag
+              console.log(`🎵 [MUSIC-STOP] Music playback stopped for device: ${this.macAddress}`);
+              this.isAudioPlaying = false;
+              // Send TTS stop message to ensure device returns to listening state
+              this.sendTtsStopMessage();
+              break;
             // case "metrics_collected":
             //   console.log(`Metrics: ${JSON.stringify(data.data)}`);
             //   break;
@@ -563,7 +570,7 @@ class LiveKitBridge extends Emitter {
 
 
 
-      console.log(`🔍 [AUDIO] Detected format for incoming data: ${isOpus ? "Opus" : "PCM or Unknown"}`);
+     // console.log(`🔍 [AUDIO] Detected format for incoming data: ${isOpus ? "Opus" : "PCM or Unknown"}`);
       if (isOpus) {
         if (opusDecoder) {
           try {
@@ -573,7 +580,7 @@ class LiveKitBridge extends Emitter {
 
             // Decode Opus to PCM
             const pcmBuffer = opusDecoder.decode(opusData, 960);
-            console.log(`✅ [OPUS DECODE] Decoded to ${pcmBuffer.length}B PCM`);
+           // console.log(`✅ [OPUS DECODE] Decoded to ${pcmBuffer.length}B PCM`);
             if (pcmBuffer && pcmBuffer.length > 0) {
               // Convert Buffer to Int16Array
               const samples = new Int16Array(
@@ -714,7 +721,7 @@ class LiveKitBridge extends Emitter {
       const stereo = (firstByte >> 2) & 0x01;        // Bit 2: stereo flag
       const frameCount = firstByte & 0x03;           // Bits 1-0: frame count
 
-      console.log(`🔍 OPUS TOC: config=${config}, stereo=${stereo}, frames=${frameCount}, size=${data.length}B`);
+     // console.log(`🔍 OPUS TOC: config=${config}, stereo=${stereo}, frames=${frameCount}, size=${data.length}B`);
 
       // Validate OPUS TOC byte
       const validConfig = config >= 0 && config <= 31;
@@ -734,12 +741,12 @@ class LiveKitBridge extends Emitter {
       // ✅ FIXED: More lenient validation - just check basic OPUS structure
       const isValidOpus = validConfig && validStereo && validFrameCount && isValidConfig;
 
-      console.log(`📊 OPUS validation: config=${validConfig}(${config}), mono=${validStereo}, frames=${validFrameCount}, validConfig=${isValidConfig} → ${isValidOpus ? "✅ VALID" : "❌ INVALID"}`);
+     // console.log(`📊 OPUS validation: config=${validConfig}(${config}), mono=${validStereo}, frames=${validFrameCount}, validConfig=${isValidConfig} → ${isValidOpus ? "✅ VALID" : "❌ INVALID"}`);
 
       // ✅ ADDITIONAL: Log first few bytes for debugging
       if (!isValidOpus) {
         const hexDump = data.slice(0, Math.min(8, data.length)).toString('hex');
-        console.log(`🔍 OPUS debug - first ${Math.min(8, data.length)} bytes: ${hexDump}`);
+      //  console.log(`🔍 OPUS debug - first ${Math.min(8, data.length)} bytes: ${hexDump}`);
       }
 
       return isValidOpus;
@@ -1590,6 +1597,11 @@ class MQTTConnection {
   }
 
   async checkKeepAlive() {
+    // Don't check keepalive if connection is closing
+    if (this.closing) {
+      return;
+    }
+
     const now = Date.now();
 
     // If we're in ending phase, check for final timeout
@@ -2289,6 +2301,11 @@ class VirtualMQTTConnection {
   }
 
   async checkKeepAlive() {
+    // Don't check keepalive if connection is closing
+    if (this.closing) {
+      return;
+    }
+
     const now = Date.now();
 
     // If we're in ending phase, check for final timeout
