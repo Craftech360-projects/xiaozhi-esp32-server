@@ -514,4 +514,76 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
         }
         return entity.getId();
     }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public String updateAgentMode(String agentId, String modeName) {
+        // 1. 验证智能体是否存在
+        AgentEntity agent = this.selectById(agentId);
+        if (agent == null) {
+            throw new RenException("智能体不存在");
+        }
+
+        // 2. 根据模板名称查询模板
+        AgentTemplateEntity template = agentTemplateService.getTemplateByName(modeName);
+        if (template == null) {
+            throw new RenException("模板 '" + modeName + "' 不存在");
+        }
+
+        // Log old prompt
+        String oldPrompt = agent.getSystemPrompt();
+        String oldPromptPreview = oldPrompt != null && oldPrompt.length() > 100
+            ? oldPrompt.substring(0, 100) + "..."
+            : oldPrompt;
+
+        // 3. 将模板配置复制到智能体（保留智能体的身份信息和审计信息）
+        agent.setAsrModelId(template.getAsrModelId());
+        agent.setVadModelId(template.getVadModelId());
+        agent.setLlmModelId(template.getLlmModelId());
+        agent.setVllmModelId(template.getVllmModelId());
+        agent.setTtsModelId(template.getTtsModelId());
+        agent.setTtsVoiceId(template.getTtsVoiceId());
+        agent.setMemModelId(template.getMemModelId());
+        agent.setIntentModelId(template.getIntentModelId());
+        agent.setSystemPrompt(template.getSystemPrompt());
+        agent.setChatHistoryConf(template.getChatHistoryConf());
+        agent.setLangCode(template.getLangCode());
+        agent.setLanguage(template.getLanguage());
+
+        // Log new prompt
+        String newPrompt = template.getSystemPrompt();
+        String newPromptPreview = newPrompt != null && newPrompt.length() > 100
+            ? newPrompt.substring(0, 100) + "..."
+            : newPrompt;
+
+        // 4. 更新审计信息
+        try {
+            UserDetail user = SecurityUser.getUser();
+            if (user != null) {
+                agent.setUpdater(user.getId());
+            }
+        } catch (Exception e) {
+            // Server secret filter - no user context, skip updater
+        }
+        agent.setUpdatedAt(new Date());
+
+        // 5. 更新数据库
+        this.updateById(agent);
+
+        // Log update details
+        System.out.println("🔄 ===== AGENT MODE UPDATE =====");
+        System.out.println("Agent ID: " + agentId);
+        System.out.println("Agent Name: " + agent.getAgentName());
+        System.out.println("Template: " + modeName + " (" + template.getId() + ")");
+        System.out.println("Old Prompt Preview: " + oldPromptPreview);
+        System.out.println("New Prompt Preview: " + newPromptPreview);
+        System.out.println("New LLM Model: " + template.getLlmModelId());
+        System.out.println("New TTS Model: " + template.getTtsModelId());
+        System.out.println("New Memory Model: " + template.getMemModelId());
+        System.out.println("Database Updated: YES ✅");
+        System.out.println("================================");
+
+        // 6. Return the updated prompt
+        return newPrompt;
+    }
 }

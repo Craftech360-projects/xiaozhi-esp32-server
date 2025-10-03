@@ -20,9 +20,17 @@ public interface AgentTemplateService extends IService<AgentTemplateEntity> {
 
     /**
      * 更新默认模板中的模型ID
-     * 
+     *
      * @param modelType 模型类型
      * @param modelId   模型ID
      */
     void updateDefaultTemplateModelId(String modelType, String modelId);
+
+    /**
+     * 根据模板名称获取模板
+     *
+     * @param modeName 模板名称
+     * @return 模板实体
+     */
+    AgentTemplateEntity getTemplateByName(String modeName);
 }

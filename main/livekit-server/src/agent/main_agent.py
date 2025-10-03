@@ -11,7 +11,7 @@ from livekit.agents import (
     RunContext,
     function_tool,
 )
-
+from src.utils.database_helper import DatabaseHelper
 logger = logging.getLogger("agent")
 
 class Assistant(Agent):
@@ -31,7 +31,14 @@ class Assistant(Agent):
         self.unified_audio_player = None
         self.device_control_service = None
         self.mcp_executor = None
-        
+
+        # Room and device information
+        self.room_name = None
+        self.device_mac = None
+
+        # Session reference for dynamic updates
+        self._agent_session = None
+
 
 
     def set_services(self, music_service, story_service, audio_player, unified_audio_player=None, device_control_service=None, mcp_executor=None):
@@ -42,6 +49,108 @@ class Assistant(Agent):
         self.unified_audio_player = unified_audio_player
         self.device_control_service = device_control_service
         self.mcp_executor = mcp_executor
+
+    def set_room_info(self, room_name: str = None, device_mac: str = None):
+        """Set room name and device MAC address"""
+        self.room_name = room_name
+        self.device_mac = device_mac
+        logger.info(f"📍 Room info set - Room: {room_name}, MAC: {device_mac}")
+
+    def set_agent_session(self, session):
+        """Set session reference for dynamic updates"""
+        self._agent_session = session
+        logger.info(f"🔗 Session reference stored for dynamic updates")
+
+    @function_tool
+    async def update_agent_mode(self, context: RunContext, mode_name: str) -> str:
+        """Update agent configuration mode by applying a template
+
+        Args:
+            mode_name: Template mode name (e.g., "Cheeko", "StudyHelper")
+
+        Returns:
+            Success or error message
+        """
+        try:
+            import os
+            import aiohttp
+
+            # 1. Validate device MAC
+            if not self.device_mac:
+                return "Device MAC address is not available"
+
+            # 2. Get Manager API configuration
+            manager_api_url = os.getenv("MANAGER_API_URL")
+            manager_api_secret = os.getenv("MANAGER_API_SECRET")
+
+            if not manager_api_url or not manager_api_secret:
+                return "Manager API is not configured"
+
+            # 3. Fetch agent_id using DatabaseHelper
+            db_helper = DatabaseHelper(manager_api_url, manager_api_secret)
+            agent_id = await db_helper.get_agent_id(self.device_mac)
+
+            if not agent_id:
+                return f"No agent found for device MAC: {self.device_mac}"
+
+            logger.info(f"🔄 Updating agent {agent_id} to mode: {mode_name}")
+
+            # 4. Call update-mode API
+            url = f"{manager_api_url}/agent/update-mode"
+            headers = {
+                "Authorization": f"Bearer {manager_api_secret}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "agentId": agent_id,
+                "modeName": mode_name
+            }
+
+            timeout = aiohttp.ClientTimeout(total=10)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.put(url, json=payload, headers=headers) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        logger.info(f"✅ Agent mode updated in database to '{mode_name}' for agent: {agent_id}")
+                        data = result.get('data')
+                        logger.info(f"📦 API Response: code={result.get('code')}, has_data={bool(data)}, data_length={len(data) if data else 0}")
+
+                        # 5. Get the new prompt from the API response directly
+                        if result.get('code') == 0 and result.get('data'):
+                            new_prompt = result.get('data')
+
+                            # 6. Update the agent's instructions dynamically
+                            # Note: self.instructions is read-only, so we update the internal attribute
+                            self._instructions = new_prompt
+                            logger.info(f"📝 Instructions updated dynamically (length: {len(new_prompt)} chars)")
+                            logger.info(f"📝 New prompt preview: {new_prompt[:100]}...")
+
+                            # 7. Update session if available (for immediate effect)
+                            if self._agent_session:
+                                try:
+                                    # Update session's agent internal instructions
+                                    self._agent_session._agent._instructions = new_prompt
+                                    logger.info(f"🔄 Session instructions updated in real-time!")
+                                except Exception as e:
+                                    logger.warning(f"⚠️ Could not update session directly: {e}")
+
+                            return f"Successfully updated agent mode to '{mode_name}' and reloaded the new prompt! The changes are now active in this conversation."
+                        else:
+                            logger.warning(f"⚠️ No prompt data in response, but mode updated in database")
+                            return f"Mode updated to '{mode_name}' in database. Please reconnect to apply changes."
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"❌ Failed to update mode: {response.status} - {error_text}")
+                        return f"Failed to update mode: {error_text}"
+
+        except aiohttp.ClientError as e:
+            logger.error(f"Network error updating agent mode: {e}")
+            return f"Network error: Unable to connect to server"
+        except Exception as e:
+            logger.error(f"Error updating agent mode: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return f"Error updating agent mode: {str(e)}"
 
     @function_tool
     async def lookup_weather(self, context: RunContext, location: str):
