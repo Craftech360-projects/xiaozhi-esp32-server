@@ -532,10 +532,14 @@ class StreamingAudioIterator:
                     pass
 
             try:
-                if hasattr(self.response, 'close') and callable(self.response.close):
-                    await self.response.close()
-                if hasattr(self.session, 'close') and callable(self.session.close):
-                    await self.session.close()
+                if self.response and hasattr(self.response, 'close'):
+                    close_result = self.response.close()
+                    if close_result is not None:
+                        await close_result
+                if self.session and hasattr(self.session, 'close'):
+                    close_result = self.session.close()
+                    if close_result is not None:
+                        await close_result
             except Exception as e:
                 logger.debug(f"🎵 STREAMING: Cleanup error: {e}")
 
