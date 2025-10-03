@@ -106,4 +106,13 @@ public interface AgentService extends BaseService<AgentEntity> {
      * @return 创建的智能体ID
      */
     String createAgent(AgentCreateDTO dto);
+
+    /**
+     * 根据模板名称更新智能体模式
+     *
+     * @param agentId  智能体ID
+     * @param modeName 模板名称
+     * @return 更新后的系统提示词
+     */
+    String updateAgentMode(String agentId, String modeName);
 }

@@ -69,4 +69,18 @@ public class AgentTemplateServiceImpl extends ServiceImpl<AgentTemplateDao, Agen
         wrapper.ge("sort", 0);
         update(wrapper);
     }
+
+    /**
+     * 根据模板名称获取模板
+     *
+     * @param modeName 模板名称
+     * @return 模板实体
+     */
+    @Override
+    public AgentTemplateEntity getTemplateByName(String modeName) {
+        LambdaQueryWrapper<AgentTemplateEntity> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(AgentTemplateEntity::getAgentName, modeName)
+                .last("LIMIT 1");
+        return this.getOne(wrapper);
+    }
 }

@@ -573,7 +573,7 @@ class LiveKitBridge extends Emitter {
 
             // Decode Opus to PCM
             const pcmBuffer = opusDecoder.decode(opusData, 960);
-            console.log(`✅ [OPUS DECODE] Decoded to ${pcmBuffer.length}B PCM`);
+            //console.log(`✅ [OPUS DECODE] Decoded to ${pcmBuffer.length}B PCM`);
             if (pcmBuffer && pcmBuffer.length > 0) {
               // Convert Buffer to Int16Array
               const samples = new Int16Array(
@@ -714,7 +714,7 @@ class LiveKitBridge extends Emitter {
       const stereo = (firstByte >> 2) & 0x01;        // Bit 2: stereo flag
       const frameCount = firstByte & 0x03;           // Bits 1-0: frame count
 
-      console.log(`🔍 OPUS TOC: config=${config}, stereo=${stereo}, frames=${frameCount}, size=${data.length}B`);
+      //console.log(`🔍 OPUS TOC: config=${config}, stereo=${stereo}, frames=${frameCount}, size=${data.length}B`);
 
       // Validate OPUS TOC byte
       const validConfig = config >= 0 && config <= 31;
@@ -734,7 +734,7 @@ class LiveKitBridge extends Emitter {
       // ✅ FIXED: More lenient validation - just check basic OPUS structure
       const isValidOpus = validConfig && validStereo && validFrameCount && isValidConfig;
 
-      console.log(`📊 OPUS validation: config=${validConfig}(${config}), mono=${validStereo}, frames=${validFrameCount}, validConfig=${isValidConfig} → ${isValidOpus ? "✅ VALID" : "❌ INVALID"}`);
+      //console.log(`📊 OPUS validation: config=${validConfig}(${config}), mono=${validStereo}, frames=${validFrameCount}, validConfig=${isValidConfig} → ${isValidOpus ? "✅ VALID" : "❌ INVALID"}`);
 
       // ✅ ADDITIONAL: Log first few bytes for debugging
       if (!isValidOpus) {

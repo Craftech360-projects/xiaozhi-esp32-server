@@ -293,6 +293,8 @@ async def entrypoint(ctx: JobContext):
     assistant = Assistant(instructions=agent_prompt)
     assistant.set_services(music_service, story_service,
                            audio_player, unified_audio_player, device_control_service, mcp_executor)
+    # Pass room name and device MAC to assistant
+    assistant.set_room_info(room_name=room_name, device_mac=device_mac)
 
     # Log session info (responses will be captured via conversation_item_added event)
     if chat_history_service:
@@ -527,6 +529,10 @@ async def entrypoint(ctx: JobContext):
         room=ctx.room,
         room_input_options=room_options,
     )
+
+    # Pass session reference to assistant for dynamic updates
+    assistant.set_agent_session(session)
+    logger.info("🔗 Session reference passed to assistant for dynamic prompt updates")
 
     # Set up music/story integration with session and context
     try:
