@@ -41,6 +41,7 @@ import xiaozhi.modules.agent.dto.AgentCreateDTO;
 import xiaozhi.modules.agent.dto.AgentDTO;
 import xiaozhi.modules.agent.dto.AgentMemoryDTO;
 import xiaozhi.modules.agent.dto.AgentUpdateDTO;
+import xiaozhi.modules.agent.dto.AgentUpdateModeDTO;
 import xiaozhi.modules.agent.entity.AgentEntity;
 import xiaozhi.modules.agent.entity.AgentTemplateEntity;
 import xiaozhi.modules.agent.service.AgentChatAudioService;
@@ -307,6 +308,40 @@ public class AgentController {
 
         } catch (Exception e) {
             log.error("Error fetching agent prompt for MAC: " + macAddress, e);
+            return new Result<String>().error("Internal server error");
+        }
+    }
+
+    @PutMapping("/update-mode")
+    @Operation(summary = "Update agent mode from template")
+    public Result<String> updateMode(@RequestBody @Valid AgentUpdateModeDTO dto) {
+        String updatedPrompt = agentService.updateAgentMode(dto.getAgentId(), dto.getModeName());
+        return new Result<String>().ok(updatedPrompt);
+    }
+
+    @GetMapping("/device/{macAddress}/agent-id")
+    @Operation(summary = "Get agent ID by device MAC address")
+    public Result<String> getAgentIdByMac(@PathVariable("macAddress") String macAddress) {
+        try {
+            // Clean MAC address (remove colons, hyphens, convert to lowercase)
+            String cleanMac = macAddress.replace(":", "").replace("-", "").toLowerCase();
+
+            // Find device by MAC address
+            DeviceEntity device = deviceService.getDeviceByMacAddress(cleanMac);
+            if (device == null) {
+                return new Result<String>().error("Device not found for MAC address: " + macAddress);
+            }
+
+            // Get associated agent ID
+            if (StringUtils.isBlank(device.getAgentId())) {
+                return new Result<String>().error("No agent associated with device: " + macAddress);
+            }
+
+            // Return agent ID
+            return new Result<String>().ok(device.getAgentId());
+
+        } catch (Exception e) {
+            log.error("Error fetching agent ID for MAC: " + macAddress, e);
             return new Result<String>().error("Internal server error");
         }
     }
