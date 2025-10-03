@@ -33,7 +33,7 @@ spring:
   datasource:
     druid:
       driver-class-name: com.mysql.cj.jdbc.Driver
-      url: jdbc:mysql://localhost:3307/manager_api?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&nullCatalogMeansCurrent=true&useSSL=false&allowPublicKeyRetrieval=true
+      url: jdbc:mysql://xiaozhi-mysql:3306/manager_api?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&nullCatalogMeansCurrent=true&useSSL=false&allowPublicKeyRetrieval=true
       username: manager
       password: managerpassword
 
@@ -61,8 +61,8 @@ spring:
 
   data:
     redis:
-      host: localhost
-      port: 6380
+      host: xiaozhi-redis
+      port: 6379
       password: redispassword
       database: 0
       timeout: 10000ms

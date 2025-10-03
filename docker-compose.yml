@@ -1,0 +1,196 @@
+version: '3.8'
+
+services:
+  # MySQL Database for Manager API
+  manager-api-db:
+    image: mysql:8.0
+    container_name: manager-api-db
+    restart: unless-stopped
+    ports:
+      - "3307:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=rootpassword
+      - MYSQL_DATABASE=manager_api
+      - MYSQL_USER=manager
+      - MYSQL_PASSWORD=managerpassword
+    volumes:
+      - manager_api_db_data:/var/lib/mysql
+    networks:
+      - xiaozhi-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "manager", "-pmanagerpassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache for Manager API
+  manager-api-redis:
+    image: redis:7-alpine
+    container_name: manager-api-redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    command: redis-server --requirepass redispassword
+    volumes:
+      - manager_api_redis_data:/data
+    networks:
+      - xiaozhi-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redispassword", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Spring Boot Manager API
+  manager-api:
+    build:
+      context: ./main/manager-api
+      dockerfile: Dockerfile
+    container_name: xiaozhi-manager-api
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - SPRING_DATASOURCE_DRUID_URL=jdbc:mysql://host.docker.internal:3307/manager_api?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&nullCatalogMeansCurrent=true&useSSL=false&allowPublicKeyRetrieval=true
+      - SPRING_DATASOURCE_DRUID_USERNAME=manager
+      - SPRING_DATASOURCE_DRUID_PASSWORD=managerpassword
+      - SPRING_DATA_REDIS_HOST=host.docker.internal
+      - SPRING_DATA_REDIS_PORT=6380
+      - SPRING_DATA_REDIS_PASSWORD=redispassword
+    volumes:
+      - ./uploadfile:/uploadfile
+      - ./main/manager-api/logs:/app/logs
+    depends_on:
+      manager-api-db:
+        condition: service_healthy
+      manager-api-redis:
+        condition: service_healthy
+    networks:
+      - xiaozhi-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/toy/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 90s
+      retries: 3
+
+  # Vue.js Manager Web Interface
+  manager-web:
+    build:
+      context: ./main/manager-web
+      dockerfile: Dockerfile
+    container_name: xiaozhi-manager-web
+    restart: unless-stopped
+    ports:
+      - "8003:8002"
+    environment:
+      - VUE_APP_API_BASE_URL=http://localhost:8002/toy
+    depends_on:
+      manager-api:
+        condition: service_healthy
+    networks:
+      - xiaozhi-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8002/"]
+      interval: 30s
+      timeout: 10s
+      start_period: 120s
+      retries: 3
+
+  # EMQX MQTT Broker
+  emqx:
+    image: emqx/emqx:5.8.3
+    container_name: xiaozhi-emqx
+    restart: unless-stopped
+    ports:
+      - "1883:1883"      # MQTT
+      - "8883:8883"      # MQTT/SSL
+      - "8083:8083"      # MQTT/WebSocket
+      - "8084:8084"      # MQTT/WebSocket/SSL
+      - "18083:18083"    # Dashboard
+    environment:
+      - EMQX_NAME=emqx
+      - EMQX_HOST=127.0.0.1
+      - EMQX_DASHBOARD__DEFAULT_USERNAME=admin
+      - EMQX_DASHBOARD__DEFAULT_PASSWORD=public
+    volumes:
+      - emqx_data:/opt/emqx/data
+      - emqx_log:/opt/emqx/log
+    networks:
+      - xiaozhi-network
+    healthcheck:
+      test: ["CMD", "emqx", "ctl", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Node.js MQTT Gateway
+  mqtt-gateway:
+    build:
+      context: ./main/mqtt-gateway
+      dockerfile: Dockerfile
+    container_name: xiaozhi-mqtt-gateway
+    restart: unless-stopped
+    ports:
+      - "8884:8884/udp"
+    environment:
+      - MQTT_PORT=1883
+      - UDP_PORT=8884
+      - PUBLIC_IP=192.168.1.78
+    volumes:
+      - ./main/mqtt-gateway/logs:/app/logs
+      - ./main/mqtt-gateway/config:/app/config
+    depends_on:
+      emqx:
+        condition: service_healthy
+      livekit:
+        condition: service_started
+    networks:
+      - xiaozhi-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # LiveKit Server (WebRTC media server)
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: livekit-server
+    restart: unless-stopped
+    ports:
+      - "7880-7882:7880-7882/tcp"
+      - "50000-50200:50000-50200/udp"
+    environment:
+      LIVEKIT_KEYS: "devkey: secret"
+    networks:
+      - xiaozhi-network
+
+  # Python LiveKit Agent with ML capabilities
+  livekit-agent:
+    build:
+      context: ./main/livekit-server
+      dockerfile: Dockerfile
+    container_name: xiaozhi-livekit-agent
+    restart: unless-stopped
+    env_file:
+      - ./main/livekit-server/.env
+    volumes:
+      - ./main/livekit-server/data:/app/data
+      - ./main/livekit-server/logs:/app/logs
+      - ./main/livekit-server/models:/app/models
+      - ./main/livekit-server/config:/app/config
+    depends_on:
+      - livekit
+    network_mode: "service:livekit"
+
+networks:
+  xiaozhi-network:
+    driver: bridge
+    name: xiaozhi-network
+
+volumes:
+  manager_api_db_data:
+  manager_api_redis_data:
+  emqx_data:
+  emqx_log:

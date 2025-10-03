@@ -184,7 +184,16 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         DeviceReportRespDTO.Mqtt mqttCredentials = buildMqttCredentials(macAddress);
         if (mqttCredentials != null) {
             response.setMqtt(mqttCredentials);
-            log.info("Added MQTT credentials to response for device: {}", macAddress);
+            log.info("✅ MQTT Response for device {}: broker={}, port={}, endpoint={}, clientId={}, username={}, password={}",
+                macAddress,
+                mqttCredentials.getBroker(),
+                mqttCredentials.getPort(),
+                mqttCredentials.getEndpoint(),
+                mqttCredentials.getClient_id(),
+                mqttCredentials.getUsername(),
+                mqttCredentials.getPassword());
+        } else {
+            log.error("❌ Failed to generate MQTT credentials for device: {}", macAddress);
         }
 
         if (deviceById != null) {
