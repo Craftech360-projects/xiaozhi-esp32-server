@@ -125,6 +125,42 @@ class ChatEventHandler:
             logger.error(f"Error handling end prompt: {e}")
 
     @staticmethod
+    async def _handle_function_call(session, ctx, function_name, arguments):
+        """Handle function call from mobile app via MQTT gateway"""
+        try:
+            logger.info(f"🎵 [MOBILE] Executing function call: {function_name}")
+
+            if not ChatEventHandler._assistant_instance:
+                logger.error("❌ [MOBILE] No assistant instance available for function call")
+                return
+
+            assistant = ChatEventHandler._assistant_instance
+
+            # Route to appropriate function based on name
+            if function_name == "play_music":
+                song_name = arguments.get('song_name')
+                language = arguments.get('language')
+                logger.info(f"🎵 [MOBILE] Calling play_music(song_name='{song_name}', language='{language}')")
+                await assistant.play_music(ctx, song_name=song_name, language=language)
+
+            elif function_name == "play_story":
+                story_name = arguments.get('story_name')
+                category = arguments.get('category')
+                logger.info(f"📖 [MOBILE] Calling play_story(story_name='{story_name}', category='{category}')")
+                await assistant.play_story(ctx, story_name=story_name, category=category)
+
+            else:
+                logger.warning(f"⚠️ [MOBILE] Unknown function call: {function_name}")
+                return
+
+            logger.info(f"✅ [MOBILE] Function call executed successfully: {function_name}")
+
+        except Exception as e:
+            logger.error(f"❌ [MOBILE] Error executing function call '{function_name}': {e}")
+            import traceback
+            logger.error(f"❌ [MOBILE] Traceback: {traceback.format_exc()}")
+
+    @staticmethod
     def setup_session_handlers(session, ctx):
         """Setup all event handlers for the agent session"""
 
@@ -490,6 +526,18 @@ class ChatEventHandler:
                     logger.info("👋 Processing end prompt signal from MQTT gateway")
                     end_prompt = message.get('prompt', 'You must end this conversation now. Start with "Time flies so fast" and say a SHORT goodbye in 1-2 sentences maximum. Do NOT ask questions or suggest activities. Just say goodbye emotionally and end the conversation.')
                     asyncio.create_task(ChatEventHandler._handle_end_prompt(session, ctx, end_prompt))
+
+                # Handle function call from MQTT gateway (mobile app requests)
+                elif message.get('type') == 'function_call':
+                    logger.info("🎵 Processing function call from MQTT gateway (mobile app)")
+                    function_call = message.get('function_call', {})
+                    function_name = function_call.get('name')
+                    arguments = function_call.get('arguments', {})
+
+                    logger.info(f"   🎯 Function: {function_name}")
+                    logger.info(f"   📝 Arguments: {arguments}")
+
+                    asyncio.create_task(ChatEventHandler._handle_function_call(session, ctx, function_name, arguments))
 
             except Exception as e:
                 logger.error(f"Error processing data channel message: {e}")

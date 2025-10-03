@@ -162,4 +162,5 @@ class ProviderFactory:
     def create_turn_detection():
         """Create turn detection model"""
        # return MultilingualModel()
-        return  EnglishModel()
+       # return EnglishModel()
+        return None  # Disabled to avoid HuggingFace download errors
