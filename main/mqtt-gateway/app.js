@@ -340,6 +340,11 @@ class LiveKitBridge extends Emitter {
               // Send TTS stop message to ensure device returns to listening state
               this.sendTtsStopMessage();
               break;
+            case "llm_emotion":
+              // ✨ EMOTION: Forward emotion from LLM to ESP32 device
+              console.log(`✨ [EMOTION] Received from agent: ${data.emoji} (${data.emotion})`);
+              this.sendEmotionMessage(data.emoji, data.emotion);
+              break;
             // case "metrics_collected":
             //   console.log(`Metrics: ${JSON.stringify(data.data)}`);
             //   break;
@@ -964,6 +969,23 @@ class LiveKitBridge extends Emitter {
 
     console.log(
       `📤 [MQTT OUT] Sending STT result to device: ${this.macAddress} - "${text}"`
+    );
+    this.connection.sendMqttMessage(JSON.stringify(message));
+  }
+
+  // ✨ EMOTION: Send emotion message to device
+  sendEmotionMessage(emoji, emotion) {
+    if (!this.connection) return;
+
+    const message = {
+      type: "llm_emotion",
+      emoji: emoji,
+      emotion: emotion,
+      session_id: this.connection.udp.session_id,
+    };
+
+    console.log(
+      `✨ [MQTT OUT] Sending emotion to device: ${this.macAddress} - ${emoji} (${emotion})`
     );
     this.connection.sendMqttMessage(JSON.stringify(message));
   }

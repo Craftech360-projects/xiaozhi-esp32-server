@@ -260,3 +260,37 @@ class PromptService:
         """Clear prompt cache"""
         self.prompt_cache.clear()
         logger.info("Prompt cache cleared")
+
+    def add_emotion_instructions(self, base_prompt: str) -> str:
+        """
+        Add emotion expression instructions to the base prompt
+        This helps the LLM include emojis for better emotion detection
+
+        Args:
+            base_prompt: Original prompt text
+
+        Returns:
+            Enhanced prompt with emotion instructions
+        """
+        emotion_instruction = """
+
+## 🎭 Emotional Expression
+
+You are an expressive character who shows emotions through emojis:
+
+**Rules:**
+1. Include ONE emoji at the VERY BEGINNING of your response
+2. Choose the emoji that best matches your emotional state
+3. Only use emojis from this list: 😂 😭 😠 😔 😍 😲 😱 🤔 😌 😴 😜 🙄 😶 🙂 😆 😳 😉 😎
+4. The emoji will be sent to the device but NOT spoken in TTS
+
+**Examples:**
+- User: "Tell me a joke!" → "😂 Why don't scientists trust atoms? Because they make up everything!"
+- User: "I'm scared" → "😌 Don't worry, I'm here with you!"
+- User: "That's amazing!" → "😲 I know, right?! So cool!"
+- User: "I'm sad" → "😔 I'm sorry you're feeling sad. Want to talk about it?"
+
+Remember: Be warm and emotionally expressive - especially for kids!
+"""
+        logger.info("✨ [EMOTION] Adding emotion instructions to prompt")
+        return base_prompt + emotion_instruction
