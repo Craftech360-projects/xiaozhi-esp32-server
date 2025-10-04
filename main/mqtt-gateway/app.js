@@ -340,11 +340,13 @@ class LiveKitBridge extends Emitter {
               // Send TTS stop message to ensure device returns to listening state
               this.sendTtsStopMessage();
               break;
+
             case "llm_emotion":
               // ✨ EMOTION: Forward emotion from LLM to ESP32 device
               console.log(`✨ [EMOTION] Received from agent: ${data.emoji} (${data.emotion})`);
               this.sendEmotionMessage(data.emoji, data.emotion);
               break;
+
             // case "metrics_collected":
             //   console.log(`Metrics: ${JSON.stringify(data.data)}`);
             //   break;
@@ -715,6 +717,7 @@ class LiveKitBridge extends Emitter {
           return false;
       }
 
+
       // Check OPUS TOC (Table of Contents) byte
       const firstByte = data[0];
       const config = (firstByte >> 3) & 0x1f;        // Bits 7-3: config (0-31)
@@ -745,7 +748,6 @@ class LiveKitBridge extends Emitter {
 
 
      // console.log(`📊 OPUS validation: config=${validConfig}(${config}), mono=${validStereo}, frames=${validFrameCount}, validConfig=${isValidConfig} → ${isValidOpus ? "✅ VALID" : "❌ INVALID"}`);
-
 
       // ✅ ADDITIONAL: Log first few bytes for debugging
       if (!isValidOpus) {
