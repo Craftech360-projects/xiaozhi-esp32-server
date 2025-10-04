@@ -14,6 +14,60 @@ from livekit.agents import (
 from src.utils.database_helper import DatabaseHelper
 logger = logging.getLogger("agent")
 
+# Mode name aliases for handling transcript variations
+# Keys must match EXACT database mode names
+MODE_ALIASES = {
+    "Cheeko": ["chiko", "chico", "cheeko", "cheek o", "default", "default mode", "normal mode"],
+    "Storyteller": ["story teller", "story-teller", "story mode", "story time", "storytelling", "tell stories", "tell story"],
+    "RhymeTime": ["rhyme time", "rhyme-time", "rime time", "rhyming time", "rhyming", "rhymetime"],
+    "Art Buddy": ["artbuddy", "art-buddy", "art mode", "art friend", "art helper", "artist"],
+    "Music Maestro": ["musicmaestro", "music-maestro", "music master", "music mode", "musician", "music teacher"],
+    "Quiz Master": ["quizmaster", "quiz-master", "quiz mode", "quiz game", "quiz time"],
+    "Adventure Guide": ["adventureguide", "adventure-guide", "adventure mode", "adventurer", "explore mode"],
+    "Kindness Coach": ["kindnesscoach", "kindness-coach", "kindness mode", "kind coach", "be kind"],
+    "Mindful Buddy": ["mindfulbuddy", "mindful-buddy", "mindful mode", "mindfulness", "meditation mode","MindfulBody"],
+}
+
+def normalize_mode_name(mode_input: str) -> str:
+    """
+    Normalize mode name input to handle transcript variations
+
+    Args:
+        mode_input: Raw mode name from speech transcript
+
+    Returns:
+        Normalized canonical mode name or original input if no match
+    """
+    if not mode_input:
+        return mode_input
+
+    # Normalize: lowercase, strip whitespace, remove special chars
+    normalized = mode_input.lower().strip()
+    normalized = normalized.replace("-", " ").replace("_", " ")
+
+    # Direct match first (case-insensitive comparison with canonical names)
+    for canonical_name in MODE_ALIASES.keys():
+        if normalized == canonical_name.lower():
+            return canonical_name
+
+    # Check aliases
+    for canonical_name, aliases in MODE_ALIASES.items():
+        if normalized in [alias.lower() for alias in aliases]:
+            logger.info(f"🔍 Matched '{mode_input}' → '{canonical_name}' via alias")
+            return canonical_name
+
+    # Check if input matches canonical name when spaces are removed
+    # (e.g., "music maestro" -> "musicmaestro" -> "MusicMaestro")
+    normalized_no_space = normalized.replace(" ", "")
+    for canonical_name in MODE_ALIASES.keys():
+        if normalized_no_space == canonical_name.lower():
+            logger.info(f"🔍 Matched '{mode_input}' → '{canonical_name}' via space removal")
+            return canonical_name
+
+    # No match found - return original for backend to handle
+    logger.warning(f"⚠️ No alias match found for '{mode_input}', passing as-is")
+    return mode_input
+
 class Assistant(Agent):
     """Main AI Assistant agent class"""
 
@@ -93,7 +147,12 @@ class Assistant(Agent):
             if not agent_id:
                 return f"No agent found for device MAC: {self.device_mac}"
 
-            logger.info(f"🔄 Updating agent {agent_id} to mode: {mode_name}")
+            # Normalize mode name to handle transcript variations
+            normalized_mode = normalize_mode_name(mode_name)
+            if normalized_mode != mode_name:
+                logger.info(f"🔄 Mode name normalized: '{mode_name}' → '{normalized_mode}'")
+
+            logger.info(f"🔄 Updating agent {agent_id} to mode: {normalized_mode}")
 
             # 4. Call update-mode API
             url = f"{manager_api_url}/agent/update-mode"
@@ -103,7 +162,7 @@ class Assistant(Agent):
             }
             payload = {
                 "agentId": agent_id,
-                "modeName": mode_name
+                "modeName": normalized_mode
             }
 
             timeout = aiohttp.ClientTimeout(total=10)
@@ -111,7 +170,7 @@ class Assistant(Agent):
                 async with session.put(url, json=payload, headers=headers) as response:
                     if response.status == 200:
                         result = await response.json()
-                        logger.info(f"✅ Agent mode updated in database to '{mode_name}' for agent: {agent_id}")
+                        logger.info(f"✅ Agent mode updated in database to '{normalized_mode}' for agent: {agent_id}")
                         data = result.get('data')
                         logger.info(f"📦 API Response: code={result.get('code')}, has_data={bool(data)}, data_length={len(data) if data else 0}")
 
@@ -134,10 +193,10 @@ class Assistant(Agent):
                                 except Exception as e:
                                     logger.warning(f"⚠️ Could not update session directly: {e}")
 
-                            return f"Successfully updated agent mode to '{mode_name}' and reloaded the new prompt! The changes are now active in this conversation."
+                            return f"Successfully updated agent mode to '{normalized_mode}' and reloaded the new prompt! The changes are now active in this conversation."
                         else:
                             logger.warning(f"⚠️ No prompt data in response, but mode updated in database")
-                            return f"Mode updated to '{mode_name}' in database. Please reconnect to apply changes."
+                            return f"Mode updated to '{normalized_mode}' in database. Please reconnect to apply changes."
                     else:
                         error_text = await response.text()
                         logger.error(f"❌ Failed to update mode: {response.status} - {error_text}")

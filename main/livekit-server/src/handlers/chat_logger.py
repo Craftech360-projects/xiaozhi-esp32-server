@@ -286,14 +286,21 @@ class ChatEventHandler:
 
                 # Safely get available attributes
                 try:
-                    available_attrs = [attr for attr in dir(ev) if not attr.startswith('_') and not callable(getattr(ev, attr, None))]
+                    # Filter out model internal fields to avoid deprecation warnings
+                    available_attrs = [
+                        attr for attr in dir(ev)
+                        if not attr.startswith('_')
+                        and attr not in ['model_fields', 'model_computed_fields', 'model_config', 'model_extra', 'model_fields_set']
+                        and not callable(getattr(ev, attr, None))
+                    ]
                     logger.debug(f"🤖 Available attributes: {available_attrs}")
                 except Exception as attr_error:
                     logger.debug(f"🤖 Could not inspect event attributes: {attr_error}")
 
-                # Try to get the event dict safely
+                # Try to get the event dict safely using Pydantic V2 method
                 try:
-                    event_dict = ev.dict()
+                    # Use model_dump() for Pydantic V2, fallback to dict() for V1
+                    event_dict = ev.model_dump() if hasattr(ev, 'model_dump') else ev.dict()
                     logger.debug(f"🤖 Event dict: {event_dict}")
 
                     # Look for text content in the dict
