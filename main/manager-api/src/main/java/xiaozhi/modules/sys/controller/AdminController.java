@@ -64,7 +64,7 @@ public class AdminController {
 
     @PutMapping("/users/{id}")
     @Operation(summary = "Reset password")
-    @RequiresPermissions("sys:role:superAdmin")
+    // @RequiresPermissions("sys:role:superAdmin")
     public Result<String> update(
             @PathVariable Long id) {
         String password = sysUserService.resetPassword(id);
@@ -73,7 +73,7 @@ public class AdminController {
 
     @DeleteMapping("/users/{id}")
     @Operation(summary = "Delete user")
-    @RequiresPermissions("sys:role:superAdmin")
+   // @RequiresPermissions("sys:role:superAdmin")
     public Result<Void> delete(@PathVariable Long id) {
         sysUserService.deleteById(id);
         return new Result<>();

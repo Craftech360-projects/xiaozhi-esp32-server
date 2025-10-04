@@ -19,6 +19,8 @@ except ImportError:
 try:
     from pydub import AudioSegment
     PYDUB_AVAILABLE = True
+    # Suppress pydub's verbose DEBUG logs from ffmpeg
+    logging.getLogger("pydub.converter").setLevel(logging.WARNING)
 except ImportError:
     PYDUB_AVAILABLE = False
 
@@ -100,8 +102,13 @@ class UnifiedAudioPlayer:
                 logger.error("No session available for playback")
                 return
 
-            # Download and convert audio to frames
-            audio_frames = await self._download_and_convert_to_frames(url, title)
+            # Stream and convert audio to frames (NEW: no full download!)
+            audio_frames = await self._stream_download_and_convert(url, title)
+
+            # Fallback to full download if streaming fails
+            if audio_frames is None:
+                logger.warning(f"🎵 UNIFIED: Streaming failed for {title}, falling back to full download")
+                audio_frames = await self._download_and_convert_to_frames_fallback(url, title)
 
             if audio_frames:
                 logger.info(f"🎵 UNIFIED: Injecting {title} into TTS queue via session.say()")
@@ -133,19 +140,70 @@ class UnifiedAudioPlayer:
             audio_state_manager.force_stop_music()
             logger.info(f"🎵 UNIFIED: Finished playing: {title}")
 
-            # Send music end signal via data channel
+            # Send music end signal via data channel FIRST (most important!)
             await self._send_music_end_signal()
-
-            # Send completion message via TTS now that music is done
-            await self._send_completion_message(title)
 
             # Send agent state change to listening mode (like normal TTS does)
             await self._send_agent_state_to_listening()
 
-    async def _download_and_convert_to_frames(self, url: str, title: str) -> Optional[AsyncIterator[rtc.AudioFrame]]:
-        """Download audio and convert to AudioFrame iterator for session.say()"""
+            # NOTE: Removed completion message to prevent race condition
+            # The completion message was causing the agent to go back to "speaking" state
+            # which could trap the system if the state change gets suppressed
+
+    async def _stream_download_and_convert(self, url: str, title: str) -> Optional[AsyncIterator[rtc.AudioFrame]]:
+        """Stream audio chunks and convert to frames on-the-fly (OPTIMIZED: no full download!)"""
         try:
-            logger.info(f"🎵 UNIFIED: Downloading {title} from {url}")
+            logger.info(f"🎵 UNIFIED: Starting streaming for {title} from {url}")
+
+            # Use longer timeout for streaming
+            timeout = aiohttp.ClientTimeout(total=None)  # No timeout for streaming
+            headers = {
+                'User-Agent': 'LiveKit-Agent/1.0',
+                'Accept': 'audio/mpeg, audio/*',
+            }
+
+            session = aiohttp.ClientSession(timeout=timeout)
+            try:
+                response = await session.get(url, headers=headers)
+
+                if response.status == 403 and 'cloudfront' in url:
+                    # Try S3 fallback
+                    await response.close()
+                    s3_url = url.replace('dbtnllz9fcr1z.cloudfront.net', 'cheeko-audio-files.s3.us-east-1.amazonaws.com')
+                    logger.warning("Trying S3 fallback URL for streaming")
+                    response = await session.get(s3_url, headers=headers)
+
+                if response.status != 200:
+                    logger.error(f"Streaming failed: HTTP {response.status}")
+                    await response.close()
+                    await session.close()
+                    return None
+
+                # Get content length for progress tracking
+                content_length = response.headers.get('Content-Length')
+                logger.info(f"🎵 UNIFIED: Streaming {content_length or 'unknown'} bytes")
+
+                # Return streaming audio iterator (NEW: no full download!)
+                if PYDUB_AVAILABLE and LIVEKIT_AVAILABLE:
+                    return StreamingAudioIterator(response, session, self.stop_event, title)
+                else:
+                    logger.error("Required libraries not available for audio conversion")
+                    await response.close()
+                    await session.close()
+                    return None
+
+            except Exception as e:
+                await session.close()
+                raise e
+
+        except Exception as e:
+            logger.error(f"🎵 UNIFIED: Error starting stream: {e}")
+            return None
+
+    async def _download_and_convert_to_frames_fallback(self, url: str, title: str) -> Optional[AsyncIterator[rtc.AudioFrame]]:
+        """LEGACY: Download full audio and convert to AudioFrame iterator (kept for fallback)"""
+        try:
+            logger.info(f"🎵 UNIFIED: FALLBACK - Downloading {title} from {url}")
 
             # Download audio
             timeout = aiohttp.ClientTimeout(total=30)
@@ -309,3 +367,189 @@ class AudioFrameIterator:
         )
 
         return frame
+
+
+class StreamingAudioIterator:
+    """Async iterator for streaming audio frames - processes MP3 chunks in real-time"""
+
+    def __init__(self, response, session, stop_event, title: str):
+        self.response = response
+        self.session = session
+        self.stop_event = stop_event
+        self.title = title
+        self.chunk_size = 64 * 1024  # 64KB chunks for good balance
+        self.buffer = b''
+        self.audio_converter = None
+        self.frame_queue = asyncio.Queue(maxsize=100)  # Buffer frames for smooth playback
+        self.producer_task = None
+        self.sample_rate = 48000
+        self.samples_per_frame = 960  # 20ms at 48kHz
+        self.is_finished = False
+        self.bytes_processed = 0
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        # Check if already finished
+        if self.is_finished:
+            raise StopAsyncIteration
+
+        # Check stop event first
+        if self.stop_event.is_set():
+            await self._cleanup()
+            raise StopAsyncIteration
+
+        # Start producer task if not already started
+        if self.producer_task is None:
+            self.producer_task = asyncio.create_task(self._produce_frames())
+
+        try:
+            # Get next frame from queue with timeout
+            frame = await asyncio.wait_for(self.frame_queue.get(), timeout=5.0)
+
+            if frame is None:  # End of stream marker
+                await self._cleanup()
+                raise StopAsyncIteration
+
+            return frame
+
+        except asyncio.TimeoutError:
+            logger.warning(f"🎵 STREAMING: Frame timeout for {self.title}")
+            await self._cleanup()
+            raise StopAsyncIteration
+        except Exception as e:
+            # Only log actual errors, not normal end-of-stream conditions
+            if str(e):
+                logger.error(f"🎵 STREAMING: Error getting frame: {e}")
+            await self._cleanup()
+            raise StopAsyncIteration
+
+    async def _produce_frames(self):
+        """Background task to download chunks and convert to audio frames"""
+        try:
+            logger.info(f"🎵 STREAMING: Starting frame producer for {self.title}")
+
+            async for chunk in self._download_chunks():
+                if self.stop_event.is_set():
+                    break
+
+                # Process chunk to audio frames
+                frames = await self._process_chunk(chunk)
+
+                # Add frames to queue
+                for frame in frames:
+                    if self.stop_event.is_set():
+                        break
+                    await self.frame_queue.put(frame)
+
+            # Signal end of stream
+            await self.frame_queue.put(None)
+            logger.info(f"🎵 STREAMING: Finished producing frames for {self.title} ({self.bytes_processed} bytes)")
+
+        except Exception as e:
+            logger.error(f"🎵 STREAMING: Producer error: {e}")
+            await self.frame_queue.put(None)  # Signal end
+
+    async def _download_chunks(self):
+        """Download HTTP response in chunks"""
+        try:
+            async for chunk in self.response.content.iter_chunked(self.chunk_size):
+                if self.stop_event.is_set():
+                    break
+
+                self.bytes_processed += len(chunk)
+                yield chunk
+
+                # Log progress every 512KB
+                if self.bytes_processed % (512 * 1024) == 0:
+                    logger.debug(f"🎵 STREAMING: Downloaded {self.bytes_processed // 1024}KB for {self.title}")
+
+        except Exception as e:
+            logger.error(f"🎵 STREAMING: Download error: {e}")
+            raise
+
+    async def _process_chunk(self, chunk: bytes) -> list:
+        """Convert MP3 chunk to audio frames"""
+        try:
+            # Add to buffer
+            self.buffer += chunk
+
+            # Try to process complete MP3 frames from buffer
+            frames = []
+
+            # For simplicity, we'll process when we have enough data
+            # In production, you'd want proper MP3 frame boundary detection
+            if len(self.buffer) >= 4096:  # Process when we have enough data
+                try:
+                    # Convert MP3 data to PCM using pydub
+                    if PYDUB_AVAILABLE:
+                        audio_segment = AudioSegment.from_mp3(io.BytesIO(self.buffer))
+
+                        # Convert to 48kHz mono for LiveKit
+                        audio_segment = audio_segment.set_frame_rate(self.sample_rate)
+                        audio_segment = audio_segment.set_channels(1)
+                        audio_segment = audio_segment.set_sample_width(2)
+
+                        raw_audio = audio_segment.raw_data
+
+                        # Split into frames
+                        frame_size = self.samples_per_frame * 2  # 2 bytes per sample
+                        for i in range(0, len(raw_audio), frame_size):
+                            if self.stop_event.is_set():
+                                break
+
+                            frame_data = raw_audio[i:i + frame_size]
+
+                            # Pad if necessary
+                            if len(frame_data) < frame_size:
+                                frame_data += b'\x00' * (frame_size - len(frame_data))
+
+                            frame = rtc.AudioFrame(
+                                data=frame_data,
+                                sample_rate=self.sample_rate,
+                                num_channels=1,
+                                samples_per_channel=self.samples_per_frame
+                            )
+                            frames.append(frame)
+
+                        # Clear processed buffer
+                        self.buffer = b''
+
+                except Exception as e:
+                    # If processing fails, try with smaller buffer or skip
+                    logger.debug(f"🎵 STREAMING: Chunk processing issue (normal): {e}")
+                    if len(self.buffer) > 64 * 1024:  # If buffer too large, clear it
+                        self.buffer = self.buffer[-8192:]  # Keep last 8KB
+
+            return frames
+
+        except Exception as e:
+            logger.error(f"🎵 STREAMING: Chunk processing error: {e}")
+            return []
+
+    async def _cleanup(self):
+        """Clean up resources"""
+        if not self.is_finished:
+            self.is_finished = True
+
+            if self.producer_task and not self.producer_task.done():
+                self.producer_task.cancel()
+                try:
+                    await self.producer_task
+                except asyncio.CancelledError:
+                    pass
+
+            try:
+                if self.response and hasattr(self.response, 'close'):
+                    close_result = self.response.close()
+                    if close_result is not None:
+                        await close_result
+                if self.session and hasattr(self.session, 'close'):
+                    close_result = self.session.close()
+                    if close_result is not None:
+                        await close_result
+            except Exception as e:
+                logger.debug(f"🎵 STREAMING: Cleanup error: {e}")
+
+            logger.info(f"🎵 STREAMING: Cleaned up resources for {self.title}")

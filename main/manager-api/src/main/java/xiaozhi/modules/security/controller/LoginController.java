@@ -17,6 +17,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.AllArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import xiaozhi.common.constant.Constant;
 import xiaozhi.common.exception.ErrorCode;
 import xiaozhi.common.exception.RenException;
@@ -34,6 +35,7 @@ import xiaozhi.modules.security.user.SecurityUser;
 import xiaozhi.modules.sys.dto.PasswordDTO;
 import xiaozhi.modules.sys.dto.RetrievePasswordDTO;
 import xiaozhi.modules.sys.dto.SysUserDTO;
+import xiaozhi.modules.sys.dto.UpdatePasswordDTO;
 import xiaozhi.modules.sys.service.SysDictDataService;
 import xiaozhi.modules.sys.service.SysParamsService;
 import xiaozhi.modules.sys.service.SysUserService;
@@ -42,6 +44,7 @@ import xiaozhi.modules.sys.vo.SysDictDataItem;
 /**
  * 登录控制层
  */
+@Slf4j
 @AllArgsConstructor
 @RestController
 @RequestMapping("/user")
@@ -169,6 +172,72 @@ public class LoginController {
         Long userId = SecurityUser.getUserId();
         sysUserTokenService.changePassword(userId, passwordDTO);
         return new Result<>();
+    }
+
+    @PutMapping("/update-password")
+    @Operation(summary = "Update user password without old password (no login required)")
+    public Result<?> updatePassword(@RequestBody UpdatePasswordDTO updatePasswordDTO) {
+        log.info("Password update request initiated for username: {}", updatePasswordDTO.getUsername());
+
+        // Validate DTO
+        ValidatorUtils.validateEntity(updatePasswordDTO);
+        log.debug("UpdatePasswordDTO validation passed for username: {}", updatePasswordDTO.getUsername());
+
+        try {
+            // Get user information by username
+            SysUserDTO userDTO = sysUserService.getByUsername(updatePasswordDTO.getUsername());
+            if (userDTO == null) {
+                log.error("User not found for username: {}", updatePasswordDTO.getUsername());
+                throw new RenException(ErrorCode.ACCOUNT_NOT_EXIST);
+            }
+            log.info("User found: username={}, userId={}", userDTO.getUsername(), userDTO.getId());
+
+            // Update password directly without verifying old password or login status
+            log.debug("Calling changePasswordDirectly for userId: {}, username: {}", userDTO.getId(), userDTO.getUsername());
+            sysUserService.changePasswordDirectly(userDTO.getId(), updatePasswordDTO.getNewPassword());
+
+            log.info("Password updated successfully for userId: {}, username: {}", userDTO.getId(), userDTO.getUsername());
+            return new Result<>();
+        } catch (RenException e) {
+            log.error("Password update failed for username: {} - Error: {}", updatePasswordDTO.getUsername(), e.getMessage());
+            throw e;
+        } catch (Exception e) {
+            log.error("Unexpected error during password update for username: {}", updatePasswordDTO.getUsername(), e);
+            throw new RenException("Password update failed, please try again later");
+        }
+    }
+
+    @DeleteMapping("/delete-account")
+    @Operation(summary = "Delete user account (no login or password verification required)")
+    public Result<?> deleteAccount(@RequestBody UpdatePasswordDTO deleteAccountDTO) {
+        log.info("Account deletion request initiated for username: {}", deleteAccountDTO.getUsername());
+
+        // Validate DTO
+        ValidatorUtils.validateEntity(deleteAccountDTO);
+        log.debug("DeleteAccountDTO validation passed for username: {}", deleteAccountDTO.getUsername());
+
+        try {
+            // Get user information by username
+            SysUserDTO userDTO = sysUserService.getByUsername(deleteAccountDTO.getUsername());
+            if (userDTO == null) {
+                log.error("User not found for username: {}", deleteAccountDTO.getUsername());
+                throw new RenException(ErrorCode.ACCOUNT_NOT_EXIST);
+            }
+            log.info("User found for deletion: username={}, userId={}", userDTO.getUsername(), userDTO.getId());
+
+            // Delete user account (including associated devices and agents)
+            log.info("Deleting user account and associated data for userId: {}, username: {}", userDTO.getId(), userDTO.getUsername());
+            sysUserService.deleteById(userDTO.getId());
+
+            log.info("Account deleted successfully for userId: {}, username: {}", userDTO.getId(), userDTO.getUsername());
+            return new Result<>();
+        } catch (RenException e) {
+            log.error("Account deletion failed for username: {} - Error: {}", deleteAccountDTO.getUsername(), e.getMessage());
+            throw e;
+        } catch (Exception e) {
+            log.error("Unexpected error during account deletion for username: {}", deleteAccountDTO.getUsername(), e);
+            throw new RenException("Account deletion failed, please try again later");
+        }
     }
 
     @PutMapping("/retrieve-password")

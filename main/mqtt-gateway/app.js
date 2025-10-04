@@ -67,7 +67,7 @@ const OUTGOING_SAMPLE_RATE = 24000;  // Hz - for LiveKit → ESP32
 const INCOMING_SAMPLE_RATE = 16000;  // Hz - for ESP32 → LiveKit
 const CHANNELS = 1;            // Mono
 const OUTGOING_FRAME_DURATION_MS = 60;  // 60ms frames for outgoing (LiveKit → ESP32)
-const INCOMING_FRAME_DURATION_MS = 20;  // 20ms frames for incoming (ESP32 → LiveKit)
+const INCOMING_FRAME_DURATION_MS = 60;  // 20ms frames for incoming (ESP32 → LiveKit)
 const OUTGOING_FRAME_SIZE_SAMPLES = (OUTGOING_SAMPLE_RATE * OUTGOING_FRAME_DURATION_MS) / 1000; // 24000 * 60 / 1000 = 1440
 const INCOMING_FRAME_SIZE_SAMPLES = (INCOMING_SAMPLE_RATE * INCOMING_FRAME_DURATION_MS) / 1000; // 16000 * 20 / 1000 = 320
 const OUTGOING_FRAME_SIZE_BYTES = OUTGOING_FRAME_SIZE_SAMPLES * 2; // 1440 samples * 2 bytes/sample = 2880 bytes PCM
@@ -269,6 +269,9 @@ class LiveKitBridge extends Emitter {
 
     this.room.on("disconnected", (reason) => {
       console.log(`[LiveKitBridge] Room disconnected: ${reason}`);
+      // CRITICAL: Clear audio flag on disconnect to prevent stuck state
+      this.isAudioPlaying = false;
+      console.log(`🎵 [CLEANUP] Cleared audio flag on room disconnect for device: ${this.macAddress}`);
     });
 
     this.room.on(
@@ -329,6 +332,13 @@ class LiveKitBridge extends Emitter {
               // Handle xiaozhi function calls (volume controls, etc.)
               console.log(`🔧 [FUNCTION CALL] Received function: ${data.function_call?.name}`);
               this.handleFunctionCall(data);
+              break;
+            case "music_playback_stopped":
+              // Handle music playback stopped - force clear audio playing flag
+              console.log(`🎵 [MUSIC-STOP] Music playback stopped for device: ${this.macAddress}`);
+              this.isAudioPlaying = false;
+              // Send TTS stop message to ensure device returns to listening state
+              this.sendTtsStopMessage();
               break;
             // case "metrics_collected":
             //   console.log(`Metrics: ${JSON.stringify(data.data)}`);
@@ -586,11 +596,16 @@ class LiveKitBridge extends Emitter {
       // Check if data is Opus and decode it
       const isOpus = this.checkOpusFormat(opusData);
 
+
+
+     // console.log(`🔍 [AUDIO] Detected format for incoming data: ${isOpus ? "Opus" : "PCM or Unknown"}`);
       if (isOpus) {
         if (opusDecoder) {
           try {
             // Decode Opus to PCM
-            const pcmBuffer = opusDecoder.decode(opusData, 480);
+            const pcmBuffer = opusDecoder.decode(opusData, 960);
+
+           // console.log(`✅ [OPUS DECODE] Decoded to ${pcmBuffer.length}B PCM`);
 
             if (pcmBuffer && pcmBuffer.length > 0) {
               // Convert Buffer to Int16Array
@@ -681,32 +696,61 @@ class LiveKitBridge extends Emitter {
     this.analyzeAudioStatistics(audioData);
   }
 
+
   checkOpusFormat(data) {
-    if (data.length < 8) return false;
+      if (data.length < 1) return false;
 
-    // Check for Opus packet headers
-    // Opus packets typically start with specific TOC (Table of Contents) byte patterns
-    const firstByte = data[0];
+      // ESP32 sends 60ms OPUS frames at 16kHz mono with complexity=0
+      const MIN_OPUS_SIZE = 1;    // Minimum OPUS packet (can be very small for silence)
+      const MAX_OPUS_SIZE = 400;  // Maximum OPUS packet for 60ms@16kHz
 
-    // Opus TOC byte analysis
-    // Bits 7-3: config (0-31), Bits 2: stereo flag, Bits 1-0: frame count code
-    const config = (firstByte >> 3) & 0x1f;
-    const stereo = (firstByte >> 2) & 0x01;
-    const frameCount = firstByte & 0x03;
+      // Validate packet size range
+      if (data.length < MIN_OPUS_SIZE || data.length > MAX_OPUS_SIZE) {
+          console.log(`❌ Invalid OPUS size: ${data.length}B (expected ${MIN_OPUS_SIZE}-${MAX_OPUS_SIZE}B)`);
+          return false;
+      }
 
-    // console.log(
-    //   `   🔍 Opus TOC Analysis: config=${config}, stereo=${stereo}, frames=${frameCount}`
-    // );
+      // Check OPUS TOC (Table of Contents) byte
+      const firstByte = data[0];
+      const config = (firstByte >> 3) & 0x1f;        // Bits 7-3: config (0-31)
+      const stereo = (firstByte >> 2) & 0x01;        // Bit 2: stereo flag
+      const frameCount = firstByte & 0x03;           // Bits 1-0: frame count
 
-    // Valid Opus configurations are 0-31
-    // Check if it looks like a valid Opus TOC byte
-    const validOpusConfig = config >= 0 && config <= 31;
 
-    // Additional Opus packet characteristics
-    const hasOpusMarkers = this.checkOpusMarkers(data);
+     // console.log(`🔍 OPUS TOC: config=${config}, stereo=${stereo}, frames=${frameCount}, size=${data.length}B`);
 
-    return validOpusConfig && hasOpusMarkers;
+
+      // Validate OPUS TOC byte
+      const validConfig = config >= 0 && config <= 31;
+      const validStereo = stereo === 0;  // ESP32 sends mono (stereo=0)
+      const validFrameCount = frameCount >= 0 && frameCount <= 3;
+
+      // ✅ FIXED: Accept ALL valid OPUS configs (0-31) for ESP32 with complexity=0
+      // ESP32 with complexity=0 can use various configs depending on audio content
+      const validOpusConfigs = [
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  // NB/MB/WB configs
+        16, 17, 18, 19,                                          // SWB configs
+        20, 21, 22, 23,                                          // FB configs
+        24, 25, 26, 27, 28, 29, 30, 31                          // Hybrid configs
+      ];
+      const isValidConfig = validOpusConfigs.includes(config);
+
+      // ✅ FIXED: More lenient validation - just check basic OPUS structure
+      const isValidOpus = validConfig && validStereo && validFrameCount && isValidConfig;
+
+
+     // console.log(`📊 OPUS validation: config=${validConfig}(${config}), mono=${validStereo}, frames=${validFrameCount}, validConfig=${isValidConfig} → ${isValidOpus ? "✅ VALID" : "❌ INVALID"}`);
+
+
+      // ✅ ADDITIONAL: Log first few bytes for debugging
+      if (!isValidOpus) {
+        const hexDump = data.slice(0, Math.min(8, data.length)).toString('hex');
+      //  console.log(`🔍 OPUS debug - first ${Math.min(8, data.length)} bytes: ${hexDump}`);
+      }
+
+      return isValidOpus;
   }
+
 
   checkOpusMarkers(data) {
     // Look for common Opus packet patterns
@@ -937,7 +981,11 @@ class LiveKitBridge extends Emitter {
       'volume_down': 'self_volume_down',
       'get_volume': 'self_get_volume',
       'mute': 'self_mute',
-      'unmute': 'self_unmute'
+      'unmute': 'self_unmute',
+      'set_light_color': 'self_set_light_color',
+      'get_battery_status': 'self_get_battery_status',
+      'set_light_mode': 'self_set_light_mode',
+      'set_rainbow_speed': 'self_set_rainbow_speed'
     };
 
     const functionName = actionToFunctionMap[action];
@@ -989,7 +1037,12 @@ class LiveKitBridge extends Emitter {
       'self_volume_up': 'self.audio_speaker.volume_up',
       'self_volume_down': 'self.audio_speaker.volume_down',
       'self_mute': 'self.audio_speaker.mute',
-      'self_unmute': 'self.audio_speaker.unmute'
+      'self_unmute': 'self.audio_speaker.unmute',
+      'self_set_light_color': 'self.led.set_color',
+      'self_get_battery_status': 'self.battery.get_status',
+      'self_set_light_mode': 'self.led.set_mode',
+      'self_set_rainbow_speed': 'self.led.set_rainbow_speed'
+      
     };
 
     const mcpToolName = functionToMcpToolMap[functionCall.name];
@@ -1355,6 +1408,10 @@ class LiveKitBridge extends Emitter {
     if (this.room) {
       console.log("[LiveKitBridge] Disconnecting from LiveKit room");
 
+      // CRITICAL: Clear audio flag before disconnect to prevent stuck state
+      this.isAudioPlaying = false;
+      console.log(`🎵 [CLEANUP] Cleared audio flag on bridge close for device: ${this.macAddress}`);
+
       // First disconnect from the room
       await this.room.disconnect();
 
@@ -1522,7 +1579,11 @@ class MQTTConnection {
 
   close() {
     this.closing = true;
+
+    // CRITICAL: Clear audio playing flag to prevent stuck state
     if (this.bridge) {
+      this.bridge.isAudioPlaying = false;
+      console.log(`🎵 [CLEANUP] Cleared audio flag on close for device: ${this.clientId}`);
       this.bridge.close();
       this.bridge = null;
     } else {
@@ -1543,6 +1604,11 @@ class MQTTConnection {
   }
 
   async checkKeepAlive() {
+    // Don't check keepalive if connection is closing
+    if (this.closing) {
+      return;
+    }
+
     const now = Date.now();
 
     // If we're in ending phase, check for final timeout
@@ -2242,6 +2308,11 @@ class VirtualMQTTConnection {
   }
 
   async checkKeepAlive() {
+    // Don't check keepalive if connection is closing
+    if (this.closing) {
+      return;
+    }
+
     const now = Date.now();
 
     // If we're in ending phase, check for final timeout

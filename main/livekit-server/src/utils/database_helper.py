@@ -43,12 +43,18 @@ class DatabaseHelper:
                     async with session.get(url, headers=headers) as response:
                         if response.status == 200:
                             data = await response.json()
+                            # Check for Result<String> format: {code: 0, data: "agent_id"}
+                            if data.get('code') == 0 and data.get('data'):
+                                agent_id = data.get('data')
+                                logger.info(f"🆔✅ Retrieved agent_id: {agent_id} for MAC: {device_mac}")
+                                return str(agent_id)
+                            # Fallback to direct fields
                             agent_id = data.get('agentId') or data.get('agent_id')
                             if agent_id:
                                 logger.info(f"🆔✅ Retrieved agent_id: {agent_id} for MAC: {device_mac}")
                                 return str(agent_id)
                             else:
-                                logger.warning(f"🆔⚠️ No agent_id found in response for MAC: {device_mac}")
+                                logger.warning(f"🆔⚠️ No agent_id found in response for MAC: {device_mac}. Response: {data}")
                                 return None
                         elif response.status == 404:
                             logger.warning(f"No agent found for MAC: {device_mac}")
