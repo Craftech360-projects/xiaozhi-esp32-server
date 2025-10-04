@@ -167,7 +167,7 @@ class LiveKitBridge extends Emitter {
 
   // Process buffered audio frames and encode to Opus
   processBufferedFrames(timestamp, frameCount, participantIdentity) {
-    console.log(`🔍 [PROCESS] processBufferedFrames called: buffer=${this.frameBuffer.length}B, target=${this.targetFrameBytes}B, connection=${this.connection ? 'exists' : 'null'}`);
+    // console.log(`🔍 [PROCESS] processBufferedFrames called: buffer=${this.frameBuffer.length}B, target=${this.targetFrameBytes}B, connection=${this.connection ? 'exists' : 'null'}`);
 
     if (!this.connection) {
       console.error(`❌ [PROCESS] No connection available, cannot send audio`);
@@ -329,6 +329,19 @@ class LiveKitBridge extends Emitter {
               // Handle xiaozhi function calls (volume controls, etc.)
               console.log(`🔧 [FUNCTION CALL] Received function: ${data.function_call?.name}`);
               this.handleFunctionCall(data);
+              break;
+            case "llm_emotion":
+              // NEW: Handle emotion messages from LiveKit agent
+              // SAFE: Uses existing sendLlmMessage function (defined at line 1192)
+              try {
+                console.log(`✨ [EMOTION] Received from LiveKit: emoji=${data.emoji}, emotion=${data.emotion}`);
+                // Use existing sendLlmMessage function to forward to ESP32
+                this.sendLlmMessage(data.emoji, data.emotion);
+                console.log(`✅ [EMOTION] Forwarded to device: ${this.macAddress}`);
+              } catch (error) {
+                console.error(`❌ [EMOTION] Error handling emotion: ${error}`);
+                // Non-fatal - continue processing other messages
+              }
               break;
             // case "metrics_collected":
             //   console.log(`Metrics: ${JSON.stringify(data.data)}`);

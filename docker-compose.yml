@@ -4,7 +4,7 @@ services:
   # MySQL Database for Manager API
   manager-api-db:
     image: mysql:8.0
-    container_name: manager-api-db
+    container_name: MySQL
     restart: unless-stopped
     ports:
       - "3307:3306"
@@ -26,7 +26,7 @@ services:
   # Redis Cache for Manager API
   manager-api-redis:
     image: redis:7-alpine
-    container_name: manager-api-redis
+    container_name: Redis
     restart: unless-stopped
     ports:
       - "6380:6379"
@@ -46,7 +46,7 @@ services:
     build:
       context: ./main/manager-api
       dockerfile: Dockerfile
-    container_name: xiaozhi-manager-api
+    container_name: manager-api
     restart: unless-stopped
     ports:
       - "8002:8002"
@@ -82,7 +82,7 @@ services:
     build:
       context: ./main/manager-web
       dockerfile: Dockerfile
-    container_name: xiaozhi-manager-web
+    container_name: manager-web
     restart: unless-stopped
     ports:
       - "8003:8002"
@@ -103,7 +103,7 @@ services:
   # EMQX MQTT Broker
   emqx:
     image: emqx/emqx:5.8.3
-    container_name: xiaozhi-emqx
+    container_name: emqx
     restart: unless-stopped
     ports:
       - "1883:1883"      # MQTT
@@ -132,7 +132,7 @@ services:
     build:
       context: ./main/mqtt-gateway
       dockerfile: Dockerfile
-    container_name: xiaozhi-mqtt-gateway
+    container_name: mqtt-gateway
     restart: unless-stopped
     ports:
       - "8884:8884/udp"
@@ -171,7 +171,7 @@ services:
     build:
       context: ./main/livekit-server
       dockerfile: Dockerfile
-    container_name: xiaozhi-livekit-agent
+    container_name: livekit-agent
     restart: unless-stopped
     env_file:
       - ./main/livekit-server/.env

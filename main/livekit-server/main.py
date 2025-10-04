@@ -231,6 +231,14 @@ async def entrypoint(ctx: JobContext):
         logger.info(
             f"📄 Using default prompt - no MAC in room name '{room_name}' (length: {len(agent_prompt)} chars)")
 
+    # NEW: Add emotion instructions to the prompt
+    try:
+        agent_prompt = prompt_service.add_emotion_instructions(agent_prompt)
+        logger.info(f"✨ [EMOTION] Enhanced prompt with emotion instructions (new length: {len(agent_prompt)} chars)")
+    except Exception as e:
+        logger.warning(f"⚠️ [EMOTION] Failed to add emotion instructions: {e}")
+        # Continue with original prompt if enhancement fails
+
     # Get VAD first as it's needed for STT
     vad = ctx.proc.userdata["vad"]
 

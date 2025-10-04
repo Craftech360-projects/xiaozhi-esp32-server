@@ -31,6 +31,15 @@ except ImportError:
     ResponseGeneratedEvent = None
     LLMResponseEvent = None
 
+# Try to import emotion utilities
+try:
+    from ..utils.emotion_utils import extract_emotion, send_emotion_via_data_channel
+    logger.debug("✨ Emotion utilities imported successfully")
+except ImportError as e:
+    logger.warning(f"⚠️ Could not import emotion utilities: {e}")
+    extract_emotion = None
+    send_emotion_via_data_channel = None
+
 class ChatEventHandler:
     """Event handler for chat logging and data channel communication"""
 
@@ -39,6 +48,9 @@ class ChatEventHandler:
 
     # Store chat history service reference
     _chat_history_service = None
+
+    # Emotion tracking flag
+    _emotion_sent_for_current_turn = False
 
     @staticmethod
     def set_assistant(assistant):
@@ -49,6 +61,55 @@ class ChatEventHandler:
     def set_chat_history_service(chat_history_service):
         """Set the chat history service instance"""
         ChatEventHandler._chat_history_service = chat_history_service
+
+    @staticmethod
+    def reset_emotion_flag():
+        """Reset emotion flag when agent starts new response"""
+        ChatEventHandler._emotion_sent_for_current_turn = False
+        logger.info("🔄 [EMOTION] Reset emotion flag for new conversation turn")
+
+    @staticmethod
+    async def process_agent_text_for_emotion(ctx, text: str):
+        """
+        Process agent response text to detect and send emotion
+        Matches xiaozhi-server behavior: send emotion on first chunk only
+
+        Args:
+            ctx: Job context with room access
+            text: Agent's response text
+        """
+        logger.info(f"📝 [EMOTION] Processing text for emotion detection: '{text[:50]}...'")
+
+        # Safety check: only proceed if emotion utils are available
+        if not extract_emotion or not send_emotion_via_data_channel:
+            logger.warning("⚠️ [EMOTION] Emotion utilities not available, skipping")
+            return
+
+        # Only process emotion once per conversation turn
+        if ChatEventHandler._emotion_sent_for_current_turn:
+            logger.debug("⏭️ [EMOTION] Already sent emotion for this turn, skipping")
+            return
+
+        # Only process non-empty text
+        if not text or not text.strip():
+            logger.debug("⚠️ [EMOTION] Empty text received, skipping emotion detection")
+            return
+
+        try:
+            # Extract emotion from text
+            emoji, emotion = extract_emotion(text)
+            logger.info(f"✨ [EMOTION] Extracted: emoji={emoji}, emotion={emotion}")
+
+            # Send via data channel to MQTT gateway
+            if ctx and ctx.room:
+                await send_emotion_via_data_channel(ctx.room, emoji, emotion)
+                ChatEventHandler._emotion_sent_for_current_turn = True
+                logger.info(f"✅ [EMOTION] Successfully processed and sent: {emoji} ({emotion})")
+            else:
+                logger.warning("⚠️ [EMOTION] No room context available, cannot send emotion")
+        except Exception as e:
+            # Non-fatal error - log and continue without breaking existing flow
+            logger.error(f"❌ [EMOTION] Error processing emotion: {e}", exc_info=True)
 
     @staticmethod
     async def _handle_abort_playback(session, ctx):
@@ -262,6 +323,19 @@ class ChatEventHandler:
                                 # Get current chat history stats
                                 stats = ChatEventHandler._chat_history_service.get_stats()
                                 logger.debug(f"📊 Chat history stats: {stats['total_messages']} total, {stats['buffered_messages']} buffered")
+
+                                # ✨ EMOTION DETECTION: Process agent messages for emotions
+                                if role == 'assistant' and extract_emotion and send_emotion_via_data_channel:
+                                    try:
+                                        emoji, emotion = extract_emotion(content)
+                                        logger.info(f"✨ [EMOTION] Detected in agent message: {emoji} ({emotion})")
+
+                                        # Send emotion via data channel
+                                        asyncio.create_task(
+                                            send_emotion_via_data_channel(ctx.room, emoji, emotion)
+                                        )
+                                    except Exception as emotion_error:
+                                        logger.warning(f"⚠️ [EMOTION] Error processing emotion: {emotion_error}")
 
                             except Exception as e:
                                 logger.error(f"📝❌ Failed to capture conversation item: {e}")
@@ -493,3 +567,6 @@ class ChatEventHandler:
 
             except Exception as e:
                 logger.error(f"Error processing data channel message: {e}")
+
+        # Emotion detection is now handled in the conversation_item_added event handler above
+        logger.info("✨ [EMOTION] Emotion detection enabled via conversation_item_added event")
