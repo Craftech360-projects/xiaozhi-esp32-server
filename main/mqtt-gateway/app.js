@@ -2012,6 +2012,10 @@ class VirtualMQTTConnection {
     this.isEnding = false; // Track if end prompt has been sent
     this.endPromptSentTime = null; // Track when end prompt was sent
 
+    // Track target toy for mobile-initiated connections
+    this.targetToyMac = null; // MAC address of the toy to route audio to
+    this.isMobileConnection = false; // Flag to identify mobile connections
+
     // Parse device info from hello message
     if (helloPayload.clientId) {
       const parts = helloPayload.clientId.split("@@@");
@@ -2126,6 +2130,23 @@ class VirtualMQTTConnection {
   }
 
   sendUdpMessage(payload, timestamp) {
+    // Check if this is a mobile-initiated connection that needs routing to a physical toy
+    if (!this.udp.remoteAddress && this.isMobileConnection && this.macAddress) {
+      // Find the real toy connection with UDP endpoint
+      const toyConnection = this.findRealToyConnection(this.macAddress);
+      if (toyConnection && toyConnection.udp && toyConnection.udp.remoteAddress) {
+        console.log(`🎯 [MOBILE->TOY] Routing audio from mobile to toy: ${this.macAddress}`);
+        // Route audio through the real toy's UDP connection
+        toyConnection.sendUdpMessage(payload, timestamp);
+        return;
+      } else {
+        // Log but don't fail - toy might not be connected yet
+        console.log(`⚠️ [MOBILE->TOY] No active toy connection found for MAC: ${this.macAddress}`);
+        return;
+      }
+    }
+
+    // Original implementation for direct UDP connections
     if (!this.udp.remoteAddress) {
       debug(`Device ${this.deviceId} not connected, cannot send UDP message`);
       return;
@@ -2159,6 +2180,35 @@ class VirtualMQTTConnection {
     this.headerBuffer.writeUInt32BE(timestamp, 8);
     this.headerBuffer.writeUInt32BE(sequence, 12);
     return Buffer.from(this.headerBuffer);
+  }
+
+  findRealToyConnection(macAddress) {
+    // Search through all gateway connections for the real toy with UDP
+    for (const [connectionId, connection] of this.gateway.connections) {
+      // Check if this is a real MQTTConnection (not VirtualMQTTConnection)
+      // and matches the MAC address and has UDP endpoint
+      if (connection &&
+          connection.macAddress === macAddress &&
+          connection.udp &&
+          connection.udp.remoteAddress &&
+          connection.constructor.name === 'MQTTConnection') {
+        console.log(`✅ [FIND-TOY] Found real toy connection for MAC ${macAddress}`);
+        return connection;
+      }
+    }
+
+    // Also check deviceConnections map
+    const deviceInfo = this.gateway.deviceConnections.get(macAddress);
+    if (deviceInfo && deviceInfo.connection) {
+      const conn = deviceInfo.connection;
+      if (conn.udp && conn.udp.remoteAddress && conn.constructor.name === 'MQTTConnection') {
+        console.log(`✅ [FIND-TOY] Found real toy in deviceConnections for MAC ${macAddress}`);
+        return conn;
+      }
+    }
+
+    console.log(`❌ [FIND-TOY] No real toy connection found for MAC ${macAddress}`);
+    return null;
   }
 
   async parseHelloMessage(json) {
@@ -2278,6 +2328,77 @@ class VirtualMQTTConnection {
         debug("Successfully forwarded abort signal to LiveKit agent");
       } catch (error) {
         debug("Failed to forward abort signal to LiveKit:", error);
+      }
+      return;
+    }
+
+    // Handle mobile music request - forward to LiveKit bridge
+    if (json.type === "mobile_music_request") {
+      try {
+        console.log(`🎵 [MOBILE] Mobile music request received from virtual device: ${this.deviceId}`);
+        console.log(`   🎵 Song: ${json.song_name}`);
+        console.log(`   🗂️ Type: ${json.content_type}`);
+        console.log(`   🌐 Language: ${json.language || 'Not specified'}`);
+
+        // Mark this as a mobile-initiated connection
+        this.isMobileConnection = true;
+        console.log(`   📱 Marked as mobile connection for MAC: ${this.macAddress}`);
+
+        // Check if bridge and room are available
+        if (!this.bridge || !this.bridge.room || !this.bridge.room.localParticipant) {
+          console.error(`❌ [MOBILE] No bridge/room available to handle music request`);
+          return;
+        }
+
+        // Convert to function_call format for LiveKit agent
+        const functionName = json.content_type === "story" ? "play_story" : "play_music";
+        const functionArguments = {};
+
+        if (json.content_type === "music") {
+          // For music: song_name and language
+          if (json.song_name) {
+            functionArguments.song_name = json.song_name;
+          }
+          if (json.language) {
+            functionArguments.language = json.language;
+          }
+        } else if (json.content_type === "story") {
+          // For stories: story_name and category
+          if (json.song_name) {
+            functionArguments.story_name = json.song_name;
+          }
+          if (json.language) {
+            functionArguments.category = json.language;
+          }
+        }
+
+        // Create function call message for LiveKit agent
+        const functionCallMessage = {
+          type: "function_call",
+          function_call: {
+            name: functionName,
+            arguments: functionArguments
+          },
+          source: "mobile_app",
+          timestamp: Date.now(),
+          request_id: `mobile_req_${Date.now()}`
+        };
+
+        // Forward to LiveKit agent via data channel
+        const messageString = JSON.stringify(functionCallMessage);
+        const messageData = new Uint8Array(Buffer.from(messageString, 'utf8'));
+
+        await this.bridge.room.localParticipant.publishData(
+          messageData,
+          { reliable: true }
+        );
+
+        console.log(`✅ [MOBILE] Music request forwarded to LiveKit agent`);
+        console.log(`   🎯 Function: ${functionName}`);
+        console.log(`   📝 Arguments: ${JSON.stringify(functionArguments)}`);
+
+      } catch (error) {
+        console.error(`❌ [MOBILE] Failed to handle mobile music request:`, error);
       }
       return;
     }
