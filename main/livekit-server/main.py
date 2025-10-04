@@ -232,6 +232,10 @@ async def entrypoint(ctx: JobContext):
         logger.info(
             f"📄 Using default prompt - no MAC in room name '{room_name}' (length: {len(agent_prompt)} chars)")
 
+    # ✨ EMOTION: Add emotion instructions to prompt
+    agent_prompt = prompt_service.add_emotion_instructions(agent_prompt)
+    logger.info(f"✨ [EMOTION] Enhanced prompt with emotion instructions (new length: {len(agent_prompt)} chars)")
+
     # Initialize mem0 memory provider and conversation buffer
     mem0_provider = None
     conversation_messages = []  # Buffer to store conversation messages
