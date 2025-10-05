@@ -167,7 +167,7 @@ class LiveKitBridge extends Emitter {
 
   // Process buffered audio frames and encode to Opus
   processBufferedFrames(timestamp, frameCount, participantIdentity) {
-    console.log(`🔍 [PROCESS] processBufferedFrames called: buffer=${this.frameBuffer.length}B, target=${this.targetFrameBytes}B, connection=${this.connection ? 'exists' : 'null'}`);
+    // console.log(`🔍 [PROCESS] processBufferedFrames called: buffer=${this.frameBuffer.length}B, target=${this.targetFrameBytes}B, connection=${this.connection ? 'exists' : 'null'}`);
 
     if (!this.connection) {
       console.error(`❌ [PROCESS] No connection available, cannot send audio`);

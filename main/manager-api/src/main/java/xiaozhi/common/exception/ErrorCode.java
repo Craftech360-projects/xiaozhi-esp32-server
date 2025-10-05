@@ -18,6 +18,7 @@ public interface ErrorCode {
     int PARAMS_GET_ERROR = 10003;
     int ACCOUNT_PASSWORD_ERROR = 10004;
     int ACCOUNT_DISABLE = 10005;
+    int ACCOUNT_NOT_EXIST = 10043;
     int IDENTIFIER_NOT_NULL = 10006;
     int CAPTCHA_ERROR = 10007;
     int PHONE_NOT_NULL = 10008;

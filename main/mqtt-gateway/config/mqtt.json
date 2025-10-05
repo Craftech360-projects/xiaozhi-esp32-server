@@ -3,7 +3,7 @@
   "mqtt_broker": {
 
 
-    "host": "192.168.1.168",
+    "host": "192.168.1.6",
 
 
     "port": 1883,
@@ -15,7 +15,7 @@
   },
   "livekit": {
 
-    "url": "ws://livekit-server:7880",
+    "url": "ws://localhost:7880",
 
     "api_key": "devkey",
     "api_secret": "secret"
