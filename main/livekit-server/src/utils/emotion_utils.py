@@ -100,7 +100,7 @@ async def send_emotion_via_data_channel(room, emoji: str, emotion: str):
 
     Args:
         room: LiveKit room instance
-        emoji: Emoji character (e.g., "😂")
+        emoji: Emoji character (e.g., "😂") - used for detection but not sent
         emotion: Emotion name (e.g., "laughing")
     """
     try:
@@ -109,16 +109,14 @@ async def send_emotion_via_data_channel(room, emoji: str, emotion: str):
             return
 
         message = {
-            "type": "llm_emotion",
-            "emoji": emoji,
+            "type": "llm",
             "emotion": emotion,
         }
         await room.local_participant.publish_data(
             json.dumps(message).encode(),
-            topic="emotion",
             reliable=True
         )
-        logger.info(f"✨ [EMOTION] Sent to gateway: {emoji} ({emotion})")
+        logger.info(f"✨ [EMOTION] Sent to gateway: {emotion}")
     except Exception as e:
         # Non-fatal error - log and continue
         logger.warning(f"⚠️ [EMOTION] Failed to send emotion message: {e}")
