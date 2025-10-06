@@ -320,11 +320,8 @@ class LiveKitBridge extends Emitter {
                 this.connection.updateActivityTime();
                 console.log(`🎵 [AUDIO-START] TTS started, timer reset for device: ${this.macAddress}`);
               }
-              // ✨ EMOTION FIX: Add small delay to ensure emotion message is published first
-              // Emotion arrives just before speech_created, so wait 30ms to let it publish
-              setTimeout(() => {
-                this.sendTtsStartMessage(data.data.text);
-              }, 30);
+              // Send TTS start message to device
+              this.sendTtsStartMessage(data.data.text);
               break;
             case "device_control":
               // Convert device_control commands to MCP function calls
@@ -351,12 +348,6 @@ class LiveKitBridge extends Emitter {
               this.isAudioPlaying = false;
               // Send TTS stop message to ensure device returns to listening state
               this.sendTtsStopMessage();
-              break;
-
-            case "llm":
-              // ✨ EMOTION: Forward emotion from LLM to ESP32 device
-              console.log(`✨ [EMOTION] Received from agent: ${data.emotion}`);
-              this.sendEmotionMessage(data.emotion);
               break;
 
             // case "metrics_collected":
@@ -987,22 +978,6 @@ class LiveKitBridge extends Emitter {
     this.connection.sendMqttMessage(JSON.stringify(message));
   }
 
-  // ✨ EMOTION: Send emotion message to device
-  sendEmotionMessage(emotion) {
-    if (!this.connection) return;
-
-    const message = {
-      type: "llm",
-      emotion: emotion,
-      session_id: this.connection.udp.session_id,
-    };
-
-    console.log(
-      `✨ [MQTT OUT] Sending emotion to device: ${this.macAddress} - ${emotion}`
-    );
-    this.connection.sendMqttMessage(JSON.stringify(message));
-  }
-
   // Convert device_control commands to MCP function calls
   convertDeviceControlToMcp(controlData) {
     if (!this.connection) return;
@@ -1341,13 +1316,12 @@ class LiveKitBridge extends Emitter {
   }
 
   // Send LLM response to device
-  sendLlmMessage(text, emotion = "neutral") {
+  sendLlmMessage(text) {
     if (!this.connection || !text) return;
 
     const message = {
       type: "llm",
       text: text,
-      emotion: emotion,
       session_id: this.connection.udp.session_id,
     };
 
