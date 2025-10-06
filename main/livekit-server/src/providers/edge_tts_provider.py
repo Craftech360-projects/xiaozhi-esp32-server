@@ -246,7 +246,7 @@ class EdgeTTSChunkedStream(tts.ChunkedStream if LIVEKIT_AVAILABLE else object):
             # Stream audio data directly as MP3 (same as ElevenLabs approach)
             async for chunk in communicate.stream():
                 if chunk["type"] == "audio":
-                    # Push MP3 data directly without conversion
+                    # Push MP3 data directly without conversion (simpler approach)
                     output_emitter.push(chunk["data"])
 
             # Flush to signal completion

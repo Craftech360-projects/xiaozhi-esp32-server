@@ -8,6 +8,10 @@ from .mcp_handler import (
     handle_volume_adjust,
     handle_volume_get,
     handle_volume_mute,
+    handle_light_color_set,
+    handle_battery_status_get,
+    handle_light_mode_set,
+    handle_rainbow_speed_set,
 )
 
 logger = logging.getLogger("mcp_executor")
@@ -184,6 +188,84 @@ class LiveKitMCPExecutor:
         """
         return self._volume_cache
 
+    # Light Control Method
+    async def set_light_color(self, color: str) -> str:
+        """Set light color"""
+        try:
+            # Convert color name to RGB if needed
+            rgb_color = self._convert_color_to_rgb(color)
+            if not rgb_color:
+                return f"Unknown color: {color}. Please use color names like red, blue, green, pink, etc."
+
+            await handle_light_color_set(self.mcp_client, rgb_color)
+            return f"Light color set to {color}."
+
+        except Exception as e:
+            logger.error(f"Error setting light color: {e}")
+            return "Sorry, I couldn't change the light color right now."
+
+    def _convert_color_to_rgb(self, color: str) -> dict:
+        """Convert color name to RGB values"""
+        color_map = {
+            "red": {"red": 255, "green": 0, "blue": 0},
+            "green": {"red": 0, "green": 255, "blue": 0},
+            "blue": {"red": 0, "green": 0, "blue": 255},
+            "white": {"red": 255, "green": 255, "blue": 255},
+            "yellow": {"red": 255, "green": 255, "blue": 0},
+            "purple": {"red": 128, "green": 0, "blue": 128},
+            "orange": {"red": 255, "green": 165, "blue": 0},
+            "pink": {"red": 255, "green": 192, "blue": 203},
+            "cyan": {"red": 0, "green": 255, "blue": 255},
+            "magenta": {"red": 255, "green": 0, "blue": 255},
+            "off": {"red": 0, "green": 0, "blue": 0}
+        }
+
+        color_lower = color.lower().strip()
+        return color_map.get(color_lower)
+
+    # Battery Status Method
+    async def get_battery_status(self) -> str:
+        """Get battery percentage only"""
+        try:
+            response = await handle_battery_status_get(self.mcp_client)
+
+            # The ESP32 should return battery data including percentage
+            # For now, return a placeholder message - the actual percentage
+            # will be received via data channel response from ESP32
+            return "Checking battery percentage..."
+
+        except Exception as e:
+            logger.error(f"Error getting battery status: {e}")
+            return "Sorry, I couldn't check the battery percentage right now."
+
+
+    async def set_light_mode(self, mode: str) -> str:
+        """Set light mode (rainbow, default, custom, etc.)"""
+        try:
+            await handle_light_mode_set(self.mcp_client, mode)
+            return f"Light mode set to {mode}."
+
+        except Exception as e:
+            logger.error(f"Error setting light mode: {e}")
+            return "Sorry, I couldn't change the light mode right now."
+    
+    async def set_rainbow_speed(self, speed_ms: str) -> str:
+      """Set rainbow mode speed"""
+      try:
+          # Convert speed_ms to integer and validate
+          try:
+              speed_value = int(speed_ms)
+              if speed_value < 50 or speed_value > 1000:
+                  return "Speed must be between 50 and 1000 milliseconds."
+          except ValueError:
+              return "Invalid speed value. Please provide a number between 50 and 1000."
+
+          await handle_rainbow_speed_set(self.mcp_client, speed_value)
+          return f"Rainbow speed set to {speed_value}ms."
+
+      except Exception as e:
+          logger.error(f"Error setting rainbow speed: {e}")
+          return "Sorry, I couldn't change the rainbow speed right now."
     # Generic Tool Execution
     async def execute_tool(self, tool_name: str, arguments: Dict[str, Any] = None) -> str:
         """

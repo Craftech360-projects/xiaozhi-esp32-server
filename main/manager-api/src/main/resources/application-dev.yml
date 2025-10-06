@@ -12,7 +12,7 @@ knife4j:
 server:
   port: ${SERVER_PORT:8002}
   address: 0.0.0.0
-  secret: b4f9775a-a022-426d-b459-018eab1843c0
+  secret: da11d988-f105-4e71-b095-da62ada82189
 
 # Management endpoints for health checks
 management:

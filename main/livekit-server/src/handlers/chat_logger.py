@@ -14,6 +14,15 @@ from ..utils.audio_state_manager import audio_state_manager
 
 logger = logging.getLogger("chat_logger")
 
+# ✨ EMOTION DETECTION: Import emotion utilities
+try:
+    from ..utils.emotion_utils import extract_emotion, send_emotion_via_data_channel
+    logger.info("✨ [EMOTION] Emotion utilities imported successfully")
+except ImportError as e:
+    logger.warning(f"✨ [EMOTION] Could not import emotion utilities: {e}")
+    extract_emotion = None
+    send_emotion_via_data_channel = None
+
 # Try to import the conversation_item_added event
 try:
     from livekit.agents import ConversationItemAddedEvent
@@ -260,6 +269,10 @@ class ChatEventHandler:
 
         # Add conversation_item_added event handler (the proper way)
         try:
+            # ✨ EMOTION DETECTION: Log if emotion detection is enabled
+            if extract_emotion and send_emotion_via_data_channel:
+                logger.info("✨ [EMOTION] Emotion detection enabled via conversation_item_added event")
+
             @session.on("conversation_item_added")
             def _on_conversation_item_added(ev):
                 logger.info(f"💬 Conversation item added: {ev}")
@@ -295,6 +308,19 @@ class ChatEventHandler:
                                 role_emoji = "👤" if role == "user" else "🤖"
                                 logger.info(f"📝✅ Captured {role_emoji} {role} message from conversation_item_added: '{content[:100]}...' ({len(content)} chars)")
 
+                                # ✨ EMOTION DETECTION: Process agent messages for emotions
+                                if role == 'assistant' and extract_emotion and send_emotion_via_data_channel:
+                                    try:
+                                        emoji, emotion = extract_emotion(content)
+                                        logger.info(f"✨ [EMOTION] Detected in agent message: {emoji} ({emotion})")
+
+                                        # Send emotion via data channel
+                                        asyncio.create_task(
+                                            send_emotion_via_data_channel(ctx.room, emoji, emotion)
+                                        )
+                                    except Exception as emotion_error:
+                                        logger.warning(f"⚠️ [EMOTION] Error processing emotion: {emotion_error}")
+
                                 # Get current chat history stats
                                 stats = ChatEventHandler._chat_history_service.get_stats()
                                 logger.debug(f"📊 Chat history stats: {stats['total_messages']} total, {stats['buffered_messages']} buffered")
@@ -322,14 +348,21 @@ class ChatEventHandler:
 
                 # Safely get available attributes
                 try:
-                    available_attrs = [attr for attr in dir(ev) if not attr.startswith('_') and not callable(getattr(ev, attr, None))]
+                    # Filter out model internal fields to avoid deprecation warnings
+                    available_attrs = [
+                        attr for attr in dir(ev)
+                        if not attr.startswith('_')
+                        and attr not in ['model_fields', 'model_computed_fields', 'model_config', 'model_extra', 'model_fields_set']
+                        and not callable(getattr(ev, attr, None))
+                    ]
                     logger.debug(f"🤖 Available attributes: {available_attrs}")
                 except Exception as attr_error:
                     logger.debug(f"🤖 Could not inspect event attributes: {attr_error}")
 
-                # Try to get the event dict safely
+                # Try to get the event dict safely using Pydantic V2 method
                 try:
-                    event_dict = ev.dict()
+                    # Use model_dump() for Pydantic V2, fallback to dict() for V1
+                    event_dict = ev.model_dump() if hasattr(ev, 'model_dump') else ev.dict()
                     logger.debug(f"🤖 Event dict: {event_dict}")
 
                     # Look for text content in the dict

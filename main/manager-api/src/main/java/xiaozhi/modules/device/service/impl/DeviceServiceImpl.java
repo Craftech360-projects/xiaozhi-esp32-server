@@ -184,7 +184,16 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         DeviceReportRespDTO.Mqtt mqttCredentials = buildMqttCredentials(macAddress);
         if (mqttCredentials != null) {
             response.setMqtt(mqttCredentials);
-            log.info("Added MQTT credentials to response for device: {}", macAddress);
+            log.info("✅ MQTT Response for device {}: broker={}, port={}, endpoint={}, clientId={}, username={}, password={}",
+                macAddress,
+                mqttCredentials.getBroker(),
+                mqttCredentials.getPort(),
+                mqttCredentials.getEndpoint(),
+                mqttCredentials.getClient_id(),
+                mqttCredentials.getUsername(),
+                mqttCredentials.getPassword());
+        } else {
+            log.error("❌ Failed to generate MQTT credentials for device: {}", macAddress);
         }
 
         if (deviceById != null) {
@@ -277,9 +286,29 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         if (StringUtils.isBlank(macAddress)) {
             return null;
         }
+
+        // Try exact match first
         QueryWrapper<DeviceEntity> wrapper = new QueryWrapper<>();
         wrapper.eq("mac_address", macAddress);
-        return baseDao.selectOne(wrapper);
+        DeviceEntity device = baseDao.selectOne(wrapper);
+
+        // If not found and MAC doesn't have colons, try with colons (format: 00:11:22:33:44:55)
+        if (device == null && !macAddress.contains(":")) {
+            String macWithColons = macAddress.replaceAll("(.{2})", "$1:").replaceAll(":$", "");
+            wrapper = new QueryWrapper<>();
+            wrapper.eq("mac_address", macWithColons);
+            device = baseDao.selectOne(wrapper);
+        }
+
+        // If not found and MAC has colons, try without colons
+        if (device == null && macAddress.contains(":")) {
+            String macWithoutColons = macAddress.replace(":", "");
+            wrapper = new QueryWrapper<>();
+            wrapper.eq("mac_address", macWithoutColons);
+            device = baseDao.selectOne(wrapper);
+        }
+
+        return device;
     }
 
     private DeviceReportRespDTO.ServerTime buildServerTime() {

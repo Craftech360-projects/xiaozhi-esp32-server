@@ -11,18 +11,73 @@ from livekit.agents import (
     RunContext,
     function_tool,
 )
-
+from .filtered_agent import FilteredAgent
+from src.utils.database_helper import DatabaseHelper
 logger = logging.getLogger("agent")
 
-class Assistant(Agent):
-    """Main AI Assistant agent class"""
+# Mode name aliases for handling transcript variations
+# Keys must match EXACT database mode names
+MODE_ALIASES = {
+    "Cheeko": ["chiko", "chico", "cheeko", "cheek o", "default", "default mode", "normal mode"],
+    "Storyteller": ["story teller", "story-teller", "story mode", "story time", "storytelling", "tell stories", "tell story"],
+    "RhymeTime": ["rhyme time", "rhyme-time", "rime time", "rhyming time", "rhyming", "rhymetime"],
+    "Art Buddy": ["artbuddy", "art-buddy", "art mode", "art friend", "art helper", "artist"],
+    "Music Maestro": ["musicmaestro", "music-maestro", "music master", "music mode", "musician", "music teacher"],
+    "Quiz Master": ["quizmaster", "quiz-master", "quiz mode", "quiz game", "quiz time"],
+    "Adventure Guide": ["adventureguide", "adventure-guide", "adventure mode", "adventurer", "explore mode"],
+    "Kindness Coach": ["kindnesscoach", "kindness-coach", "kindness mode", "kind coach", "be kind"],
+    "Mindful Buddy": ["mindfulbuddy", "mindful-buddy", "mindful mode", "mindfulness", "meditation mode","MindfulBody"],
+}
 
-    def __init__(self, instructions: str = None) -> None:
+def normalize_mode_name(mode_input: str) -> str:
+    """
+    Normalize mode name input to handle transcript variations
+
+    Args:
+        mode_input: Raw mode name from speech transcript
+
+    Returns:
+        Normalized canonical mode name or original input if no match
+    """
+    if not mode_input:
+        return mode_input
+
+    # Normalize: lowercase, strip whitespace, remove special chars
+    normalized = mode_input.lower().strip()
+    normalized = normalized.replace("-", " ").replace("_", " ")
+
+    # Direct match first (case-insensitive comparison with canonical names)
+    for canonical_name in MODE_ALIASES.keys():
+        if normalized == canonical_name.lower():
+            return canonical_name
+
+    # Check aliases
+    for canonical_name, aliases in MODE_ALIASES.items():
+        if normalized in [alias.lower() for alias in aliases]:
+            logger.info(f"🔍 Matched '{mode_input}' → '{canonical_name}' via alias")
+            return canonical_name
+
+    # Check if input matches canonical name when spaces are removed
+    # (e.g., "music maestro" -> "musicmaestro" -> "MusicMaestro")
+    normalized_no_space = normalized.replace(" ", "")
+    for canonical_name in MODE_ALIASES.keys():
+        if normalized_no_space == canonical_name.lower():
+            logger.info(f"🔍 Matched '{mode_input}' → '{canonical_name}' via space removal")
+            return canonical_name
+
+    # No match found - return original for backend to handle
+    logger.warning(f"⚠️ No alias match found for '{mode_input}', passing as-is")
+    return mode_input
+
+class Assistant(FilteredAgent):
+    """Main AI Assistant agent class with TTS text filtering"""
+
+    def __init__(self, instructions: str = None, tts_provider=None) -> None:
         # Use provided instructions or fallback to a basic prompt
         if instructions is None:
             instructions = "You are a helpful AI assistant."
 
-        super().__init__(instructions=instructions)
+        super().__init__(instructions=instructions, tts_provider=tts_provider)
 
         # These will be injected by main.py
         self.music_service = None
@@ -31,7 +86,14 @@ class Assistant(Agent):
         self.unified_audio_player = None
         self.device_control_service = None
         self.mcp_executor = None
-        
+
+        # Room and device information
+        self.room_name = None
+        self.device_mac = None
+
+        # Session reference for dynamic updates
+        self._agent_session = None
+
 
 
     def set_services(self, music_service, story_service, audio_player, unified_audio_player=None, device_control_service=None, mcp_executor=None):
@@ -42,6 +104,113 @@ class Assistant(Agent):
         self.unified_audio_player = unified_audio_player
         self.device_control_service = device_control_service
         self.mcp_executor = mcp_executor
+
+    def set_room_info(self, room_name: str = None, device_mac: str = None):
+        """Set room name and device MAC address"""
+        self.room_name = room_name
+        self.device_mac = device_mac
+        logger.info(f"📍 Room info set - Room: {room_name}, MAC: {device_mac}")
+
+    def set_agent_session(self, session):
+        """Set session reference for dynamic updates"""
+        self._agent_session = session
+        logger.info(f"🔗 Session reference stored for dynamic updates")
+
+    @function_tool
+    async def update_agent_mode(self, context: RunContext, mode_name: str) -> str:
+        """Update agent configuration mode by applying a template
+
+        Args:
+            mode_name: Template mode name (e.g., "Cheeko", "StudyHelper")
+
+        Returns:
+            Success or error message
+        """
+        try:
+            import os
+            import aiohttp
+
+            # 1. Validate device MAC
+            if not self.device_mac:
+                return "Device MAC address is not available"
+
+            # 2. Get Manager API configuration
+            manager_api_url = os.getenv("MANAGER_API_URL")
+            manager_api_secret = os.getenv("MANAGER_API_SECRET")
+
+            if not manager_api_url or not manager_api_secret:
+                return "Manager API is not configured"
+
+            # 3. Fetch agent_id using DatabaseHelper
+            db_helper = DatabaseHelper(manager_api_url, manager_api_secret)
+            agent_id = await db_helper.get_agent_id(self.device_mac)
+
+            if not agent_id:
+                return f"No agent found for device MAC: {self.device_mac}"
+
+            # Normalize mode name to handle transcript variations
+            normalized_mode = normalize_mode_name(mode_name)
+            if normalized_mode != mode_name:
+                logger.info(f"🔄 Mode name normalized: '{mode_name}' → '{normalized_mode}'")
+
+            logger.info(f"🔄 Updating agent {agent_id} to mode: {normalized_mode}")
+
+            # 4. Call update-mode API
+            url = f"{manager_api_url}/agent/update-mode"
+            headers = {
+                "Authorization": f"Bearer {manager_api_secret}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "agentId": agent_id,
+                "modeName": normalized_mode
+            }
+
+            timeout = aiohttp.ClientTimeout(total=10)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.put(url, json=payload, headers=headers) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        logger.info(f"✅ Agent mode updated in database to '{normalized_mode}' for agent: {agent_id}")
+                        data = result.get('data')
+                        logger.info(f"📦 API Response: code={result.get('code')}, has_data={bool(data)}, data_length={len(data) if data else 0}")
+
+                        # 5. Get the new prompt from the API response directly
+                        if result.get('code') == 0 and result.get('data'):
+                            new_prompt = result.get('data')
+
+                            # 6. Update the agent's instructions dynamically
+                            # Note: self.instructions is read-only, so we update the internal attribute
+                            self._instructions = new_prompt
+                            logger.info(f"📝 Instructions updated dynamically (length: {len(new_prompt)} chars)")
+                            logger.info(f"📝 New prompt preview: {new_prompt[:100]}...")
+
+                            # 7. Update session if available (for immediate effect)
+                            if self._agent_session:
+                                try:
+                                    # Update session's agent internal instructions
+                                    self._agent_session._agent._instructions = new_prompt
+                                    logger.info(f"🔄 Session instructions updated in real-time!")
+                                except Exception as e:
+                                    logger.warning(f"⚠️ Could not update session directly: {e}")
+
+                            return f"Successfully updated agent mode to '{normalized_mode}' and reloaded the new prompt! The changes are now active in this conversation."
+                        else:
+                            logger.warning(f"⚠️ No prompt data in response, but mode updated in database")
+                            return f"Mode updated to '{normalized_mode}' in database. Please reconnect to apply changes."
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"❌ Failed to update mode: {response.status} - {error_text}")
+                        return f"Failed to update mode: {error_text}"
+
+        except aiohttp.ClientError as e:
+            logger.error(f"Network error updating agent mode: {e}")
+            return f"Network error: Unable to connect to server"
+        except Exception as e:
+            logger.error(f"Error updating agent mode: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return f"Error updating agent mode: {str(e)}"
 
     @function_tool
     async def lookup_weather(self, context: RunContext, location: str):
@@ -658,3 +827,58 @@ class Assistant(Agent):
         self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
 
         return await self.mcp_executor.unmute_device()
+
+    @function_tool
+    async def set_light_color(self, context: RunContext, color: str):
+        """Set device light color
+
+        Args:
+            color: Color name (red, blue, green, white, yellow, purple, pink, etc.)
+        """
+        if not self.mcp_executor:
+            return "Light control is not available right now."
+
+        self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
+        return await self.mcp_executor.set_light_color(color)
+
+    @function_tool
+    async def get_battery_status(self, context: RunContext):
+        """Get current battery percentage level
+
+        Returns:
+            Battery percentage status
+        """
+        if not self.mcp_executor:
+            return "Battery status is not available right now."
+
+        # Always set context for each call to ensure correct room access
+        self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
+
+        return await self.mcp_executor.get_battery_status()
+    
+    
+    @function_tool
+    async def set_light_mode(self, context: RunContext, mode: str):
+        """Set device light mode
+
+        Args:
+            mode: Mode name (rainbow, default, custom)
+        """
+        if not self.mcp_executor:
+            return "Light Mode control is not available right now."
+
+        self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
+        return await self.mcp_executor.set_light_mode(mode)
+    
+    @function_tool
+    async def set_rainbow_speed(self, context: RunContext, speed_ms: str):
+        """Set rainbow mode speed
+
+       Args:
+            mode: Mode speed (integer, 50-1000)
+        """
+        if not self.mcp_executor:
+            return "rainbow Mode speed control is not available right now."
+
+        self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
+        return await self.mcp_executor.set_rainbow_speed(speed_ms)
