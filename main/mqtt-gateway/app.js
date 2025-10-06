@@ -2332,7 +2332,42 @@ class VirtualMQTTConnection {
       return;
     }
 
-    // Handle mobile music request - forward to LiveKit bridge
+    // Handle function_call from mobile app - forward directly to LiveKit agent
+    if (json.type === "function_call" && json.source === "mobile_app") {
+      try {
+        console.log(`🎵 [MOBILE] Function call received from mobile app: ${this.deviceId}`);
+        console.log(`   🎯 Function: ${json.function_call?.name}`);
+        console.log(`   📝 Arguments: ${JSON.stringify(json.function_call?.arguments)}`);
+
+        // Check if bridge and room are available
+        if (!this.bridge || !this.bridge.room || !this.bridge.room.localParticipant) {
+          console.error(`❌ [MOBILE] No bridge/room available to handle function call`);
+          return;
+        }
+
+        // Forward directly to LiveKit agent via data channel
+        const messageString = JSON.stringify({
+          type: "function_call",
+          function_call: json.function_call,
+          source: "mobile_app",
+          timestamp: json.timestamp || Date.now(),
+          request_id: json.request_id || `mobile_req_${Date.now()}`
+        });
+        const messageData = new Uint8Array(Buffer.from(messageString, 'utf8'));
+
+        await this.bridge.room.localParticipant.publishData(
+          messageData,
+          { reliable: true }
+        );
+
+        console.log(`✅ [MOBILE] Function call forwarded to LiveKit agent`);
+      } catch (error) {
+        console.error(`❌ [MOBILE] Failed to forward function call:`, error);
+      }
+      return;
+    }
+
+    // Handle mobile music request - forward to LiveKit bridge (legacy support)
     if (json.type === "mobile_music_request") {
       try {
         console.log(`🎵 [MOBILE] Mobile music request received from virtual device: ${this.deviceId}`);
@@ -2682,8 +2717,24 @@ class MQTTGateway {
           console.log(`👋 [HELLO] Processing hello message from internal/server-ingest: ${deviceId}`);
           this.handleDeviceHello(deviceId, enhancedPayload);
         } else {
-          console.log(`📊 [DATA] Processing data message from internal/server-ingest: ${deviceId}`);
-          this.handleDeviceData(deviceId, enhancedPayload);
+          // ALWAYS check for real ESP32 connection FIRST (prioritize over virtual)
+          const realConnection = this.findRealDeviceConnection(deviceId);
+
+          if (realConnection) {
+            console.log(`🎯 [ROUTE] Routing message from mobile to existing ESP32: ${deviceId}`);
+            // Route the message to the existing ESP32 connection
+            realConnection.handlePublish({ payload: JSON.stringify(originalPayload) });
+          } else {
+            // No real ESP32 connection - check if there's a virtual connection
+            const deviceInfo = this.deviceConnections.get(deviceId);
+
+            if (deviceInfo && deviceInfo.connection) {
+              console.log(`📊 [DATA] Routing to virtual device connection: ${deviceId}`);
+              this.handleDeviceData(deviceId, enhancedPayload);
+            } else {
+              console.log(`⚠️ [DATA] No connection found for device: ${deviceId}, message type: ${originalPayload.type}`);
+            }
+          }
         }
       } else if (topicParts.length >= 3 && topicParts[0] === 'devices') {
         const deviceId = topicParts[1];
@@ -2742,6 +2793,28 @@ class MQTTGateway {
     } else {
       console.warn(`📱 Received data from unknown device: ${deviceId}`);
     }
+  }
+
+  findRealDeviceConnection(macAddress) {
+    // Search through all connections for a real MQTTConnection (not Virtual) with this MAC
+    console.log(`🔍 [FIND-DEVICE] Searching for real device with MAC: ${macAddress}`);
+    console.log(`🔍 [FIND-DEVICE] Total connections: ${this.connections.size}`);
+
+    for (const [connectionId, connection] of this.connections) {
+      const hasUDP = connection.udp && connection.udp.remoteAddress ? 'YES' : 'NO';
+      const hasBridge = connection.bridge ? 'YES' : 'NO';
+      console.log(`  - Connection ${connectionId}: MAC=${connection.macAddress}, Type=${connection.constructor.name}, UDP=${hasUDP}, Bridge=${hasBridge}`);
+
+      if (connection &&
+          connection.macAddress === macAddress &&
+          connection.constructor.name === 'MQTTConnection') {
+        console.log(`✅ [FIND-DEVICE] Found real ESP32 connection for MAC ${macAddress}, connectionId=${connectionId}`);
+        return connection;
+      }
+    }
+
+    console.log(`❌ [FIND-DEVICE] No real ESP32 connection found for MAC ${macAddress}`);
+    return null;
   }
 
   publishToDevice(clientIdOrDeviceId, message) {
