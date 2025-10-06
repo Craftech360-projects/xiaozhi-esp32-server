@@ -282,7 +282,7 @@ class LiveKitBridge extends Emitter {
           let data;
           try {
             data = JSON5.parse(str);
-            // console.log("Data:", data);
+            console.log(`📨 [DATA RECEIVED] Topic: ${topic}, Type: ${data?.type}, Data:`, data);
           } catch (err) {
             console.error("Invalid JSON5:", err.message);
           }
@@ -341,10 +341,10 @@ class LiveKitBridge extends Emitter {
               this.sendTtsStopMessage();
               break;
 
-            case "llm_emotion":
+            case "llm":
               // ✨ EMOTION: Forward emotion from LLM to ESP32 device
-              console.log(`✨ [EMOTION] Received from agent: ${data.emoji} (${data.emotion})`);
-              this.sendEmotionMessage(data.emoji, data.emotion);
+              console.log(`✨ [EMOTION] Received from agent: ${data.emotion}`);
+              this.sendEmotionMessage(data.emotion);
               break;
 
             // case "metrics_collected":
@@ -976,18 +976,17 @@ class LiveKitBridge extends Emitter {
   }
 
   // ✨ EMOTION: Send emotion message to device
-  sendEmotionMessage(emoji, emotion) {
+  sendEmotionMessage(emotion) {
     if (!this.connection) return;
 
     const message = {
-      type: "llm_emotion",
-      emoji: emoji,
+      type: "llm",
       emotion: emotion,
       session_id: this.connection.udp.session_id,
     };
 
     console.log(
-      `✨ [MQTT OUT] Sending emotion to device: ${this.macAddress} - ${emoji} (${emotion})`
+      `✨ [MQTT OUT] Sending emotion to device: ${this.macAddress} - ${emotion}`
     );
     this.connection.sendMqttMessage(JSON.stringify(message));
   }
