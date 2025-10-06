@@ -2345,7 +2345,14 @@ class VirtualMQTTConnection {
           return;
         }
 
-        // Forward directly to LiveKit agent via data channel
+        // First send abort signal to stop any current playback
+        console.log(`🛑 [MOBILE] Sending abort signal before new playback`);
+        await this.bridge.sendAbortSignal(this.udp.session_id);
+
+        // Wait a moment for abort to process
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // Then forward the new function call to LiveKit agent
         const messageString = JSON.stringify({
           type: "function_call",
           function_call: json.function_call,
