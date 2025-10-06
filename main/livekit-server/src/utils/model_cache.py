@@ -181,9 +181,10 @@ class ModelCache:
                 logger.warning("[CACHE] VAD model must be loaded on main thread, deferring...")
                 return None
 
-            from src.providers.provider_factory import ProviderFactory
+            # Load VAD directly to avoid circular dependency with ProviderFactory
+            from livekit.plugins import silero
             logger.info("[CACHE] Loading VAD model on main thread...")
-            vad = ProviderFactory.create_vad()
+            vad = silero.VAD.load()
             self._models["vad_model"] = vad
             logger.info("[CACHE] VAD model loaded and cached")
             return vad
