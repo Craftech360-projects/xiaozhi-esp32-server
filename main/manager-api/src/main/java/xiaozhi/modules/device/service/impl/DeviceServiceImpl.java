@@ -408,7 +408,7 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
             
             // Use defaults if not configured
             if (StringUtils.isBlank(mqttBroker)) {
-                mqttBroker = "192.168.1.105"; // Default to local IP
+                mqttBroker = "192.168.1.236"; // Default to local IP
             }
             if (StringUtils.isBlank(mqttPort)) {
                 mqttPort = "1883";
