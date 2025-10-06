@@ -33,6 +33,7 @@ import xiaozhi.modules.security.password.PasswordUtils;
 import xiaozhi.modules.security.service.CaptchaService;
 import xiaozhi.modules.security.service.SysUserTokenService;
 import xiaozhi.modules.security.user.SecurityUser;
+import xiaozhi.modules.sys.dto.DeleteAccountDTO;
 import xiaozhi.modules.sys.dto.PasswordDTO;
 import xiaozhi.modules.sys.dto.RetrievePasswordDTO;
 import xiaozhi.modules.sys.dto.SysUserDTO;
@@ -189,7 +190,7 @@ public class LoginController {
             SysUserDTO userDTO = sysUserService.getByUsername(updatePasswordDTO.getUsername());
             if (userDTO == null) {
                 log.error("User not found for username: {}", updatePasswordDTO.getUsername());
-                throw new RenException("账户不存在");
+                throw new RenException("User account does not exist");
             }
             log.info("User found: username={}, userId={}", userDTO.getUsername(), userDTO.getId());
 
@@ -210,7 +211,7 @@ public class LoginController {
 
     @DeleteMapping("/delete-account")
     @Operation(summary = "Delete user account (no login or password verification required)")
-    public Result<?> deleteAccount(@RequestBody UpdatePasswordDTO deleteAccountDTO) {
+    public Result<?> deleteAccount(@RequestBody DeleteAccountDTO deleteAccountDTO) {
         log.info("Account deletion request initiated for username: {}", deleteAccountDTO.getUsername());
 
         // Validate DTO
@@ -222,7 +223,7 @@ public class LoginController {
             SysUserDTO userDTO = sysUserService.getByUsername(deleteAccountDTO.getUsername());
             if (userDTO == null) {
                 log.error("User not found for username: {}", deleteAccountDTO.getUsername());
-                throw new RenException("账户不存在");
+                throw new RenException("User account does not exist");
             }
             log.info("User found for deletion: username={}, userId={}", userDTO.getUsername(), userDTO.getId());
 
