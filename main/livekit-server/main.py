@@ -333,7 +333,7 @@ async def entrypoint(ctx: JobContext):
     logger.info("🎛️ Device control service and MCP executor created")
 
     # Create agent with dynamic prompt and inject services
-    assistant = Assistant(instructions=agent_prompt)
+    assistant = Assistant(instructions=agent_prompt, tts_provider=tts)
     assistant.set_services(music_service, story_service,
                            audio_player, unified_audio_player, device_control_service, mcp_executor)
     # Pass room name and device MAC to assistant

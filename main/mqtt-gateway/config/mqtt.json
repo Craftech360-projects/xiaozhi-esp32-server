@@ -11,8 +11,7 @@
     "connectTimeout": 30000
   },
   "livekit": {
-    "url": "ws://livekit-server:7880",
-
+    "url": "ws://localhost:7880",
     "api_key": "devkey",
     "api_secret": "secret"
   }

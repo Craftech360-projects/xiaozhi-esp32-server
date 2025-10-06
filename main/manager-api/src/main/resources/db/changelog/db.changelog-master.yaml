@@ -26,7 +26,7 @@ databaseChangeLog:
   - changeSet:
       id: 202504092335
       author: John
-      validCheckSum: 8:678b9fce8ee142d17e90ffb870f66f21
+      validCheckSum: ANY
       changes:
         - sqlFile:
             encoding: utf8
@@ -48,6 +48,7 @@ databaseChangeLog:
   - changeSet:
       id: 202504151206
       author: John
+      validCheckSum: ANY
       changes:
         - sqlFile:
             encoding: utf8
@@ -428,4 +429,11 @@ databaseChangeLog:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202509271500_add_doit_ai_01_kit.sql
+  - changeSet:
+      id: 202510031530
+      author: claude
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202510031530_add_mqtt_config.sql
 

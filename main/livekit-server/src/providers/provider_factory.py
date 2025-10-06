@@ -54,19 +54,25 @@ class ProviderFactory:
             ]
             return stt.FallbackAdapter(providers)
         else:
-            # Single provider (current behavior)
+            # Single provider with StreamAdapter and VAD (FIXED!)
             provider = config.get('stt_provider', 'groq').lower()
 
             if provider == 'deepgram':
-                return deepgram.STT(
-                    model=config.get('deepgram_model', 'nova-3'),
-                    language=config['stt_language']
+                return stt.StreamAdapter(
+                    stt=deepgram.STT(
+                        model=config.get('deepgram_model', 'nova-3'),
+                        language=config['stt_language']
+                    ),
+                    vad=vad
                 )
             else:
-                # Default to Groq
-                return groq.STT(
-                    model=config['stt_model'],
-                    language=config['stt_language']
+                # Default to Groq with StreamAdapter and VAD
+                return stt.StreamAdapter(
+                    stt=groq.STT(
+                        model=config['stt_model'],
+                        language=config['stt_language']
+                    ),
+                    vad=vad
                 )
 
     @staticmethod
@@ -162,4 +168,5 @@ class ProviderFactory:
     def create_turn_detection():
         """Create turn detection model"""
        # return MultilingualModel()
-        return  EnglishModel()
+       # return EnglishModel()
+        return None  # Disabled to avoid HuggingFace download errors

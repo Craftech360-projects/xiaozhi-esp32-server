@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -188,7 +189,7 @@ public class LoginController {
             SysUserDTO userDTO = sysUserService.getByUsername(updatePasswordDTO.getUsername());
             if (userDTO == null) {
                 log.error("User not found for username: {}", updatePasswordDTO.getUsername());
-                throw new RenException(ErrorCode.ACCOUNT_NOT_EXIST);
+                throw new RenException("账户不存在");
             }
             log.info("User found: username={}, userId={}", userDTO.getUsername(), userDTO.getId());
 
@@ -221,7 +222,7 @@ public class LoginController {
             SysUserDTO userDTO = sysUserService.getByUsername(deleteAccountDTO.getUsername());
             if (userDTO == null) {
                 log.error("User not found for username: {}", deleteAccountDTO.getUsername());
-                throw new RenException(ErrorCode.ACCOUNT_NOT_EXIST);
+                throw new RenException("账户不存在");
             }
             log.info("User found for deletion: username={}, userId={}", userDTO.getUsername(), userDTO.getId());
 
