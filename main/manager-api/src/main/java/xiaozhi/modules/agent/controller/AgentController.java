@@ -40,6 +40,8 @@ import xiaozhi.modules.agent.dto.AgentChatSessionDTO;
 import xiaozhi.modules.agent.dto.AgentCreateDTO;
 import xiaozhi.modules.agent.dto.AgentDTO;
 import xiaozhi.modules.agent.dto.AgentMemoryDTO;
+import xiaozhi.modules.agent.dto.AgentModeCycleResponse;
+import xiaozhi.modules.agent.dto.AgentModeCycleSimpleResponse;
 import xiaozhi.modules.agent.dto.AgentUpdateDTO;
 import xiaozhi.modules.agent.dto.AgentUpdateModeDTO;
 import xiaozhi.modules.agent.entity.AgentEntity;
@@ -343,6 +345,34 @@ public class AgentController {
         } catch (Exception e) {
             log.error("Error fetching agent ID for MAC: " + macAddress, e);
             return new Result<String>().error("Internal server error");
+        }
+    }
+
+    @PostMapping("/device/{macAddress}/cycle-mode")
+    @Operation(summary = "Cycle agent mode by device MAC address (triggered by button)")
+    public Result<AgentModeCycleSimpleResponse> cycleAgentModeByMacButton(
+            @PathVariable("macAddress") String macAddress) {
+        try {
+            // Clean MAC address
+            String cleanMac = macAddress.replace(":", "").replace("-", "").toLowerCase();
+
+            log.info("🔘 Mode cycle requested for device MAC: {}", cleanMac);
+
+            // Call service to cycle mode
+            AgentModeCycleResponse fullResponse = agentService.cycleAgentModeByMac(cleanMac);
+
+            // Create simplified response with only essential fields
+            AgentModeCycleSimpleResponse simpleResponse = new AgentModeCycleSimpleResponse();
+            simpleResponse.setSuccess(fullResponse.isSuccess());
+            simpleResponse.setAgentId(fullResponse.getAgentId());
+            simpleResponse.setOldModeName(fullResponse.getOldModeName());
+            simpleResponse.setNewModeName(fullResponse.getNewModeName());
+
+            return new Result<AgentModeCycleSimpleResponse>().ok(simpleResponse);
+
+        } catch (Exception e) {
+            log.error("❌ Error cycling mode for MAC {}: {}", macAddress, e.getMessage());
+            return new Result<AgentModeCycleSimpleResponse>().error(e.getMessage());
         }
     }
 

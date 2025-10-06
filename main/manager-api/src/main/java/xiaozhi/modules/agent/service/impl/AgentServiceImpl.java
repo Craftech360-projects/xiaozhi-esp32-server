@@ -31,6 +31,7 @@ import xiaozhi.common.utils.JsonUtils;
 import xiaozhi.modules.agent.dao.AgentDao;
 import xiaozhi.modules.agent.dto.AgentCreateDTO;
 import xiaozhi.modules.agent.dto.AgentDTO;
+import xiaozhi.modules.agent.dto.AgentModeCycleResponse;
 import xiaozhi.modules.agent.dto.AgentUpdateDTO;
 import xiaozhi.modules.agent.entity.AgentEntity;
 import xiaozhi.modules.agent.entity.AgentPluginMapping;
@@ -40,6 +41,7 @@ import xiaozhi.modules.agent.service.AgentPluginMappingService;
 import xiaozhi.modules.agent.service.AgentService;
 import xiaozhi.modules.agent.service.AgentTemplateService;
 import xiaozhi.modules.agent.vo.AgentInfoVO;
+import xiaozhi.modules.device.entity.DeviceEntity;
 import xiaozhi.modules.device.service.DeviceService;
 import xiaozhi.modules.model.dto.ModelProviderDTO;
 import xiaozhi.modules.model.entity.ModelConfigEntity;
@@ -585,5 +587,115 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
 
         // 6. Return the updated prompt
         return newPrompt;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public AgentModeCycleResponse cycleAgentModeByMac(String macAddress) {
+        // 1. Get device by MAC address
+        DeviceEntity device = deviceService.getDeviceByMacAddress(macAddress);
+        if (device == null) {
+            throw new RenException("Device not found for MAC address: " + macAddress);
+        }
+
+        // 2. Get current agent
+        AgentEntity agent = this.selectById(device.getAgentId());
+        if (agent == null) {
+            throw new RenException("No agent associated with device");
+        }
+
+        String currentModeName = agent.getAgentName();
+
+        // 3. Get all visible templates ordered by sort
+        List<AgentTemplateEntity> allTemplates = agentTemplateService.list(
+            new QueryWrapper<AgentTemplateEntity>()
+                .eq("is_visible", 1)
+                .orderByAsc("sort")
+        );
+
+        if (allTemplates.isEmpty()) {
+            throw new RenException("No templates available");
+        }
+
+        if (allTemplates.size() == 1) {
+            // Only one mode available, cannot cycle
+            AgentModeCycleResponse response = new AgentModeCycleResponse();
+            response.setSuccess(false);
+            response.setAgentId(agent.getId());
+            response.setOldModeName(currentModeName);
+            response.setNewModeName(currentModeName);
+            response.setModeIndex(0);
+            response.setTotalModes(1);
+            response.setMessage("Only one mode available, cannot cycle");
+            return response;
+        }
+
+        // 4. Find current template index by name
+        int currentIndex = -1;
+        for (int i = 0; i < allTemplates.size(); i++) {
+            if (allTemplates.get(i).getAgentName().equalsIgnoreCase(currentModeName)) {
+                currentIndex = i;
+                break;
+            }
+        }
+
+        // 5. Calculate next index (cycle to next mode)
+        int nextIndex = (currentIndex + 1) % allTemplates.size();
+        AgentTemplateEntity nextTemplate = allTemplates.get(nextIndex);
+
+        // 6. Update agent with template configuration
+        String oldModeName = agent.getAgentName();
+
+        agent.setAgentName(nextTemplate.getAgentName());
+        agent.setAsrModelId(nextTemplate.getAsrModelId());
+        agent.setVadModelId(nextTemplate.getVadModelId());
+        agent.setLlmModelId(nextTemplate.getLlmModelId());
+        agent.setVllmModelId(nextTemplate.getVllmModelId());
+        agent.setTtsModelId(nextTemplate.getTtsModelId());
+        agent.setTtsVoiceId(nextTemplate.getTtsVoiceId());
+        agent.setMemModelId(nextTemplate.getMemModelId());
+        agent.setIntentModelId(nextTemplate.getIntentModelId());
+        agent.setSystemPrompt(nextTemplate.getSystemPrompt());
+        agent.setChatHistoryConf(nextTemplate.getChatHistoryConf());
+        agent.setLangCode(nextTemplate.getLangCode());
+        agent.setLanguage(nextTemplate.getLanguage());
+
+        // 7. Update audit info
+        try {
+            UserDetail user = SecurityUser.getUser();
+            if (user != null) {
+                agent.setUpdater(user.getId());
+            }
+        } catch (Exception e) {
+            // Server secret filter - no user context, skip updater
+        }
+        agent.setUpdatedAt(new Date());
+
+        // 8. Save to database
+        this.updateById(agent);
+
+        // 9. Build response
+        AgentModeCycleResponse response = new AgentModeCycleResponse();
+        response.setSuccess(true);
+        response.setAgentId(agent.getId());
+        response.setOldModeName(oldModeName);
+        response.setNewModeName(nextTemplate.getAgentName());
+        response.setModeIndex(nextIndex);
+        response.setTotalModes(allTemplates.size());
+        response.setMessage("Mode changed successfully from " + oldModeName + " to " + nextTemplate.getAgentName());
+        response.setNewSystemPrompt(nextTemplate.getSystemPrompt());
+
+        // 10. Log the change
+        System.out.println("🔘 ===== AGENT MODE CYCLE (BUTTON) =====");
+        System.out.println("Device MAC: " + macAddress);
+        System.out.println("Agent ID: " + agent.getId());
+        System.out.println("Mode Change: " + oldModeName + " → " + nextTemplate.getAgentName());
+        System.out.println("Mode Index: " + nextIndex + " / " + allTemplates.size());
+        System.out.println("New LLM Model: " + nextTemplate.getLlmModelId());
+        System.out.println("New TTS Model: " + nextTemplate.getTtsModelId());
+        System.out.println("Database Updated: YES ✅");
+        System.out.println("========================================");
+
+        return response;
     }
 }

@@ -7,6 +7,7 @@ import xiaozhi.common.page.PageData;
 import xiaozhi.common.service.BaseService;
 import xiaozhi.modules.agent.dto.AgentCreateDTO;
 import xiaozhi.modules.agent.dto.AgentDTO;
+import xiaozhi.modules.agent.dto.AgentModeCycleResponse;
 import xiaozhi.modules.agent.dto.AgentUpdateDTO;
 import xiaozhi.modules.agent.entity.AgentEntity;
 import xiaozhi.modules.agent.vo.AgentInfoVO;
@@ -115,4 +116,13 @@ public interface AgentService extends BaseService<AgentEntity> {
      * @return 更新后的系统提示词
      */
     String updateAgentMode(String agentId, String modeName);
+
+    /**
+     * 根据设备MAC地址循环切换智能体模式
+     * 用于设备按钮触发的模式切换
+     *
+     * @param macAddress 设备MAC地址
+     * @return 模式切换响应信息
+     */
+    AgentModeCycleResponse cycleAgentModeByMac(String macAddress);
 }
