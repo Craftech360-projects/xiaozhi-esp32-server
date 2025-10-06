@@ -167,7 +167,7 @@ class LiveKitBridge extends Emitter {
 
   // Process buffered audio frames and encode to Opus
   processBufferedFrames(timestamp, frameCount, participantIdentity) {
-    console.log(`🔍 [PROCESS] processBufferedFrames called: buffer=${this.frameBuffer.length}B, target=${this.targetFrameBytes}B, connection=${this.connection ? 'exists' : 'null'}`);
+    // console.log(`🔍 [PROCESS] processBufferedFrames called: buffer=${this.frameBuffer.length}B, target=${this.targetFrameBytes}B, connection=${this.connection ? 'exists' : 'null'}`);
 
     if (!this.connection) {
       console.error(`❌ [PROCESS] No connection available, cannot send audio`);
@@ -320,8 +320,11 @@ class LiveKitBridge extends Emitter {
                 this.connection.updateActivityTime();
                 console.log(`🎵 [AUDIO-START] TTS started, timer reset for device: ${this.macAddress}`);
               }
-              // Send TTS start message to device
-              this.sendTtsStartMessage(data.data.text);
+              // ✨ EMOTION FIX: Add small delay to ensure emotion message is published first
+              // Emotion arrives just before speech_created, so wait 30ms to let it publish
+              setTimeout(() => {
+                this.sendTtsStartMessage(data.data.text);
+              }, 30);
               break;
             case "device_control":
               // Convert device_control commands to MCP function calls

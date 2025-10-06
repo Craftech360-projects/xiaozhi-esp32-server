@@ -233,6 +233,9 @@ class ChatEventHandler:
 
         # Add conversation_item_added event handler (the proper way)
         try:
+            # ✨ EMOTION DETECTION: Track which messages already had emotion sent
+            emotion_sent_for_messages = set()
+
             # ✨ EMOTION DETECTION: Log if emotion detection is enabled
             if extract_emotion and send_emotion_via_data_channel:
                 logger.info("✨ [EMOTION] Emotion detection enabled via conversation_item_added event")
@@ -275,13 +278,21 @@ class ChatEventHandler:
                                 # ✨ EMOTION DETECTION: Process agent messages for emotions
                                 if role == 'assistant' and extract_emotion and send_emotion_via_data_channel:
                                     try:
-                                        emoji, emotion = extract_emotion(content)
-                                        logger.info(f"✨ [EMOTION] Detected in agent message: {emoji} ({emotion})")
+                                        # Check if emotion was already sent early
+                                        message_id = getattr(item, 'id', None)
+                                        if message_id and message_id in emotion_sent_for_messages:
+                                            logger.info(f"✨ [EMOTION] Skipping - already sent early for message: {message_id}")
+                                        else:
+                                            emoji, emotion = extract_emotion(content)
+                                            logger.info(f"✨ [EMOTION] Fallback detection in conversation_item_added: {emoji} ({emotion})")
 
-                                        # Send emotion via data channel
-                                        asyncio.create_task(
-                                            send_emotion_via_data_channel(ctx.room, emoji, emotion)
-                                        )
+                                            # Send emotion via data channel
+                                            asyncio.create_task(
+                                                send_emotion_via_data_channel(ctx.room, emoji, emotion)
+                                            )
+                                            # Mark as sent
+                                            if message_id:
+                                                emotion_sent_for_messages.add(message_id)
                                     except Exception as emotion_error:
                                         logger.warning(f"⚠️ [EMOTION] Error processing emotion: {emotion_error}")
 
@@ -350,6 +361,26 @@ class ChatEventHandler:
                                         break
                             except Exception as e:
                                 logger.debug(f"🤖 Error accessing attribute '{attr}': {e}")
+
+                    # ✨ EMOTION: Try immediate emotion detection from available text
+                    if extract_emotion and send_emotion_via_data_channel:
+                        if text_content and len(text_content) > 0:
+                            # We have text - detect emotion from it
+                            emoji, emotion = extract_emotion(text_content)
+                            logger.info(f"✨ [EMOTION] Immediate detection from speech_created: {emoji} ({emotion})")
+                            asyncio.create_task(
+                                send_emotion_via_data_channel(ctx.room, emoji, emotion)
+                            )
+                            # Mark as sent to avoid duplicate in conversation_item_added
+                            if hasattr(ev, 'item_id') and ev.item_id:
+                                emotion_sent_for_messages.add(ev.item_id)
+                        else:
+                            # No text available yet - send default emotion immediately
+                            logger.info("✨ [EMOTION] No text in speech_created, sending default emotion: happy")
+                            asyncio.create_task(
+                                send_emotion_via_data_channel(ctx.room, "🙂", "happy")
+                            )
+                            # Don't mark as sent - allow override if we find emotion later
 
                     # Capture agent response for chat history
                     if ChatEventHandler._chat_history_service and text_content:
