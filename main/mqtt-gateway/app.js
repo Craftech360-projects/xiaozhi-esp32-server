@@ -320,8 +320,11 @@ class LiveKitBridge extends Emitter {
                 this.connection.updateActivityTime();
                 console.log(`🎵 [AUDIO-START] TTS started, timer reset for device: ${this.macAddress}`);
               }
-              // Send TTS start message to device
-              this.sendTtsStartMessage(data.data.text);
+              // ✨ EMOTION FIX: Add small delay to ensure emotion message is published first
+              // Emotion arrives just before speech_created, so wait 30ms to let it publish
+              setTimeout(() => {
+                this.sendTtsStartMessage(data.data.text);
+              }, 30);
               break;
             case "device_control":
               // Convert device_control commands to MCP function calls
