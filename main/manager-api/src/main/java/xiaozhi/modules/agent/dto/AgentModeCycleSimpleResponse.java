@@ -20,6 +20,9 @@ public class AgentModeCycleSimpleResponse implements Serializable {
     @Schema(description = "Agent ID")
     private String agentId;
 
+    @Schema(description = "Old mode name")
+    private String oldModeName;
+
     @Schema(description = "New mode name")
     private String newModeName;
 }

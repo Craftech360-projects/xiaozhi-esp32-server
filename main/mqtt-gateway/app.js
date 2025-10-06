@@ -2572,6 +2572,9 @@ class MQTTGateway {
         if (originalPayload.type === 'hello') {
           console.log(`👋 [HELLO] Processing hello message from internal/server-ingest: ${deviceId}`);
           this.handleDeviceHello(deviceId, enhancedPayload);
+        } else if (originalPayload.type === 'mode-change') {
+          console.log(`🔘 [MODE-CHANGE] Processing mode change from internal/server-ingest: ${deviceId}`);
+          this.handleDeviceModeChange(deviceId, enhancedPayload);
         } else {
           console.log(`📊 [DATA] Processing data message from internal/server-ingest: ${deviceId}`);
           this.handleDeviceData(deviceId, enhancedPayload);
@@ -2632,6 +2635,113 @@ class MQTTGateway {
       deviceInfo.connection.handlePublish({ payload: JSON.stringify(payload) });
     } else {
       console.warn(`📱 Received data from unknown device: ${deviceId}`);
+    }
+  }
+
+  async handleDeviceModeChange(deviceId, payload) {
+    try {
+      console.log(`🔘 [MODE-CHANGE] Device ${deviceId} requesting mode change`);
+
+      // Extract MAC address (remove colons for API call)
+      const macAddress = deviceId.replace(/:/g, '').toLowerCase();
+
+      // Call Manager API
+      const axios = require('axios');
+      const apiUrl = `${process.env.MANAGER_API_URL}/agent/device/${macAddress}/cycle-mode`;
+
+      console.log(`📡 [MODE-CHANGE] Calling API: ${apiUrl}`);
+      const response = await axios.post(apiUrl, {}, { timeout: 5000 });
+
+      if (response.data.code === 0 && response.data.data.success) {
+        const { newModeName, oldModeName, agentId } = response.data.data;
+        console.log(`✅ [MODE-CHANGE] Mode updated: ${oldModeName} → ${newModeName}`);
+
+        // Load audio map
+        const fs = require('fs');
+        const path = require('path');
+        const audioMapPath = path.join(__dirname, 'audio', 'mode_change', 'audio_map.json');
+        const audioMap = JSON.parse(fs.readFileSync(audioMapPath, 'utf8'));
+
+        // Get audio file for mode
+        const audioFileName = audioMap.modes[newModeName] || audioMap.default;
+        const audioFilePath = path.join(__dirname, 'audio', 'mode_change', audioFileName);
+
+        if (!fs.existsSync(audioFilePath)) {
+          console.error(`❌ [MODE-CHANGE] Audio file not found: ${audioFilePath}`);
+          return;
+        }
+
+        console.log(`🎵 [MODE-CHANGE] Streaming audio: ${audioFileName}`);
+
+        // Stream audio via UDP
+        await this.streamAudioViaUdp(deviceId, audioFilePath, newModeName);
+
+      } else {
+        console.error(`❌ [MODE-CHANGE] API error:`, response.data);
+      }
+
+    } catch (error) {
+      console.error(`❌ [MODE-CHANGE] Error:`, error.message);
+    }
+  }
+
+  async streamAudioViaUdp(deviceId, audioFilePath, modeName) {
+    try {
+      const fs = require('fs');
+      const connection = this.deviceConnections.get(deviceId)?.connection;
+
+      if (!connection) {
+        console.error(`❌ [MODE-CHANGE] No active connection for device: ${deviceId}`);
+        return;
+      }
+
+      // Send TTS start via MQTT control message
+      const ttsStartMsg = JSON.stringify({
+        type: 'tts',
+        state: 'start',
+        text: `Switched to ${modeName} mode`,
+        timestamp: Date.now()
+      });
+      connection.mqttPublish('control', ttsStartMsg);
+      console.log(`📤 [MODE-CHANGE] TTS start sent to ${deviceId}`);
+
+      // Read Opus file (16kHz)
+      const opusData = fs.readFileSync(audioFilePath);
+      console.log(`📦 [MODE-CHANGE] Loaded ${opusData.length} bytes from ${audioFilePath}`);
+
+      // Stream Opus packets via UDP (60ms frames at 16kHz)
+      // 16000 Hz * 0.06s = 960 samples/frame * 2 bytes = 1920 bytes PCM
+      // But Opus compresses this, so we send raw Opus packets
+      const CHUNK_SIZE = 320; // Typical Opus packet size for 60ms at 16kHz
+      let offset = 0;
+      let packetCount = 0;
+
+      while (offset < opusData.length) {
+        const chunk = opusData.slice(offset, Math.min(offset + CHUNK_SIZE, opusData.length));
+
+        // Send via UDP using existing connection
+        connection.sendAudioToDevice(chunk);
+
+        offset += CHUNK_SIZE;
+        packetCount++;
+
+        // Small delay to match 60ms frame duration
+        await new Promise(resolve => setTimeout(resolve, 60));
+      }
+
+      console.log(`📦 [MODE-CHANGE] Sent ${packetCount} audio packets via UDP`);
+
+      // Send TTS stop
+      const ttsStopMsg = JSON.stringify({
+        type: 'tts',
+        state: 'stop',
+        timestamp: Date.now()
+      });
+      connection.mqttPublish('control', ttsStopMsg);
+      console.log(`📤 [MODE-CHANGE] TTS stop sent to ${deviceId}`);
+
+    } catch (error) {
+      console.error(`❌ [MODE-CHANGE] Audio streaming error:`, error.message);
     }
   }
 

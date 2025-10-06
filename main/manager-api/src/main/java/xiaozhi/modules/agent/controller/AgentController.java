@@ -365,6 +365,7 @@ public class AgentController {
             AgentModeCycleSimpleResponse simpleResponse = new AgentModeCycleSimpleResponse();
             simpleResponse.setSuccess(fullResponse.isSuccess());
             simpleResponse.setAgentId(fullResponse.getAgentId());
+            simpleResponse.setOldModeName(fullResponse.getOldModeName());
             simpleResponse.setNewModeName(fullResponse.getNewModeName());
 
             return new Result<AgentModeCycleSimpleResponse>().ok(simpleResponse);
