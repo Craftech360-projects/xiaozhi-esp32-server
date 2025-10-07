@@ -3,6 +3,7 @@ import livekit.plugins.elevenlabs as elevenlabs
 from livekit.plugins import silero
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 from livekit.plugins.turn_detector.english import EnglishModel
+from .tts_wrapper import wrap_tts_with_sanitizer
 
 class ProviderFactory:
     """Factory class for creating AI service providers"""
@@ -24,18 +25,21 @@ class ProviderFactory:
     def create_tts(groq_config, tts_config):
         """Create Text-to-Speech provider based on configuration"""
         provider = tts_config.get('provider', 'groq').lower()
-        
+
         if provider == 'elevenlabs':
-            return elevenlabs.TTS(
+            base_tts = elevenlabs.TTS(
                 voice_id=tts_config['elevenlabs_voice_id'],
                 model=tts_config['elevenlabs_model']
             )
         else:
             # Default to Groq
-            return groq.TTS(
+            base_tts = groq.TTS(
                 model=groq_config['tts_model'],
                 voice=groq_config['tts_voice']
             )
+
+        # Wrap the TTS with sanitization for better speech output
+        return wrap_tts_with_sanitizer(base_tts, child_friendly=True)
 
     @staticmethod
     def create_vad():

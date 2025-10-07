@@ -282,4 +282,5 @@ if __name__ == "__main__":
         prewarm_fnc=prewarm,
         num_idle_processes=1,  # Keep 1 process warmed up for immediate client connections
         initialize_process_timeout=timeout,
+        job_memory_warn_mb=2000,  # Increase memory warning threshold to 2GB (educational mode uses ~1GB)
     ))

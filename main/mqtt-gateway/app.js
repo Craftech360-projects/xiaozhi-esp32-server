@@ -1727,8 +1727,9 @@ class VirtualMQTTConnection {
     }
 
     if (json.type === "goodbye") {
-      this.bridge.close();
-      this.bridge = null;
+      debug(`Received goodbye from device: ${this.deviceId}`);
+      // this.bridge.close();
+      // this.bridge = null;
       return;
     }
 
