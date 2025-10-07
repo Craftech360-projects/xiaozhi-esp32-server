@@ -611,4 +611,5 @@ if __name__ == "__main__":
         prewarm_fnc=prewarm,
         num_idle_processes=2,  # Disable process pooling to avoid initialization issues
         initialize_process_timeout=30.0,  # Increase timeout to 30 seconds
+        job_memory_warn_mb=2000,
     ))

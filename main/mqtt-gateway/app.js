@@ -127,6 +127,17 @@ class LiveKitBridge extends Emitter {
     this.protocolVersion = protocolVersion;
     this.isAudioPlaying = false; // Track if audio is actively playing
 
+    // Add agent join tracking
+    this.agentJoined = false;
+    this.agentJoinPromise = null;
+    this.agentJoinResolve = null;
+    this.agentJoinTimeout = null;
+
+    // Create a promise that resolves when agent joins
+    this.agentJoinPromise = new Promise((resolve) => {
+      this.agentJoinResolve = resolve;
+    });
+
     // Initialize audio resampler for 48kHz -> 24kHz conversion (outgoing: LiveKit -> ESP32)
     this.audioResampler = new AudioResampler(48000, 24000, 1, AudioResamplerQuality.QUICK);
 
@@ -298,6 +309,28 @@ class LiveKitBridge extends Emitter {
                 console.log(`🎵 [AUDIO-STOP] TTS stopped for device: ${this.macAddress}`);
                 // Send TTS stop message to device
                 this.sendTtsStopMessage();
+
+                // If we're in ending phase, send goodbye MQTT message now that TTS finished
+                if (this.connection && this.connection.isEnding && !this.connection.goodbyeSent) {
+                  console.log(`👋 [END-COMPLETE] TTS goodbye finished, sending goodbye MQTT message to device: ${this.macAddress}`);
+                  this.connection.goodbyeSent = true;
+                  this.connection.sendMqttMessage(
+                    JSON.stringify({
+                      type: "goodbye",
+                      session_id: this.connection.udp ? this.connection.udp.session_id : null,
+                      reason: "inactivity_timeout",
+                      timestamp: Date.now()
+                    })
+                  );
+                  console.log(`👋 [GOODBYE-MQTT] Sent goodbye MQTT message after TTS completed: ${this.macAddress}`);
+
+                  // Close connection shortly after goodbye message
+                  setTimeout(() => {
+                    if (this.connection) {
+                      this.connection.close();
+                    }
+                  }, 500); // Small delay to ensure goodbye message is delivered
+                }
               }
               else if(
                 data.data.old_state === "listening" &&
@@ -538,6 +571,19 @@ class LiveKitBridge extends Emitter {
           // Check if this is an agent joining (agent identity typically contains "agent")
           if (participant.identity.includes('agent')) {
             console.log(`🤖 [AGENT] Agent joined the room: ${participant.identity}`);
+
+            // Set agent joined flag and resolve promise
+            this.agentJoined = true;
+            if (this.agentJoinResolve) {
+              this.agentJoinResolve();
+              console.log(`✅ [AGENT-READY] Agent join promise resolved`);
+            }
+
+            // Clear timeout if set
+            if (this.agentJoinTimeout) {
+              clearTimeout(this.agentJoinTimeout);
+              this.agentJoinTimeout = null;
+            }
 
             // Send initial greeting message to let user know agent is ready
             setTimeout(() => {
@@ -1403,6 +1449,36 @@ class LiveKitBridge extends Emitter {
     }
   }
 
+  /**
+   * Wait for agent to join the room with timeout
+   * @param {number} timeoutMs - Timeout in milliseconds (default: 7000)
+   * @returns {Promise<boolean>} - true if agent joined, false if timeout
+   */
+  async waitForAgentJoin(timeoutMs = 7000) {
+    // If agent already joined, return immediately
+    if (this.agentJoined) {
+      console.log(`✅ [AGENT-WAIT] Agent already joined`);
+      return true;
+    }
+
+    console.log(`⏳ [AGENT-WAIT] Waiting for agent to join (timeout: ${timeoutMs}ms)...`);
+
+    // Race between agent join and timeout
+    const timeoutPromise = new Promise((resolve) => {
+      this.agentJoinTimeout = setTimeout(() => {
+        console.log(`⏰ [AGENT-WAIT] Timeout reached, proceeding anyway`);
+        resolve(false);
+      }, timeoutMs);
+    });
+
+    const result = await Promise.race([
+      this.agentJoinPromise.then(() => true),
+      timeoutPromise
+    ]);
+
+    return result;
+  }
+
   async sendAbortSignal(sessionId) {
     /**
      * Send abort signal to LiveKit agent via data channel
@@ -1691,6 +1767,22 @@ class MQTTConnection {
 
       if (timeSinceEndPrompt > maxEndWaitTime) {
         console.log(`🕒 [END-TIMEOUT] End prompt timeout reached, force closing connection: ${this.clientId} (waited ${Math.round(timeSinceEndPrompt / 1000)}s)`);
+
+        // Send goodbye MQTT message before force closing
+        try {
+          this.sendMqttMessage(
+            JSON.stringify({
+              type: "goodbye",
+              session_id: this.udp ? this.udp.session_id : null,
+              reason: "end_prompt_timeout",
+              timestamp: Date.now()
+            })
+          );
+          console.log(`👋 [GOODBYE-MQTT] Sent goodbye MQTT message to device on timeout: ${this.clientId}`);
+        } catch (error) {
+          console.error(`Failed to send goodbye MQTT message: ${error.message}`);
+        }
+
         this.close();
         return;
       }
@@ -1722,7 +1814,11 @@ class MQTTConnection {
         console.log(`👋 [END-PROMPT] Sending goodbye message before timeout: ${this.clientId} (inactive for ${Math.round(timeSinceLastActivity / 1000)}s) - Last activity: ${new Date(this.lastActivityTime).toISOString()}, Now: ${new Date(now).toISOString()}`);
 
         try {
+          // Send end prompt to agent for voice goodbye (TTS "Time flies fast...")
+          // Note: Goodbye MQTT will be sent AFTER TTS finishes (in agent_state_changed handler)
+          this.goodbyeSent = false; // Flag to track if goodbye MQTT was sent
           await this.bridge.sendEndPrompt(this.udp.session_id);
+          console.log(`👋 [END-PROMPT-SENT] Waiting for TTS goodbye to complete before sending goodbye MQTT: ${this.clientId}`);
         } catch (error) {
           console.error(`Failed to send end prompt: ${error.message}`);
           // If end prompt fails, close immediately
@@ -1730,8 +1826,24 @@ class MQTTConnection {
         }
         return;
       } else {
-        // No bridge available, close immediately
+        // No bridge available, send goodbye message and close immediately
         console.log(`🕒 [TIMEOUT] Closing connection due to 1-minute inactivity: ${this.clientId} (inactive for ${Math.round(timeSinceLastActivity / 1000)}s)`);
+
+        // Send goodbye MQTT message before closing
+        try {
+          this.sendMqttMessage(
+            JSON.stringify({
+              type: "goodbye",
+              session_id: this.udp ? this.udp.session_id : null,
+              reason: "inactivity_timeout",
+              timestamp: Date.now()
+            })
+          );
+          console.log(`👋 [GOODBYE-MQTT] Sent goodbye MQTT message to device: ${this.clientId}`);
+        } catch (error) {
+          console.error(`Failed to send goodbye MQTT message: ${error.message}`);
+        }
+
         this.close();
         return;
       }
@@ -1912,6 +2024,16 @@ class MQTTConnection {
         json.features
       );
       this.udp.session_id = helloReply.session_id;
+
+      // Wait for agent to join before sending hello response
+      console.log(`⏳ [HELLO] Waiting for agent to join before sending hello response to ${this.clientId}`);
+      const agentReady = await this.bridge.waitForAgentJoin(7000); // 7 second timeout
+
+      if (agentReady) {
+        console.log(`✅ [HELLO] Agent ready, sending hello response to ${this.clientId}`);
+      } else {
+        console.log(`⚠️ [HELLO] Agent join timeout, sending hello response anyway to ${this.clientId}`);
+      }
 
       this.sendMqttMessage(
         JSON.stringify({
@@ -2328,6 +2450,16 @@ class VirtualMQTTConnection {
       this.udp.session_id = helloReply.session_id;
       console.log(`📡 [SESSION ID] Set session_id to: ${this.udp.session_id}`);
 
+      // Wait for agent to join before sending hello response
+      console.log(`⏳ [HELLO] Waiting for agent to join before sending hello response to ${this.deviceId}`);
+      const agentReady = await this.bridge.waitForAgentJoin(7000); // 7 second timeout
+
+      if (agentReady) {
+        console.log(`✅ [HELLO] Agent ready, sending hello response to ${this.deviceId}`);
+      } else {
+        console.log(`⚠️ [HELLO] Agent join timeout, sending hello response anyway to ${this.deviceId}`);
+      }
+
       this.sendMqttMessage(
         JSON.stringify({
           type: "hello",
@@ -2558,6 +2690,22 @@ class VirtualMQTTConnection {
 
       if (timeSinceEndPrompt > maxEndWaitTime) {
         console.log(`🕒 [END-TIMEOUT] End prompt timeout reached, force closing virtual connection: ${this.deviceId} (waited ${Math.round(timeSinceEndPrompt / 1000)}s)`);
+
+        // Send goodbye MQTT message before force closing
+        try {
+          this.sendMqttMessage(
+            JSON.stringify({
+              type: "goodbye",
+              session_id: this.udp ? this.udp.session_id : null,
+              reason: "end_prompt_timeout",
+              timestamp: Date.now()
+            })
+          );
+          console.log(`👋 [GOODBYE-MQTT] Sent goodbye MQTT message to virtual device on timeout: ${this.deviceId}`);
+        } catch (error) {
+          console.error(`Failed to send goodbye MQTT message: ${error.message}`);
+        }
+
         this.close();
         return;
       }
@@ -2589,7 +2737,11 @@ class VirtualMQTTConnection {
         console.log(`👋 [END-PROMPT] Sending goodbye message before timeout: ${this.deviceId} (inactive for ${Math.round(timeSinceLastActivity / 1000)}s) - Last activity: ${new Date(this.lastActivityTime).toISOString()}, Now: ${new Date(now).toISOString()}`);
 
         try {
+          // Send end prompt to agent for voice goodbye (TTS "Time flies fast...")
+          // Note: Goodbye MQTT will be sent AFTER TTS finishes (in agent_state_changed handler)
+          this.goodbyeSent = false; // Flag to track if goodbye MQTT was sent
           await this.bridge.sendEndPrompt(this.udp.session_id);
+          console.log(`👋 [END-PROMPT-SENT] Waiting for TTS goodbye to complete before sending goodbye MQTT: ${this.deviceId}`);
         } catch (error) {
           console.error(`Failed to send end prompt: ${error.message}`);
           // If end prompt fails, close immediately
@@ -2597,8 +2749,24 @@ class VirtualMQTTConnection {
         }
         return;
       } else {
-        // No bridge available, close immediately
+        // No bridge available, send goodbye message and close immediately
         console.log(`🕒 [TIMEOUT] Closing virtual connection due to 1-minute inactivity: ${this.deviceId} (inactive for ${Math.round(timeSinceLastActivity / 1000)}s)`);
+
+        // Send goodbye MQTT message before closing
+        try {
+          this.sendMqttMessage(
+            JSON.stringify({
+              type: "goodbye",
+              session_id: this.udp ? this.udp.session_id : null,
+              reason: "inactivity_timeout",
+              timestamp: Date.now()
+            })
+          );
+          console.log(`👋 [GOODBYE-MQTT] Sent goodbye MQTT message to virtual device: ${this.deviceId}`);
+        } catch (error) {
+          console.error(`Failed to send goodbye MQTT message: ${error.message}`);
+        }
+
         this.close();
         return;
       }
@@ -2855,6 +3023,35 @@ class MQTTGateway {
     } catch (error) {
       console.error(`❌ [HELLO] Error in handlePublish for device ${deviceId}:`, error);
     }
+  }
+
+  findRealDeviceConnection(deviceId) {
+    // Search through all gateway connections for the real device with UDP
+    for (const [connectionId, connection] of this.connections) {
+      // Check if this is a real MQTTConnection (not VirtualMQTTConnection)
+      // and matches the device ID and has UDP endpoint
+      if (connection &&
+          (connection.macAddress === deviceId || connection.deviceId === deviceId) &&
+          connection.udp &&
+          connection.udp.remoteAddress &&
+          connection.constructor.name === 'MQTTConnection') {
+        console.log(`✅ [FIND-DEVICE] Found real device connection for ${deviceId}`);
+        return connection;
+      }
+    }
+
+    // Also check deviceConnections map
+    const deviceInfo = this.deviceConnections.get(deviceId);
+    if (deviceInfo && deviceInfo.connection) {
+      const conn = deviceInfo.connection;
+      if (conn.udp && conn.udp.remoteAddress && conn.constructor.name === 'MQTTConnection') {
+        console.log(`✅ [FIND-DEVICE] Found real device in deviceConnections for ${deviceId}`);
+        return conn;
+      }
+    }
+
+    console.log(`❌ [FIND-DEVICE] No real device connection found for ${deviceId}`);
+    return null;
   }
 
   handleDeviceData(deviceId, payload) {
