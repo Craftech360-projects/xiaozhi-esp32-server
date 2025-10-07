@@ -15,6 +15,7 @@ from src.agent.main_agent import Assistant
 from src.providers.provider_factory import ProviderFactory
 from src.config.config_loader import ConfigLoader
 from src.memory.mem0_provider import Mem0MemoryProvider
+from jinja2 import Template
 import logging
 import asyncio
 import os
@@ -235,17 +236,30 @@ async def entrypoint(ctx: JobContext):
     # Initialize mem0 memory provider and conversation buffer
     mem0_provider = None
     conversation_messages = []  # Buffer to store conversation messages
+    EMOJI_List = ["😶", "🙂", "😆", "😂", "😔", "😠", "😭", "😍", "😳",
+                  "😲", "😱", "🤔", "😉", "😎", "😌", "🤤", "😘", "😏", "😴", "😜", "🙄"]
+
+    # take the agent prompt in jinga template and replace {{emoji_list}} with emoji list using jinja2
+    if "{{ emojiList }}" in agent_prompt:
+        template = Template(agent_prompt)
+        agent_prompt = template.render(emojiList=EMOJI_List)
+        logger.info("🎨 Rendered emoji list in agent prompt")
+
+    logger.info(f"📋 Full Agent Prompt:\n{agent_prompt}")
 
     mem0_enabled = os.getenv("MEM0_ENABLED", "false").lower() == "true"
-    logger.info(f"💭 Mem0 config - Enabled: {mem0_enabled}, Device MAC: {device_mac}")
+    logger.info(
+        f"💭 Mem0 config - Enabled: {mem0_enabled}, Device MAC: {device_mac}")
 
     if device_mac and mem0_enabled:
         try:
             mem0_api_key = os.getenv("MEM0_API_KEY")
-            logger.info(f"💭 MEM0_API_KEY present: {bool(mem0_api_key and mem0_api_key != 'your_mem0_api_key_here')}")
+            logger.info(
+                f"💭 MEM0_API_KEY present: {bool(mem0_api_key and mem0_api_key != 'your_mem0_api_key_here')}")
 
             if mem0_api_key and mem0_api_key != "your_mem0_api_key_here":
-                logger.info(f"💭 Initializing Mem0MemoryProvider for MAC: {device_mac}")
+                logger.info(
+                    f"💭 Initializing Mem0MemoryProvider for MAC: {device_mac}")
                 mem0_provider = Mem0MemoryProvider(
                     api_key=mem0_api_key,
                     role_id=device_mac
@@ -256,8 +270,10 @@ async def entrypoint(ctx: JobContext):
                 memories = await mem0_provider.query_memory("conversation history and user preferences")
 
                 if memories:
-                    agent_prompt = agent_prompt.replace("<memory>", f"<memory>\n{memories}")
-                    logger.info(f"💭✅ Loaded memories from mem0 ({len(memories)} chars)")
+                    agent_prompt = agent_prompt.replace(
+                        "<memory>", f"<memory>\n{memories}")
+                    logger.info(
+                        f"💭✅ Loaded memories from mem0 ({len(memories)} chars)")
                 else:
                     logger.info("💭 No existing memories found in mem0")
             else:
@@ -268,7 +284,8 @@ async def entrypoint(ctx: JobContext):
             logger.error(f"💭❌ Traceback: {traceback.format_exc()}")
             mem0_provider = None
     else:
-        logger.info(f"💭 Mem0 disabled - MEM0_ENABLED: {mem0_enabled}, Device MAC present: {bool(device_mac)}")
+        logger.info(
+            f"💭 Mem0 disabled - MEM0_ENABLED: {mem0_enabled}, Device MAC present: {bool(device_mac)}")
 
     # Get VAD first as it's needed for STT
     vad = ctx.proc.userdata["vad"]
@@ -316,9 +333,10 @@ async def entrypoint(ctx: JobContext):
         logger.info("[INIT] Creating new music and story services...")
         # Create new services with preloaded models
 
-        music_service = MusicService(preloaded_embedding_model, preloaded_qdrant_client)
-        story_service = StoryService(preloaded_embedding_model, preloaded_qdrant_client)
-
+        music_service = MusicService(
+            preloaded_embedding_model, preloaded_qdrant_client)
+        story_service = StoryService(
+            preloaded_embedding_model, preloaded_qdrant_client)
 
     audio_player = ForegroundAudioPlayer()
     unified_audio_player = UnifiedAudioPlayer()
@@ -368,7 +386,8 @@ async def entrypoint(ctx: JobContext):
                             'role': role,
                             'content': content
                         })
-                        logger.debug(f"💭 Captured {role} message for mem0 (buffer size: {len(conversation_messages)})")
+                        logger.debug(
+                            f"💭 Captured {role} message for mem0 (buffer size: {len(conversation_messages)})")
             except Exception as e:
                 logger.error(f"💭 Failed to capture message for mem0: {e}")
 
@@ -462,7 +481,8 @@ async def entrypoint(ctx: JobContext):
                 if mem0_provider and conversation_messages:
                     message_count = len(conversation_messages)
 
-                    logger.info(f"💭 Saving {message_count} messages to mem0 cloud")
+                    logger.info(
+                        f"💭 Saving {message_count} messages to mem0 cloud")
 
                     # Create history dict from conversation buffer
                     history_dict = {'messages': conversation_messages}
@@ -470,7 +490,8 @@ async def entrypoint(ctx: JobContext):
                     # Save to mem0
                     await mem0_provider.save_memory(history_dict)
 
-                    logger.info(f"💭✅ Session saved to mem0 cloud ({message_count} messages)")
+                    logger.info(
+                        f"💭✅ Session saved to mem0 cloud ({message_count} messages)")
 
                     # Log sample for verification
                     if message_count > 0:
@@ -478,11 +499,14 @@ async def entrypoint(ctx: JobContext):
                             role = msg.get('role', 'unknown')
                             content = msg.get('content', '')
                             if isinstance(content, list):
-                                content = ' '.join(str(item) for item in content)
-                            logger.debug(f"💭 Message {i}: {role} - '{str(content)[:50]}...'")
+                                content = ' '.join(str(item)
+                                                   for item in content)
+                            logger.debug(
+                                f"💭 Message {i}: {role} - '{str(content)[:50]}...'")
                 else:
                     if mem0_provider:
-                        logger.warning(f"💭⚠️ No conversation messages captured (buffer size: {len(conversation_messages)})")
+                        logger.warning(
+                            f"💭⚠️ No conversation messages captured (buffer size: {len(conversation_messages)})")
                     else:
                         logger.info("💭 Mem0 not enabled")
             except Exception as e:
@@ -589,7 +613,13 @@ async def entrypoint(ctx: JobContext):
 
     # Pass session reference to assistant for dynamic updates
     assistant.set_agent_session(session)
-    logger.info("🔗 Session reference passed to assistant for dynamic prompt updates")
+    logger.info(
+        "🔗 Session reference passed to assistant for dynamic prompt updates")
+
+    # Pass context to assistant for emotion publishing via data channel
+    assistant._session_context = ctx
+    logger.info(
+        "😊 Context reference passed to assistant for emotion publishing")
 
     # Set up music/story integration with session and context
     try:

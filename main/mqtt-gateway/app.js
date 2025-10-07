@@ -382,6 +382,11 @@ class LiveKitBridge extends Emitter {
               // Send TTS stop message to ensure device returns to listening state
               this.sendTtsStopMessage();
               break;
+            case "llm":
+              // Handle emotion from LLM response
+              console.log(`😊 [EMOTION] Received: ${data.emotion} (${data.text})`);
+              this.sendEmotionMessage(data.text, data.emotion);
+              break;
 
             // case "metrics_collected":
             //   console.log(`Metrics: ${JSON.stringify(data.data)}`);
@@ -1020,6 +1025,23 @@ class LiveKitBridge extends Emitter {
 
     console.log(
       `📤 [MQTT OUT] Sending STT result to device: ${this.macAddress} - "${text}"`
+    );
+    this.connection.sendMqttMessage(JSON.stringify(message));
+  }
+
+  // Send emotion message to device (from LLM response)
+  sendEmotionMessage(emoji, emotion) {
+    if (!this.connection) return;
+
+    const message = {
+      type: "llm",
+      text: emoji,
+      emotion: emotion,
+      session_id: this.connection.udp.session_id,
+    };
+
+    console.log(
+      `📤 [MQTT OUT] Sending emotion to device: ${this.macAddress} - ${emotion} (${emoji})`
     );
     this.connection.sendMqttMessage(JSON.stringify(message));
   }
