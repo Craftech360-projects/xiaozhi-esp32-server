@@ -2991,9 +2991,56 @@ class MQTTGateway {
 
             if (deviceInfo && deviceInfo.connection) {
               console.log(`📊 [DATA] Routing to virtual device connection: ${deviceId}`);
+
+              // Send success message to mobile app
+              const successMessage = {
+                type: 'device_status',
+                status: 'connected',
+                message: 'song is playing',
+                deviceId: deviceId,
+                timestamp: Date.now()
+              };
+
+              // Publish to app/p2p/{macAddress}
+              const appTopic = `app/p2p/${deviceId}`;
+              console.log(`✅ [MOBILE-RESPONSE] Sending device connected status to ${appTopic}`);
+
+              if (this.mqttClient && this.mqttClient.connected) {
+                this.mqttClient.publish(appTopic, JSON.stringify(successMessage), (err) => {
+                  if (err) {
+                    console.error(`❌ [MOBILE-RESPONSE] Failed to send success to mobile app:`, err);
+                  } else {
+                    console.log(`✅ [MOBILE-RESPONSE] Device connected status sent to mobile app`);
+                  }
+                });
+              }
+
               this.handleDeviceData(deviceId, enhancedPayload);
             } else {
               console.log(`⚠️ [DATA] No connection found for device: ${deviceId}, message type: ${originalPayload.type}`);
+
+              // Send device not connected message to mobile app
+              const errorMessage = {
+                type: 'device_status',
+                status: 'not_connected',
+                message: 'Device is not connected',
+                deviceId: deviceId,
+                timestamp: Date.now()
+              };
+
+              // Publish to app/p2p/{macAddress}
+              const appTopic = `app/p2p/${deviceId}`;
+              console.log(`❌ [MOBILE-RESPONSE] Sending device not connected status to ${appTopic}`);
+
+              if (this.mqttClient && this.mqttClient.connected) {
+                this.mqttClient.publish(appTopic, JSON.stringify(errorMessage), (err) => {
+                  if (err) {
+                    console.error(`❌ [MOBILE-RESPONSE] Failed to send error to mobile app:`, err);
+                  } else {
+                    console.log(`✅ [MOBILE-RESPONSE] Device not connected status sent to mobile app`);
+                  }
+                });
+              }
             }
           }
         }
