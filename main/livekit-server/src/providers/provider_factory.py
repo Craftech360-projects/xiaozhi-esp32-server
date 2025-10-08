@@ -1,13 +1,15 @@
 import livekit.plugins.groq as groq
 import livekit.plugins.elevenlabs as elevenlabs
 import livekit.plugins.deepgram as deepgram
-from livekit.plugins import silero
+from livekit.plugins import openai, silero
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 from livekit.plugins.turn_detector.english import EnglishModel
 from livekit.agents import stt, llm, tts
 
-# Import our custom EdgeTTS provider
+# Import our custom providers
 from .edge_tts_provider import EdgeTTS
+from .local_whisper_stt import LocalWhisperSTT
+from .coqui_tts_provider import CoquiTTS
 
 class ProviderFactory:
     """Factory class for creating AI service providers"""
@@ -16,48 +18,114 @@ class ProviderFactory:
     def create_llm(config):
         """Create LLM provider with fallback based on configuration"""
         fallback_enabled = config.get('fallback_enabled', False)
+        provider = config.get('llm_provider', 'groq').lower()
 
         if fallback_enabled:
             # Create primary and fallback LLM providers
-            providers = [
-                groq.LLM(model=config['llm_model']),  # Primary: Groq
-                groq.LLM(model=config.get('fallback_llm_model', 'llama-3.1-8b-instant')),  # Fallback: Different Groq model
-            ]
+            providers = []
+
+            if provider == 'ollama':
+                providers.append(openai.LLM.with_ollama(
+                    model=config.get('llm_model', 'llama3.1:8b'),
+                    base_url=config.get('ollama_url', 'http://localhost:11434') + '/v1',
+                    temperature=config.get('llm_temperature', 0.7),
+                ))
+            else:
+                providers.append(groq.LLM(model=config['llm_model']))
+
+            # Add fallback
+            fallback_provider = config.get('fallback_llm_provider', provider).lower()
+            if fallback_provider == 'ollama':
+                providers.append(openai.LLM.with_ollama(
+                    model=config.get('fallback_llm_model', 'llama3.1:8b'),
+                    base_url=config.get('ollama_url', 'http://localhost:11434') + '/v1',
+                ))
+            else:
+                providers.append(groq.LLM(model=config.get('fallback_llm_model', 'llama-3.1-8b-instant')))
+
             return llm.FallbackAdapter(providers)
         else:
-            # Single provider (current behavior)
-            return groq.LLM(model=config['llm_model'])
+            # Single provider
+            if provider == 'ollama':
+                return openai.LLM.with_ollama(
+                    model=config.get('llm_model', 'llama3.1:8b'),
+                    base_url=config.get('ollama_url', 'http://localhost:11434') + '/v1',
+                    temperature=config.get('llm_temperature', 0.7),
+                )
+            else:
+                # Default to Groq
+                return groq.LLM(model=config['llm_model'])
 
     @staticmethod
     def create_stt(config, vad=None):
         """Create Speech-to-Text provider with fallback based on configuration"""
         fallback_enabled = config.get('fallback_enabled', False)
+        provider = config.get('stt_provider', 'groq').lower()
 
         if fallback_enabled:
             # Create primary and fallback STT providers with StreamAdapter
-            # Primary: Deepgram, Fallback: Groq (as per user requirements)
-            providers = [
-                stt.StreamAdapter(
+            providers = []
+
+            if provider == 'local_whisper':
+                providers.append(stt.StreamAdapter(
+                    stt=LocalWhisperSTT(
+                        model_size=config.get('whisper_model', 'base'),
+                        device=config.get('whisper_device', 'cpu'),
+                        language=config['stt_language'],
+                    ),
+                    vad=vad
+                ))
+            elif provider == 'deepgram':
+                providers.append(stt.StreamAdapter(
                     stt=deepgram.STT(
                         model=config.get('deepgram_model', 'nova-3'),
                         language=config['stt_language']
                     ),
                     vad=vad
-                ),  # Primary: Deepgram
-                stt.StreamAdapter(
+                ))
+            else:
+                providers.append(stt.StreamAdapter(
                     stt=groq.STT(
                         model=config['stt_model'],
                         language=config['stt_language']
                     ),
                     vad=vad
-                ),  # Fallback: Groq
-            ]
+                ))
+
+            # Add fallback
+            fallback_provider = config.get('fallback_stt_provider', 'groq').lower()
+            if fallback_provider == 'local_whisper':
+                providers.append(stt.StreamAdapter(
+                    stt=LocalWhisperSTT(
+                        model_size=config.get('whisper_model', 'base'),
+                        device=config.get('whisper_device', 'cpu'),
+                        language=config['stt_language'],
+                    ),
+                    vad=vad
+                ))
+            else:
+                providers.append(stt.StreamAdapter(
+                    stt=groq.STT(
+                        model=config['stt_model'],
+                        language=config['stt_language']
+                    ),
+                    vad=vad
+                ))
+
             return stt.FallbackAdapter(providers)
         else:
-            # Single provider with StreamAdapter and VAD (FIXED!)
-            provider = config.get('stt_provider', 'groq').lower()
-
-            if provider == 'deepgram':
+            # Single provider with StreamAdapter and VAD
+            if provider == 'local_whisper':
+                return stt.StreamAdapter(
+                    stt=LocalWhisperSTT(
+                        model_size=config.get('whisper_model', 'base'),
+                        device=config.get('whisper_device', 'cpu'),
+                        compute_type=config.get('whisper_compute_type', 'int8'),
+                        language=config['stt_language'],
+                    ),
+                    vad=vad
+                )
+            elif provider == 'deepgram':
                 return stt.StreamAdapter(
                     stt=deepgram.STT(
                         model=config.get('deepgram_model', 'nova-3'),
@@ -128,7 +196,15 @@ class ProviderFactory:
             # Single provider (current behavior)
             provider = tts_config.get('provider', 'groq').lower()
 
-            if provider == 'elevenlabs':
+            if provider == 'coqui':
+                return CoquiTTS(
+                    model_name=tts_config.get('coqui_model', 'tts_models/en/ljspeech/tacotron2-DDC'),
+                    use_gpu=tts_config.get('coqui_use_gpu', False),
+                    sample_rate=tts_config.get('coqui_sample_rate', 24000),
+                    speaker=tts_config.get('coqui_speaker'),
+                    language=tts_config.get('coqui_language'),
+                )
+            elif provider == 'elevenlabs':
                 return elevenlabs.TTS(
                     voice_id=tts_config['elevenlabs_voice_id'],
                     model=tts_config['elevenlabs_model']
