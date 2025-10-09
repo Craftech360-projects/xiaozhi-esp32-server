@@ -26,6 +26,8 @@ import xiaozhi.modules.device.dto.DeviceRegisterDTO;
 import xiaozhi.modules.device.dto.DeviceUnBindDTO;
 import xiaozhi.modules.device.dto.DeviceUpdateDTO;
 import xiaozhi.modules.device.dto.DeviceManualAddDTO;
+import xiaozhi.modules.device.dto.AssignKidToDeviceDTO;
+import xiaozhi.modules.device.dto.AssignKidByMacDTO;
 import xiaozhi.modules.device.entity.DeviceEntity;
 import xiaozhi.modules.device.service.DeviceService;
 import xiaozhi.modules.security.user.SecurityUser;
@@ -118,5 +120,54 @@ public class DeviceController {
         UserDetail user = SecurityUser.getUser();
         deviceService.manualAddDevice(user.getId(), dto);
         return new Result<>();
+    }
+
+    @PutMapping("/assign-kid/{deviceId}")
+    @Operation(summary = "Assign kid to device by device ID")
+    @RequiresPermissions("sys:role:normal")
+    public Result<Void> assignKidToDevice(
+            @PathVariable String deviceId,
+            @RequestBody @Valid AssignKidToDeviceDTO dto) {
+        UserDetail user = SecurityUser.getUser();
+
+        // Get device and verify ownership
+        DeviceEntity device = deviceService.selectById(deviceId);
+        if (device == null) {
+            return new Result<Void>().error("Device not found");
+        }
+
+        if (!device.getUserId().equals(user.getId())) {
+            return new Result<Void>().error("You don't own this device");
+        }
+
+        // Update kid_id
+        device.setKidId(dto.getKidId());
+        deviceService.updateById(device);
+
+        return new Result<Void>().ok(null);
+    }
+
+    @PutMapping("/assign-kid-by-mac")
+    @Operation(summary = "Assign kid to device by MAC address")
+    @RequiresPermissions("sys:role:normal")
+    public Result<Void> assignKidByMac(@RequestBody @Valid AssignKidByMacDTO dto) {
+        UserDetail user = SecurityUser.getUser();
+
+        // Get device by MAC address
+        DeviceEntity device = deviceService.getDeviceByMacAddress(dto.getMacAddress());
+        if (device == null) {
+            return new Result<Void>().error("Device not found for MAC: " + dto.getMacAddress());
+        }
+
+        // Verify ownership
+        if (!device.getUserId().equals(user.getId())) {
+            return new Result<Void>().error("You don't own this device");
+        }
+
+        // Update kid_id
+        device.setKidId(dto.getKidId());
+        deviceService.updateById(device);
+
+        return new Result<Void>().ok(null);
     }
 }
