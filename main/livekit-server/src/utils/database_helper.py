@@ -83,6 +83,65 @@ class DatabaseHelper:
         logger.error(f"Failed to get agent_id after {self.retry_attempts} attempts for MAC: {device_mac}")
         return None
 
+    async def get_child_profile_by_mac(self, device_mac: str) -> Optional[dict]:
+        """
+        Get child profile assigned to device by MAC address
+
+        Args:
+            device_mac: Device MAC address
+
+        Returns:
+            dict: Child profile with name, age, ageGroup, gender, interests
+        """
+        url = f"{self.manager_api_url}/config/child-profile-by-mac"
+        headers = {
+            "Authorization": f"Bearer {self.secret}",
+            "Content-Type": "application/json"
+        }
+        payload = {"macAddress": device_mac}
+
+        for attempt in range(self.retry_attempts):
+            try:
+                timeout = aiohttp.ClientTimeout(total=10)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.post(url, json=payload, headers=headers) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            # Check for Result<ChildProfileDTO> format: {code: 0, data: {...}}
+                            if data.get('code') == 0 and data.get('data'):
+                                child_profile = data.get('data')
+                                logger.info(f"👶✅ Retrieved child profile for MAC: {device_mac} - {child_profile.get('name')}, age {child_profile.get('age')}")
+                                return child_profile
+                            else:
+                                logger.warning(f"👶⚠️ API returned error: {data}")
+                                return None
+                        elif response.status == 404:
+                            logger.warning(f"No child profile found for MAC: {device_mac}")
+                            return None
+                        else:
+                            error_text = await response.text()
+                            logger.warning(f"API request failed: {response.status} - {error_text}")
+
+                            # Don't retry client errors (4xx)
+                            if 400 <= response.status < 500:
+                                logger.error(f"Client error, not retrying: {response.status}")
+                                return None
+
+            except asyncio.TimeoutError:
+                logger.warning(f"API request timeout (attempt {attempt + 1}/{self.retry_attempts})")
+            except aiohttp.ClientError as e:
+                logger.warning(f"API client error (attempt {attempt + 1}/{self.retry_attempts}): {e}")
+            except Exception as e:
+                logger.error(f"Unexpected error getting child profile (attempt {attempt + 1}/{self.retry_attempts}): {e}")
+
+            # Wait before retry with exponential backoff
+            if attempt < self.retry_attempts - 1:
+                wait_time = 2 ** attempt  # 1s, 2s, 4s
+                await asyncio.sleep(wait_time)
+
+        logger.error(f"Failed to get child profile after {self.retry_attempts} attempts for MAC: {device_mac}")
+        return None
+
     async def verify_manager_api_connection(self) -> bool:
         """
         Verify connection to Manager API

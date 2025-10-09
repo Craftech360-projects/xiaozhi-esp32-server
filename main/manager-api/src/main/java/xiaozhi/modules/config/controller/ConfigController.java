@@ -55,4 +55,16 @@ public class ConfigController {
         String prompt = configService.getAgentPrompt(macAddress);
         return new Result<String>().ok(prompt);
     }
+
+    @PostMapping("child-profile-by-mac")
+    @Operation(summary = "获取设备关联的孩子资料")
+    public Result<xiaozhi.modules.config.dto.ChildProfileDTO> getChildProfileByMac(@Valid @RequestBody Map<String, String> request) {
+        String macAddress = request.get("macAddress");
+        if (macAddress == null || macAddress.trim().isEmpty()) {
+            return new Result<xiaozhi.modules.config.dto.ChildProfileDTO>().error("MAC address is required");
+        }
+
+        xiaozhi.modules.config.dto.ChildProfileDTO childProfile = configService.getChildProfileByMac(macAddress);
+        return new Result<xiaozhi.modules.config.dto.ChildProfileDTO>().ok(childProfile);
+    }
 }
