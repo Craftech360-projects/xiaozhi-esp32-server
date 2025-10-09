@@ -551,6 +551,7 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
         agent.setChatHistoryConf(template.getChatHistoryConf());
         agent.setLangCode(template.getLangCode());
         agent.setLanguage(template.getLanguage());
+        agent.setAgentName(template.getAgentName());
 
         // Log new prompt
         String newPrompt = template.getSystemPrompt();

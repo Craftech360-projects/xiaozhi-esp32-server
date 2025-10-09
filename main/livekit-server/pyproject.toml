@@ -20,6 +20,7 @@ dependencies = [
     "pydub",
     "edge-tts",
     "mem0ai",
+    "jinja2",
     "pytz",
     "qdrant-client>=1.7.0",
     "sentence-transformers>=2.2.0"
