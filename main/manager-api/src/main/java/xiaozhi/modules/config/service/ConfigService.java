@@ -27,4 +27,12 @@ public interface ConfigService {
      * @return 智能体提示词
      */
     String getAgentPrompt(String macAddress);
+
+    /**
+     * 获取设备关联的孩子资料
+     *
+     * @param macAddress MAC地址
+     * @return 孩子资料
+     */
+    xiaozhi.modules.config.dto.ChildProfileDTO getChildProfileByMac(String macAddress);
 }

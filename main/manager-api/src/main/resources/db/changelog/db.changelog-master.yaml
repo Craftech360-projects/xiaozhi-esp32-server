@@ -436,4 +436,18 @@ databaseChangeLog:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202510031530_add_mqtt_config.sql
+  - changeSet:
+      id: 202510091430
+      author: claude
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202510091430_create_kid_profile_table.sql
+  - changeSet:
+      id: 202510091431
+      author: claude
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202510091431_add_kid_id_to_device.sql
 
