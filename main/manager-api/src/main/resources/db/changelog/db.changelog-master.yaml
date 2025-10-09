@@ -459,6 +459,7 @@ databaseChangeLog:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202510091700_add_cheeko_modes_final.sql
+  - changeSet:
       id: 202510091430
       author: claude
       changes:
