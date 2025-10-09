@@ -291,20 +291,9 @@ async def entrypoint(ctx: JobContext):
                     role_id=device_mac
                 )
 
-                # Store child profile in mem0 for agent memory
-                if child_profile:
-                    child_info = {
-                        "role": "system",
-                        "content": f"Child Profile - Name: {child_profile.get('name')}, Age: {child_profile.get('age')}, Age Group: {child_profile.get('ageGroup')}, Gender: {child_profile.get('gender')}, Interests: {child_profile.get('interests')}"
-                    }
-                    try:
-                        # Add child profile as a permanent memory
-                        await mem0_provider.save_memory({"messages": [child_info]})
-                        logger.info(f"👶💭 Child profile saved to mem0: {child_profile.get('name')}")
-                    except Exception as e:
-                        logger.warning(f"👶💭⚠️ Failed to save child profile to mem0: {e}")
-
                 # Fetch existing memories and inject into prompt
+                # Note: Child profile is already in the agent prompt fetched from database,
+                # so we don't store it separately in mem0 to avoid redundancy
                 logger.info("💭 Querying mem0 for existing memories...")
                 memories = await mem0_provider.query_memory("conversation history and user preferences")
 
