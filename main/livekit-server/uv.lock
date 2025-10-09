@@ -16,6 +16,7 @@ source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
     { name = "edge-tts" },
+    { name = "jinja2" },
     { name = "livekit-agents", extra = ["cartesia", "deepgram", "openai", "silero", "turn-detector"] },
     { name = "livekit-plugins-deepgram" },
     { name = "livekit-plugins-elevenlabs" },
@@ -41,6 +42,7 @@ dev = [
 requires-dist = [
     { name = "aiohttp" },
     { name = "edge-tts" },
+    { name = "jinja2" },
     { name = "livekit-agents", extras = ["openai", "turn-detector", "silero", "cartesia", "deepgram"], specifier = "~=1.2" },
     { name = "livekit-plugins-deepgram" },
     { name = "livekit-plugins-elevenlabs" },

@@ -19,14 +19,11 @@ logger = logging.getLogger("agent")
 # Keys must match EXACT database mode names
 MODE_ALIASES = {
     "Cheeko": ["chiko", "chico", "cheeko", "cheek o", "default", "default mode", "normal mode"],
-    "Storyteller": ["story teller", "story-teller", "story mode", "story time", "storytelling", "tell stories", "tell story"],
-    "RhymeTime": ["rhyme time", "rhyme-time", "rime time", "rhyming time", "rhyming", "rhymetime"],
-    "Art Buddy": ["artbuddy", "art-buddy", "art mode", "art friend", "art helper", "artist"],
-    "Music Maestro": ["musicmaestro", "music-maestro", "music master", "music mode", "musician", "music teacher"],
-    "Quiz Master": ["quizmaster", "quiz-master", "quiz mode", "quiz game", "quiz time"],
-    "Adventure Guide": ["adventureguide", "adventure-guide", "adventure mode", "adventurer", "explore mode"],
-    "Kindness Coach": ["kindnesscoach", "kindness-coach", "kindness mode", "kind coach", "be kind"],
-    "Mindful Buddy": ["mindfulbuddy", "mindful-buddy", "mindful mode", "mindfulness", "meditation mode","MindfulBody"],
+    "Story": ["story", "story mode", "story time", "storytelling", "storyteller", "tell stories", "tell story", "story teller"],
+    "Music": ["music", "music mode", "musician", "music time", "sing", "singing", "song", "songs"],
+    "Tutor": ["tutor", "tutor mode", "teacher", "teach", "teaching", "study", "study mode", "learning", "learn"],
+    "Chat": ["chat", "chat mode", "talk", "conversation", "friend", "buddy", "chatting"],
+    
 }
 
 def normalize_mode_name(mode_input: str) -> str:
