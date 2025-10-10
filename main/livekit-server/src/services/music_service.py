@@ -20,6 +20,7 @@ class MusicService:
     def __init__(self, preloaded_model=None, preloaded_client=None):
         self.cloudfront_domain = os.getenv("CLOUDFRONT_DOMAIN", "")
         self.s3_base_url = os.getenv("S3_BASE_URL", "")
+        self.local_media_url = os.getenv("LOCAL_MEDIA_URL", "")
         self.use_cdn = os.getenv("USE_CDN", "true").lower() == "true"
         self.is_initialized = False
         self.semantic_search = QdrantSemanticSearch(preloaded_model, preloaded_client)
@@ -44,7 +45,11 @@ class MusicService:
         audio_path = f"music/{language}/{filename}"
         encoded_path = urllib.parse.quote(audio_path)
 
-        if self.use_cdn and self.cloudfront_domain:
+        # Use local media URL if available (offline mode)
+        if self.local_media_url:
+            return f"{self.local_media_url}/{encoded_path}"
+        # Otherwise use CDN or S3
+        elif self.use_cdn and self.cloudfront_domain:
             return f"https://{self.cloudfront_domain}/{encoded_path}"
         else:
             return f"{self.s3_base_url}/{encoded_path}"

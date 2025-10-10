@@ -25,6 +25,8 @@ dependencies = [
     "qdrant-client>=1.7.0",
     "sentence-transformers>=2.2.0",
     "faster-whisper",
+    "openai-whisper",
+    "piper-tts",
     "TTS"
 ]
 

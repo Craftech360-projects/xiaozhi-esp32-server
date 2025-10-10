@@ -9,6 +9,7 @@ from livekit.agents import stt, llm, tts
 # Import our custom providers
 from .edge_tts_provider import EdgeTTS
 from .local_whisper_stt import LocalWhisperSTT
+from .openai_whisper_stt import OpenAIWhisperSTT
 from .coqui_tts_provider import CoquiTTS
 
 class ProviderFactory:
@@ -47,10 +48,23 @@ class ProviderFactory:
         else:
             # Single provider
             if provider == 'ollama':
-                return openai.LLM.with_ollama(
-                    model=config.get('llm_model', 'llama3.1:8b'),
+                from openai import AsyncOpenAI
+                import httpx
+
+                # Create custom HTTP client with extended timeout
+                http_client = httpx.AsyncClient(timeout=120.0)
+
+                # Create OpenAI client with custom http_client
+                oai_client = AsyncOpenAI(
                     base_url=config.get('ollama_url', 'http://localhost:11434') + '/v1',
+                    api_key="ollama",  # Ollama doesn't need real API key
+                    http_client=http_client,
+                )
+
+                return openai.LLM(
+                    model=config.get('llm_model', 'llama3.1:8b'),
                     temperature=config.get('llm_temperature', 0.7),
+                    client=oai_client,
                 )
             else:
                 # Default to Groq
@@ -121,6 +135,15 @@ class ProviderFactory:
                         model_size=config.get('whisper_model', 'base'),
                         device=config.get('whisper_device', 'cpu'),
                         compute_type=config.get('whisper_compute_type', 'int8'),
+                        language=config['stt_language'],
+                    ),
+                    vad=vad
+                )
+            elif provider == 'openai_whisper':
+                return stt.StreamAdapter(
+                    stt=OpenAIWhisperSTT(
+                        model_size=config.get('whisper_model', 'base'),
+                        device=config.get('whisper_device', 'cpu'),
                         language=config['stt_language'],
                     ),
                     vad=vad
@@ -196,7 +219,21 @@ class ProviderFactory:
             # Single provider (current behavior)
             provider = tts_config.get('provider', 'groq').lower()
 
-            if provider == 'coqui':
+            if provider == 'piper':
+                from .piper_tts_provider import PiperTTS
+                return PiperTTS(
+                    voice=tts_config.get('piper_voice', 'en_US-lessac-medium'),
+                    sample_rate=tts_config.get('piper_sample_rate', 22050),
+                )
+            elif provider == 'pyttsx3':
+                from .pyttsx3_tts_provider import Pyttsx3TTS
+                return Pyttsx3TTS(
+                    rate=tts_config.get('pyttsx3_rate', 150),
+                    volume=tts_config.get('pyttsx3_volume', 1.0),
+                    voice_index=tts_config.get('pyttsx3_voice', 0),
+                    sample_rate=24000,
+                )
+            elif provider == 'coqui':
                 return CoquiTTS(
                     model_name=tts_config.get('coqui_model', 'tts_models/en/ljspeech/tacotron2-DDC'),
                     use_gpu=tts_config.get('coqui_use_gpu', False),

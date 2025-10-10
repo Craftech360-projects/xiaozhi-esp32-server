@@ -220,16 +220,31 @@ class Assistant(FilteredAgent):
         self,
         context: RunContext,
         song_name: Optional[str] = None,
-        language: Optional[str] = None
+        language: str = "English"
     ):
         """Play music - either a specific song or random music
 
         Args:
             song_name: Optional specific song to search for
-            language: Optional language preference (English, Hindi, Telugu, etc.)
+            language: Language preference (default: "English"). Options: English, Hindi, Telugu, Kannada, etc.
         """
         try:
-            logger.info(f"Music request - song: '{song_name}', language: '{language}'")
+            # Map common language codes to full names used in database
+            language_map = {
+                "en": "English",
+                "hi": "Hindi",
+                "te": "Telugu",
+                "ka": "Kannada",
+                "english": "English",
+                "hindi": "Hindi",
+                "telugu": "Telugu",
+                "kannada": "Kannada"
+            }
+
+            # Normalize language to database format
+            normalized_language = language_map.get(language.lower(), language)
+
+            logger.info(f"Music request - song: '{song_name}', language: '{language}' (normalized: '{normalized_language}')")
 
             if not self.music_service:
                 return "Sorry, music service is not available right now."
@@ -241,16 +256,16 @@ class Assistant(FilteredAgent):
 
             if song_name:
                 # Search for specific song
-                songs = await self.music_service.search_songs(song_name, language)
+                songs = await self.music_service.search_songs(song_name, normalized_language)
                 if songs:
                     song = songs[0]  # Take first match
                     logger.info(f"Found song: {song['title']} in {song['language']}")
                 else:
                     logger.info(f"No songs found for '{song_name}', playing random song")
-                    song = await self.music_service.get_random_song(language)
+                    song = await self.music_service.get_random_song(normalized_language)
             else:
                 # Play random song
-                song = await self.music_service.get_random_song(language)
+                song = await self.music_service.get_random_song(normalized_language)
 
             if not song:
                 return "Sorry, I couldn't find any music to play right now."

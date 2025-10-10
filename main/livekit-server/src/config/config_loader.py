@@ -15,16 +15,27 @@ class ConfigLoader:
     def get_groq_config():
         """Get Groq configuration from environment variables"""
         return {
+            # LLM configuration
+            'llm_provider': os.getenv('LLM_PROVIDER', 'groq'),  # groq or ollama
             'llm_model': os.getenv('LLM_MODEL', 'openai/gpt-oss-20b'),
+            'llm_temperature': float(os.getenv('LLM_TEMPERATURE', '0.7')),
+            'ollama_url': os.getenv('OLLAMA_URL', 'http://localhost:11434'),
+            # STT configuration
             'stt_model': os.getenv('STT_MODEL', 'whisper-large-v3-turbo'),
+            'stt_language': os.getenv('STT_LANGUAGE', 'en'),
+            'stt_provider': os.getenv('STT_PROVIDER', 'groq'),  # groq, deepgram, or local_whisper
+            'deepgram_model': os.getenv('DEEPGRAM_MODEL', 'nova-3'),
+            'whisper_model': os.getenv('WHISPER_MODEL', 'base'),
+            'whisper_device': os.getenv('WHISPER_DEVICE', 'cpu'),
+            'whisper_compute_type': os.getenv('WHISPER_COMPUTE_TYPE', 'int8'),
+            # TTS configuration
             'tts_model': os.getenv('TTS_MODEL', 'playai-tts'),
             'tts_voice': os.getenv('TTS_VOICE', 'Aaliyah-PlayAI'),
-            'stt_language': os.getenv('STT_LANGUAGE', 'en'),
-            'stt_provider': os.getenv('STT_PROVIDER', 'groq'),  # groq or deepgram
-            'deepgram_model': os.getenv('DEEPGRAM_MODEL', 'nova-3'),
             # Fallback configuration
             'fallback_enabled': os.getenv('FALLBACK_ENABLED', 'false').lower() == 'true',
+            'fallback_llm_provider': os.getenv('FALLBACK_LLM_PROVIDER', 'groq'),
             'fallback_llm_model': os.getenv('FALLBACK_LLM_MODEL', 'llama-3.1-8b-instant'),
+            'fallback_stt_provider': os.getenv('FALLBACK_STT_PROVIDER', 'groq'),
         }
 
     @staticmethod
@@ -44,6 +55,17 @@ class ConfigLoader:
             'edge_pitch': os.getenv('EDGE_TTS_PITCH', '+0Hz'),
             'edge_sample_rate': int(os.getenv('EDGE_TTS_SAMPLE_RATE', '24000')),
             'edge_channels': int(os.getenv('EDGE_TTS_CHANNELS', '1')),
+            # Piper TTS configuration (fast, lightweight, local)
+            'piper_voice': os.getenv('PIPER_VOICE', 'en_US-lessac-medium'),
+            'piper_sample_rate': int(os.getenv('PIPER_SAMPLE_RATE', '22050')),
+            # pyttsx3 configuration (fully local)
+            'pyttsx3_rate': int(os.getenv('PYTTSX3_RATE', '150')),
+            'pyttsx3_volume': float(os.getenv('PYTTSX3_VOLUME', '1.0')),
+            'pyttsx3_voice': int(os.getenv('PYTTSX3_VOICE', '0')),
+            # Coqui TTS configuration
+            'coqui_model': os.getenv('COQUI_MODEL', 'tts_models/en/ljspeech/tacotron2-DDC'),
+            'coqui_use_gpu': os.getenv('COQUI_USE_GPU', 'false').lower() == 'true',
+            'coqui_sample_rate': int(os.getenv('COQUI_SAMPLE_RATE', '24000')),
             # Fallback configuration
             'fallback_enabled': os.getenv('TTS_FALLBACK_ENABLED', 'false').lower() == 'true',
         }
