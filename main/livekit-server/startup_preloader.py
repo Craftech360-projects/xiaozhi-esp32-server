@@ -22,6 +22,11 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+
+# Reduce verbosity of third-party libraries
+logging.getLogger("faster_whisper").setLevel(logging.WARNING)
+logging.getLogger("filelock").setLevel(logging.WARNING)
+
 logger = logging.getLogger("startup_preloader")
 
 def main():

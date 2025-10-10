@@ -88,12 +88,13 @@ class CoquiTTS(tts.TTS):
 
             logger.info(f"Coqui TTS model loaded: {self._model_name}")
 
-    def synthesize(self, text: str) -> "ChunkedStream":
+    def synthesize(self, text: str, *, conn_options: Optional[any] = None) -> "ChunkedStream":
         """
         Synthesize text to speech
 
         Args:
             text: Text to synthesize
+            conn_options: Connection options (passed to stream)
 
         Returns:
             ChunkedStream with audio data
@@ -104,6 +105,7 @@ class CoquiTTS(tts.TTS):
             sample_rate=self._sample_rate,
             speaker=self._speaker,
             language=self._language,
+            conn_options=conn_options,
         )
 
     async def _synthesize_audio(self, text: str) -> bytes:
@@ -227,6 +229,7 @@ class CoquiTTSStream(tts.ChunkedStream):
         sample_rate: int,
         speaker: Optional[str] = None,
         language: Optional[str] = None,
+        conn_options: Optional[any] = None,
     ):
         """
         Initialize TTS stream
@@ -237,8 +240,13 @@ class CoquiTTSStream(tts.ChunkedStream):
             sample_rate: Audio sample rate
             speaker: Speaker name
             language: Language code
+            conn_options: Connection options (passed to ChunkedStream)
         """
-        super().__init__()
+        super().__init__(
+            tts=tts_instance,
+            input_text=text,
+            conn_options=conn_options,
+        )
         self._tts = tts_instance
         self._text = text
         self._sample_rate = sample_rate
@@ -247,25 +255,24 @@ class CoquiTTSStream(tts.ChunkedStream):
         self._audio_data: Optional[bytes] = None
         self._sent = False
 
-    async def __anext__(self) -> tts.SynthesizedAudio:
-        """Stream audio chunks"""
-        if self._sent:
-            raise StopAsyncIteration
-
-        # Synthesize audio
-        if self._audio_data is None:
+    async def _run(self, output_emitter):
+        """Main synthesis task - required by ChunkedStream abstract class"""
+        try:
+            # Synthesize audio
             self._audio_data = await self._tts._synthesize_audio(self._text)
 
-        # Mark as sent
-        self._sent = True
-
-        # Return audio frame
-        return tts.SynthesizedAudio(
-            request_id="",  # Not used in Coqui TTS
-            segment_id="",
-            frame=self._audio_data,
-        )
+            # Emit the audio chunk using the output_emitter
+            output_emitter(
+                tts.SynthesizedAudio(
+                    request_id="",
+                    segment_id="",
+                    frame=self._audio_data,
+                )
+            )
+        except Exception as e:
+            logger.error(f"Error in CoquiTTS synthesis: {e}")
 
     async def aclose(self):
         """Close stream"""
+        await super().aclose()
         self._audio_data = None

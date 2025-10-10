@@ -84,18 +84,20 @@ class LocalWhisperSTT(stt.STT):
 
             logger.info(f"Whisper model loaded: {self._model_size}")
 
-    async def recognize(
+    async def _recognize_impl(
         self,
-        *,
         buffer: Union[utils.AudioBuffer, "rtc.AudioFrame"],
+        *,
         language: Optional[str] = None,
+        conn_options: Optional[any] = None,
     ) -> stt.SpeechEvent:
         """
-        Recognize speech from audio buffer
+        Implementation of speech recognition (required by STT base class)
 
         Args:
             buffer: Audio data to transcribe
             language: Override language (optional)
+            conn_options: Connection options (ignored for local Whisper)
 
         Returns:
             SpeechEvent with transcription
@@ -144,8 +146,8 @@ class LocalWhisperSTT(stt.STT):
     def _prepare_audio(self, buffer: Union[utils.AudioBuffer, "rtc.AudioFrame"]) -> np.ndarray:
         """Convert audio buffer to numpy array for Whisper"""
         try:
-            # Handle AudioBuffer
-            if isinstance(buffer, utils.AudioBuffer):
+            # Check if it's an AudioBuffer by checking for the class name
+            if hasattr(buffer, '__class__') and buffer.__class__.__name__ == 'AudioBuffer':
                 # Get raw audio data
                 audio_data = buffer.data
 
@@ -162,10 +164,10 @@ class LocalWhisperSTT(stt.STT):
 
                 return audio_np
 
-            # Handle rtc.AudioFrame
+            # Handle rtc.AudioFrame or any other buffer type
             else:
                 # Get frame data
-                frame_data = buffer.data
+                frame_data = buffer.data if hasattr(buffer, 'data') else buffer
 
                 # Convert to numpy array
                 audio_np = np.frombuffer(frame_data, dtype=np.int16)
@@ -220,13 +222,15 @@ class LocalWhisperSTTStream(stt.SpeechStream):
         self._audio_buffer = []
         self._buffer_lock = asyncio.Lock()
 
-    async def recognize(
+    async def _recognize_impl(
         self,
-        *,
         buffer: Union[utils.AudioBuffer, "rtc.AudioFrame"],
+        *,
+        language: Optional[str] = None,
+        conn_options: Optional[any] = None,
     ) -> stt.SpeechEvent:
         """Recognize speech from buffered audio"""
-        return await self._stt.recognize(buffer=buffer, language=self._language)
+        return await self._stt._recognize_impl(buffer=buffer, language=language or self._language, conn_options=conn_options)
 
     async def aclose(self):
         """Close stream"""

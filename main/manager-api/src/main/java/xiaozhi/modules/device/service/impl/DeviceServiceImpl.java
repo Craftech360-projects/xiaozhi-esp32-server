@@ -80,7 +80,7 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
     }
 
     @Override
-    public Boolean deviceActivation(String agentId, String activationCode) {
+    public DeviceEntity deviceActivation(String agentId, String activationCode) {
         if (StringUtils.isBlank(activationCode)) {
             throw new RenException("激活码不能为空");
         }
@@ -132,7 +132,8 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         // 清理redis缓存
         redisUtils.delete(cacheDeviceKey);
         redisUtils.delete(deviceKey);
-        return true;
+
+        return deviceEntity;
     }
 
     @Override

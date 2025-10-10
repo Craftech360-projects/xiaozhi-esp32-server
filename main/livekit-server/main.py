@@ -7,6 +7,7 @@ from src.services.unified_audio_player import UnifiedAudioPlayer
 from src.services.foreground_audio_player import ForegroundAudioPlayer
 from src.services.story_service import StoryService
 from src.services.music_service import MusicService
+from src.services.simple_music_service import SimpleMusicService
 from src.mcp.device_control_service import DeviceControlService
 from src.mcp.mcp_executor import LiveKitMCPExecutor
 from src.utils.helpers import UsageManager
@@ -39,6 +40,9 @@ load_dotenv(".env")
 
 # Import our organized modules
 
+# Reduce verbosity of third-party libraries
+logging.getLogger("faster_whisper").setLevel(logging.WARNING)
+logging.getLogger("filelock").setLevel(logging.WARNING)
 
 logger = logging.getLogger("agent")
 
@@ -361,8 +365,18 @@ async def entrypoint(ctx: JobContext):
         logger.info("[INIT] Creating new music and story services...")
         # Create new services with preloaded models
 
-        music_service = MusicService(
-            preloaded_embedding_model, preloaded_qdrant_client)
+        # Check if Qdrant is available/configured
+        use_simple_music = os.getenv("USE_SIMPLE_MUSIC", "false").lower() == "true"
+        qdrant_url = os.getenv("QDRANT_URL", "")
+
+        if use_simple_music or not qdrant_url:
+            logger.info("[INIT] Using simple file-based music service (no Qdrant)")
+            music_service = SimpleMusicService()
+        else:
+            logger.info("[INIT] Using Qdrant-based music service")
+            music_service = MusicService(
+                preloaded_embedding_model, preloaded_qdrant_client)
+
         story_service = StoryService(
             preloaded_embedding_model, preloaded_qdrant_client)
 

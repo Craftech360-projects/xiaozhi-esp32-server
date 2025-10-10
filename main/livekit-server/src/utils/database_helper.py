@@ -36,6 +36,8 @@ class DatabaseHelper:
             "Content-Type": "application/json"
         }
 
+        logger.info(f"🌐 Calling API: GET {url}")
+
         for attempt in range(self.retry_attempts):
             try:
                 timeout = aiohttp.ClientTimeout(total=10)
@@ -98,6 +100,8 @@ class DatabaseHelper:
             "Authorization": f"Bearer {self.secret}",
             "Content-Type": "application/json"
         }
+
+        logger.info(f"🌐 Calling API: POST {url} with MAC: {device_mac}")
         payload = {"macAddress": device_mac}
 
         for attempt in range(self.retry_attempts):
