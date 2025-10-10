@@ -230,9 +230,36 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
 
     @Override
     public void unbindDevice(Long userId, String deviceId) {
+        // First, verify the device exists
+        DeviceEntity device = baseDao.selectById(deviceId);
+        if (device == null) {
+            throw new RenException("设备不存在");
+        }
+
+        // Get current user to check if super admin
+        UserDetail currentUser = SecurityUser.getUser();
+        boolean isSuperAdmin = (currentUser.getSuperAdmin() != null &&
+                               currentUser.getSuperAdmin() == 1);
+
+        // Build delete query
         UpdateWrapper<DeviceEntity> wrapper = new UpdateWrapper<>();
-        wrapper.eq("user_id", userId);
+
+        if (!isSuperAdmin) {
+            // Regular user - must own the device
+            wrapper.eq("user_id", userId);
+        }
+        // Super admin can unbind any device (no user_id restriction)
+
         wrapper.eq("id", deviceId);
+
+        // Log the unbind action for audit purposes
+        log.info("🔓 Device unbind - DeviceId: {}, DeviceOwner: {}, RequestedBy: {} ({}), Action: {}",
+                 deviceId,
+                 device.getUserId(),
+                 currentUser.getId(),
+                 isSuperAdmin ? "SuperAdmin" : "User",
+                 isSuperAdmin && !device.getUserId().equals(currentUser.getId()) ? "ADMIN_UNBIND" : "SELF_UNBIND");
+
         baseDao.delete(wrapper);
     }
 
