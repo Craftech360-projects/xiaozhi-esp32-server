@@ -189,7 +189,7 @@ class ChatEventHandler:
                 instructions=ev.extra_instructions or NOT_GIVEN)
             payload = json.dumps({
                 "type": "agent_false_interruption",
-                "data": ev.dict()
+                "data": ev.model_dump()
             })
             asyncio.create_task(ctx.room.local_participant.publish_data(
                 payload.encode("utf-8"), reliable=True))

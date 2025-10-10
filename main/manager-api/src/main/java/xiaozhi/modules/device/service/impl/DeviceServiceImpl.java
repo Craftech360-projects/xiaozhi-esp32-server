@@ -514,6 +514,10 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
 
         firmware.setVersion(ota == null ? currentVersion : ota.getVersion());
         firmware.setUrl(downloadUrl == null ? Constant.INVALID_FIRMWARE_URL : downloadUrl);
+
+        log.info("📦 OTA Firmware Message - Type: {}, Current Version: {}, Latest Version: {}, URL: {}",
+            type, currentVersion, firmware.getVersion(), firmware.getUrl());
+
         return firmware;
     }
 

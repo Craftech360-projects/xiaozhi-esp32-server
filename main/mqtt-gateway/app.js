@@ -382,6 +382,11 @@ class LiveKitBridge extends Emitter {
               // Send TTS stop message to ensure device returns to listening state
               this.sendTtsStopMessage();
               break;
+            case "llm":
+              // Handle emotion from LLM response
+              console.log(`😊 [EMOTION] Received: ${data.emotion} (${data.text})`);
+              this.sendEmotionMessage(data.text, data.emotion);
+              break;
 
             // case "metrics_collected":
             //   console.log(`Metrics: ${JSON.stringify(data.data)}`);
@@ -1020,6 +1025,23 @@ class LiveKitBridge extends Emitter {
 
     console.log(
       `📤 [MQTT OUT] Sending STT result to device: ${this.macAddress} - "${text}"`
+    );
+    this.connection.sendMqttMessage(JSON.stringify(message));
+  }
+
+  // Send emotion message to device (from LLM response)
+  sendEmotionMessage(emoji, emotion) {
+    if (!this.connection) return;
+
+    const message = {
+      type: "llm",
+      text: emoji,
+      emotion: emotion,
+      session_id: this.connection.udp.session_id,
+    };
+
+    console.log(
+      `📤 [MQTT OUT] Sending emotion to device: ${this.macAddress} - ${emotion} (${emoji})`
     );
     this.connection.sendMqttMessage(JSON.stringify(message));
   }
@@ -2969,9 +2991,56 @@ class MQTTGateway {
 
             if (deviceInfo && deviceInfo.connection) {
               console.log(`📊 [DATA] Routing to virtual device connection: ${deviceId}`);
+
+              // Send success message to mobile app
+              const successMessage = {
+                type: 'device_status',
+                status: 'connected',
+                message: 'song is playing',
+                deviceId: deviceId,
+                timestamp: Date.now()
+              };
+
+              // Publish to app/p2p/{macAddress}
+              const appTopic = `app/p2p/${deviceId}`;
+              console.log(`✅ [MOBILE-RESPONSE] Sending device connected status to ${appTopic}`);
+
+              if (this.mqttClient && this.mqttClient.connected) {
+                this.mqttClient.publish(appTopic, JSON.stringify(successMessage), (err) => {
+                  if (err) {
+                    console.error(`❌ [MOBILE-RESPONSE] Failed to send success to mobile app:`, err);
+                  } else {
+                    console.log(`✅ [MOBILE-RESPONSE] Device connected status sent to mobile app`);
+                  }
+                });
+              }
+
               this.handleDeviceData(deviceId, enhancedPayload);
             } else {
               console.log(`⚠️ [DATA] No connection found for device: ${deviceId}, message type: ${originalPayload.type}`);
+
+              // Send device not connected message to mobile app
+              const errorMessage = {
+                type: 'device_status',
+                status: 'not_connected',
+                message: 'Device is not connected',
+                deviceId: deviceId,
+                timestamp: Date.now()
+              };
+
+              // Publish to app/p2p/{macAddress}
+              const appTopic = `app/p2p/${deviceId}`;
+              console.log(`❌ [MOBILE-RESPONSE] Sending device not connected status to ${appTopic}`);
+
+              if (this.mqttClient && this.mqttClient.connected) {
+                this.mqttClient.publish(appTopic, JSON.stringify(errorMessage), (err) => {
+                  if (err) {
+                    console.error(`❌ [MOBILE-RESPONSE] Failed to send error to mobile app:`, err);
+                  } else {
+                    console.log(`✅ [MOBILE-RESPONSE] Device not connected status sent to mobile app`);
+                  }
+                });
+              }
             }
           }
         }
@@ -3087,16 +3156,17 @@ class MQTTGateway {
         const audioMapPath = path.join(__dirname, 'audio', 'mode_change', 'audio_map.json');
         const audioMap = JSON.parse(fs.readFileSync(audioMapPath, 'utf8'));
 
-        // Get audio file for mode
+        // Get audio file for mode (use PCM extension instead of Opus)
         const audioFileName = audioMap.modes[newModeName] || audioMap.default;
-        const audioFilePath = path.join(__dirname, 'audio', 'mode_change', audioFileName);
+        const pcmFileName = audioFileName.replace('.opus', '.pcm');
+        const audioFilePath = path.join(__dirname, 'audio', 'mode_change', pcmFileName);
 
         if (!fs.existsSync(audioFilePath)) {
           console.error(`❌ [MODE-CHANGE] Audio file not found: ${audioFilePath}`);
           return;
         }
 
-        console.log(`🎵 [MODE-CHANGE] Streaming audio: ${audioFileName}`);
+        console.log(`🎵 [MODE-CHANGE] Streaming audio: ${pcmFileName}`);
 
         // Stream audio via UDP
         await this.streamAudioViaUdp(deviceId, audioFilePath, newModeName);
@@ -3113,6 +3183,7 @@ class MQTTGateway {
   async streamAudioViaUdp(deviceId, audioFilePath, modeName) {
     try {
       const fs = require('fs');
+      const path = require('path');
       const connection = this.deviceConnections.get(deviceId)?.connection;
 
       if (!connection) {
@@ -3120,53 +3191,142 @@ class MQTTGateway {
         return;
       }
 
-      // Send TTS start via MQTT control message
-      const ttsStartMsg = JSON.stringify({
+      // Get client ID for publishing MQTT messages
+      const clientId = connection.clientId;
+      if (!clientId) {
+        console.error(`❌ [MODE-CHANGE] No client ID found for device: ${deviceId}`);
+        return;
+      }
+
+      // Check if we need to convert Opus file to PCM first
+      const pcmFilePath = audioFilePath.replace('.opus', '.pcm');
+
+      if (!fs.existsSync(pcmFilePath)) {
+        console.log(`⚠️ [MODE-CHANGE] PCM file not found. Please convert Opus to PCM:`);
+        console.log(`   ffmpeg -i ${audioFilePath} -f s16le -ar 24000 -ac 1 ${pcmFilePath}`);
+        console.error(`❌ [MODE-CHANGE] Cannot stream without PCM file`);
+        return;
+      }
+
+      // Read PCM file (24kHz, mono, 16-bit signed)
+      const pcmData = fs.readFileSync(pcmFilePath);
+      console.log(`📦 [MODE-CHANGE] Loaded ${pcmData.length} bytes PCM from ${pcmFilePath}`);
+
+      const controlTopic = `devices/p2p/${clientId}`;
+
+      // Send TTS start via MQTT
+      const ttsStartMsg = {
         type: 'tts',
         state: 'start',
         text: `Switched to ${modeName} mode`,
         timestamp: Date.now()
+      };
+      this.mqttClient.publish(controlTopic, JSON.stringify(ttsStartMsg), (err) => {
+        if (err) {
+          console.error(`❌ [MODE-CHANGE] Failed to publish TTS start:`, err);
+        } else {
+          console.log(`📤 [MODE-CHANGE] TTS start sent to ${deviceId} via ${controlTopic}`);
+        }
       });
-      connection.mqttPublish('control', ttsStartMsg);
-      console.log(`📤 [MODE-CHANGE] TTS start sent to ${deviceId}`);
 
-      // Read Opus file (16kHz)
-      const opusData = fs.readFileSync(audioFilePath);
-      console.log(`📦 [MODE-CHANGE] Loaded ${opusData.length} bytes from ${audioFilePath}`);
+      // Wait a bit for TTS start to be processed
+      await new Promise(resolve => setTimeout(resolve, 200));
 
-      // Stream Opus packets via UDP (60ms frames at 16kHz)
-      // 16000 Hz * 0.06s = 960 samples/frame * 2 bytes = 1920 bytes PCM
-      // But Opus compresses this, so we send raw Opus packets
-      const CHUNK_SIZE = 320; // Typical Opus packet size for 60ms at 16kHz
+      // Stream PCM in 60ms frames, encode to Opus, send via UDP
+      // Same as LiveKit audio: 24kHz, 60ms = 1440 samples = 2880 bytes PCM
+      const FRAME_SIZE_SAMPLES = 1440; // 24000 Hz * 0.06s
+      const FRAME_SIZE_BYTES = FRAME_SIZE_SAMPLES * 2; // 2 bytes per sample
       let offset = 0;
-      let packetCount = 0;
+      let frameCount = 0;
 
-      while (offset < opusData.length) {
-        const chunk = opusData.slice(offset, Math.min(offset + CHUNK_SIZE, opusData.length));
+      // Calculate relative timestamp
+      const startTime = connection.udp?.startTime || Date.now();
+      let baseTimestamp = (Date.now() - startTime) & 0xffffffff;
 
-        // Send via UDP using existing connection
-        connection.sendAudioToDevice(chunk);
+      while (offset < pcmData.length) {
+        const frameData = pcmData.slice(offset, Math.min(offset + FRAME_SIZE_BYTES, pcmData.length));
 
-        offset += CHUNK_SIZE;
-        packetCount++;
+        // Pad last frame if incomplete
+        let frameTosend = frameData;
+        if (frameData.length < FRAME_SIZE_BYTES) {
+          frameTosend = Buffer.alloc(FRAME_SIZE_BYTES);
+          frameData.copy(frameTosend);
+          // Rest is zeros (silence padding)
+        }
 
-        // Small delay to match 60ms frame duration
+        // Calculate timestamp for this frame
+        const timestamp = (baseTimestamp + (frameCount * 60)) & 0xffffffff;
+
+        // Encode to Opus (same as LiveKit audio streaming)
+        if (opusEncoder) {
+          try {
+            const opusBuffer = opusEncoder.encode(frameTosend, FRAME_SIZE_SAMPLES);
+
+            if (frameCount % 20 === 0) {
+              console.log(`🎵 [MODE-CHANGE] Frame ${frameCount}: PCM ${frameTosend.length}B → Opus ${opusBuffer.length}B`);
+            }
+
+            // Send via UDP (will be encrypted automatically)
+            connection.sendUdpMessage(opusBuffer, timestamp);
+          } catch (err) {
+            console.error(`❌ [MODE-CHANGE] Opus encode error:`, err.message);
+            // Fallback to PCM
+            connection.sendUdpMessage(frameTosend, timestamp);
+          }
+        } else {
+          // No Opus encoder available, send PCM directly
+          console.warn(`⚠️ [MODE-CHANGE] No Opus encoder, sending PCM`);
+          connection.sendUdpMessage(frameTosend, timestamp);
+        }
+
+        offset += FRAME_SIZE_BYTES;
+        frameCount++;
+
+        // Wait 60ms for next frame (match frame duration)
         await new Promise(resolve => setTimeout(resolve, 60));
       }
 
-      console.log(`📦 [MODE-CHANGE] Sent ${packetCount} audio packets via UDP`);
+      console.log(`📦 [MODE-CHANGE] Streamed ${frameCount} frames (${pcmData.length} bytes PCM)`);
+
+      // Wait a bit before sending TTS stop
+      await new Promise(resolve => setTimeout(resolve, 100));
 
       // Send TTS stop
-      const ttsStopMsg = JSON.stringify({
+      const ttsStopMsg = {
         type: 'tts',
         state: 'stop',
         timestamp: Date.now()
+      };
+      this.mqttClient.publish(controlTopic, JSON.stringify(ttsStopMsg), (err) => {
+        if (err) {
+          console.error(`❌ [MODE-CHANGE] Failed to publish TTS stop:`, err);
+        } else {
+          console.log(`📤 [MODE-CHANGE] TTS stop sent to ${deviceId} via ${controlTopic}`);
+        }
       });
-      connection.mqttPublish('control', ttsStopMsg);
-      console.log(`📤 [MODE-CHANGE] TTS stop sent to ${deviceId}`);
+
+      // Wait a bit to ensure TTS stop is processed
+      await new Promise(resolve => setTimeout(resolve, 200));
+
+      // Send goodbye message to close the LiveKit session after mode change
+      const goodbyeMsg = {
+        type: "goodbye",
+        session_id: connection.udp?.session_id || null,
+        reason: "mode_change",
+        timestamp: Date.now()
+      };
+
+      this.mqttClient.publish(controlTopic, JSON.stringify(goodbyeMsg), (err) => {
+        if (err) {
+          console.error(`❌ [MODE-CHANGE] Failed to publish goodbye:`, err);
+        } else {
+          console.log(`👋 [MODE-CHANGE] Goodbye sent to ${deviceId} - LiveKit session will close`);
+        }
+      });
 
     } catch (error) {
       console.error(`❌ [MODE-CHANGE] Audio streaming error:`, error.message);
+      console.error(error.stack);
     }
   }
 

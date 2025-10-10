@@ -14,7 +14,7 @@
 # Using pip
 pip install -r requirements.txt
 
-# Or using the project's pyproject.toml
+
 pip install -e .
 ```
 

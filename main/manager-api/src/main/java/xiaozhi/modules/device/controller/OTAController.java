@@ -93,6 +93,9 @@ public class OTAController {
         ObjectMapper objectMapper = new ObjectMapper();
         objectMapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
         String json = objectMapper.writeValueAsString(deviceReportRespDTO);
+
+        log.info("📤 Full OTA Response JSON:\n{}", json);
+
         byte[] jsonBytes = json.getBytes(StandardCharsets.UTF_8);
         return ResponseEntity
                 .ok()

@@ -20,3 +20,5 @@ PyJWT
 
 # Memory provider (optional - comment out if using local memory)
 mem0
+
+jinja2

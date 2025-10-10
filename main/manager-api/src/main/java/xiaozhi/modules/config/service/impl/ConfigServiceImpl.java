@@ -38,6 +38,9 @@ import xiaozhi.modules.sys.dto.SysParamsDTO;
 import xiaozhi.modules.sys.service.SysParamsService;
 import xiaozhi.modules.timbre.service.TimbreService;
 import xiaozhi.modules.timbre.vo.TimbreDetailsVO;
+import xiaozhi.modules.sys.service.KidProfileService;
+import xiaozhi.modules.sys.dto.KidProfileDTO;
+import xiaozhi.modules.config.dto.ChildProfileDTO;
 
 @Service
 @AllArgsConstructor
@@ -52,6 +55,7 @@ public class ConfigServiceImpl implements ConfigService {
     private final AgentPluginMappingService agentPluginMappingService;
     private final AgentMcpAccessPointService agentMcpAccessPointService;
     private final AgentVoicePrintDao agentVoicePrintDao;
+    private final KidProfileService kidProfileService;
 
     @Override
     public Object getConfig(Boolean isCache) {
@@ -466,12 +470,44 @@ public class ConfigServiceImpl implements ConfigService {
             throw new RenException("Agent not found for device: " + macAddress);
         }
 
-        // 返回系统提示词
+        // 返回系统提示词 (now contains Jinja2 templates directly in database)
         String systemPrompt = agent.getSystemPrompt();
         if (StringUtils.isBlank(systemPrompt)) {
             throw new RenException("No system prompt configured for agent: " + agent.getAgentName());
         }
 
+        // Simply return the prompt as-is (templates already in database)
         return systemPrompt;
+    }
+
+    @Override
+    public ChildProfileDTO getChildProfileByMac(String macAddress) {
+        // 根据MAC地址查找设备
+        DeviceEntity device = deviceService.getDeviceByMacAddress(macAddress);
+        if (device == null) {
+            throw new RenException(ErrorCode.OTA_DEVICE_NOT_FOUND, "Device not found for MAC: " + macAddress);
+        }
+
+        // 获取设备关联的孩子ID
+        Long kidId = device.getKidId();
+        if (kidId == null) {
+            throw new RenException("No child assigned to this device");
+        }
+
+        // 获取孩子资料
+        KidProfileDTO kid = kidProfileService.get(kidId);
+        if (kid == null) {
+            throw new RenException("Child profile not found");
+        }
+
+        // 转换为LiveKit使用的ChildProfileDTO
+        ChildProfileDTO childProfile = new ChildProfileDTO();
+        childProfile.setName(kid.getName());
+        childProfile.setAge(kid.getAge());
+        childProfile.setAgeGroup(kid.getAgeGroup());
+        childProfile.setGender(kid.getGender());
+        childProfile.setInterests(kid.getInterests());
+
+        return childProfile;
     }
 }
