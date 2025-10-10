@@ -28,6 +28,7 @@ import xiaozhi.modules.device.dto.DeviceUpdateDTO;
 import xiaozhi.modules.device.dto.DeviceManualAddDTO;
 import xiaozhi.modules.device.dto.AssignKidToDeviceDTO;
 import xiaozhi.modules.device.dto.AssignKidByMacDTO;
+import xiaozhi.modules.device.dto.DeviceResponseDTO;
 import xiaozhi.modules.device.entity.DeviceEntity;
 import xiaozhi.modules.device.service.DeviceService;
 import xiaozhi.modules.security.user.SecurityUser;
@@ -44,9 +45,20 @@ public class DeviceController {
     @PostMapping("/bind/{agentId}/{deviceCode}")
     @Operation(summary = "绑定设备")
     @RequiresPermissions("sys:role:normal")
-    public Result<Void> bindDevice(@PathVariable String agentId, @PathVariable String deviceCode) {
-        deviceService.deviceActivation(agentId, deviceCode);
-        return new Result<>();
+    public Result<DeviceResponseDTO> bindDevice(@PathVariable String agentId, @PathVariable String deviceCode) {
+        DeviceEntity device = deviceService.deviceActivation(agentId, deviceCode);
+
+        // Build response with device details
+        DeviceResponseDTO response = new DeviceResponseDTO();
+        response.setId(device.getId());
+        response.setMacAddress(device.getMacAddress());
+        response.setAgentId(device.getAgentId());
+        response.setAlias(device.getAlias());
+        response.setBoard(device.getBoard());
+        response.setKidId(device.getKidId());
+        response.setAppVersion(device.getAppVersion());
+
+        return new Result<DeviceResponseDTO>().ok(response);
     }
 
     @PostMapping("/register")
@@ -150,24 +162,34 @@ public class DeviceController {
     @PutMapping("/assign-kid-by-mac")
     @Operation(summary = "Assign kid to device by MAC address")
     @RequiresPermissions("sys:role:normal")
-    public Result<Void> assignKidByMac(@RequestBody @Valid AssignKidByMacDTO dto) {
+    public Result<DeviceResponseDTO> assignKidByMac(@RequestBody @Valid AssignKidByMacDTO dto) {
         UserDetail user = SecurityUser.getUser();
 
         // Get device by MAC address
         DeviceEntity device = deviceService.getDeviceByMacAddress(dto.getMacAddress());
         if (device == null) {
-            return new Result<Void>().error("Device not found for MAC: " + dto.getMacAddress());
+            return new Result<DeviceResponseDTO>().error("Device not found for MAC: " + dto.getMacAddress());
         }
 
         // Verify ownership
         if (!device.getUserId().equals(user.getId())) {
-            return new Result<Void>().error("You don't own this device");
+            return new Result<DeviceResponseDTO>().error("You don't own this device");
         }
 
         // Update kid_id
         device.setKidId(dto.getKidId());
         deviceService.updateById(device);
 
-        return new Result<Void>().ok(null);
+        // Build response with device details
+        DeviceResponseDTO response = new DeviceResponseDTO();
+        response.setId(device.getId());
+        response.setMacAddress(device.getMacAddress());
+        response.setAgentId(device.getAgentId());
+        response.setAlias(device.getAlias());
+        response.setBoard(device.getBoard());
+        response.setKidId(device.getKidId());
+        response.setAppVersion(device.getAppVersion());
+
+        return new Result<DeviceResponseDTO>().ok(response);
     }
 }

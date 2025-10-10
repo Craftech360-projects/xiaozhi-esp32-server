@@ -75,29 +75,47 @@ def create_kid_profile(token, name, dob, gender, interests):
             'Authorization': f'Bearer {token}'
         }
 
+        payload = {
+            'name': name,
+            'dateOfBirth': dob,
+            'gender': gender,
+            'interests': interests,
+            'avatarUrl': 'https://example.com/avatar.jpg'
+        }
+
+        print(f"\n{BLUE}📤 Request Details:{RESET}")
+        print(f"  URL: {BASE_URL}/api/mobile/kids/create")
+        print(f"  Headers: {headers}")
+        print(f"  Payload: {json.dumps(payload, indent=2)}")
+
         response = requests.post(
             f"{BASE_URL}/api/mobile/kids/create",
             headers=headers,
-            json={
-                'name': name,
-                'dateOfBirth': dob,
-                'gender': gender,
-                'interests': interests,
-                'avatarUrl': 'https://example.com/avatar.jpg'
-            },
+            json=payload,
             timeout=10
         )
+
+        print(f"\n{BLUE}📥 Response Details:{RESET}")
+        print(f"  Status Code: {response.status_code}")
+        print(f"  Response Body: {json.dumps(response.json(), indent=2)}")
 
         if response.status_code == 200:
             data = response.json()
             if data.get('code') == 0 and data.get('data', {}).get('kid'):
                 kid = data['data']['kid']
                 kid_id = kid.get('id')
-                print(f"  {GREEN}✅ Kid profile created!{RESET}")
-                print(f"  {GREEN}   ID: {kid_id}{RESET}")
-                print(f"  {GREEN}   Name: {kid.get('name')}{RESET}")
-                print(f"  {GREEN}   Age: {kid.get('age')}{RESET}")
-                print(f"  {GREEN}   Age Group: {kid.get('ageGroup')}{RESET}")
+                print(f"\n  {GREEN}✅ Kid profile created!{RESET}")
+                print(f"  {GREEN}   ═══════════════════════════════════════{RESET}")
+                print(f"  {GREEN}   🆔 KID ID RECEIVED: {kid_id}{RESET}")
+                print(f"  {GREEN}   ═══════════════════════════════════════{RESET}")
+                print(f"  {GREEN}   👤 Name: {kid.get('name')}{RESET}")
+                print(f"  {GREEN}   🎂 Age: {kid.get('age')}{RESET}")
+                print(f"  {GREEN}   📚 Age Group: {kid.get('ageGroup')}{RESET}")
+                print(f"  {GREEN}   🚻 Gender: {kid.get('gender')}{RESET}")
+
+                print(f"\n  {YELLOW}📋 Full Kid Object from Response:{RESET}")
+                print(f"  {json.dumps(kid, indent=4)}")
+
                 return kid_id
             else:
                 error_msg = data.get('msg', 'Creation failed')
@@ -105,6 +123,7 @@ def create_kid_profile(token, name, dob, gender, interests):
                 return None
         else:
             print(f"  {RED}❌ HTTP Error {response.status_code}{RESET}")
+            print(f"  Response: {response.text}")
             return None
 
     except Exception as e:
@@ -156,20 +175,37 @@ def assign_kid_to_device(token, mac_address, kid_id):
             'Authorization': f'Bearer {token}'
         }
 
+        payload = {
+            'macAddress': mac_address,
+            'kidId': kid_id
+        }
+
+        print(f"\n{BLUE}📤 Assignment Request Details:{RESET}")
+        print(f"  URL: {BASE_URL}/device/assign-kid-by-mac")
+        print(f"  Method: PUT")
+        print(f"  Payload: {json.dumps(payload, indent=2)}")
+
         response = requests.put(
             f"{BASE_URL}/device/assign-kid-by-mac",
             headers=headers,
-            json={
-                'macAddress': mac_address,
-                'kidId': kid_id
-            },
+            json=payload,
             timeout=10
         )
+
+        print(f"\n{BLUE}📥 Assignment Response Details:{RESET}")
+        print(f"  Status Code: {response.status_code}")
+        print(f"  Response Body: {json.dumps(response.json(), indent=2)}")
 
         if response.status_code == 200:
             data = response.json()
             if data.get('code') == 0:
-                print(f"  {GREEN}✅ Kid assigned to device successfully!{RESET}")
+                print(f"\n  {GREEN}✅ Kid assigned to device successfully!{RESET}")
+
+                # Print device details if available in response
+                if data.get('data'):
+                    print(f"\n  {YELLOW}📋 Assignment Response Data:{RESET}")
+                    print(f"  {json.dumps(data.get('data'), indent=4)}")
+
                 return True
             else:
                 error_msg = data.get('msg', 'Assignment failed')
@@ -177,11 +213,70 @@ def assign_kid_to_device(token, mac_address, kid_id):
                 return False
         else:
             print(f"  {RED}❌ HTTP Error {response.status_code}{RESET}")
+            print(f"  Response: {response.text}")
             return False
 
     except Exception as e:
         print(f"  {RED}❌ Error: {e}{RESET}")
         return False
+
+def bind_device(token, agent_id, device_code):
+    """Bind device using API - Returns device details including MAC address"""
+    print(f"\n{BLUE}📱 Binding device with code: {device_code} to agent: {agent_id}{RESET}")
+
+    try:
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {token}'
+        }
+
+        url = f"{BASE_URL}/device/bind/{agent_id}/{device_code}"
+
+        print(f"\n{BLUE}📤 Device Binding Request:{RESET}")
+        print(f"  URL: {url}")
+        print(f"  Method: POST")
+
+        response = requests.post(
+            url,
+            headers=headers,
+            timeout=10
+        )
+
+        print(f"\n{BLUE}📥 Device Binding Response:{RESET}")
+        print(f"  Status Code: {response.status_code}")
+        print(f"  Response Body: {json.dumps(response.json(), indent=2)}")
+
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('code') == 0 and data.get('data', {}).get('device'):
+                device = data['data']['device']
+                device_id = device.get('id')
+                mac_address = device.get('macAddress')
+
+                print(f"\n  {GREEN}✅ Device bound successfully!{RESET}")
+                print(f"  {GREEN}   ═══════════════════════════════════════{RESET}")
+                print(f"  {GREEN}   🆔 Device ID: {device_id}{RESET}")
+                print(f"  {GREEN}   📶 MAC Address: {mac_address}{RESET}")
+                print(f"  {GREEN}   🔢 Device Code: {device.get('deviceCode')}{RESET}")
+                print(f"  {GREEN}   🤖 Agent ID: {device.get('agentId')}{RESET}")
+                print(f"  {GREEN}   ═══════════════════════════════════════{RESET}")
+
+                print(f"\n  {YELLOW}📋 Full Device Object from Response:{RESET}")
+                print(f"  {json.dumps(device, indent=4)}")
+
+                return device
+            else:
+                error_msg = data.get('msg', 'Binding failed')
+                print(f"  {RED}❌ Failed: {error_msg}{RESET}")
+                return None
+        else:
+            print(f"  {RED}❌ HTTP Error {response.status_code}{RESET}")
+            print(f"  Response: {response.text}")
+            return None
+
+    except Exception as e:
+        print(f"  {RED}❌ Error: {e}{RESET}")
+        return None
 
 def get_child_profile_by_mac(mac_address):
     """Get child profile by MAC (LiveKit endpoint - no login required)"""
