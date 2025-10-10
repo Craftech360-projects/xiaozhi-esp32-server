@@ -100,12 +100,33 @@ public class DeviceController {
     }
 
     @PostMapping("/unbind")
-    @Operation(summary = "解绑设备")
+    @Operation(summary = "Unbind device - Regular users can unbind their own devices, Super admins can unbind any device")
     @RequiresPermissions("sys:role:normal")
     public Result<Void> unbindDevice(@RequestBody DeviceUnBindDTO unDeviveBind) {
         UserDetail user = SecurityUser.getUser();
+
+        // Validate device ID
+        if (StringUtils.isBlank(unDeviveBind.getDeviceId())) {
+            return new Result<Void>().error("Device ID cannot be empty");
+        }
+
+        // Pre-check device existence for better error messages
+        DeviceEntity device = deviceService.selectById(unDeviveBind.getDeviceId());
+        if (device == null) {
+            return new Result<Void>().error("Device not found");
+        }
+
+        boolean isSuperAdmin = (user.getSuperAdmin() != null && user.getSuperAdmin() == 1);
+
+        // Check ownership if not super admin
+        if (!isSuperAdmin && !device.getUserId().equals(user.getId())) {
+            return new Result<Void>().error("You don't have permission to unbind this device");
+        }
+
+        // Perform the unbind operation
         deviceService.unbindDevice(user.getId(), unDeviveBind.getDeviceId());
-        return new Result<Void>();
+
+        return new Result<Void>().ok(null);
     }
 
     @PutMapping("/update/{id}")
