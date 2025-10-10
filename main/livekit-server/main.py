@@ -668,6 +668,6 @@ if __name__ == "__main__":
         entrypoint_fnc=entrypoint,
         prewarm_fnc=prewarm,
         num_idle_processes=2,  # Disable process pooling to avoid initialization issues
-        initialize_process_timeout=30.0,  # Increase timeout to 30 seconds
+        initialize_process_timeout=120.0,  # Increase timeout to 120 seconds for heavy model loading
         job_memory_warn_mb=2000,
     ))
