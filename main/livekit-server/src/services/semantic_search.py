@@ -72,8 +72,9 @@ class QdrantSemanticSearch:
             return False
 
         # Check if Qdrant configuration is provided
-        if not self.config["qdrant_url"] or not self.config["qdrant_api_key"]:
-            logger.warning("Qdrant configuration missing, semantic search will be limited")
+        # API key is optional for local Qdrant instances
+        if not self.config["qdrant_url"]:
+            logger.warning("Qdrant URL not configured, semantic search will be disabled")
             return False
 
         try:
@@ -88,11 +89,15 @@ class QdrantSemanticSearch:
 
             # Use preloaded client if available, otherwise create it
             if self.client is None:
-                self.client = QdrantClient(
-                    url=self.config["qdrant_url"],
-                    api_key=self.config["qdrant_api_key"],
-                    timeout=10  # Add timeout for faster failure detection
-                )
+                # API key is optional for local Qdrant instances
+                client_params = {
+                    "url": self.config["qdrant_url"],
+                    "timeout": 10  # Add timeout for faster failure detection
+                }
+                if self.config["qdrant_api_key"]:
+                    client_params["api_key"] = self.config["qdrant_api_key"]
+
+                self.client = QdrantClient(**client_params)
             else:
                 logger.info("✅ Using preloaded Qdrant client from prewarm")
 
