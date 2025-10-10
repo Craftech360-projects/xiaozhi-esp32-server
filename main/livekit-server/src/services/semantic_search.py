@@ -59,11 +59,27 @@ class QdrantSemanticSearch:
             "stories_collection": "xiaozhi_stories",
             "embedding_model": "all-MiniLM-L6-v2",
             "search_limit": 10,
-            "min_score_threshold": 0.5
+            "min_score_threshold": 0.5,
+            "allowed_music_languages": self._parse_allowed_languages()
         }
 
         if not QDRANT_AVAILABLE:
             logger.warning("Qdrant dependencies not available, semantic search will be limited")
+
+    def _parse_allowed_languages(self) -> List[str]:
+        """Parse allowed music languages from environment variable
+
+        Returns:
+            List of allowed language names, or empty list to allow all languages
+        """
+        allowed = os.getenv("ALLOWED_MUSIC_LANGUAGES", "")
+        if allowed:
+            languages = [lang.strip() for lang in allowed.split(",") if lang.strip()]
+            logger.info(f"🎵 Music search restricted to languages: {', '.join(languages)}")
+            return languages
+        else:
+            logger.info("🎵 Music search enabled for ALL languages (no restrictions)")
+            return []
 
     async def initialize(self) -> bool:
         """Initialize Qdrant client and embedding model with fallback support"""
@@ -273,6 +289,11 @@ class QdrantSemanticSearch:
                                 romanized=payload.get('romanized', '')
                             ))
                         
+                        # Filter by allowed languages if configured
+                        if self.config["allowed_music_languages"]:
+                            results = [r for r in results if r.language_or_category in self.config["allowed_music_languages"]]
+                            logger.info(f"🔒 Filtered to allowed languages: {len(results)} results remain")
+
                         # If we have good vector results, return them
                         if results:
                             results.sort(key=lambda x: x.score, reverse=True)
@@ -332,11 +353,19 @@ class QdrantSemanticSearch:
                                 romanized=payload.get('romanized', '')
                             ))
 
+                    # Filter by allowed languages if configured
+                    if self.config["allowed_music_languages"]:
+                        results = [r for r in results if r.language_or_category in self.config["allowed_music_languages"]]
+                        logger.info(f"🔒 Filtered to allowed languages: {len(results)} results remain")
+
                     # Sort by score and return top results
                     results.sort(key=lambda x: x.score, reverse=True)
                     final_results = results[:limit]
-                    
-                    logger.info(f"✅ Enhanced text search found {len(final_results)} results for '{query}' across all languages")
+
+                    if self.config["allowed_music_languages"]:
+                        logger.info(f"✅ Enhanced text search found {len(final_results)} results for '{query}' in allowed languages: {', '.join(self.config['allowed_music_languages'])}")
+                    else:
+                        logger.info(f"✅ Enhanced text search found {len(final_results)} results for '{query}' across all languages")
                     return final_results
                     
                 except Exception as e:
@@ -559,8 +588,15 @@ class QdrantSemanticSearch:
                 import random
                 # Filter by language if specified
                 valid_points = scroll_result[0]
+
+                # First apply allowed languages filter if configured
+                if self.config["allowed_music_languages"]:
+                    valid_points = [p for p in valid_points if p.payload.get('language') in self.config["allowed_music_languages"]]
+                    logger.info(f"🔒 Random music restricted to allowed languages: {', '.join(self.config['allowed_music_languages'])}")
+
+                # Then apply specific language filter if requested
                 if language_filter:
-                    valid_points = [p for p in scroll_result[0] if p.payload.get('language') == language_filter]
+                    valid_points = [p for p in valid_points if p.payload.get('language') == language_filter]
 
                 if valid_points:
                     random_point = random.choice(valid_points)
