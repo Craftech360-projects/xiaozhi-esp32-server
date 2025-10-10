@@ -11,3 +11,5 @@ KMS
 .pytest_cache
 .ruff_cache
 venv
+# Local media files (music and stories)
+local_media/
