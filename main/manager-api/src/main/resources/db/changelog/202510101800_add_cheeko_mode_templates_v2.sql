@@ -1,5 +1,6 @@
--- Add Cheeko Mode Templates (Story, Music, Tutor, Chat) - Final Version
+-- Add Cheeko Mode Templates (Story, Music, Tutor, Chat) - Version 2
 -- These templates allow users to switch Cheeko's personality dynamically
+-- This version copies all configuration from the base Cheeko template
 
 -- First, delete any existing mode templates to avoid duplicates
 DELETE FROM ai_agent_template WHERE agent_name IN ('Story', 'Music', 'Tutor', 'Chat');
@@ -16,12 +17,12 @@ SELECT
     asr_model_id,
     vad_model_id,
     llm_model_id,
-    'VLLM_ChatGLMVLLM',
+    vllm_model_id,
     tts_model_id,
     tts_voice_id,
-    'Memory_nomem',
+    mem_model_id,
     intent_model_id,
-    1,
+    chat_history_conf,
     '<identity>
 {% if child_name %}
 🎯 *Child Profile:*
@@ -76,14 +77,14 @@ When a child requests a story:
 - If they return, recall them naturally ("Hey! Sparkle the Turtle''s back!").
 - Track which story themes excite the child most.
 </memory>',
-    NULL,
-    'en',
-    'English',
+    summary_memory,
+    lang_code,
+    language,
     1,
     1,
-    NULL,
+    creator,
     NOW(),
-    NULL,
+    updater,
     NOW()
 FROM ai_agent_template
 WHERE id = '9406648b5cc5fde1b8aa335b6f8b4f76'
@@ -101,12 +102,12 @@ SELECT
     asr_model_id,
     vad_model_id,
     llm_model_id,
-    'VLLM_ChatGLMVLLM',
+    vllm_model_id,
     tts_model_id,
     tts_voice_id,
-    'Memory_nomem',
+    mem_model_id,
     intent_model_id,
-    1,
+    chat_history_conf,
     '<identity>
 
 {% if child_name %}
@@ -118,7 +119,7 @@ SELECT
 {% if child_interests %}- *Interests:* {{ child_interests }}{% endif %}
 
 *Important:* Always address this child by their name ({{ child_name }}) and personalize your responses based on their age ({{ child_age }}) and interests ({{ child_interests }}). For age group {{ age_group }}, use age-appropriate vocabulary and concepts.
-{% endif %}    
+{% endif %}
 
 You are Cheeko, the tiny rockstar who turns every rhyme into a concert.
 You make music feel like playtime—energetic, silly, and joyful.
@@ -161,14 +162,14 @@ When a child asks for a rhyme or song:
 - Next time, surprise them with callbacks ("Want your dinosaur jam again?").
 - Track mood and tempo preferences for better suggestions.
 </memory>',
-    NULL,
-    'en',
-    'English',
+    summary_memory,
+    lang_code,
+    language,
     2,
     1,
-    NULL,
+    creator,
     NOW(),
-    NULL,
+    updater,
     NOW()
 FROM ai_agent_template
 WHERE id = '9406648b5cc5fde1b8aa335b6f8b4f76'
@@ -186,12 +187,12 @@ SELECT
     asr_model_id,
     vad_model_id,
     llm_model_id,
-    'VLLM_ChatGLMVLLM',
+    vllm_model_id,
     tts_model_id,
     tts_voice_id,
-    'Memory_nomem',
+    mem_model_id,
     intent_model_id,
-    1,
+    chat_history_conf,
     '<identity>
 {% if child_name %}
 🎯 *Child Profile:*
@@ -244,14 +245,14 @@ When a child asks a learning question:
 - Track weak spots ("struggled with spelling") and favorites ("loves space").
 - Recall progress next session to build confidence.
 </memory>',
-    NULL,
-    'en',
-    'English',
+    summary_memory,
+    lang_code,
+    language,
     3,
     1,
-    NULL,
+    creator,
     NOW(),
-    NULL,
+    updater,
     NOW()
 FROM ai_agent_template
 WHERE id = '9406648b5cc5fde1b8aa335b6f8b4f76'
@@ -269,12 +270,12 @@ SELECT
     asr_model_id,
     vad_model_id,
     llm_model_id,
-    'VLLM_ChatGLMVLLM',
+    vllm_model_id,
     tts_model_id,
     tts_voice_id,
-    'Memory_nomem',
+    mem_model_id,
     intent_model_id,
-    1,
+    chat_history_conf,
     '<identity>
 {% if child_name %}
 🎯 *Child Profile:*
@@ -327,14 +328,14 @@ If the child suddenly asks for a story or song:
 - Bring them back later to create a sense of friendship.
 - Track moods to make interactions more caring.
 </memory>',
-    NULL,
-    'en',
-    'English',
+    summary_memory,
+    lang_code,
+    language,
     4,
     1,
-    NULL,
+    creator,
     NOW(),
-    NULL,
+    updater,
     NOW()
 FROM ai_agent_template
 WHERE id = '9406648b5cc5fde1b8aa335b6f8b4f76'

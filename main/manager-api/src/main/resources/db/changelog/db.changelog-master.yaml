@@ -437,6 +437,14 @@ databaseChangeLog:
             encoding: utf8
             path: classpath:db/changelog/202510031530_add_mqtt_config.sql
   - changeSet:
+      id: 202509261500_final_cheeko_fix
+      author: claude
+      validCheckSum: ANY
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202509261500_final_cheeko_fix.sql
+  - changeSet:
       id: 202510091545
       author: claude
       validCheckSum: ANY
@@ -455,6 +463,7 @@ databaseChangeLog:
   - changeSet:
       id: 202510091700
       author: claude
+      validCheckSum: ANY
       changes:
         - sqlFile:
             encoding: utf8
@@ -473,4 +482,12 @@ databaseChangeLog:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202510091431_add_kid_id_to_device.sql
+  - changeSet:
+      id: 202510101800
+      author: claude
+      validCheckSum: ANY
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202510101800_add_cheeko_mode_templates_v2.sql
 
