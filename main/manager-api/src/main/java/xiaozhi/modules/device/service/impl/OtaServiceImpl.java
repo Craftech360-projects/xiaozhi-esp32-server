@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
@@ -81,5 +82,51 @@ public class OtaServiceImpl extends BaseServiceImpl<OtaDao, OtaEntity> implement
                 .orderByDesc("update_date")
                 .last("LIMIT 1");
         return baseDao.selectOne(wrapper);
+    }
+
+    @Override
+    public OtaEntity getForceUpdateFirmware(String type) {
+        QueryWrapper<OtaEntity> wrapper = new QueryWrapper<>();
+        wrapper.eq("type", type)
+                .eq("force_update", 1)
+                .last("LIMIT 1");
+        return baseDao.selectOne(wrapper);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void setForceUpdate(String id, String type, Integer forceUpdate) {
+        if (forceUpdate == null || (forceUpdate != 0 && forceUpdate != 1)) {
+            throw new RuntimeException("force_update值必须为0或1");
+        }
+
+        // If enabling force update, first disable it for all other firmwares of the same type
+        if (forceUpdate == 1) {
+            QueryWrapper<OtaEntity> wrapper = new QueryWrapper<>();
+            wrapper.eq("type", type)
+                    .eq("force_update", 1)
+                    .ne("id", id);
+
+            List<OtaEntity> existingForceUpdates = baseDao.selectList(wrapper);
+            if (!existingForceUpdates.isEmpty()) {
+                // Disable force update for other firmwares
+                for (OtaEntity otaEntity : existingForceUpdates) {
+                    otaEntity.setForceUpdate(0);
+                    baseDao.updateById(otaEntity);
+                }
+            }
+        }
+
+        // Update the target firmware
+        OtaEntity entity = baseDao.selectById(id);
+        if (entity == null) {
+            throw new RuntimeException("固件不存在");
+        }
+        if (!entity.getType().equals(type)) {
+            throw new RuntimeException("固件类型不匹配");
+        }
+        entity.setForceUpdate(forceUpdate);
+        entity.setUpdateDate(new Date());
+        baseDao.updateById(entity);
     }
 }

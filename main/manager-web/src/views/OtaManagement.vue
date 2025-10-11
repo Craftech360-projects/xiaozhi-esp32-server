@@ -70,6 +70,24 @@
                                 </template>
                             </el-table-column>
                             <el-table-column label="Version" prop="version" align="center"></el-table-column>
+                            <el-table-column label="Force Update" prop="forceUpdate" align="center" width="140">
+                                <template slot-scope="scope">
+                                    <el-tooltip :content="getForceUpdateTooltip(scope.row)" placement="top">
+                                        <el-switch
+                                            v-model="scope.row.forceUpdate"
+                                            :active-value="1"
+                                            :inactive-value="0"
+                                            active-color="#13ce66"
+                                            inactive-color="#dcdfe6"
+                                            @change="handleForceUpdateToggle(scope.row)"
+                                            :disabled="isSwitchDisabled(scope.row)">
+                                        </el-switch>
+                                    </el-tooltip>
+                                    <span v-if="scope.row.forceUpdate === 1" style="color: #13ce66; font-size: 12px; margin-left: 5px;">
+                                        ✓ Active
+                                    </span>
+                                </template>
+                            </el-table-column>
                             <el-table-column label="File Size" prop="size" align="center">
                                 <template slot-scope="scope">
                                     {{ formatFileSize(scope.row.size) }}
@@ -172,7 +190,8 @@ export default {
                 version: "",
                 size: 0,
                 remark: "",
-                firmwarePath: ""
+                firmwarePath: "",
+                forceUpdate: 0
             },
             firmwareTypes: [],
             connectedDevices: {
@@ -264,7 +283,8 @@ export default {
                 version: "",
                 size: 0,
                 remark: "",
-                firmwarePath: ""
+                firmwarePath: "",
+                forceUpdate: 0
             };
             this.$nextTick(() => {
                 // Reset form validation state
@@ -456,7 +476,7 @@ export default {
                     if (data.code === 0 && data.data) {
                         const devices = data.data;
                         this.connectedDevices.total = devices.length;
-                        
+
                         // Count devices active today
                         const today = new Date();
                         today.setHours(0, 0, 0, 0);
@@ -464,7 +484,7 @@ export default {
                             const lastConnected = new Date(device.lastConnectedAt);
                             return lastConnected >= today;
                         }).length;
-                        
+
                         // Calculate version distribution
                         const versionMap = {};
                         devices.forEach(device => {
@@ -476,6 +496,64 @@ export default {
                 });
             }
         },
+        handleForceUpdateToggle(row) {
+            const action = row.forceUpdate === 1 ? 'enable' : 'disable';
+            const message = row.forceUpdate === 1
+                ? `Are you sure you want to FORCE all devices of type "${this.getFirmwareTypeName(row.type)}" to update/downgrade to version ${row.version}? This will affect ALL devices regardless of their current version.`
+                : `Are you sure you want to disable force update for version ${row.version}?`;
+
+            this.$confirm(message, 'Warning', {
+                confirmButtonText: 'Confirm',
+                cancelButtonText: 'Cancel',
+                type: 'warning',
+                distinguishCancelAndClose: true
+            }).then(() => {
+                Api.ota.setForceUpdate(row.id, {
+                    forceUpdate: row.forceUpdate,
+                    type: row.type
+                }, (res) => {
+                    res = res.data;
+                    if (res.code === 0) {
+                        this.$message.success({
+                            message: action === 'enable' ? 'Force update enabled successfully' : 'Force update disabled successfully',
+                            showClose: true
+                        });
+                        this.fetchFirmwareList(); // Refresh to show updated state
+                    } else {
+                        this.$message.error({
+                            message: res.msg || 'Operation failed',
+                            showClose: true
+                        });
+                        // Revert the switch
+                        row.forceUpdate = row.forceUpdate === 1 ? 0 : 1;
+                    }
+                });
+            }).catch(() => {
+                // User cancelled, revert the switch
+                row.forceUpdate = row.forceUpdate === 1 ? 0 : 1;
+            });
+        },
+        isSwitchDisabled(row) {
+            // Disable if another firmware of the same type already has force update enabled
+            if (row.forceUpdate === 1) {
+                return false; // Allow disabling current force update
+            }
+            // Check if there's already a force update for this type
+            return this.paramsList.some(item =>
+                item.type === row.type &&
+                item.id !== row.id &&
+                item.forceUpdate === 1
+            );
+        },
+        getForceUpdateTooltip(row) {
+            if (row.forceUpdate === 1) {
+                return 'Force update is ACTIVE. All devices will update to this version.';
+            }
+            if (this.isSwitchDisabled(row)) {
+                return 'Another version already has force update enabled for this type.';
+            }
+            return 'Enable to force all devices to this version (including downgrades)';
+        }
     },
 };
 </script>

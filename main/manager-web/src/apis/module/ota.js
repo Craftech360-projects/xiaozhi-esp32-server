@@ -119,5 +119,22 @@ export default {
                     this.getDownloadUrl(id, callback);
                 });
             }).send();
+    },
+    // 设置固件强制更新
+    setForceUpdate(id, data, callback) {
+        RequestService.sendRequest()
+            .url(`${getServiceUrl()}/otaMag/forceUpdate/${id}`)
+            .method('PUT')
+            .data(data)
+            .success((res) => {
+                RequestService.clearRequestTime();
+                callback(res);
+            })
+            .networkFail((err) => {
+                console.error('设置强制更新失败:', err);
+                RequestService.reAjaxFun(() => {
+                    this.setForceUpdate(id, data, callback);
+                });
+            }).send();
     }
 }

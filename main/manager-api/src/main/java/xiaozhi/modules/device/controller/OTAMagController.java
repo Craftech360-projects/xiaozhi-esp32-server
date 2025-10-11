@@ -126,6 +126,27 @@ public class OTAMagController {
         }
     }
 
+    @PutMapping("/forceUpdate/{id}")
+    @Operation(summary = "设置固件强制更新")
+    @RequiresPermissions("sys:role:superAdmin")
+    public Result<Void> setForceUpdate(
+            @PathVariable("id") String id,
+            @RequestBody Map<String, Object> params) {
+        if (params == null || !params.containsKey("forceUpdate") || !params.containsKey("type")) {
+            return new Result<Void>().error("参数不完整");
+        }
+
+        Integer forceUpdate = (Integer) params.get("forceUpdate");
+        String type = (String) params.get("type");
+
+        try {
+            otaService.setForceUpdate(id, type, forceUpdate);
+            return new Result<Void>();
+        } catch (RuntimeException e) {
+            return new Result<Void>().error(e.getMessage());
+        }
+    }
+
     @GetMapping("/getDownloadUrl/{id}")
     @Operation(summary = "获取 OTA 固件下载链接")
     @RequiresPermissions("sys:role:superAdmin")

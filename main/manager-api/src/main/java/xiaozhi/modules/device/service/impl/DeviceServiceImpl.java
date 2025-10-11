@@ -517,23 +517,65 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
             currentVersion = "0.0.0";
         }
 
-        OtaEntity ota = otaService.getLatestOta(type);
+        // STEP 1: Check if there's a force update firmware for this type
+        // Force update takes PRIORITY over normal update logic
+        OtaEntity forceUpdateOta = otaService.getForceUpdateFirmware(type);
         DeviceReportRespDTO.Firmware firmware = new DeviceReportRespDTO.Firmware();
         String downloadUrl = null;
 
-        if (ota != null) {
-            // 如果设备没有版本信息，或者OTA版本比设备版本新，则返回下载地址
-            if (compareVersions(ota.getVersion(), currentVersion) > 0) {
+        if (forceUpdateOta != null) {
+            // Force update mode: ALWAYS return the forced version
+            // This completely bypasses normal version comparison logic
+            log.info("🔒 Force update ACTIVE for type: {}, forced version: {}, device current: {}",
+                type, forceUpdateOta.getVersion(), currentVersion);
+
+            // Only provide download URL if device version is different from forced version
+            // If same version, device already has it, no download needed
+            if (!forceUpdateOta.getVersion().equals(currentVersion)) {
                 String otaUrl = sysParamsService.getValue(Constant.SERVER_OTA, true);
                 if (StringUtils.isBlank(otaUrl) || otaUrl.equals("null")) {
                     log.error("OTA地址未配置，请登录智控台，在参数管理找到【server.ota】配置");
-                    // 尝试从请求中获取
                     HttpServletRequest request = ((ServletRequestAttributes) RequestContextHolder
                             .getRequestAttributes())
                             .getRequest();
                     otaUrl = request.getRequestURL().toString();
                 }
-                // 将URL中的/ota/替换为/otaMag/download/
+                String uuid = UUID.randomUUID().toString();
+                redisUtils.set(RedisKeys.getOtaIdKey(uuid), forceUpdateOta.getId());
+                downloadUrl = otaUrl.replace("/ota/", "/otaMag/download/") + uuid;
+
+                log.info("📥 Force update download URL generated - Device will {} to version {}",
+                    compareVersions(forceUpdateOta.getVersion(), currentVersion) > 0 ? "UPGRADE" : "DOWNGRADE",
+                    forceUpdateOta.getVersion());
+            } else {
+                log.info("✅ Device already on forced version {}, no download needed", currentVersion);
+            }
+
+            // ALWAYS return the forced version, regardless of comparison
+            firmware.setVersion(forceUpdateOta.getVersion());
+            firmware.setUrl(downloadUrl == null ? Constant.INVALID_FIRMWARE_URL : downloadUrl);
+
+            log.info("📦 FORCE OTA Response - Type: {}, Current: {}, Target: {}, URL: {}",
+                type, currentVersion, firmware.getVersion(), firmware.getUrl());
+
+            return firmware;
+        }
+
+        // STEP 2: Normal mode - get latest firmware and compare versions
+        // This only runs if NO force update is set
+        OtaEntity ota = otaService.getLatestOta(type);
+
+        if (ota != null) {
+            // If device has no version info, or OTA version is newer, return download URL
+            if (compareVersions(ota.getVersion(), currentVersion) > 0) {
+                String otaUrl = sysParamsService.getValue(Constant.SERVER_OTA, true);
+                if (StringUtils.isBlank(otaUrl) || otaUrl.equals("null")) {
+                    log.error("OTA地址未配置，请登录智控台，在参数管理找到【server.ota】配置");
+                    HttpServletRequest request = ((ServletRequestAttributes) RequestContextHolder
+                            .getRequestAttributes())
+                            .getRequest();
+                    otaUrl = request.getRequestURL().toString();
+                }
                 String uuid = UUID.randomUUID().toString();
                 redisUtils.set(RedisKeys.getOtaIdKey(uuid), ota.getId());
                 downloadUrl = otaUrl.replace("/ota/", "/otaMag/download/") + uuid;
@@ -543,7 +585,7 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         firmware.setVersion(ota == null ? currentVersion : ota.getVersion());
         firmware.setUrl(downloadUrl == null ? Constant.INVALID_FIRMWARE_URL : downloadUrl);
 
-        log.info("📦 OTA Firmware Message - Type: {}, Current Version: {}, Latest Version: {}, URL: {}",
+        log.info("📦 Normal OTA Response - Type: {}, Current: {}, Latest: {}, URL: {}",
             type, currentVersion, firmware.getVersion(), firmware.getUrl());
 
         return firmware;
