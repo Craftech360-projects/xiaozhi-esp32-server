@@ -4,8 +4,8 @@ from datetime import datetime
 import shutil
 
 # === CONFIGURATION ===
-new_ip = "192.168.1.7"
-old_ip = "192.168.1.168"
+new_ip = "192.168.1.147"
+old_ip = "192.168.1.78"
 
 # List of files you want to modify
 file_paths = [
@@ -13,7 +13,6 @@ file_paths = [
     r"C:\Users\Acer\Cheeko-esp32-server\main\livekit-server\.env",
     r"C:\Users\Acer\Cheeko-esp32-server\main\mqtt-gateway\.env",
 ]
- 
 
 
 def replace_in_file(path: Path, old_ip: str, new_ip: str):
@@ -39,11 +38,14 @@ def replace_in_file(path: Path, old_ip: str, new_ip: str):
     new_text = pattern.sub(new_ip, text)
     path.write_text(new_text, encoding="utf-8")
 
-    print(f"✅ Replaced {len(matches)} occurrence(s) in {path} (backup: {backup_path})")
+    print(
+        f"✅ Replaced {len(matches)} occurrence(s) in {path} (backup: {backup_path})")
+
 
 def main():
     for f in file_paths:
         replace_in_file(Path(f), old_ip, new_ip)
+
 
 if __name__ == "__main__":
     main()

@@ -139,7 +139,7 @@ services:
     environment:
       - MQTT_PORT=1883
       - UDP_PORT=8884
-      - PUBLIC_IP=192.168.1.78
+      - PUBLIC_IP=192.168.1.147
     volumes:
       - ./main/mqtt-gateway/logs:/app/logs
       - ./main/mqtt-gateway/config:/app/config
