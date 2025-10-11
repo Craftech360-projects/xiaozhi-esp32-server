@@ -2,6 +2,9 @@ from dotenv import load_dotenv
 import os
 import yaml
 from pathlib import Path
+import logging
+
+logger = logging.getLogger("config_loader")
 
 class ConfigLoader:
     """Configuration loader for the agent system"""
@@ -28,15 +31,24 @@ class ConfigLoader:
         }
 
     @staticmethod
-    def get_tts_config():
-        """Get TTS configuration from environment variables"""
-        return {
+    def get_tts_config(api_config=None):
+        """
+        Get TTS configuration, with API config taking precedence over .env
+
+        Args:
+            api_config: TTS config from API (if available)
+
+        Returns:
+            Dict with TTS configuration
+        """
+        # Start with .env defaults
+        config = {
             'provider': os.getenv('TTS_PROVIDER', 'edge'),  # groq, elevenlabs, or edge
             'model': os.getenv('TTS_MODEL', 'playai-tts'),
             'voice': os.getenv('TTS_VOICE', 'Aaliyah-PlayAI'),
             # ElevenLabs configuration
             'elevenlabs_voice_id': os.getenv('ELEVENLABS_VOICE_ID', ''),
-            'elevenlabs_model': os.getenv('ELEVENLABS_MODEL', 'eleven_turbo_v2_5'),
+            'elevenlabs_model': os.getenv('ELEVENLABS_MODEL_ID', 'eleven_turbo_v2_5'),
             # EdgeTTS configuration
             'edge_voice': os.getenv('EDGE_TTS_VOICE', 'en-US-AnaNeural'),
             'edge_rate': os.getenv('EDGE_TTS_RATE', '+0%'),
@@ -47,6 +59,42 @@ class ConfigLoader:
             # Fallback configuration
             'fallback_enabled': os.getenv('TTS_FALLBACK_ENABLED', 'false').lower() == 'true',
         }
+
+        # Override with API config if provided
+        if api_config:
+            logger.info(f"🔄 Overriding TTS config with API settings: {api_config}")
+
+            if 'provider' in api_config:
+                config['provider'] = api_config['provider']
+                logger.info(f"✅ TTS Provider from API: {api_config['provider']}")
+
+            if api_config.get('provider') == 'elevenlabs':
+                if 'voice_id' in api_config:
+                    config['elevenlabs_voice_id'] = api_config['voice_id']
+                if 'model' in api_config:
+                    config['elevenlabs_model'] = api_config['model']
+                logger.info(f"✅ ElevenLabs Voice ID: {config['elevenlabs_voice_id']}")
+
+            elif api_config.get('provider') == 'edge':
+                if 'voice' in api_config:
+                    config['edge_voice'] = api_config['voice']
+                if 'rate' in api_config:
+                    config['edge_rate'] = api_config['rate']
+                if 'volume' in api_config:
+                    config['edge_volume'] = api_config['volume']
+                if 'pitch' in api_config:
+                    config['edge_pitch'] = api_config['pitch']
+                logger.info(f"✅ Edge TTS Voice: {config['edge_voice']}")
+
+            elif api_config.get('provider') == 'groq':
+                if 'model' in api_config:
+                    config['model'] = api_config['model']
+                if 'voice' in api_config:
+                    config['voice'] = api_config['voice']
+        else:
+            logger.info(f"📝 Using TTS config from .env: Provider={config['provider']}")
+
+        return config
 
     @staticmethod
     def get_livekit_config():

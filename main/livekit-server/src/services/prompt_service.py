@@ -260,3 +260,179 @@ class PromptService:
         """Clear prompt cache"""
         self.prompt_cache.clear()
         logger.info("Prompt cache cleared")
+
+    async def fetch_model_config_from_api(self, mac_address: str, room_name: str) -> Optional[dict]:
+        """
+        Fetch model configuration from Manager API
+
+        Args:
+            mac_address: Device MAC address
+            room_name: LiveKit room name (used as clientId)
+
+        Returns:
+            Dict containing model configurations (TTS, STT, LLM, etc.)
+        """
+        try:
+            config = self.load_config()
+            manager_api = config.get('manager_api', {})
+
+            if not manager_api:
+                logger.error("Manager API configuration not found")
+                return None
+
+            base_url = manager_api.get('url', '')
+            secret = manager_api.get('secret', '')
+            timeout = manager_api.get('timeout', 5)
+
+            if not base_url or not secret:
+                logger.error("Manager API URL or secret not configured")
+                return None
+
+            # API endpoint to get agent models
+            url = f"{base_url}/config/agent-models"
+
+            headers = {
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {secret}'
+            }
+
+            # Request payload with MAC address, clientId, and empty selectedModule
+            payload = {
+                'macAddress': mac_address.lower(),
+                'clientId': room_name,  # Use room name as client ID
+                'selectedModule': {}  # Empty to get all models
+            }
+
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
+                async with session.post(url, json=payload, headers=headers) as response:
+                    if response.status == 200:
+                        data = await response.json()
+
+                        if data.get('code') == 0 and 'data' in data:
+                            model_config = data['data']
+                            logger.info(f"✅ Successfully fetched model config from API for MAC: {mac_address}")
+                            return model_config
+                        else:
+                            logger.warning(f"API returned error: {data}")
+                            return None
+                    else:
+                        error_text = await response.text()
+                        logger.warning(f"Model config API failed: {response.status} - {error_text}")
+                        return None
+
+        except Exception as e:
+            logger.error(f"Error fetching model config for MAC {mac_address}: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
+            return None
+
+    def extract_tts_config(self, model_config: dict) -> Optional[dict]:
+        """
+        Extract TTS configuration from model config API response
+
+        Args:
+            model_config: Full model configuration from API
+
+        Returns:
+            Dict with TTS provider and settings
+        """
+        try:
+            if not model_config or 'TTS' not in model_config:
+                logger.warning("No TTS configuration in model config")
+                return None
+
+            tts_models = model_config.get('TTS', {})
+            selected_module = model_config.get('selected_module', {})
+            selected_tts_id = selected_module.get('TTS')
+
+            if not selected_tts_id or selected_tts_id not in tts_models:
+                logger.warning(f"Selected TTS model '{selected_tts_id}' not found in TTS models")
+                return None
+
+            tts_config = tts_models[selected_tts_id]
+            tts_type = tts_config.get('type', '')
+
+            logger.info(f"🎤 TTS Config from DB - Type: {tts_type}, Config: {tts_config}")
+
+            result = {'type': tts_type, 'model_id': selected_tts_id}
+
+            # Map database TTS types to provider names
+            if tts_type == 'edge_tts':
+                result['provider'] = 'edge'
+                result['voice'] = tts_config.get('voice', 'en-US-AnaNeural')
+                result['rate'] = tts_config.get('rate', '+0%')
+                result['volume'] = tts_config.get('volume', '+0%')
+                result['pitch'] = tts_config.get('pitch', '+0Hz')
+
+            elif tts_type == 'elevenlabs':
+                result['provider'] = 'elevenlabs'
+                result['voice_id'] = tts_config.get('voice_id', '')
+                result['model'] = tts_config.get('model', 'eleven_turbo_v2_5')
+
+            elif tts_type == 'openai_tts':
+                result['provider'] = 'openai'
+                result['voice'] = tts_config.get('voice', 'alloy')
+                result['model'] = tts_config.get('model', 'tts-1')
+
+            elif tts_type == 'groq_tts':
+                result['provider'] = 'groq'
+                result['model'] = tts_config.get('model', 'playai-tts')
+                result['voice'] = tts_config.get('voice', 'Aaliyah-PlayAI')
+
+            else:
+                logger.warning(f"Unknown TTS type: {tts_type}")
+                return None
+
+            logger.info(f"✅ Extracted TTS - Provider: {result['provider']}")
+            return result
+
+        except Exception as e:
+            logger.error(f"Error extracting TTS config: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
+            return None
+
+    async def get_prompt_and_config(self, room_name: str, mac_address: str) -> tuple:
+        """
+        Get both prompt and model configuration in one call
+
+        Args:
+            room_name: LiveKit room name
+            mac_address: Device MAC address
+
+        Returns:
+            Tuple of (prompt_string, tts_config_dict)
+        """
+        import time
+
+        if not self.should_read_from_api():
+            return self.get_default_prompt(), None
+
+        # Check cache first
+        cache_key = mac_address
+        if cache_key in self.prompt_cache:
+            cached = self.prompt_cache[cache_key]
+            if (time.time() - cached['timestamp']) < self.cache_timeout:
+                logger.info(f"📦 Using cached config for MAC: {mac_address}")
+                return cached.get('prompt'), cached.get('tts_config')
+
+        # Fetch prompt
+        prompt = await self.fetch_prompt_from_api(mac_address)
+        if not prompt:
+            prompt = self.get_default_prompt()
+
+        # Fetch model config (including TTS)
+        model_config = await self.fetch_model_config_from_api(mac_address, room_name)
+        tts_config = None
+
+        if model_config:
+            tts_config = self.extract_tts_config(model_config)
+
+        # Cache both
+        self.prompt_cache[cache_key] = {
+            'prompt': prompt,
+            'tts_config': tts_config,
+            'timestamp': time.time()
+        }
+
+        return prompt, tts_config

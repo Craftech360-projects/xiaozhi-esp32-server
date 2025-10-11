@@ -413,6 +413,9 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
             return true;
         }
         ModelConfigEntity llmModelData = modelConfigService.selectById(llmModelId);
+        if (llmModelData == null || llmModelData.getConfigJson() == null) {
+            return true;
+        }
         String type = llmModelData.getConfigJson().get("type").toString();
         // 如果查询大语言模型是openai或者ollama，意图识别选参数都可以
         if ("openai".equals(type) || "ollama".equals(type)) {
