@@ -490,4 +490,11 @@ databaseChangeLog:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202510101800_add_cheeko_mode_templates_v2.sql
+  - changeSet:
+      id: 202510111800
+      author: claude
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202510111800_add_arabic_template.sql
 
