@@ -11,6 +11,7 @@ from .edge_tts_provider import EdgeTTS
 from .local_whisper_stt import LocalWhisperSTT
 from .coqui_tts_provider import CoquiTTS
 
+
 class ProviderFactory:
     """Factory class for creating AI service providers"""
 
@@ -27,21 +28,25 @@ class ProviderFactory:
             if provider == 'ollama':
                 providers.append(openai.LLM.with_ollama(
                     model=config.get('llm_model', 'llama3.1:8b'),
-                    base_url=config.get('ollama_url', 'http://localhost:11434') + '/v1',
+                    base_url=config.get(
+                        'ollama_url', 'http://localhost:11434') + '/v1',
                     temperature=config.get('llm_temperature', 0.7),
                 ))
             else:
                 providers.append(groq.LLM(model=config['llm_model']))
 
             # Add fallback
-            fallback_provider = config.get('fallback_llm_provider', provider).lower()
+            fallback_provider = config.get(
+                'fallback_llm_provider', provider).lower()
             if fallback_provider == 'ollama':
                 providers.append(openai.LLM.with_ollama(
                     model=config.get('fallback_llm_model', 'llama3.1:8b'),
-                    base_url=config.get('ollama_url', 'http://localhost:11434') + '/v1',
+                    base_url=config.get(
+                        'ollama_url', 'http://localhost:11434') + '/v1',
                 ))
             else:
-                providers.append(groq.LLM(model=config.get('fallback_llm_model', 'llama-3.1-8b-instant')))
+                providers.append(groq.LLM(model=config.get(
+                    'fallback_llm_model', 'llama-3.1-8b-instant')))
 
             return llm.FallbackAdapter(providers)
         else:
@@ -49,7 +54,8 @@ class ProviderFactory:
             if provider == 'ollama':
                 return openai.LLM.with_ollama(
                     model=config.get('llm_model', 'llama3.1:8b'),
-                    base_url=config.get('ollama_url', 'http://localhost:11434') + '/v1',
+                    base_url=config.get(
+                        'ollama_url', 'http://localhost:11434') + '/v1',
                     temperature=config.get('llm_temperature', 0.7),
                 )
             else:
@@ -93,7 +99,8 @@ class ProviderFactory:
                 ))
 
             # Add fallback
-            fallback_provider = config.get('fallback_stt_provider', 'groq').lower()
+            fallback_provider = config.get(
+                'fallback_stt_provider', 'groq').lower()
             if fallback_provider == 'local_whisper':
                 providers.append(stt.StreamAdapter(
                     stt=LocalWhisperSTT(
@@ -120,7 +127,8 @@ class ProviderFactory:
                     stt=LocalWhisperSTT(
                         model_size=config.get('whisper_model', 'base'),
                         device=config.get('whisper_device', 'cpu'),
-                        compute_type=config.get('whisper_compute_type', 'int8'),
+                        compute_type=config.get(
+                            'whisper_compute_type', 'int8'),
                         language=config['stt_language'],
                     ),
                     vad=vad
@@ -198,7 +206,8 @@ class ProviderFactory:
 
             if provider == 'coqui':
                 return CoquiTTS(
-                    model_name=tts_config.get('coqui_model', 'tts_models/en/ljspeech/tacotron2-DDC'),
+                    model_name=tts_config.get(
+                        'coqui_model', 'tts_models/en/ljspeech/tacotron2-DDC'),
                     use_gpu=tts_config.get('coqui_use_gpu', False),
                     sample_rate=tts_config.get('coqui_sample_rate', 24000),
                     speaker=tts_config.get('coqui_speaker'),
@@ -239,12 +248,7 @@ class ProviderFactory:
 
         # Fallback to direct loading with child-friendly settings
         # Lower thresholds to better detect children's higher-pitched voices
-        return silero.VAD.load(
-            min_speech_duration_ms=200,      # Shorter minimum speech (was ~250ms default)
-            min_silence_duration_ms=300,     # Shorter silence to end speech (was ~500ms default)
-            activation_threshold=0.3,        # Lower threshold for children (was 0.5 default)
-            sampling_rate=16000
-        )
+        return silero.VAD.load()
 
     @staticmethod
     def create_turn_detection():

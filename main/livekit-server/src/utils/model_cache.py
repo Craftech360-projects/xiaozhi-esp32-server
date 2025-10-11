@@ -13,6 +13,7 @@ import pickle
 
 logger = logging.getLogger(__name__)
 
+
 class ModelCache:
     """Singleton cache for heavy ML models"""
     _instance = None
@@ -59,7 +60,8 @@ class ModelCache:
 
         # Check if another thread is loading this model
         if model_key in self._loading_status:
-            logger.info(f"[CACHE] Waiting for model to finish loading: {model_key}")
+            logger.info(
+                f"[CACHE] Waiting for model to finish loading: {model_key}")
             # Wait for loading to complete (with timeout)
             start_time = time.time()
             while model_key in self._loading_status and time.time() - start_time < 30:
@@ -78,7 +80,8 @@ class ModelCache:
 
         # Load model using provided function
         if loader_func is None:
-            logger.warning(f"No loader function provided for model: {model_key}")
+            logger.warning(
+                f"No loader function provided for model: {model_key}")
             return None
 
         with self._lock:
@@ -96,7 +99,8 @@ class ModelCache:
                 model = loader_func(*args, **kwargs)
 
                 load_time = time.time() - start_time
-                logger.info(f"[CACHE] Model loaded in {load_time:.2f}s: {model_key}")
+                logger.info(
+                    f"[CACHE] Model loaded in {load_time:.2f}s: {model_key}")
 
                 # Cache in memory
                 self._models[model_key] = model
@@ -122,18 +126,21 @@ class ModelCache:
         try:
             cache_path = self._get_cache_path(model_key)
             if cache_path.exists():
-                logger.info(f"[CACHE] Loading model from disk cache: {model_key}")
+                logger.info(
+                    f"[CACHE] Loading model from disk cache: {model_key}")
                 with open(cache_path, 'rb') as f:
                     return pickle.load(f)
         except Exception as e:
-            logger.warning(f"Failed to load model from disk cache {model_key}: {e}")
+            logger.warning(
+                f"Failed to load model from disk cache {model_key}: {e}")
         return None
 
     def _save_to_disk(self, model_key: str, model: Any):
         """Save model to disk cache (background thread)"""
         # Skip certain models that can't be pickled
         if model_key in ['qdrant_client', 'vad_model']:
-            logger.debug(f"[CACHE] Skipping disk cache for {model_key} (not serializable)")
+            logger.debug(
+                f"[CACHE] Skipping disk cache for {model_key} (not serializable)")
             return
 
         try:
@@ -178,20 +185,18 @@ class ModelCache:
         try:
             import threading
             if threading.current_thread() != threading.main_thread():
-                logger.warning("[CACHE] VAD model must be loaded on main thread, deferring...")
+                logger.warning(
+                    "[CACHE] VAD model must be loaded on main thread, deferring...")
                 return None
 
             # Load VAD directly to avoid circular dependency with ProviderFactory
             from livekit.plugins import silero
-            logger.info("[CACHE] Loading VAD model on main thread with child-friendly settings...")
-            vad = silero.VAD.load(
-                min_speech_duration_ms=200,      # Shorter minimum speech for children
-                min_silence_duration_ms=300,     # Shorter silence to end speech
-                activation_threshold=0.3,        # Lower threshold to detect children's voices
-                sampling_rate=16000
-            )
+            logger.info(
+                "[CACHE] Loading VAD model on main thread with child-friendly settings...")
+            vad = silero.VAD.load()
             self._models["vad_model"] = vad
-            logger.info("[CACHE] VAD model loaded and cached with child-friendly settings")
+            logger.info(
+                "[CACHE] VAD model loaded and cached with child-friendly settings")
             return vad
         except Exception as e:
             logger.error(f"[CACHE] Failed to load VAD model: {e}")
@@ -250,6 +255,7 @@ class ModelCache:
     def get_cached_service(self, service_key: str):
         """Get cached service instance"""
         return self._models.get(service_key)
+
 
 # Global instance
 model_cache = ModelCache()
