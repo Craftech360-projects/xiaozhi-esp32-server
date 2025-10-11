@@ -102,13 +102,21 @@ class UnifiedAudioPlayer:
                 logger.error("No session available for playback")
                 return
 
-            # Stream and convert audio to frames (NEW: no full download!)
-            audio_frames = await self._stream_download_and_convert(url, title)
+            # Log the URL for debugging
+            logger.info(f"🎵 UNIFIED: Processing URL: {url[:100]}...")
 
-            # Fallback to full download if streaming fails
-            if audio_frames is None:
-                logger.warning(f"🎵 UNIFIED: Streaming failed for {title}, falling back to full download")
-                audio_frames = await self._download_and_convert_to_frames_fallback(url, title)
+            # Check if it's a local file:// URL
+            if url.startswith('file://'):
+                logger.info(f"🎵 UNIFIED: Local file detected, loading directly from disk")
+                audio_frames = await self._load_local_file(url, title)
+            else:
+                # Stream and convert audio to frames (NEW: no full download!)
+                audio_frames = await self._stream_download_and_convert(url, title)
+
+                # Fallback to full download if streaming fails
+                if audio_frames is None:
+                    logger.warning(f"🎵 UNIFIED: Streaming failed for {title}, falling back to full download")
+                    audio_frames = await self._download_and_convert_to_frames_fallback(url, title)
 
             if audio_frames:
                 logger.info(f"🎵 UNIFIED: Injecting {title} into TTS queue via session.say()")
@@ -149,6 +157,50 @@ class UnifiedAudioPlayer:
             # NOTE: Removed completion message to prevent race condition
             # The completion message was causing the agent to go back to "speaking" state
             # which could trap the system if the state change gets suppressed
+
+    async def _load_local_file(self, url: str, title: str) -> Optional[AsyncIterator[rtc.AudioFrame]]:
+        """Load audio from local file:// URL and convert to frames"""
+        try:
+            # Convert file:// URL to local path
+            from urllib.parse import unquote
+            from urllib.request import url2pathname
+
+            # Remove 'file://' prefix and decode URL encoding
+            if url.startswith('file:///'):
+                file_path = url[8:]  # Remove 'file:///'
+            elif url.startswith('file://'):
+                file_path = url[7:]  # Remove 'file://'
+            else:
+                file_path = url
+
+            # Decode URL encoding (e.g., %20 -> space)
+            file_path = unquote(file_path)
+
+            logger.info(f"🎵 UNIFIED: Loading local file: {file_path}")
+
+            # Read file directly (sync I/O wrapped in async)
+            try:
+                with open(file_path, 'rb') as f:
+                    audio_data = f.read()
+            except FileNotFoundError:
+                logger.error(f"🎵 UNIFIED: Local file not found: {file_path}")
+                return None
+            except Exception as e:
+                logger.error(f"🎵 UNIFIED: Error reading local file: {e}")
+                return None
+
+            logger.info(f"🎵 UNIFIED: Loaded {len(audio_data)} bytes from local file")
+
+            # Convert to audio frames using existing method
+            if PYDUB_AVAILABLE and LIVEKIT_AVAILABLE:
+                return await self._create_frame_iterator(audio_data)
+            else:
+                logger.error("Required libraries not available for audio conversion")
+                return None
+
+        except Exception as e:
+            logger.error(f"🎵 UNIFIED: Error loading local file: {e}")
+            return None
 
     async def _stream_download_and_convert(self, url: str, title: str) -> Optional[AsyncIterator[rtc.AudioFrame]]:
         """Stream audio chunks and convert to frames on-the-fly (OPTIMIZED: no full download!)"""

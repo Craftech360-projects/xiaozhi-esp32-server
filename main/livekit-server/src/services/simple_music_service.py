@@ -17,15 +17,15 @@ class SimpleMusicService:
     """Service for handling music playback using file-based search (no Qdrant)"""
 
     def __init__(self):
-        self.local_media_url = os.getenv("LOCAL_MEDIA_URL", "http://localhost:8080")
-        self.use_cdn = os.getenv("USE_CDN", "false").lower() == "true"
-        self.cloudfront_domain = os.getenv("CLOUDFRONT_DOMAIN", "")
-        self.s3_base_url = os.getenv("S3_BASE_URL", "")
         self.is_initialized = False
 
         # Media directory (where music files are stored)
         self.media_root = Path(__file__).parent.parent.parent / "media"
         self.music_cache = {}  # Cache of available songs
+
+        logger.info("[SIMPLE MUSIC] ===== SimpleMusicService INITIALIZED (LOCAL FILE VERSION) =====")
+        logger.info(f"[SIMPLE MUSIC] Media root: {self.media_root}")
+        logger.info("[SIMPLE MUSIC] Will use file:// URLs for local playback")
 
     async def initialize(self) -> bool:
         """Initialize music service by scanning available music files"""
@@ -68,31 +68,22 @@ class SimpleMusicService:
                 filename = music_file.name
                 title = filename.replace(".mp3", "").replace("_", " ")
 
+                # Generate file:// URL for local file
+                file_url = music_file.as_uri()
+
                 # Add to cache
                 cache_key = f"{language}:{filename.lower()}"
                 self.music_cache[cache_key] = {
                     'title': title,
                     'filename': filename,
                     'language': language,
-                    'url': self.get_song_url(filename, language),
-                    'searchable': title.lower()
+                    'url': file_url,  # Use file:// URL instead of HTTP
+                    'searchable': title.lower(),
+                    'file_path': music_file  # Keep path for reference
                 }
+                logger.debug(f"[SIMPLE MUSIC] Cached: {title} -> {file_url[:80]}...")
 
-        logger.info(f"[SIMPLE MUSIC] Cached {len(self.music_cache)} songs")
-
-    def get_song_url(self, filename: str, language: str = "English") -> str:
-        """Generate URL for song file"""
-        audio_path = f"music/{language}/{filename}"
-        encoded_path = urllib.parse.quote(audio_path)
-
-        # Use local media URL if available (offline mode)
-        if self.local_media_url:
-            return f"{self.local_media_url}/{encoded_path}"
-        # Otherwise use CDN or S3
-        elif self.use_cdn and self.cloudfront_domain:
-            return f"https://{self.cloudfront_domain}/{encoded_path}"
-        else:
-            return f"{self.s3_base_url}/{encoded_path}"
+        logger.info(f"[SIMPLE MUSIC] Cached {len(self.music_cache)} songs with file:// URLs")
 
     async def search_songs(self, query: str, language: Optional[str] = None) -> List[Dict]:
         """Search for songs using simple text matching"""

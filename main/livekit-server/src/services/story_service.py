@@ -1,206 +1,180 @@
 """
 Story Service Module for LiveKit Agent
-Handles story search and playback with AWS CloudFront streaming and semantic search
+Handles story search and playback from LOCAL FILES
 """
 
-import json
 import os
 import random
 import logging
 from typing import Dict, List, Optional
 from pathlib import Path
-import urllib.parse
-from src.services.semantic_search import QdrantSemanticSearch
+from difflib import SequenceMatcher
 
 logger = logging.getLogger(__name__)
 
 class StoryService:
-    """Service for handling story playback and search with semantic search"""
+    """Service for handling LOCAL story playback and search"""
 
     def __init__(self, preloaded_model=None, preloaded_client=None):
-        self.cloudfront_domain = os.getenv("CLOUDFRONT_DOMAIN", "")
-        self.s3_base_url = os.getenv("S3_BASE_URL", "")
-        self.use_cdn = os.getenv("USE_CDN", "true").lower() == "true"
+        # Note: preloaded_model and preloaded_client kept for backward compatibility
         self.is_initialized = False
-        self.semantic_search = QdrantSemanticSearch(preloaded_model, preloaded_client)
+
+        # Base path for local story files (flat directory)
+        self.stories_path = Path(__file__).parent.parent / "stories"
+        self.story_index = {}  # Cache of available stories
+
+        logger.info("[STORY SERVICE] ===== StoryService INITIALIZED (LOCAL FILE VERSION) =====")
+        logger.info(f"[STORY SERVICE] Stories path: {self.stories_path}")
+        logger.info("[STORY SERVICE] Will use file:// URLs for local playback")
 
     async def initialize(self) -> bool:
-        """Initialize story service with semantic search using Qdrant"""
+        """Initialize local story service by scanning stories folder"""
         try:
-            # Initialize semantic search
-            initialized = await self.semantic_search.initialize()
-            if initialized:
-                logger.info("[STORY] Story service initialized with Qdrant semantic search")
+            if not self.stories_path.exists():
+                logger.error(f"[STORY SERVICE] Stories folder not found: {self.stories_path}")
+                return False
+
+            # Scan all story files
+            self._build_story_index()
+
+            if self.story_index:
+                logger.info(f"[STORY SERVICE] Initialized with {len(self.story_index)} stories")
                 self.is_initialized = True
                 return True
             else:
-                logger.warning("[STORY] Qdrant initialization failed - falling back to simple story service")
-                # Still mark as initialized for fallback mode
-                self.is_initialized = True
-                return True
+                logger.warning("[STORY SERVICE] No story files found in stories folder")
+                return False
 
         except Exception as e:
-            logger.error(f"[STORY] Failed to initialize story service: {e}")
-            # Still mark as initialized for fallback mode
-            self.is_initialized = True
-            return True
+            logger.error(f"[STORY SERVICE] Failed to initialize: {e}")
+            return False
 
-    def get_story_url(self, filename: str, category: str = "Adventure") -> str:
-        """Generate URL for story file"""
-        audio_path = f"stories/{category}/{filename}"
-        encoded_path = urllib.parse.quote(audio_path)
+    def _build_story_index(self):
+        """Build index of all available story files"""
+        self.story_index = {}
 
-        if self.use_cdn and self.cloudfront_domain:
-            return f"https://{self.cloudfront_domain}/{encoded_path}"
-        else:
-            return f"{self.s3_base_url}/{encoded_path}"
+        # Scan for MP3 files in stories directory (flat structure)
+        for story_file in self.stories_path.glob("*.mp3"):
+            if story_file.name.startswith("."):
+                continue  # Skip hidden files
+
+            # Extract story title (remove .mp3 extension)
+            title = story_file.stem
+
+            # Generate file:// URL
+            file_url = story_file.as_uri()
+
+            # Assign a default category (we don't have category folders)
+            category = "Stories"
+
+            self.story_index[title.lower()] = {
+                "title": title.title(),  # Capitalize words
+                "filename": story_file.name,
+                "category": category,
+                "path": story_file,
+                "url": file_url
+            }
+
+            logger.debug(f"[STORY SERVICE] Cached: {title.title()} -> {file_url[:80]}...")
+
+        logger.info(f"[STORY SERVICE] Cached {len(self.story_index)} stories with file:// URLs")
+
+    def _similarity_score(self, query: str, title: str) -> float:
+        """Calculate similarity between query and title"""
+        query_lower = query.lower().strip()
+        title_lower = title.lower().strip()
+
+        # Exact match
+        if query_lower == title_lower:
+            return 1.0
+
+        # Contains match
+        if query_lower in title_lower:
+            return 0.8
+
+        # Fuzzy match using SequenceMatcher
+        return SequenceMatcher(None, query_lower, title_lower).ratio()
 
     async def search_stories(self, query: str, category: Optional[str] = None) -> List[Dict]:
-        """Search for stories using enhanced semantic search with spell tolerance"""
+        """Search for stories using simple fuzzy matching"""
+        logger.info(f"[STORY SERVICE] ===== SEARCH_STORIES CALLED =====")
+        logger.info(f"[STORY SERVICE] Query: '{query}', Category: '{category}'")
+
         if not self.is_initialized:
-            logger.warning(f"Story service not initialized - cannot search for '{query}'")
+            logger.warning(f"[STORY SERVICE] Service not initialized - cannot search for '{query}'")
             return []
 
         try:
-            # Use semantic search service with enhanced fuzzy matching
-            search_results = await self.semantic_search.search_stories(query, category, limit=5)
-
-            # Convert search results to expected format
             results = []
-            for result in search_results:
-                results.append({
-                    'title': result.title,
-                    'filename': result.filename,
-                    'category': result.language_or_category,  # Stories use category instead of language
-                    'url': self.get_story_url(result.filename, result.language_or_category),
-                    'score': result.score
-                })
+
+            # Search through stories
+            for key, story in self.story_index.items():
+                score = self._similarity_score(query, story["title"])
+
+                # Only include if score is above threshold
+                if score > 0.3:
+                    results.append({
+                        "title": story["title"],
+                        "filename": story["filename"],
+                        "category": story["category"],
+                        "url": story["url"],
+                        "score": score
+                    })
+
+            # Sort by score (highest first)
+            results.sort(key=lambda x: x["score"], reverse=True)
+
+            # Limit to top 5 results
+            results = results[:5]
 
             if results:
-                logger.info(f"📚 Found {len(results)} stories for '{query}' - top match: '{results[0]['title']}' (score: {results[0]['score']:.2f})")
+                logger.info(f"📚 [LOCAL] Found {len(results)} stories for '{query}' - top match: '{results[0]['title']}' (score: {results[0]['score']:.2f})")
             else:
-                logger.warning(f"📚 No stories found for '{query}' - will try random story")
-                # If no results, fall back to random story
-                return []
+                logger.warning(f"📚 [LOCAL] No stories found for '{query}'")
 
             return results
 
         except Exception as e:
-            logger.error(f"Error in semantic story search for '{query}': {e}")
-            # Fall back to random story on error
+            logger.error(f"[STORY SERVICE] Error searching stories for '{query}': {e}")
             return []
 
     async def get_random_story(self, category: Optional[str] = None) -> Optional[Dict]:
-        """Get a random story using semantic search or fallback"""
+        """Get a random story from local collection"""
+        logger.info(f"[STORY SERVICE] ===== GET_RANDOM_STORY CALLED =====")
+        logger.info(f"[STORY SERVICE] Category: '{category}'")
+
         if not self.is_initialized:
+            logger.warning("[STORY SERVICE] Service not initialized")
             return None
 
         try:
-            # First try to get a random story from Qdrant
-            random_result = await self.semantic_search.get_random_story(category)
+            if not self.story_index:
+                logger.warning("[STORY SERVICE] No stories available")
+                return None
 
-            if random_result:
-                story = {
-                    'title': random_result.title,
-                    'filename': random_result.filename,
-                    'category': random_result.language_or_category,
-                    'url': self.get_story_url(random_result.filename, random_result.language_or_category)
-                }
-                logger.info(f"📚 Selected random story from Qdrant: {story['title']} ({story['category']})")
-                return story
+            # Get all stories as a list
+            available_stories = list(self.story_index.values())
 
-            # Fallback to hardcoded stories if Qdrant fails
-            logger.warning("📚 Qdrant random story failed - using fallback stories")
-            sample_stories = [
-                {
-                    'title': 'Why Bananas Belong to Monkeys',
-                    'filename': 'why bananas belong to monkeys.mp3',
-                    'category': 'Adventure'
-                },
-                {
-                    'title': 'Agent Bertie',
-                    'filename': 'agent bertie part.mp3',
-                    'category': 'Adventure'
-                },
-                {
-                    'title': 'The Three Dogs',
-                    'filename': 'the three dogs.mp3',
-                    'category': 'Bedtime'
-                },
-                {
-                    'title': 'Sleeping Beauty',
-                    'filename': 'sleeping beauty.mp3',
-                    'category': 'Bedtime'
-                },
-                {
-                    'title': 'The Christmas Cherry Tree',
-                    'filename': 'the christmas cherry tree.mp3',
-                    'category': 'Educational'
-                },
-                {
-                    'title': 'Hansel and Gretel',
-                    'filename': 'hansel and gretel.mp3',
-                    'category': 'Fantasy'
-                },
-                {
-                    'title': 'Katie Unicorn',
-                    'filename': 'katie unicorn.mp3',
-                    'category': 'Fantasy'
-                },
-                {
-                    'title': 'A Portrait of a Cat',
-                    'filename': 'a portrait of a cat.mp3',
-                    'category': 'Fairy Tales'
-                },
-                {
-                    'title': 'Honest Jack',
-                    'filename': 'honest jack.mp3',
-                    'category': 'Fairy Tales'
-                }
-            ]
+            # Pick random story
+            story = random.choice(available_stories)
 
-            # Filter by category if specified
-            if category:
-                filtered_stories = [s for s in sample_stories if s['category'].lower() == category.lower()]
-                if filtered_stories:
-                    sample_stories = filtered_stories
+            logger.info(f"📚 [LOCAL] Random story selected: '{story['title']}'")
 
-            # Select a random story from the fallback list
-            story = random.choice(sample_stories)
-            story['url'] = self.get_story_url(story['filename'], story['category'])
-
-            logger.info(f"📚 Selected fallback story: {story['title']} ({story['category']})")
-            return story
+            return {
+                "title": story["title"],
+                "filename": story["filename"],
+                "category": story["category"],
+                "url": story["url"]
+            }
 
         except Exception as e:
-            logger.error(f"Error getting random story: {e}")
-            # Last resort fallback
-            fallback = {
-                'title': 'Why Bananas Belong to Monkeys',
-                'filename': 'why bananas belong to monkeys.mp3',
-                'category': 'Adventure',
-                'url': self.get_story_url('why bananas belong to monkeys.mp3', 'Adventure')
-            }
-            return fallback
+            logger.error(f"[STORY SERVICE] Error getting random story: {e}")
+            return None
 
     async def get_all_categories(self) -> List[str]:
-        """Get list of available story categories from semantic search or fallback"""
+        """Get list of available story categories"""
         if not self.is_initialized:
             return []
 
-        try:
-            # Try to get categories from Qdrant
-            categories = await self.semantic_search.get_available_categories()
-
-            if categories:
-                logger.info(f"📚 Found {len(categories)} story categories from Qdrant")
-                return categories
-
-            # Fallback to known categories
-            logger.warning("📚 Using fallback category list")
-            return ["Adventure", "Bedtime", "Educational", "Fantasy", "Fairy Tales"]
-
-        except Exception as e:
-            logger.error(f"Error getting story categories: {e}")
-            # Return fallback categories
-            return ["Adventure", "Bedtime", "Educational", "Fantasy", "Fairy Tales"]
+        # Since we use a flat directory structure, return a generic category
+        return ["Stories"]

@@ -229,6 +229,9 @@ class Assistant(FilteredAgent):
             language: Language preference (default: "English"). Options: English, Hindi, Telugu, Kannada, etc.
         """
         try:
+            logger.info(f"🎵 ===== PLAY_MUSIC FUNCTION CALLED =====")
+            logger.info(f"🎵 song_name: '{song_name}', language: '{language}'")
+
             # Map common language codes to full names used in database
             language_map = {
                 "en": "English",
@@ -244,31 +247,43 @@ class Assistant(FilteredAgent):
             # Normalize language to database format
             normalized_language = language_map.get(language.lower(), language)
 
-            logger.info(f"Music request - song: '{song_name}', language: '{language}' (normalized: '{normalized_language}')")
+            logger.info(f"🎵 Music request - song: '{song_name}', language: '{language}' (normalized: '{normalized_language}')")
+            logger.info(f"🎵 Music service available: {self.music_service is not None}")
+            logger.info(f"🎵 Music service type: {type(self.music_service).__name__ if self.music_service else 'None'}")
 
             if not self.music_service:
                 return "Sorry, music service is not available right now."
 
             # Use unified audio player which injects music into TTS queue
             player = self.unified_audio_player if self.unified_audio_player else self.audio_player
+            logger.info(f"🎵 Using player: {type(player).__name__ if player else 'None'}")
+
             if not player:
                 return "Sorry, audio player is not available right now."
 
             if song_name:
                 # Search for specific song
+                logger.info(f"🎵 Searching for song: '{song_name}'")
                 songs = await self.music_service.search_songs(song_name, normalized_language)
+                logger.info(f"🎵 Search returned {len(songs)} results")
                 if songs:
                     song = songs[0]  # Take first match
-                    logger.info(f"Found song: {song['title']} in {song['language']}")
+                    logger.info(f"🎵 Found song: {song['title']} in {song['language']}")
+                    logger.info(f"🎵 Song URL: {song.get('url', 'NO URL')[:100]}...")
                 else:
-                    logger.info(f"No songs found for '{song_name}', playing random song")
+                    logger.info(f"🎵 No songs found for '{song_name}', playing random song")
                     song = await self.music_service.get_random_song(normalized_language)
             else:
                 # Play random song
+                logger.info(f"🎵 Getting random song for language: {normalized_language}")
                 song = await self.music_service.get_random_song(normalized_language)
 
             if not song:
+                logger.error(f"🎵 ERROR: No song returned from music service")
                 return "Sorry, I couldn't find any music to play right now."
+
+            logger.info(f"🎵 Final song selected: {song.get('title', 'UNKNOWN')}")
+            logger.info(f"🎵 Final song URL: {song.get('url', 'NO URL')}")
 
             # Send music start signal to device via data channel FIRST
             try:
@@ -298,7 +313,9 @@ class Assistant(FilteredAgent):
                 logger.warning(f"Failed to send music start signal: {e}")
 
             # Start playing the song through TTS channel - this will queue it
+            logger.info(f"🎵 Calling player.play_from_url with URL: {song['url'][:100]}...")
             await player.play_from_url(song['url'], song['title'])
+            logger.info(f"🎵 player.play_from_url completed")
 
             # Return special instruction to suppress immediate response
             # The agent should stay silent while music plays

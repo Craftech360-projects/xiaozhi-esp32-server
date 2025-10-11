@@ -122,7 +122,7 @@ async def delete_livekit_room(room_name: str):
 
 def prewarm(proc: JobProcess):
     """Fast prewarm function using cached models"""
-    logger.info("[PREWARM] Fast prewarm: Using cached models")
+    logger.info("[PREWARM] ===== Starting Prewarm =====")
 
     # Start background model loading if not already started
     if not model_preloader.is_ready():
@@ -133,12 +133,97 @@ def prewarm(proc: JobProcess):
         logger.info("[PREWARM] Loading VAD model on main thread...")
         vad = ProviderFactory.create_vad()
         model_cache._models["vad_model"] = vad
-        logger.info("[PREWARM] VAD model loaded and cached")
+        logger.info("[PREWARM] ✅ VAD model loaded and cached")
     else:
         vad = model_cache._models["vad_model"]
-        logger.info("[PREWARM] Using cached VAD model")
+        logger.info("[PREWARM] ✅ Using cached VAD model")
+
+    # Load Whisper STT model (for speech recognition)
+    if "whisper_stt" not in model_cache._models:
+        logger.info("[PREWARM] Loading Whisper STT model...")
+        try:
+            groq_config = ConfigLoader.get_groq_config()
+            stt = ProviderFactory.create_stt(groq_config, vad)
+            # Trigger model loading by calling _ensure_model_loaded if available
+            if hasattr(stt, '_ensure_model_loaded'):
+                import asyncio
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(stt._ensure_model_loaded())
+                loop.close()
+            model_cache._models["whisper_stt"] = stt
+            logger.info("[PREWARM] ✅ Whisper STT model loaded and cached")
+        except Exception as e:
+            logger.error(f"[PREWARM] ❌ Failed to load Whisper STT: {e}")
+            # Continue without Whisper - it will load on first use
+    else:
+        logger.info("[PREWARM] ✅ Using cached Whisper STT model")
+
+    # Load Piper TTS model (for text-to-speech)
+    if "piper_tts" not in model_cache._models:
+        logger.info("[PREWARM] Loading Piper TTS model...")
+        try:
+            tts_config = ConfigLoader.get_tts_config()
+            tts = ProviderFactory.create_tts(None, tts_config)
+            # Piper TTS loads model in __init__, so just creating it is enough
+            model_cache._models["piper_tts"] = tts
+            logger.info("[PREWARM] ✅ Piper TTS model loaded and cached")
+        except Exception as e:
+            logger.error(f"[PREWARM] ❌ Failed to load Piper TTS: {e}")
+            # Continue without TTS - it will load on first use
+    else:
+        logger.info("[PREWARM] ✅ Using cached Piper TTS model")
+
+    # Load Music Service (scan local music files)
+    if "music_service" not in model_cache._models:
+        logger.info("[PREWARM] Initializing Music Service...")
+        try:
+            import asyncio
+            use_simple_music = os.getenv("USE_SIMPLE_MUSIC", "false").lower() == "true"
+
+            if use_simple_music:
+                music_service = SimpleMusicService()
+            else:
+                music_service = MusicService()
+
+            # Initialize music service (async)
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(music_service.initialize())
+            loop.close()
+
+            model_cache._models["music_service"] = music_service
+            logger.info("[PREWARM] ✅ Music Service initialized and cached")
+        except Exception as e:
+            logger.error(f"[PREWARM] ❌ Failed to load Music Service: {e}")
+    else:
+        logger.info("[PREWARM] ✅ Using cached Music Service")
+
+    # Load Story Service (scan local story files)
+    if "story_service" not in model_cache._models:
+        logger.info("[PREWARM] Initializing Story Service...")
+        try:
+            import asyncio
+            story_service = StoryService()
+
+            # Initialize story service (async)
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(story_service.initialize())
+            loop.close()
+
+            model_cache._models["story_service"] = story_service
+            logger.info("[PREWARM] ✅ Story Service initialized and cached")
+        except Exception as e:
+            logger.error(f"[PREWARM] ❌ Failed to load Story Service: {e}")
+    else:
+        logger.info("[PREWARM] ✅ Using cached Story Service")
 
     proc.userdata["vad"] = vad
+    proc.userdata["whisper_stt"] = model_cache._models.get("whisper_stt")
+    proc.userdata["piper_tts"] = model_cache._models.get("piper_tts")
+    proc.userdata["music_service"] = model_cache._models.get("music_service")
+    proc.userdata["story_service"] = model_cache._models.get("story_service")
     proc.userdata["embedding_model"] = model_cache.get_embedding_model()
     proc.userdata["qdrant_client"] = model_cache.get_qdrant_client()
 
@@ -148,7 +233,7 @@ def prewarm(proc: JobProcess):
     # Log cache status
     stats = model_cache.get_cache_stats()
     logger.info(
-        f"[PREWARM] Fast prewarm complete: {stats['cache_size']} models cached")
+        f"[PREWARM] ✅ Prewarm complete: {stats['cache_size']} models cached")
 
     # Optional: Wait briefly for background loading (non-blocking)
     if not model_preloader.is_ready():
@@ -330,9 +415,23 @@ async def entrypoint(ctx: JobContext):
         logger.debug(
             f"🧠 Using LLM type: {type(llm)} (will capture responses via conversation_item_added event)")
 
-    stt = ProviderFactory.create_stt(
-        groq_config, vad)  # Pass VAD to STT factory
-    tts = ProviderFactory.create_tts(groq_config, tts_config)
+    # Use prewarmed STT if available, otherwise create new one
+    prewarmed_stt = ctx.proc.userdata.get("whisper_stt")
+    if prewarmed_stt:
+        logger.info("🚀 Using prewarmed Whisper STT model (instant startup!)")
+        stt = prewarmed_stt
+    else:
+        logger.info("⏳ Creating new Whisper STT (not prewarmed)")
+        stt = ProviderFactory.create_stt(groq_config, vad)  # Pass VAD to STT factory
+
+    # Use prewarmed TTS if available, otherwise create new one
+    prewarmed_tts = ctx.proc.userdata.get("piper_tts")
+    if prewarmed_tts:
+        logger.info("🚀 Using prewarmed Piper TTS model (instant startup!)")
+        tts = prewarmed_tts
+    else:
+        logger.info("⏳ Creating new Piper TTS (not prewarmed)")
+        tts = ProviderFactory.create_tts(groq_config, tts_config)
     # Disable turn detection to avoid timeout issues
     turn_detection = ProviderFactory.create_turn_detection()
 
@@ -352,33 +451,32 @@ async def entrypoint(ctx: JobContext):
     preloaded_embedding_model = ctx.proc.userdata.get("embedding_model")
     preloaded_qdrant_client = ctx.proc.userdata.get("qdrant_client")
 
-    # Try to use cached services first, otherwise create new ones
-    music_service = model_cache.get_cached_service("music_service")
-    story_service = model_cache.get_cached_service("story_service")
+    # Use prewarmed services if available
+    prewarmed_music = ctx.proc.userdata.get("music_service")
+    prewarmed_story = ctx.proc.userdata.get("story_service")
 
-    services_from_cache = False
-
-    if music_service and story_service:
-        logger.info("[FAST] Using cached music and story services")
-        services_from_cache = True
+    if prewarmed_music:
+        logger.info("🚀 Using prewarmed Music Service (instant startup!)")
+        music_service = prewarmed_music
     else:
-        logger.info("[INIT] Creating new music and story services...")
-        # Create new services with preloaded models
-
-        # Check if Qdrant is available/configured
+        logger.info("⏳ Creating new Music Service (not prewarmed)")
         use_simple_music = os.getenv("USE_SIMPLE_MUSIC", "false").lower() == "true"
         qdrant_url = os.getenv("QDRANT_URL", "")
 
         if use_simple_music or not qdrant_url:
-            logger.info("[INIT] Using simple file-based music service (no Qdrant)")
             music_service = SimpleMusicService()
         else:
-            logger.info("[INIT] Using Qdrant-based music service")
-            music_service = MusicService(
-                preloaded_embedding_model, preloaded_qdrant_client)
+            music_service = MusicService(preloaded_embedding_model, preloaded_qdrant_client)
 
-        story_service = StoryService(
-            preloaded_embedding_model, preloaded_qdrant_client)
+        await music_service.initialize()
+
+    if prewarmed_story:
+        logger.info("🚀 Using prewarmed Story Service (instant startup!)")
+        story_service = prewarmed_story
+    else:
+        logger.info("⏳ Creating new Story Service (not prewarmed)")
+        story_service = StoryService(preloaded_embedding_model, preloaded_qdrant_client)
+        await story_service.initialize()
 
     audio_player = ForegroundAudioPlayer()
     unified_audio_player = UnifiedAudioPlayer()
@@ -445,48 +543,12 @@ async def entrypoint(ctx: JobContext):
 
     ctx.add_shutdown_callback(log_usage)
 
-    # Initialize services only if not from cache
-    if not services_from_cache:
-        logger.info("[INIT] Initializing music and story services...")
-        try:
-            music_initialized = await music_service.initialize()
-            story_initialized = await story_service.initialize()
-
-            if music_initialized:
-                # Cache the initialized service
-                model_cache.cache_service("music_service", music_service)
-                languages = await music_service.get_all_languages()
-                logger.info(
-                    f"[INIT] Music service initialized with {len(languages)} languages")
-            else:
-                logger.warning("[INIT] Music service initialization failed")
-
-            if story_initialized:
-                # Cache the initialized service
-                model_cache.cache_service("story_service", story_service)
-                categories = await story_service.get_all_categories()
-                logger.info(
-                    f"[INIT] Story service initialized with {len(categories)} categories")
-            else:
-                logger.warning("[INIT] Story service initialization failed")
-
-        except Exception as e:
-            logger.error(
-                f"[INIT] Failed to initialize music/story services: {e}")
+    # Services are already initialized in prewarm or above
+    # No need for additional initialization here
+    if music_service and story_service:
+        logger.info("[INIT] ✅ Music and Story services ready")
     else:
-        # Services are from cache, just log their status
-        try:
-            if music_service and music_service.is_initialized:
-                languages = await music_service.get_all_languages()
-                logger.info(
-                    f"[FAST] Music service ready with {len(languages)} languages")
-
-            if story_service and story_service.is_initialized:
-                categories = await story_service.get_all_categories()
-                logger.info(
-                    f"[FAST] Story service ready with {len(categories)} categories")
-        except Exception as e:
-            logger.warning(f"[FAST] Error checking cached services: {e}")
+        logger.warning("[INIT] ⚠️ Some services not available")
 
     # Create room input options with optional noise cancellation
     room_options = None
@@ -677,7 +739,53 @@ async def entrypoint(ctx: JobContext):
 
     await ctx.connect()
 
+def startup_preload():
+    """
+    Run this BEFORE LiveKit starts - loads critical models at module import time
+    This happens even before the prewarm function
+    """
+    logger.info("🚀 [STARTUP] Pre-loading critical models before LiveKit initialization...")
+
+    # Start background model loading immediately
+    if not model_preloader.is_ready():
+        logger.info("🚀 [STARTUP] Starting background model loading...")
+        model_preloader.start_background_loading()
+
+    # Pre-load VAD (required for STT)
+    if "vad_model" not in model_cache._models:
+        logger.info("🚀 [STARTUP] Loading VAD model...")
+        vad = ProviderFactory.create_vad()
+        model_cache._models["vad_model"] = vad
+        logger.info("🚀 [STARTUP] ✅ VAD model loaded")
+
+    # Pre-load Whisper STT (the slowest model - 13 seconds)
+    if "whisper_stt" not in model_cache._models:
+        logger.info("🚀 [STARTUP] Loading Whisper STT model (this may take 10-15 seconds)...")
+        try:
+            import asyncio
+            groq_config = ConfigLoader.get_groq_config()
+            vad = model_cache._models.get("vad_model")
+            stt = ProviderFactory.create_stt(groq_config, vad)
+
+            # Trigger model loading
+            if hasattr(stt, '_ensure_model_loaded'):
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(stt._ensure_model_loaded())
+                loop.close()
+
+            model_cache._models["whisper_stt"] = stt
+            logger.info("🚀 [STARTUP] ✅ Whisper STT model loaded and ready!")
+        except Exception as e:
+            logger.error(f"🚀 [STARTUP] ❌ Failed to load Whisper: {e}")
+
+    logger.info("🚀 [STARTUP] Pre-loading complete! LiveKit can start now.")
+
 if __name__ == "__main__":
+    # Run startup preload BEFORE LiveKit starts
+    startup_preload()
+
+    # Now start LiveKit with prewarm for remaining models
     cli.run_app(WorkerOptions(
         entrypoint_fnc=entrypoint,
         prewarm_fnc=prewarm,
