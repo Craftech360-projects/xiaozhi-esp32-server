@@ -237,8 +237,14 @@ class ProviderFactory:
         except Exception:
             pass  # Fall back to direct loading
 
-        # Fallback to direct loading
-        return silero.VAD.load()
+        # Fallback to direct loading with child-friendly settings
+        # Lower thresholds to better detect children's higher-pitched voices
+        return silero.VAD.load(
+            min_speech_duration_ms=200,      # Shorter minimum speech (was ~250ms default)
+            min_silence_duration_ms=300,     # Shorter silence to end speech (was ~500ms default)
+            activation_threshold=0.3,        # Lower threshold for children (was 0.5 default)
+            sampling_rate=16000
+        )
 
     @staticmethod
     def create_turn_detection():

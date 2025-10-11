@@ -159,8 +159,8 @@ async def entrypoint(ctx: JobContext):
 
     # Load configuration (environment variables already loaded at module level)
     groq_config = ConfigLoader.get_groq_config()
-    tts_config = ConfigLoader.get_tts_config()
     agent_config = ConfigLoader.get_agent_config()
+    # Note: TTS config will be loaded later after fetching from API
 
     # Extract MAC address from room name and fetch device-specific prompt
     prompt_service = PromptService()
@@ -212,24 +212,33 @@ async def entrypoint(ctx: JobContext):
             logger.error(f"📝❌ Failed to initialize chat history service: {e}")
             chat_history_service = None
 
-    # Fetch device-specific prompt BEFORE creating assistant
+    # Fetch device-specific prompt AND TTS config BEFORE creating assistant
+    tts_config_from_api = None
     if device_mac:
         try:
-            agent_prompt = await prompt_service.get_prompt(room_name, device_mac)
+            agent_prompt, tts_config_from_api = await prompt_service.get_prompt_and_config(room_name, device_mac)
             logger.info(
                 f"🎯 Using device-specific prompt for MAC: {device_mac} (length: {len(agent_prompt)} chars)")
             # Log first few lines of the fetched prompt for verification
             prompt_lines = agent_prompt.split('\n')[:5]  # First 5 lines
             logger.info(
                 f"📝 Fetched prompt preview: {' | '.join(line.strip()[:50] for line in prompt_lines if line.strip())}")
+
+            if tts_config_from_api:
+                logger.info(f"🎤 TTS Config from API: Provider={tts_config_from_api.get('provider')}, Type={tts_config_from_api.get('type')}")
+            else:
+                logger.warning(f"⚠️ No TTS config from API, will use .env defaults")
+
         except Exception as e:
             logger.warning(
-                f"Failed to fetch device prompt for MAC {device_mac}, using default: {e}")
+                f"Failed to fetch config from API for MAC {device_mac}, using defaults: {e}")
             agent_prompt = ConfigLoader.get_default_prompt()
+            tts_config_from_api = None
             logger.info(
                 f"📄 Fallback to default prompt (length: {len(agent_prompt)} chars)")
     else:
         agent_prompt = ConfigLoader.get_default_prompt()
+        tts_config_from_api = None
         logger.info(
             f"📄 Using default prompt - no MAC in room name '{room_name}' (length: {len(agent_prompt)} chars)")
 
@@ -328,7 +337,13 @@ async def entrypoint(ctx: JobContext):
 
     stt = ProviderFactory.create_stt(
         groq_config, vad)  # Pass VAD to STT factory
+
+    # Get TTS config, with API override if available
+    tts_config = ConfigLoader.get_tts_config(api_config=tts_config_from_api)
     tts = ProviderFactory.create_tts(groq_config, tts_config)
+
+    logger.info(f"🎤 Final TTS Provider: {tts_config.get('provider')}")
+
     # Disable turn detection to avoid timeout issues
     turn_detection = ProviderFactory.create_turn_detection()
 
@@ -340,8 +355,8 @@ async def entrypoint(ctx: JobContext):
         turn_detection=turn_detection,  # Disabled to avoid timeout
         vad=vad,
         preemptive_generation=agent_config['preemptive_generation'],
-        min_endpointing_delay=1.2,      # Increase from 500ms to 1.2s
-        min_interruption_duration=1.0,   # Require longer pause
+        min_endpointing_delay=0.8,      # Reduced from 1.2s for faster response with children
+        min_interruption_duration=0.6,   # Reduced from 1.0s to allow children to interrupt
     )
 
     # Get preloaded models from prewarm

@@ -183,10 +183,15 @@ class ModelCache:
 
             # Load VAD directly to avoid circular dependency with ProviderFactory
             from livekit.plugins import silero
-            logger.info("[CACHE] Loading VAD model on main thread...")
-            vad = silero.VAD.load()
+            logger.info("[CACHE] Loading VAD model on main thread with child-friendly settings...")
+            vad = silero.VAD.load(
+                min_speech_duration_ms=200,      # Shorter minimum speech for children
+                min_silence_duration_ms=300,     # Shorter silence to end speech
+                activation_threshold=0.3,        # Lower threshold to detect children's voices
+                sampling_rate=16000
+            )
             self._models["vad_model"] = vad
-            logger.info("[CACHE] VAD model loaded and cached")
+            logger.info("[CACHE] VAD model loaded and cached with child-friendly settings")
             return vad
         except Exception as e:
             logger.error(f"[CACHE] Failed to load VAD model: {e}")

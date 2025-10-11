@@ -23,9 +23,7 @@ dependencies = [
     "jinja2",
     "pytz",
     "qdrant-client>=1.7.0",
-    "sentence-transformers>=2.2.0",
-    "faster-whisper",
-    "TTS"
+    "sentence-transformers>=2.2.0"
 ]
 
 [dependency-groups]
