@@ -431,14 +431,18 @@ public class ConfigServiceImpl implements ConfigService {
                     if (StringUtils.isNotBlank(intentLLMModelId)) {
                         if (!typeConfig.containsKey(intentLLMModelId)) {
                             ModelConfigEntity intentLLM = modelConfigService.getModelById(intentLLMModelId, isCache);
-                            typeConfig.put(intentLLM.getId(), intentLLM.getConfigJson());
+                            if (intentLLM != null) {
+                                typeConfig.put(intentLLM.getId(), intentLLM.getConfigJson());
+                            }
                         }
                     }
                     if (StringUtils.isNotBlank(memLocalShortLLMModelId)) {
                         if (!typeConfig.containsKey(memLocalShortLLMModelId)) {
                             ModelConfigEntity memLocalShortLLM = modelConfigService
                                     .getModelById(memLocalShortLLMModelId, isCache);
-                            typeConfig.put(memLocalShortLLM.getId(), memLocalShortLLM.getConfigJson());
+                            if (memLocalShortLLM != null) {
+                                typeConfig.put(memLocalShortLLM.getId(), memLocalShortLLM.getConfigJson());
+                            }
                         }
                     }
                 }
