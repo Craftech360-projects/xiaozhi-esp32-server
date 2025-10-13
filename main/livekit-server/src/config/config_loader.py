@@ -91,6 +91,7 @@ class ConfigLoader:
                     config['model'] = api_config['model']
                 if 'voice' in api_config:
                     config['voice'] = api_config['voice']
+                logger.info(f"✅ Groq TTS - Model: {config.get('model')}, Voice: {config.get('voice')}")
         else:
             logger.info(f"📝 Using TTS config from .env: Provider={config['provider']}")
 

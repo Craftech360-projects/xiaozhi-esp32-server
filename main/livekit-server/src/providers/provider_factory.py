@@ -82,8 +82,13 @@ class ProviderFactory:
                     vad=vad
                 ))
             elif provider == 'deepgram':
+                import os
+                api_key = os.getenv('DEEPGRAM_API_KEY')
+                if not api_key:
+                    raise ValueError("DEEPGRAM_API_KEY environment variable is not set")
                 providers.append(stt.StreamAdapter(
                     stt=deepgram.STT(
+                        api_key=api_key,
                         model=config.get('deepgram_model', 'nova-3'),
                         language=config['stt_language']
                     ),
@@ -134,8 +139,13 @@ class ProviderFactory:
                     vad=vad
                 )
             elif provider == 'deepgram':
+                import os
+                api_key = os.getenv('DEEPGRAM_API_KEY')
+                if not api_key:
+                    raise ValueError("DEEPGRAM_API_KEY environment variable is not set")
                 return stt.StreamAdapter(
                     stt=deepgram.STT(
+                        api_key=api_key,
                         model=config.get('deepgram_model', 'nova-3'),
                         language=config['stt_language']
                     ),
@@ -177,9 +187,12 @@ class ProviderFactory:
                     model=tts_config['elevenlabs_model']
                 ))
             else:
+                # Primary Groq TTS - use tts_config if available
+                model = tts_config.get('model', groq_config['tts_model'])
+                voice = tts_config.get('voice', groq_config['tts_voice'])
                 providers.append(groq.TTS(
-                    model=groq_config['tts_model'],
-                    voice=groq_config['tts_voice']
+                    model=model,
+                    voice=voice
                 ))
 
             # Fallback providers (in order of preference)
@@ -228,10 +241,12 @@ class ProviderFactory:
                     channels=tts_config.get('edge_channels', 1)
                 )
             else:
-                # Default to Groq
+                # Default to Groq - use tts_config if available, otherwise fall back to groq_config
+                model = tts_config.get('model', groq_config['tts_model'])
+                voice = tts_config.get('voice', groq_config['tts_voice'])
                 return groq.TTS(
-                    model=groq_config['tts_model'],
-                    voice=groq_config['tts_voice']
+                    model=model,
+                    voice=voice
                 )
 
     @staticmethod

@@ -379,6 +379,12 @@ class PromptService:
                 result['model'] = tts_config.get('model', 'playai-tts')
                 result['voice'] = tts_config.get('voice', 'Aaliyah-PlayAI')
 
+            elif tts_type == 'groq arabic':
+                result['provider'] = 'groq'
+                result['model'] = tts_config.get('model', 'playai-tts-arabic')
+                # Check for both 'voice' and 'private_voice' keys
+                result['voice'] = tts_config.get('voice') or tts_config.get('private_voice', 'Nasser-PlayAI')
+
             else:
                 logger.warning(f"Unknown TTS type: {tts_type}")
                 return None

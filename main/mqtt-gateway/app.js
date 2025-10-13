@@ -12,7 +12,7 @@ const debug = debugModule("mqtt-server");
 const crypto = require("crypto");
 const dgram = require("dgram");
 const Emitter = require("events");
-const { AccessToken } = require("livekit-server-sdk");
+const { AccessToken, RoomServiceClient } = require("livekit-server-sdk");
 const {
   Room,
   RoomEvent,
@@ -678,7 +678,9 @@ class LiveKitBridge extends Emitter {
               const frame = new AudioFrame(samples, 16000, 1, samples.length);
 
               // Safe capture with error handling
-              this.safeCaptureFrame(frame);
+              this.safeCaptureFrame(frame).catch(err => {
+              console.error(`❌ [AUDIO] Unhandled error in safeCaptureFrame: ${err.message}`);
+              });;
             }
           } catch (err) {
             console.error(`❌ [OPUS] Decode error: ${err.message}`);
@@ -696,14 +698,16 @@ class LiveKitBridge extends Emitter {
         const frame = new AudioFrame(samples, 16000, 1, samples.length);
 
         // Safe capture with error handling
-        this.safeCaptureFrame(frame);
+        this.safeCaptureFrame(frame).catch(err => {
+              console.error(`❌ [AUDIO] Unhandled error in safeCaptureFrame: ${err.message}`);
+              });;
       }
     } catch (error) {
       console.error(`❌ [AUDIO] Error in sendAudio: ${error.message}`);
     }
   }
 
-  safeCaptureFrame(frame) {
+  async safeCaptureFrame(frame) {
     try {
       // Validate frame before capture
       if (!frame || !frame.data || frame.data.length === 0) {
@@ -718,7 +722,7 @@ class LiveKitBridge extends Emitter {
       }
 
       // Attempt to capture the frame
-      this.audioSource.captureFrame(frame);
+     await this.audioSource.captureFrame(frame);
     } catch (error) {
       console.error(`❌ [AUDIO] Failed to capture frame: ${error.message}`);
 
@@ -1611,6 +1615,79 @@ class LiveKitBridge extends Emitter {
       this.room = null;
     }
   }
+
+  /**
+   * Clean up all old LiveKit rooms for a specific MAC address
+   * Finds and deletes ALL rooms ending with the MAC address pattern
+   * This ensures no ghost sessions exist before creating a new one
+   *
+   * @param {string} macAddress - MAC address with colons (e.g., "28:56:2f:07:c6:ec")
+   * @param {RoomServiceClient} roomService - LiveKit room service client
+   */
+  static async cleanupOldSessionsForDevice(macAddress, roomService, currentRoomName = null) {
+    try {
+      // Convert MAC address format: "28:56:2f:07:c6:ec" → "28562f07c6ec"
+      const macForRoom = macAddress.replace(/:/g, '');
+      console.log(`🧹 [CLEANUP] Searching for old sessions for MAC: ${macAddress} (${macForRoom})`);
+      if (currentRoomName) {
+        console.log(`🔒 [CLEANUP] Protecting current room from deletion: ${currentRoomName}`);
+      }
+
+      // Safety check: Ensure roomService is available
+      if (!roomService) {
+        console.log(`⚠️ [CLEANUP] RoomService not available, skipping cleanup`);
+        return;
+      }
+
+      // Get ALL active rooms from LiveKit server
+      const allRooms = await roomService.listRooms();
+      console.log(`📊 [CLEANUP] Found ${allRooms.length} total active rooms`);
+
+      // Filter rooms belonging to this device (pattern: *_28562f07c6ec)
+      // BUT exclude the current room being created
+      const deviceRooms = allRooms.filter(room => {
+        if (!room.name || !room.name.endsWith(`_${macForRoom}`)) {
+          return false;
+        }
+
+        // CRITICAL: Never delete the room we're currently creating
+        if (currentRoomName && room.name === currentRoomName) {
+          console.log(`   🔒 Skipping current room: ${room.name} (actively being used)`);
+          return false;
+        }
+
+        return true;
+      });
+
+      if (deviceRooms.length > 0) {
+        console.log(`🗑️ [CLEANUP] Found ${deviceRooms.length} old session(s) for MAC ${macAddress}:`);
+
+        // Delete each old room
+        for (const room of deviceRooms) {
+          const roomCreationTime = Number(room.creationTime);
+          const roomAge = now - roomCreationTime;
+          console.log(`   - Deleting room: ${room.name} (${room.numParticipants} participants, age: ${roomAge.toFixed(0)}s)`);
+          try {
+            await roomService.deleteRoom(room.name);
+            console.log(`   ✅ Successfully deleted room: ${room.name}`);
+          } catch (deleteError) {
+            console.error(`   ❌ Failed to delete room ${room.name}:`, deleteError.message);
+            // Continue with other rooms even if one fails
+          }
+        }
+
+        console.log(`✅ [CLEANUP] Completed cleanup for MAC ${macAddress}`);
+
+        // Wait for cleanup to propagate on LiveKit server
+        await new Promise(resolve => setTimeout(resolve, 500));
+      } else {
+        console.log(`✓ [CLEANUP] No old sessions found for MAC: ${macAddress}`);
+      }
+    } catch (error) {
+      console.error(`❌ [CLEANUP] Error cleaning up sessions for MAC ${macAddress}:`, error.message);
+      // Don't throw - continue with connection attempt even if cleanup fails
+    }
+  }
 }
 
 const MacAddressRegex = /^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/;
@@ -1923,6 +2000,8 @@ class MQTTConnection {
       }
 
       this.parseHelloMessage(json).catch((error) => {
+        console.error(`❌ [HELLO-ERROR] Failed to process hello message for ${this.clientId}:`, error);
+        console.error(`❌ [HELLO-ERROR] Error stack:`, error.stack);
         debug("Failed to process hello message:", error);
         this.close();
       });
@@ -1992,6 +2071,9 @@ class MQTTConnection {
   }
 
   async parseHelloMessage(json) {
+    console.log(`🔍 [PARSE-HELLO] Starting parseHelloMessage for ${this.clientId}`);
+    console.log(`🔍 [PARSE-HELLO] JSON version: ${json.version}, has bridge: ${!!this.bridge}`);
+
     this.udp = {
       ...this.udp,
       key: crypto.randomBytes(16),
@@ -2010,11 +2092,28 @@ class MQTTConnection {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
 
+    // CRITICAL FIX: Generate new UUID for each session to create new room
+    // This prevents device from reconnecting to the same room after session end
+    const newSessionUuid = crypto.randomUUID();
+    console.log(`🔄 [NEW-SESSION] Generated fresh UUID for new session: ${newSessionUuid} (old: ${this.uuid})`);
+
+    // Generate the new room name that will be created (must match LiveKitBridge.connect() logic)
+    const macForRoom = this.macAddress.replace(/:/g, '');
+    const newRoomName = `${newSessionUuid}_${macForRoom}`;  // Use new UUID
+    console.log(`🔐 [HELLO] New room will be: ${newRoomName}`);
+
+    // Clean up ALL old sessions for this MAC address EXCEPT the new room
+    // Check if server has roomService (for legacy MQTTConnection support)
+    if (this.server && this.server.roomService) {
+      console.log(`🧹 [HELLO] Cleaning up old sessions for MAC: ${this.macAddress}`);
+      await LiveKitBridge.cleanupOldSessionsForDevice(this.macAddress, this.server.roomService, newRoomName);
+    }
+
     this.bridge = new LiveKitBridge(
       this,
       json.version,
       this.macAddress,
-      this.uuid,
+      newSessionUuid,  // Use fresh UUID instead of this.uuid
       this.userData
     );
     this.bridge.on("close", () => {
@@ -2056,6 +2155,11 @@ class MQTTConnection {
       } else {
         console.log(`⚠️ [HELLO] Agent join timeout, sending hello response anyway to ${this.clientId}`);
       }
+
+      // Reset activity timer after bridge is fully connected and ready
+      // This prevents timeout during the initialization phase (cleanup + agent join)
+      this.lastActivityTime = Date.now();
+      console.log(`⏱️ [HELLO] Reset activity timer after bridge connection for device: ${this.clientId}`);
 
       this.sendMqttMessage(
         JSON.stringify({
@@ -2300,6 +2404,8 @@ class VirtualMQTTConnection {
         }
 
         this.parseHelloMessage(json).catch((error) => {
+          console.error(`❌ [HELLO-ERROR] Failed to process hello message for ${this.deviceId}:`, error);
+          console.error(`❌ [HELLO-ERROR] Error stack:`, error.stack);
           debug("Failed to process hello message:", error);
           this.close();
         });
@@ -2412,6 +2518,9 @@ class VirtualMQTTConnection {
   }
 
   async parseHelloMessage(json) {
+    console.log(`🔍 [PARSE-HELLO] Starting parseHelloMessage for ${this.deviceId}`);
+    console.log(`🔍 [PARSE-HELLO] JSON version: ${json.version}, has bridge: ${!!this.bridge}`);
+
     this.udp = {
       ...this.udp,
       key: crypto.randomBytes(16),
@@ -2430,11 +2539,25 @@ class VirtualMQTTConnection {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
 
+    // CRITICAL FIX: Generate new UUID for each session to create new room
+    // This prevents device from reconnecting to the same room after session end
+    const newSessionUuid = crypto.randomUUID();
+    console.log(`🔄 [NEW-SESSION] Generated fresh UUID for new session: ${newSessionUuid} (old: ${this.uuid})`);
+
+    // Generate the new room name that will be created (must match LiveKitBridge.connect() logic)
+    const macForRoom = this.macAddress.replace(/:/g, '');
+    const newRoomName = `${newSessionUuid}_${macForRoom}`;  // Use new UUID
+    console.log(`🔐 [HELLO] New room will be: ${newRoomName}`);
+
+    // Clean up ALL old sessions for this MAC address EXCEPT the new room
+    console.log(`🧹 [HELLO] Cleaning up old sessions for MAC: ${this.macAddress}`);
+    await LiveKitBridge.cleanupOldSessionsForDevice(this.macAddress, this.gateway.roomService, newRoomName);
+
     this.bridge = new LiveKitBridge(
       this,
       json.version,
       this.macAddress,
-      this.uuid,
+      newSessionUuid,  // Use fresh UUID instead of this.uuid
       this.userData
     );
     this.bridge.on("close", () => {
@@ -2482,6 +2605,11 @@ class VirtualMQTTConnection {
         console.log(`⚠️ [HELLO] Agent join timeout, sending hello response anyway to ${this.deviceId}`);
       }
 
+      // Reset activity timer after bridge is fully connected and ready
+      // This prevents timeout during the initialization phase (cleanup + agent join)
+      this.lastActivityTime = Date.now();
+      console.log(`⏱️ [HELLO] Reset activity timer after bridge connection for device: ${this.deviceId}`);
+
       this.sendMqttMessage(
         JSON.stringify({
           type: "hello",
@@ -2523,8 +2651,8 @@ class VirtualMQTTConnection {
 
     if (json.type === "goodbye") {
       console.log(`👋 [GOODBYE-DEVICEID] Received goodbye message from device: ${this.deviceId}, session: ${json.session_id}`);
-      // this.bridge.close();
-      // this.bridge = null;
+      this.bridge.close();
+      this.bridge = null;
       //commet temporarly, dgoodby message is not working well
       
       return;
@@ -2830,6 +2958,25 @@ class MQTTGateway {
     this.mqttClient = null;
     this.deviceConnections = new Map(); // deviceId -> connection info
     this.clientConnections = new Map(); // clientId -> device info (for tracking EMQX clients)
+
+    // Initialize LiveKit RoomServiceClient for room management
+    try {
+      const livekitConfig = configManager.get("livekit");
+      if (livekitConfig && livekitConfig.url && livekitConfig.api_key && livekitConfig.api_secret) {
+        this.roomService = new RoomServiceClient(
+          livekitConfig.url,
+          livekitConfig.api_key,
+          livekitConfig.api_secret
+        );
+        console.log("✅ [INIT] RoomServiceClient initialized for session cleanup");
+      } else {
+        console.warn("⚠️ [INIT] LiveKit config incomplete, room cleanup will be skipped");
+        this.roomService = null;
+      }
+    } catch (error) {
+      console.error("❌ [INIT] Failed to initialize RoomServiceClient:", error.message);
+      this.roomService = null;
+    }
   }
 
   generateNewConnectionId() {
