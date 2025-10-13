@@ -33,6 +33,8 @@ public class DeviceReportRespDTO {
         private String version;
         @Schema(description = "下载地址")
         private String url;
+        @Schema(description = "是否强制更新: 0-否, 1-是")
+        private Integer force;
     }
 
     public static DeviceReportRespDTO createError(String message) {

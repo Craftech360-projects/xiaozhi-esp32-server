@@ -185,16 +185,6 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         DeviceReportRespDTO.Mqtt mqttCredentials = buildMqttCredentials(macAddress);
         if (mqttCredentials != null) {
             response.setMqtt(mqttCredentials);
-            log.info("✅ MQTT Response for device {}: broker={}, port={}, endpoint={}, clientId={}, username={}, password={}",
-                macAddress,
-                mqttCredentials.getBroker(),
-                mqttCredentials.getPort(),
-                mqttCredentials.getEndpoint(),
-                mqttCredentials.getClient_id(),
-                mqttCredentials.getUsername(),
-                mqttCredentials.getPassword());
-        } else {
-            log.error("❌ Failed to generate MQTT credentials for device: {}", macAddress);
         }
 
         if (deviceById != null) {
@@ -390,15 +380,12 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
             String frontedUrl = sysParamsService.getValue(Constant.SERVER_FRONTED_URL, true);
             code.setMessage(frontedUrl + "\n" + cachedCode);
             code.setChallenge(deviceId);
-            log.info("📱 Device {} requesting activation - Using cached code: {}", deviceId, cachedCode);
         } else {
             String newCode = RandomUtil.randomNumbers(6);
             code.setCode(newCode);
             String frontedUrl = sysParamsService.getValue(Constant.SERVER_FRONTED_URL, true);
             code.setMessage(frontedUrl + "\n" + newCode);
             code.setChallenge(deviceId);
-            log.info("🔐 Generated NEW activation code for device {}: {}", deviceId, newCode);
-            log.info("📱 Please bind device using code: {} at {}", newCode, frontedUrl);
 
             Map<String, Object> dataMap = new HashMap<>();
             dataMap.put("id", deviceId);
@@ -499,12 +486,10 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
             mqtt.setPassword(password);
             mqtt.setPublish_topic("device-server");
             mqtt.setSubscribe_topic("null");
-            
-            log.info("Generated MQTT credentials for device {}: clientId={}", deviceId, clientId);
-            
+
             return mqtt;
         } catch (Exception e) {
-            log.error("Failed to generate MQTT credentials for device {}: {}", deviceId, e.getMessage(), e);
+            log.error("生成MQTT凭据失败: {}", e.getMessage());
             return null;
         }
     }
@@ -517,24 +502,16 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
             currentVersion = "0.0.0";
         }
 
-        // STEP 1: Check if there's a force update firmware for this type
-        // Force update takes PRIORITY over normal update logic
+        // Check if there's a force update firmware for this type
         OtaEntity forceUpdateOta = otaService.getForceUpdateFirmware(type);
         DeviceReportRespDTO.Firmware firmware = new DeviceReportRespDTO.Firmware();
         String downloadUrl = null;
 
         if (forceUpdateOta != null) {
-            // Force update mode: ALWAYS return the forced version
-            // This completely bypasses normal version comparison logic
-            log.info("🔒 Force update ACTIVE for type: {}, forced version: {}, device current: {}",
-                type, forceUpdateOta.getVersion(), currentVersion);
-
-            // Only provide download URL if device version is different from forced version
-            // If same version, device already has it, no download needed
+            // Force update mode: return the forced version
             if (!forceUpdateOta.getVersion().equals(currentVersion)) {
                 String otaUrl = sysParamsService.getValue(Constant.SERVER_OTA, true);
                 if (StringUtils.isBlank(otaUrl) || otaUrl.equals("null")) {
-                    log.error("OTA地址未配置，请登录智控台，在参数管理找到【server.ota】配置");
                     HttpServletRequest request = ((ServletRequestAttributes) RequestContextHolder
                             .getRequestAttributes())
                             .getRequest();
@@ -543,34 +520,22 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
                 String uuid = UUID.randomUUID().toString();
                 redisUtils.set(RedisKeys.getOtaIdKey(uuid), forceUpdateOta.getId());
                 downloadUrl = otaUrl.replace("/ota/", "/otaMag/download/") + uuid;
-
-                log.info("📥 Force update download URL generated - Device will {} to version {}",
-                    compareVersions(forceUpdateOta.getVersion(), currentVersion) > 0 ? "UPGRADE" : "DOWNGRADE",
-                    forceUpdateOta.getVersion());
-            } else {
-                log.info("✅ Device already on forced version {}, no download needed", currentVersion);
             }
 
-            // ALWAYS return the forced version, regardless of comparison
             firmware.setVersion(forceUpdateOta.getVersion());
             firmware.setUrl(downloadUrl == null ? Constant.INVALID_FIRMWARE_URL : downloadUrl);
-
-            log.info("📦 FORCE OTA Response - Type: {}, Current: {}, Target: {}, URL: {}",
-                type, currentVersion, firmware.getVersion(), firmware.getUrl());
+            firmware.setForce(downloadUrl != null ? 1 : 0);
 
             return firmware;
         }
 
-        // STEP 2: Normal mode - get latest firmware and compare versions
-        // This only runs if NO force update is set
+        // Normal mode - get latest firmware and compare versions
         OtaEntity ota = otaService.getLatestOta(type);
 
         if (ota != null) {
-            // If device has no version info, or OTA version is newer, return download URL
             if (compareVersions(ota.getVersion(), currentVersion) > 0) {
                 String otaUrl = sysParamsService.getValue(Constant.SERVER_OTA, true);
                 if (StringUtils.isBlank(otaUrl) || otaUrl.equals("null")) {
-                    log.error("OTA地址未配置，请登录智控台，在参数管理找到【server.ota】配置");
                     HttpServletRequest request = ((ServletRequestAttributes) RequestContextHolder
                             .getRequestAttributes())
                             .getRequest();
@@ -584,9 +549,7 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
 
         firmware.setVersion(ota == null ? currentVersion : ota.getVersion());
         firmware.setUrl(downloadUrl == null ? Constant.INVALID_FIRMWARE_URL : downloadUrl);
-
-        log.info("📦 Normal OTA Response - Type: {}, Current: {}, Latest: {}, URL: {}",
-            type, currentVersion, firmware.getVersion(), firmware.getUrl());
+        firmware.setForce(0);
 
         return firmware;
     }

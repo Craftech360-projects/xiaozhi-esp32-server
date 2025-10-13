@@ -175,7 +175,6 @@ public class OTAMagController {
         if (downloadCount >= 3) {
             redisUtils.delete(downloadCountKey);
             redisUtils.delete(RedisKeys.getOtaIdKey(uuid));
-            logger.warn("Download limit exceeded for UUID: {}", uuid);
             return ResponseEntity.notFound().build();
         }
 
@@ -185,37 +184,28 @@ public class OTAMagController {
             // 获取固件信息
             OtaEntity otaEntity = otaService.selectById(id);
             if (otaEntity == null || StringUtils.isBlank(otaEntity.getFirmwarePath())) {
-                logger.warn("Firmware not found or path is empty for ID: {}", id);
                 return ResponseEntity.notFound().build();
             }
 
-            // 获取文件路径 - 确保路径是绝对路径或正确的相对路径
+            // 获取文件路径
             String firmwarePath = otaEntity.getFirmwarePath();
             Path path;
 
-            // 检查是否是绝对路径
             if (Paths.get(firmwarePath).isAbsolute()) {
                 path = Paths.get(firmwarePath);
             } else {
-                // 如果是相对路径，则从当前工作目录解析
                 path = Paths.get(System.getProperty("user.dir"), firmwarePath);
             }
 
-            logger.info("Attempting to download firmware for ID: {}, DB path: {}, resolved path: {}",
-                    id, firmwarePath, path.toAbsolutePath());
-
             if (!Files.exists(path) || !Files.isRegularFile(path)) {
-                // 尝试直接从firmware目录下查找文件名
+                // 尝试从firmware目录查找
                 String fileName = new File(firmwarePath).getName();
                 Path altPath = Paths.get(System.getProperty("user.dir"), "firmware", fileName);
-
-                logger.info("File not found at primary path, trying alternative path: {}", altPath.toAbsolutePath());
 
                 if (Files.exists(altPath) && Files.isRegularFile(altPath)) {
                     path = altPath;
                 } else {
-                    logger.error("Firmware file not found at either path: {} or {}",
-                            path.toAbsolutePath(), altPath.toAbsolutePath());
+                    logger.error("固件文件未找到: {}", firmwarePath);
                     return ResponseEntity.notFound().build();
                 }
             }
@@ -230,21 +220,17 @@ public class OTAMagController {
                 originalFilename += extension;
             }
 
-            // 清理文件名，移除不安全字符
             String safeFilename = originalFilename.replaceAll("[^a-zA-Z0-9._-]", "_");
-
-            logger.info("Providing download for firmware ID: {}, filename: {}, size: {} bytes",
-                    id, safeFilename, fileContent.length);
 
             return ResponseEntity.ok()
                     .contentType(MediaType.APPLICATION_OCTET_STREAM)
                     .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + safeFilename + "\"")
                     .body(fileContent);
         } catch (IOException e) {
-            logger.error("Error reading firmware file for ID: {}", id, e);
+            logger.error("读取固件文件失败", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         } catch (Exception e) {
-            logger.error("Unexpected error during firmware download for ID: {}", id, e);
+            logger.error("下载固件时发生错误", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
