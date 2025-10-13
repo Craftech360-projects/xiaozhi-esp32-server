@@ -678,7 +678,9 @@ class LiveKitBridge extends Emitter {
               const frame = new AudioFrame(samples, 16000, 1, samples.length);
 
               // Safe capture with error handling
-              this.safeCaptureFrame(frame);
+              this.safeCaptureFrame(frame).catch(err => {
+              console.error(`❌ [AUDIO] Unhandled error in safeCaptureFrame: ${err.message}`);
+              });;
             }
           } catch (err) {
             console.error(`❌ [OPUS] Decode error: ${err.message}`);
@@ -696,14 +698,16 @@ class LiveKitBridge extends Emitter {
         const frame = new AudioFrame(samples, 16000, 1, samples.length);
 
         // Safe capture with error handling
-        this.safeCaptureFrame(frame);
+        this.safeCaptureFrame(frame).catch(err => {
+              console.error(`❌ [AUDIO] Unhandled error in safeCaptureFrame: ${err.message}`);
+              });;
       }
     } catch (error) {
       console.error(`❌ [AUDIO] Error in sendAudio: ${error.message}`);
     }
   }
 
-  safeCaptureFrame(frame) {
+  async safeCaptureFrame(frame) {
     try {
       // Validate frame before capture
       if (!frame || !frame.data || frame.data.length === 0) {
@@ -718,7 +722,7 @@ class LiveKitBridge extends Emitter {
       }
 
       // Attempt to capture the frame
-      this.audioSource.captureFrame(frame);
+     await this.audioSource.captureFrame(frame);
     } catch (error) {
       console.error(`❌ [AUDIO] Failed to capture frame: ${error.message}`);
 
@@ -1996,6 +2000,8 @@ class MQTTConnection {
       }
 
       this.parseHelloMessage(json).catch((error) => {
+        console.error(`❌ [HELLO-ERROR] Failed to process hello message for ${this.clientId}:`, error);
+        console.error(`❌ [HELLO-ERROR] Error stack:`, error.stack);
         debug("Failed to process hello message:", error);
         this.close();
       });
@@ -2065,6 +2071,9 @@ class MQTTConnection {
   }
 
   async parseHelloMessage(json) {
+    console.log(`🔍 [PARSE-HELLO] Starting parseHelloMessage for ${this.clientId}`);
+    console.log(`🔍 [PARSE-HELLO] JSON version: ${json.version}, has bridge: ${!!this.bridge}`);
+
     this.udp = {
       ...this.udp,
       key: crypto.randomBytes(16),
@@ -2083,9 +2092,14 @@ class MQTTConnection {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
 
+    // CRITICAL FIX: Generate new UUID for each session to create new room
+    // This prevents device from reconnecting to the same room after session end
+    const newSessionUuid = crypto.randomUUID();
+    console.log(`🔄 [NEW-SESSION] Generated fresh UUID for new session: ${newSessionUuid} (old: ${this.uuid})`);
+
     // Generate the new room name that will be created (must match LiveKitBridge.connect() logic)
     const macForRoom = this.macAddress.replace(/:/g, '');
-    const newRoomName = `${this.uuid}_${macForRoom}`;
+    const newRoomName = `${newSessionUuid}_${macForRoom}`;  // Use new UUID
     console.log(`🔐 [HELLO] New room will be: ${newRoomName}`);
 
     // Clean up ALL old sessions for this MAC address EXCEPT the new room
@@ -2099,7 +2113,7 @@ class MQTTConnection {
       this,
       json.version,
       this.macAddress,
-      this.uuid,
+      newSessionUuid,  // Use fresh UUID instead of this.uuid
       this.userData
     );
     this.bridge.on("close", () => {
@@ -2390,6 +2404,8 @@ class VirtualMQTTConnection {
         }
 
         this.parseHelloMessage(json).catch((error) => {
+          console.error(`❌ [HELLO-ERROR] Failed to process hello message for ${this.deviceId}:`, error);
+          console.error(`❌ [HELLO-ERROR] Error stack:`, error.stack);
           debug("Failed to process hello message:", error);
           this.close();
         });
@@ -2502,6 +2518,9 @@ class VirtualMQTTConnection {
   }
 
   async parseHelloMessage(json) {
+    console.log(`🔍 [PARSE-HELLO] Starting parseHelloMessage for ${this.deviceId}`);
+    console.log(`🔍 [PARSE-HELLO] JSON version: ${json.version}, has bridge: ${!!this.bridge}`);
+
     this.udp = {
       ...this.udp,
       key: crypto.randomBytes(16),
@@ -2520,9 +2539,14 @@ class VirtualMQTTConnection {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
 
+    // CRITICAL FIX: Generate new UUID for each session to create new room
+    // This prevents device from reconnecting to the same room after session end
+    const newSessionUuid = crypto.randomUUID();
+    console.log(`🔄 [NEW-SESSION] Generated fresh UUID for new session: ${newSessionUuid} (old: ${this.uuid})`);
+
     // Generate the new room name that will be created (must match LiveKitBridge.connect() logic)
     const macForRoom = this.macAddress.replace(/:/g, '');
-    const newRoomName = `${this.uuid}_${macForRoom}`;
+    const newRoomName = `${newSessionUuid}_${macForRoom}`;  // Use new UUID
     console.log(`🔐 [HELLO] New room will be: ${newRoomName}`);
 
     // Clean up ALL old sessions for this MAC address EXCEPT the new room
@@ -2533,7 +2557,7 @@ class VirtualMQTTConnection {
       this,
       json.version,
       this.macAddress,
-      this.uuid,
+      newSessionUuid,  // Use fresh UUID instead of this.uuid
       this.userData
     );
     this.bridge.on("close", () => {
@@ -2627,8 +2651,8 @@ class VirtualMQTTConnection {
 
     if (json.type === "goodbye") {
       console.log(`👋 [GOODBYE-DEVICEID] Received goodbye message from device: ${this.deviceId}, session: ${json.session_id}`);
-      // this.bridge.close();
-      // this.bridge = null;
+      this.bridge.close();
+      this.bridge = null;
       //commet temporarly, dgoodby message is not working well
       
       return;
