@@ -882,77 +882,128 @@ workflows:
 
   # ==========================================
   # 🔧 DEV WORKFLOW
-  # Runs ONLY on dev branch - Tests + Deployment in parallel
+  # Runs on dev branch AND circleci-validation branch for testing
   # ==========================================
   dev-workflow:
-    when:
-      equal: [ dev, << pipeline.git.branch >> ]
     jobs:
       # Notification
       - test_pipeline_notification:
           name: "[DEV] 🔧 Pipeline Start"
+          filters:
+            branches:
+              only:
+                - dev
+                - circleci-validation
 
       # Code Quality Check
       - test_code_quality_check:
           name: "[DEV] 🔧 Code Quality"
           requires: ["[DEV] 🔧 Pipeline Start"]
+          filters:
+            branches:
+              only:
+                - dev
+                - circleci-validation
 
       # ==========================================
       # TESTING PHASE: All 4 services test in parallel
+      # Runs on dev branch AND circleci-validation branch
       # ==========================================
       - test_node_service:
           name: "[DEV] 🔧 Test MQTT Gateway"
           service_name: "mqtt-gateway"
           service_path: "main/mqtt-gateway"
           requires: ["[DEV] 🔧 Code Quality"]
+          filters:
+            branches:
+              only:
+                - dev
+                - circleci-validation
 
       - test_java_service:
           name: "[DEV] 🔧 Test Manager API"
           service_name: "manager-api"
           service_path: "main/manager-api"
           requires: ["[DEV] 🔧 Code Quality"]
+          filters:
+            branches:
+              only:
+                - dev
+                - circleci-validation
 
       - test_node_service:
           name: "[DEV] 🔧 Test Manager Web"
           service_name: "manager-web"
           service_path: "main/manager-web"
           requires: ["[DEV] 🔧 Code Quality"]
+          filters:
+            branches:
+              only:
+                - dev
+                - circleci-validation
 
       - test_python_service:
           name: "[DEV] 🔧 Test LiveKit Server"
           service_name: "livekit-server"
           service_path: "main/livekit-server"
           requires: ["[DEV] 🔧 Code Quality"]
+          filters:
+            branches:
+              only:
+                - dev
+                - circleci-validation
 
       # ==========================================
       # BUILD PHASE: All 4 services build in parallel (after tests pass)
+      # Runs on dev branch AND circleci-validation branch
       # ==========================================
       - build_node_service:
           name: "[DEV] 🔧 Build MQTT Gateway"
           service_name: "mqtt-gateway"
           service_path: "main/mqtt-gateway"
           requires: ["[DEV] 🔧 Test MQTT Gateway"]
+          filters:
+            branches:
+              only:
+                - dev
+                - circleci-validation
 
       - build_java_service:
           name: "[DEV] 🔧 Build Manager API"
           service_name: "manager-api"
           service_path: "main/manager-api"
           requires: ["[DEV] 🔧 Test Manager API"]
+          filters:
+            branches:
+              only:
+                - dev
+                - circleci-validation
 
       - build_vue_frontend:
           name: "[DEV] 🔧 Build Manager Web"
           service_name: "manager-web"
           service_path: "main/manager-web"
           requires: ["[DEV] 🔧 Test Manager Web"]
+          filters:
+            branches:
+              only:
+                - dev
+                - circleci-validation
 
       - build_python_service:
           name: "[DEV] 🔧 Build LiveKit Server"
           service_name: "livekit-server"
           service_path: "main/livekit-server"
           requires: ["[DEV] 🔧 Test LiveKit Server"]
+          filters:
+            branches:
+              only:
+                - dev
+                - circleci-validation
 
       # ==========================================
       # DEPLOY PHASE: All 4 services deploy in parallel to dev environment
+      # ONLY runs on dev branch (NOT on circleci-validation for safety)
       # ==========================================
       - deploy_node_pm2_azure:
           name: "[DEV] 🔧 Deploy MQTT Gateway"
@@ -963,6 +1014,9 @@ workflows:
           http_port: 8884
           mqtt_port: 1883
           requires: ["[DEV] 🔧 Build MQTT Gateway"]
+          filters:
+            branches:
+              only: dev
 
       - deploy_java_pm2_azure:
           name: "[DEV] 🔧 Deploy Manager API"
@@ -971,6 +1025,9 @@ workflows:
           env: "development"
           http_port: 8002
           requires: ["[DEV] 🔧 Build Manager API"]
+          filters:
+            branches:
+              only: dev
 
       - deploy_vue_pm2_azure:
           name: "[DEV] 🔧 Deploy Manager Web"
@@ -979,6 +1036,9 @@ workflows:
           env: "development"
           http_port: 8886
           requires: ["[DEV] 🔧 Build Manager Web"]
+          filters:
+            branches:
+              only: dev
 
       - deploy_python_pm2_azure:
           name: "[DEV] 🔧 Deploy LiveKit Server"
@@ -988,6 +1048,9 @@ workflows:
           http_port: 8887
           entry_file: "main.py"
           requires: ["[DEV] 🔧 Build LiveKit Server"]
+          filters:
+            branches:
+              only: dev
 
   # ==========================================
   # 🚀 PRODUCTION WORKFLOW
