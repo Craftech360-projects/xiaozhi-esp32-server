@@ -5,7 +5,7 @@ aiohttp
 
 # Local AI Models (for offline operation)
 faster-whisper  # Local STT using Whisper
-TTS  # Coqui TTS for local text-to-speech
+# TTS  # Coqui TTS for local text-to-speech - OFFLINE MODE ONLY, not needed for production/CI (requires Python < 3.12)
 
 # Optional dependencies for enhanced semantic search
 qdrant-client
