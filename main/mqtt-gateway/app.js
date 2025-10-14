@@ -240,7 +240,9 @@ class LiveKitBridge extends Emitter {
   }
 
   async connect(audio_params, features) {
+    const connectStartTime = Date.now();
     console.log(`🔍 [DEBUG] LiveKitBridge.connect() called - UUID: ${this.uuid}, MAC: ${this.macAddress}`);
+    console.log(`⏱️ [TIMING-START] Connection initiated at ${connectStartTime}`);
     const { url, api_key, api_secret } = this.livekitConfig;
     // Include MAC address in room name for agent to extract device-specific prompt
     const macForRoom = this.macAddress.replace(/:/g, ''); // Remove colons: 00:16:3e:ac:b5:38 → 00163eacb538
@@ -407,7 +409,9 @@ class LiveKitBridge extends Emitter {
           autoSubscribe: true,
           dynacast: true,
         });
+        const roomConnectedTime = Date.now();
         console.log(`✅ [ROOM] Connected to LiveKit room: ${roomName}`);
+        console.log(`⏱️ [TIMING-ROOM] Room connection took ${roomConnectedTime - connectStartTime}ms`);
         console.log(`🔗 [CONNECTION] State: ${this.room.connectionState}`);
         console.log(`🟢 [STATUS] Is connected: ${this.room.isConnected}`);
 
@@ -526,13 +530,13 @@ class LiveKitBridge extends Emitter {
                     this.processBufferedFrames(timestamp, frameCount, participant.identity);
 
                     // Log every 50 frames or every 5 seconds
-                    const now = Date.now();
-                    if (frameCount % 50 === 0 || now - lastLogTime > 5000) {
-                      console.log(
-                        `🎵 [AUDIO FRAMES] Received ${frameCount} frames, ${totalBytes} total bytes from ${participant.identity}, buffer: ${this.frameBuffer.length}B`
-                      );
-                      lastLogTime = now;
-                    }
+                    // const now = Date.now();
+                    // if (frameCount % 50 === 0 || now - lastLogTime > 5000) {
+                    //   console.log(
+                    //     `🎵 [AUDIO FRAMES] Received ${frameCount} frames, ${totalBytes} total bytes from ${participant.identity}, buffer: ${this.frameBuffer.length}B`
+                    //   );
+                    //   lastLogTime = now;
+                    // }
 
                   }
                 } catch (error) {
@@ -591,9 +595,12 @@ class LiveKitBridge extends Emitter {
             }
 
             // Send initial greeting message to let user know agent is ready
+            const greetingStartTime = Date.now();
             setTimeout(() => {
+              const greetingEndTime = Date.now();
+              console.log(`⏱️ [TIMING-GREETING] Greeting delay took ${greetingEndTime - greetingStartTime}ms`);
               this.sendInitialGreeting();
-            }, 1000); // Small delay to ensure connection is stable
+            }, 300); // Reduced delay for faster response (optimized from 1000ms)
           }
         });
 
@@ -621,13 +628,17 @@ class LiveKitBridge extends Emitter {
           track,
           options
         );
+        const trackPublishedTime = Date.now();
         console.log(
           `🎤 [PUBLISH] Published local audio track: ${publication.trackSid || publication.sid}`
         );
+        console.log(`⏱️ [TIMING-TRACK] Track publish took ${trackPublishedTime - roomConnectedTime}ms`);
 
         // Use roomName as session_id - this is consistent with how LiveKit rooms work
         // The room.sid might not be immediately available, but roomName is our session identifier
         // Include audio_params that the client expects
+        const totalConnectTime = Date.now() - connectStartTime;
+        console.log(`⏱️ [TIMING-TOTAL] Total connection setup took ${totalConnectTime}ms`);
         resolve({
           session_id: roomName,
           audio_params: {
@@ -1477,10 +1488,10 @@ class LiveKitBridge extends Emitter {
 
   /**
    * Wait for agent to join the room with timeout
-   * @param {number} timeoutMs - Timeout in milliseconds (default: 7000)
+   * @param {number} timeoutMs - Timeout in milliseconds (default: 4000)
    * @returns {Promise<boolean>} - true if agent joined, false if timeout
    */
-  async waitForAgentJoin(timeoutMs = 7000) {
+  async waitForAgentJoin(timeoutMs = 4000) {
     // If agent already joined, return immediately
     if (this.agentJoined) {
       console.log(`✅ [AGENT-WAIT] Agent already joined`);
@@ -2148,7 +2159,10 @@ class MQTTConnection {
 
       // Wait for agent to join before sending hello response
       console.log(`⏳ [HELLO] Waiting for agent to join before sending hello response to ${this.clientId}`);
-      const agentReady = await this.bridge.waitForAgentJoin(7000); // 7 second timeout
+      const agentWaitStartTime = Date.now();
+      const agentReady = await this.bridge.waitForAgentJoin(4000); // Reduced timeout from 7000ms to 4000ms
+      const agentWaitEndTime = Date.now();
+      console.log(`⏱️ [TIMING-AGENT] Agent wait took ${agentWaitEndTime - agentWaitStartTime}ms`);
 
       if (agentReady) {
         console.log(`✅ [HELLO] Agent ready, sending hello response to ${this.clientId}`);
@@ -2597,7 +2611,10 @@ class VirtualMQTTConnection {
 
       // Wait for agent to join before sending hello response
       console.log(`⏳ [HELLO] Waiting for agent to join before sending hello response to ${this.deviceId}`);
-      const agentReady = await this.bridge.waitForAgentJoin(7000); // 7 second timeout
+      const agentWaitStartTime = Date.now();
+      const agentReady = await this.bridge.waitForAgentJoin(4000); // Reduced timeout from 7000ms to 4000ms
+      const agentWaitEndTime = Date.now();
+      console.log(`⏱️ [TIMING-AGENT] Agent wait took ${agentWaitEndTime - agentWaitStartTime}ms`);
 
       if (agentReady) {
         console.log(`✅ [HELLO] Agent ready, sending hello response to ${this.deviceId}`);
