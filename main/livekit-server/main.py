@@ -157,6 +157,9 @@ async def entrypoint(ctx: JobContext):
     ctx.log_context_fields = {"room": ctx.room.name}
     print(f"Starting agent in room: {ctx.room.name}")
 
+    # PERFORMANCE: Track total initialization time
+    init_start_time = asyncio.get_event_loop().time()
+
     # Load configuration (environment variables already loaded at module level)
     groq_config = ConfigLoader.get_groq_config()
     agent_config = ConfigLoader.get_agent_config()
@@ -178,83 +181,102 @@ async def entrypoint(ctx: JobContext):
                 device_mac = ':'.join(mac_part[i:i+2] for i in range(0, 12, 2))
                 logger.info(f"📱 Extracted MAC from room name: {device_mac}")
 
-    # Initialize chat history service if MAC is available
+    # OPTIMIZATION PHASE 1: Parallel API Calls
+    # Fetch all API data in parallel to reduce latency from ~1200ms to ~500ms
     chat_history_service = None
+    tts_config_from_api = None
+    child_profile = None
+    agent_prompt = None
+    db_helper = None
+    agent_id = None
+
     if device_mac:
         try:
+            logger.info("⚡ Starting parallel API calls...")
+            start_time = asyncio.get_event_loop().time()
+
             # Get Manager API configuration
-            manager_api_url = os.getenv(
-                "MANAGER_API_URL")
-            manager_api_secret = os.getenv(
-                "MANAGER_API_SECRET")
+            manager_api_url = os.getenv("MANAGER_API_URL")
+            manager_api_secret = os.getenv("MANAGER_API_SECRET")
 
-            # Create database helper and get agent_id
+            # Create database helper
             db_helper = DatabaseHelper(manager_api_url, manager_api_secret)
-            agent_id = await db_helper.get_agent_id(device_mac)
 
-            # Create chat history service
-            chat_history_service = ChatHistoryService(
-                manager_api_url=manager_api_url,
-                secret=manager_api_secret,
-                device_mac=device_mac,
-                session_id=room_name,
-                agent_id=agent_id
+            # Execute all API calls in parallel
+            results = await asyncio.gather(
+                db_helper.get_agent_id(device_mac),                          # ~200ms
+                prompt_service.get_prompt_and_config(room_name, device_mac), # ~500ms
+                db_helper.get_child_profile_by_mac(device_mac),             # ~500ms
+                return_exceptions=True  # Don't fail all if one fails
             )
 
-            # Start periodic sending
-            chat_history_service.start_periodic_sending()
-            logger.info(
-                f"📝✅ Chat history service initialized for MAC: {device_mac}, Agent ID: {agent_id}")
-            logger.info(
-                f"📝📊 Service config: batch_size={chat_history_service.batch_size}, interval={chat_history_service.send_interval}s")
+            elapsed_time = (asyncio.get_event_loop().time() - start_time) * 1000
+            logger.info(f"⚡✅ Parallel API calls completed in {elapsed_time:.0f}ms")
 
-        except Exception as e:
-            logger.error(f"📝❌ Failed to initialize chat history service: {e}")
-            chat_history_service = None
+            # Unpack results with error handling
+            agent_id_result, prompt_config_result, child_profile_result = results
 
-    # Fetch device-specific prompt AND TTS config BEFORE creating assistant
-    tts_config_from_api = None
-    if device_mac:
-        try:
-            agent_prompt, tts_config_from_api = await prompt_service.get_prompt_and_config(room_name, device_mac)
-            logger.info(
-                f"🎯 Using device-specific prompt for MAC: {device_mac} (length: {len(agent_prompt)} chars)")
-            # Log first few lines of the fetched prompt for verification
-            prompt_lines = agent_prompt.split('\n')[:5]  # First 5 lines
-            logger.info(
-                f"📝 Fetched prompt preview: {' | '.join(line.strip()[:50] for line in prompt_lines if line.strip())}")
-
-            if tts_config_from_api:
-                logger.info(f"🎤 TTS Config from API: Provider={tts_config_from_api.get('provider')}, Type={tts_config_from_api.get('type')}")
+            # Process agent_id result
+            if isinstance(agent_id_result, Exception):
+                logger.error(f"📝❌ Failed to get agent_id: {agent_id_result}")
+                agent_id = None
             else:
-                logger.warning(f"⚠️ No TTS config from API, will use .env defaults")
+                agent_id = agent_id_result
+                logger.info(f"📝 Agent ID fetched: {agent_id}")
+
+            # Process prompt and config result
+            if isinstance(prompt_config_result, Exception):
+                logger.warning(f"Failed to fetch config from API for MAC {device_mac}: {prompt_config_result}")
+                agent_prompt = ConfigLoader.get_default_prompt()
+                tts_config_from_api = None
+                logger.info(f"📄 Fallback to default prompt (length: {len(agent_prompt)} chars)")
+            else:
+                agent_prompt, tts_config_from_api = prompt_config_result
+                logger.info(f"🎯 Using device-specific prompt for MAC: {device_mac} (length: {len(agent_prompt)} chars)")
+                # Log first few lines of the fetched prompt for verification
+                prompt_lines = agent_prompt.split('\n')[:5]
+                logger.info(f"📝 Fetched prompt preview: {' | '.join(line.strip()[:50] for line in prompt_lines if line.strip())}")
+
+                if tts_config_from_api:
+                    logger.info(f"🎤 TTS Config from API: Provider={tts_config_from_api.get('provider')}, Type={tts_config_from_api.get('type')}")
+                else:
+                    logger.warning(f"⚠️ No TTS config from API, will use .env defaults")
+
+            # Process child profile result
+            if isinstance(child_profile_result, Exception):
+                logger.warning(f"Failed to fetch child profile for MAC {device_mac}: {child_profile_result}")
+                child_profile = None
+            else:
+                child_profile = child_profile_result
+                if child_profile:
+                    logger.info(f"👶 Child profile loaded: {child_profile.get('name')}, age {child_profile.get('age')} ({child_profile.get('ageGroup')})")
+                else:
+                    logger.info(f"👶 No child profile assigned to device {device_mac}")
+
+            # Create chat history service if we have agent_id
+            if agent_id:
+                chat_history_service = ChatHistoryService(
+                    manager_api_url=manager_api_url,
+                    secret=manager_api_secret,
+                    device_mac=device_mac,
+                    session_id=room_name,
+                    agent_id=agent_id
+                )
+                chat_history_service.start_periodic_sending()
+                logger.info(f"📝✅ Chat history service initialized for MAC: {device_mac}, Agent ID: {agent_id}")
+                logger.info(f"📝📊 Service config: batch_size={chat_history_service.batch_size}, interval={chat_history_service.send_interval}s")
 
         except Exception as e:
-            logger.warning(
-                f"Failed to fetch config from API for MAC {device_mac}, using defaults: {e}")
+            logger.error(f"❌ Error in parallel API calls: {e}")
             agent_prompt = ConfigLoader.get_default_prompt()
             tts_config_from_api = None
-            logger.info(
-                f"📄 Fallback to default prompt (length: {len(agent_prompt)} chars)")
+            child_profile = None
+            chat_history_service = None
     else:
+        # No device MAC - use defaults
         agent_prompt = ConfigLoader.get_default_prompt()
         tts_config_from_api = None
-        logger.info(
-            f"📄 Using default prompt - no MAC in room name '{room_name}' (length: {len(agent_prompt)} chars)")
-
-    # Fetch child profile if device MAC is available
-    child_profile = None
-    if device_mac:
-        try:
-            child_profile = await db_helper.get_child_profile_by_mac(device_mac)
-            if child_profile:
-                logger.info(
-                    f"👶 Child profile loaded: {child_profile.get('name')}, age {child_profile.get('age')} ({child_profile.get('ageGroup')})")
-            else:
-                logger.info(f"👶 No child profile assigned to device {device_mac}")
-        except Exception as e:
-            logger.warning(f"Failed to fetch child profile for MAC {device_mac}: {e}")
-            child_profile = None
+        logger.info(f"📄 Using default prompt - no MAC in room name '{room_name}' (length: {len(agent_prompt)} chars)")
 
     # Initialize mem0 memory provider and conversation buffer
     mem0_provider = None
@@ -656,6 +678,10 @@ async def entrypoint(ctx: JobContext):
         room=ctx.room,
         room_input_options=room_options,
     )
+
+    # PERFORMANCE: Log total initialization time
+    init_elapsed_time = (asyncio.get_event_loop().time() - init_start_time) * 1000
+    logger.info(f"⚡ Total room initialization completed in {init_elapsed_time:.0f}ms")
 
     # Pass session reference to assistant for dynamic updates
     assistant.set_agent_session(session)
