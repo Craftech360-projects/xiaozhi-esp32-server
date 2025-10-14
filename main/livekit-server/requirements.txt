@@ -19,6 +19,6 @@ livekit-api
 PyJWT
 
 # Memory provider (optional - comment out if using local memory)
-mem0
+mem0ai  # Correct package name on PyPI (was: mem0)
 
 jinja2
