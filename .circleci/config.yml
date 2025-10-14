@@ -884,6 +884,205 @@ jobs:
               echo \"✅ ${SVC} deployed successfully\"
             "
 
+  # ==========================================
+  # PRODUCTION CONFIG DEPLOYMENT
+  # Deploy LiveKit Cloud configuration for production
+  # ==========================================
+  deploy_livekit_config:
+    executor: base-executor
+    steps:
+      - checkout
+      - add_ssh_keys:
+          fingerprints:
+            - "SHA256:VlAMfJstRWT1o3ZLc7LT00HxvqwqVsAR+F5X1ZSaXh0"
+      - run:
+          name: Deploy LiveKit Cloud Configuration
+          command: |
+            # Install envsubst for environment variable substitution
+            sudo apt-get update -qq && sudo apt-get install -y gettext-base
+
+            : "${AZURE_HOST:?Set AZURE_HOST in CircleCI context}"
+            : "${AZURE_USER:?Set AZURE_USER in CircleCI context}"
+            : "${AZURE_DEPLOY_PATH:?Set AZURE_DEPLOY_PATH in CircleCI context}"
+            : "${LIVEKIT_URL:?Set LIVEKIT_URL in CircleCI context}"
+            : "${LIVEKIT_API_KEY:?Set LIVEKIT_API_KEY in CircleCI context}"
+            : "${LIVEKIT_API_SECRET:?Set LIVEKIT_API_SECRET in CircleCI context}"
+
+            echo "📝 Deploying LiveKit config.yaml with LiveKit Cloud settings"
+
+            # Replace LiveKit Cloud environment variables in config.yaml
+            envsubst < "main/livekit-server/config.production.yaml" > /tmp/config.yaml
+
+            # Deploy config.yaml
+            scp -o StrictHostKeyChecking=no /tmp/config.yaml \
+              "${AZURE_USER}@${AZURE_HOST}:${AZURE_DEPLOY_PATH}/main/livekit-server/config.yaml"
+
+            echo "✅ LiveKit Cloud config deployed successfully"
+
+            # Verify deployment
+            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" \
+              "echo '=== Deployed LiveKit Config ===' && grep 'livekit:' ${AZURE_DEPLOY_PATH}/main/livekit-server/config.yaml -A 3"
+
+  # ==========================================
+  # LIVEKIT AGENT CLOUD DEPLOYMENT
+  # Deploy LiveKit agent to LiveKit Cloud
+  # ==========================================
+  deploy_livekit_agent_cloud:
+    machine:
+      image: ubuntu-2204:2024.01.1
+      docker_layer_caching: true
+    resource_class: large
+    steps:
+      - checkout
+      - run:
+          name: Install LiveKit CLI and UV
+          command: |
+            # Install LiveKit CLI for agent deployment
+            echo "📦 Installing LiveKit CLI..."
+            curl -sSL https://get.livekit.io/cli | bash
+
+            # Verify LiveKit CLI installation
+            lk --version
+
+            # Install UV (Python package manager)
+            echo "📦 Installing UV..."
+            curl -LsSf https://astral.sh/uv/install.sh | sh
+
+            # Add UV to PATH for current session
+            export PATH="$HOME/.cargo/bin:$PATH"
+
+            # Verify UV installation
+            uv --version
+
+            echo "✅ LiveKit CLI and UV installed successfully"
+
+      - run:
+          name: Delete Old Agent from LiveKit Cloud
+          command: |
+            : "${LIVEKIT_URL:?Set LIVEKIT_URL in CircleCI context}"
+            : "${LIVEKIT_API_KEY:?Set LIVEKIT_API_KEY in CircleCI context}"
+            : "${LIVEKIT_API_SECRET:?Set LIVEKIT_API_SECRET in CircleCI context}"
+
+            cd main/livekit-server
+
+            echo "🗑️ Deleting old agent from LiveKit Cloud..."
+
+            # Set LiveKit credentials as environment variables
+            export LIVEKIT_URL="$LIVEKIT_URL"
+            export LIVEKIT_API_KEY="$LIVEKIT_API_KEY"
+            export LIVEKIT_API_SECRET="$LIVEKIT_API_SECRET"
+
+            # Check if agent exists and delete it
+            # Read agent ID from livekit.toml if it exists
+            if [ -f "livekit.toml" ]; then
+              AGENT_ID=$(grep -oP 'id\s*=\s*"\K[^"]+' livekit.toml || echo "")
+
+              if [ -n "$AGENT_ID" ]; then
+                echo "📋 Found agent ID: $AGENT_ID"
+                echo "🗑️ Attempting to delete agent..."
+
+                # Delete the agent (ignore errors if agent doesn't exist)
+                lk agent delete "$AGENT_ID" || echo "⚠️ Agent not found or already deleted (this is okay)"
+              else
+                echo "📋 No agent ID found in livekit.toml"
+              fi
+            else
+              echo "📋 livekit.toml not found, skipping delete"
+            fi
+
+            echo "✅ Old agent cleanup completed"
+
+      - run:
+          name: Lock Dependencies with UV
+          command: |
+            cd main/livekit-server
+
+            # Add UV to PATH
+            export PATH="$HOME/.cargo/bin:$PATH"
+
+            echo "🔒 Locking dependencies with uv..."
+
+            # Run uv lock to update uv.lock file
+            uv lock
+
+            echo "✅ Dependencies locked successfully"
+
+      - run:
+          name: Create New Agent on LiveKit Cloud
+          command: |
+            : "${LIVEKIT_URL:?Set LIVEKIT_URL in CircleCI context}"
+            : "${LIVEKIT_API_KEY:?Set LIVEKIT_API_KEY in CircleCI context}"
+            : "${LIVEKIT_API_SECRET:?Set LIVEKIT_API_SECRET in CircleCI context}"
+
+            cd main/livekit-server
+
+            echo "☁️ Creating new agent on LiveKit Cloud..."
+
+            # Set LiveKit credentials as environment variables
+            export LIVEKIT_URL="$LIVEKIT_URL"
+            export LIVEKIT_API_KEY="$LIVEKIT_API_KEY"
+            export LIVEKIT_API_SECRET="$LIVEKIT_API_SECRET"
+
+            # Create the agent with auto-confirmation
+            # Use expect or provide automatic yes responses for prompts
+            echo "📝 Creating agent (auto-accepting prompts)..."
+
+            # Method 1: Try lk agent create with timeout
+            timeout 300 bash -c '
+              # Automatically answer yes to all prompts
+              yes | lk agent create || {
+                EXIT_CODE=$?
+                if [ $EXIT_CODE -eq 124 ]; then
+                  echo "⏱️ Agent creation timed out after 5 minutes"
+                  echo "🔄 Will try lk deploy as fallback..."
+                  exit 124
+                else
+                  echo "❌ Agent creation failed with code $EXIT_CODE"
+                  exit $EXIT_CODE
+                fi
+              }
+            ' || {
+              EXIT_CODE=$?
+              if [ $EXIT_CODE -eq 124 ]; then
+                echo "⏱️ lk agent create took too long, switching to lk deploy..."
+
+                # Fallback: Use lk deploy command
+                echo "🚀 Deploying with lk deploy..."
+                lk deploy || {
+                  echo "❌ Both lk agent create and lk deploy failed"
+                  exit 1
+                }
+
+                echo "✅ Agent deployed successfully using lk deploy"
+              else
+                echo "❌ Agent creation failed"
+                exit $EXIT_CODE
+              fi
+            }
+
+            echo "✅ Agent created/deployed on LiveKit Cloud successfully"
+
+      - run:
+          name: Verify Agent Deployment
+          command: |
+            : "${LIVEKIT_URL:?Set LIVEKIT_URL in CircleCI context}"
+            : "${LIVEKIT_API_KEY:?Set LIVEKIT_API_KEY in CircleCI context}"
+            : "${LIVEKIT_API_SECRET:?Set LIVEKIT_API_SECRET in CircleCI context}"
+
+            cd main/livekit-server
+
+            # Set LiveKit credentials
+            export LIVEKIT_URL="$LIVEKIT_URL"
+            export LIVEKIT_API_KEY="$LIVEKIT_API_KEY"
+            export LIVEKIT_API_SECRET="$LIVEKIT_API_SECRET"
+
+            echo "🔍 Verifying agent deployment..."
+
+            # List all agents to confirm deployment
+            lk agent list
+
+            echo "✅ Agent deployment verification completed"
+
 # =========================
 # Workflows - BRANCH-SPECIFIC PIPELINES
 # =========================
@@ -1064,11 +1263,12 @@ workflows:
 
   # ==========================================
   # 🚀 PRODUCTION WORKFLOW
-  # Runs ONLY on production branch - Tests + Deployment in parallel
+  # Runs on dev branch (temporarily) - Uses LiveKit Cloud
+  # Later will be changed to run on production branch only
   # ==========================================
   production-workflow:
     when:
-      equal: [ production, << pipeline.git.branch >> ]
+      equal: [ dev, << pipeline.git.branch >> ]
     jobs:
       # Notification
       - prod_pipeline_notification:
@@ -1134,8 +1334,19 @@ workflows:
           requires: ["[PROD] 🚀 Test LiveKit Server"]
 
       # ==========================================
-      # DEPLOY PHASE: All 4 services deploy in parallel to production environment
+      # DEPLOY PHASE:
+      # - 3 services (MQTT, Manager API, Manager Web) deploy to Digital Ocean
+      # - LiveKit agent deploys to LiveKit Cloud
       # ==========================================
+
+      # Deploy LiveKit agent to LiveKit Cloud
+      - deploy_livekit_agent_cloud:
+          name: "[PROD] 🚀 Deploy Agent to LiveKit Cloud"
+          context: "azure-mqtt-gateway"
+          requires:
+            - "[PROD] 🚀 Test LiveKit Server"
+
+      # Deploy other services to Digital Ocean (in parallel)
       - deploy_node_pm2_azure:
           name: "[PROD] 🚀 Deploy MQTT Gateway"
           context: "azure-mqtt-gateway"
@@ -1161,12 +1372,3 @@ workflows:
           env: "production"
           http_port: 8886
           requires: ["[PROD] 🚀 Build Manager Web"]
-
-      - deploy_python_pm2_azure:
-          name: "[PROD] 🚀 Deploy LiveKit Server"
-          context: "azure-mqtt-gateway"
-          service_name: "livekit-server"
-          env: "production"
-          http_port: 8887
-          entry_file: "main.py"
-          requires: ["[PROD] 🚀 Build LiveKit Server"]
