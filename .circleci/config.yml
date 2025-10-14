@@ -306,11 +306,13 @@ jobs:
       - run:
           name: Install Python (optimized)
           command: |
-            # Use built-in Python3 to save time
+            # Use built-in Python3 to save time (ignore .python-version file)
             python3 --version || {
               sudo apt-get update -qq
               sudo apt-get install -y python3 python3-pip python3-venv
             }
+            # Disable pyenv to use system Python
+            echo "Using system Python: $(python3 --version)"
       - run:
           name: Skip if service folder missing
           command: |
@@ -324,6 +326,9 @@ jobs:
             DIR="<< parameters.service_path >>"
             echo "=== Testing ${SVC} ==="
             cd "$DIR"
+
+            # Remove .python-version to use system Python
+            rm -f .python-version
 
             # Install dependencies including pytest
             if [ -f requirements.txt ]; then
@@ -615,7 +620,8 @@ jobs:
             fi
       - restore_cache:
           keys:
-            - npm-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/package-lock.json" }}
+            - npm-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/package.json" }}
+            - npm-<< parameters.service_name >>-v1-
       - run:
           name: Build Vue.js app
           command: |
@@ -635,7 +641,7 @@ jobs:
       - save_cache:
           paths:
             - << parameters.service_path >>/node_modules
-          key: npm-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/package-lock.json" }}
+          key: npm-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/package.json" }}
       - persist_to_workspace:
           root: /tmp/workspace
           paths:
@@ -652,11 +658,12 @@ jobs:
       - run:
           name: Install Python (optimized)
           command: |
-            # Use built-in Python3 to save time
+            # Use built-in Python3 to save time (ignore .python-version file)
             python3 --version || {
               sudo apt-get update -qq
               sudo apt-get install -y python3 python3-pip python3-venv
             }
+            echo "Using system Python: $(python3 --version)"
       - run:
           name: Skip if service folder missing
           command: |
@@ -672,6 +679,9 @@ jobs:
             SVC="<< parameters.service_name >>"
             DIR="<< parameters.service_path >>"
             cd "$DIR"
+
+            # Remove .python-version to use system Python
+            rm -f .python-version
             if [ -f requirements.txt ]; then
               pip install -r requirements.txt
             fi
