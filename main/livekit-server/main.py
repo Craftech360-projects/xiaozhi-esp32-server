@@ -473,34 +473,78 @@ async def entrypoint(ctx: JobContext):
 
     ctx.add_shutdown_callback(log_usage)
 
-    # Initialize services only if not from cache
+    # OPTIMIZATION PHASE 2: Initialize services in parallel (cold start only)
     if not services_from_cache:
-        logger.info("[INIT] Initializing music and story services...")
+        logger.info("[INIT] Initializing music and story services in parallel...")
+        init_services_start = asyncio.get_event_loop().time()
+
         try:
-            music_initialized = await music_service.initialize()
-            story_initialized = await story_service.initialize()
+            # Run both service initializations in parallel
+            init_results = await asyncio.gather(
+                music_service.initialize(),
+                story_service.initialize(),
+                return_exceptions=True
+            )
 
-            if music_initialized:
-                # Cache the initialized service
-                model_cache.cache_service("music_service", music_service)
-                languages = await music_service.get_all_languages()
-                logger.info(
-                    f"[INIT] Music service initialized with {len(languages)} languages")
-            else:
-                logger.warning("[INIT] Music service initialization failed")
+            init_elapsed = (asyncio.get_event_loop().time() - init_services_start) * 1000
+            logger.info(f"[INIT] Parallel service initialization completed in {init_elapsed:.0f}ms")
 
-            if story_initialized:
-                # Cache the initialized service
-                model_cache.cache_service("story_service", story_service)
-                categories = await story_service.get_all_categories()
-                logger.info(
-                    f"[INIT] Story service initialized with {len(categories)} categories")
+            # Process results
+            music_init_result, story_init_result = init_results
+
+            # Handle music service initialization
+            if isinstance(music_init_result, Exception):
+                logger.error(f"[INIT] Music service initialization failed: {music_init_result}")
+                music_initialized = False
             else:
-                logger.warning("[INIT] Story service initialization failed")
+                music_initialized = music_init_result
+
+            # Handle story service initialization
+            if isinstance(story_init_result, Exception):
+                logger.error(f"[INIT] Story service initialization failed: {story_init_result}")
+                story_initialized = False
+            else:
+                story_initialized = story_init_result
+
+            # Now fetch metadata in parallel for successfully initialized services
+            if music_initialized or story_initialized:
+                logger.info("[INIT] Fetching service metadata in parallel...")
+                metadata_start = asyncio.get_event_loop().time()
+
+                metadata_results = await asyncio.gather(
+                    music_service.get_all_languages() if music_initialized else None,
+                    story_service.get_all_categories() if story_initialized else None,
+                    return_exceptions=True
+                )
+
+                metadata_elapsed = (asyncio.get_event_loop().time() - metadata_start) * 1000
+                logger.info(f"[INIT] Parallel metadata fetch completed in {metadata_elapsed:.0f}ms")
+
+                # Process metadata results
+                languages_result, categories_result = metadata_results
+
+                if music_initialized:
+                    # Cache the initialized service
+                    model_cache.cache_service("music_service", music_service)
+                    if languages_result and not isinstance(languages_result, Exception):
+                        logger.info(f"[INIT] Music service initialized with {len(languages_result)} languages")
+                    else:
+                        logger.warning("[INIT] Failed to fetch music languages")
+                else:
+                    logger.warning("[INIT] Music service initialization failed")
+
+                if story_initialized:
+                    # Cache the initialized service
+                    model_cache.cache_service("story_service", story_service)
+                    if categories_result and not isinstance(categories_result, Exception):
+                        logger.info(f"[INIT] Story service initialized with {len(categories_result)} categories")
+                    else:
+                        logger.warning("[INIT] Failed to fetch story categories")
+                else:
+                    logger.warning("[INIT] Story service initialization failed")
 
         except Exception as e:
-            logger.error(
-                f"[INIT] Failed to initialize music/story services: {e}")
+            logger.error(f"[INIT] Failed to initialize music/story services: {e}")
     else:
         # OPTIMIZATION: Services are from cache, check status in parallel
         try:
