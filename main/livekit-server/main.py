@@ -181,18 +181,52 @@ async def entrypoint(ctx: JobContext):
                 device_mac = ':'.join(mac_part[i:i+2] for i in range(0, 12, 2))
                 logger.info(f"📱 Extracted MAC from room name: {device_mac}")
 
-    # OPTIMIZATION PHASE 1: Parallel API Calls
-    # Fetch all API data in parallel to reduce latency from ~1200ms to ~500ms
+    # Helper function for Mem0 query to run in parallel
+    async def query_mem0_memories(mac: str) -> tuple:
+        """Query Mem0 for existing memories - runs in parallel with API calls"""
+        try:
+            mem0_api_key = os.getenv("MEM0_API_KEY")
+            mem0_enabled = os.getenv("MEM0_ENABLED", "false").lower() == "true"
+
+            if not mem0_enabled or not mac:
+                return None, None
+
+            if not mem0_api_key or mem0_api_key == "your_mem0_api_key_here":
+                logger.warning("💭⚠️ MEM0_API_KEY not configured properly")
+                return None, None
+
+            logger.info(f"💭 Initializing Mem0MemoryProvider for MAC: {mac}")
+            provider = Mem0MemoryProvider(api_key=mem0_api_key, role_id=mac)
+
+            logger.info("💭 Querying mem0 for existing memories...")
+            memories = await provider.query_memory("conversation history and user preferences")
+
+            if memories:
+                logger.info(f"💭✅ Loaded memories from mem0 ({len(memories)} chars)")
+            else:
+                logger.info("💭 No existing memories found in mem0")
+
+            return provider, memories
+        except Exception as e:
+            logger.error(f"💭❌ Failed to query mem0: {e}")
+            import traceback
+            logger.error(f"💭❌ Traceback: {traceback.format_exc()}")
+            return None, None
+
+    # OPTIMIZATION PHASE 1 + 1.5: Parallel API Calls + Mem0 Query
+    # Fetch all API data and Mem0 memories in parallel to maximize concurrency
     chat_history_service = None
     tts_config_from_api = None
     child_profile = None
     agent_prompt = None
     db_helper = None
     agent_id = None
+    mem0_provider = None
+    memories = None
 
     if device_mac:
         try:
-            logger.info("⚡ Starting parallel API calls...")
+            logger.info("⚡ Starting parallel API calls + Mem0 query...")
             start_time = asyncio.get_event_loop().time()
 
             # Get Manager API configuration
@@ -202,19 +236,20 @@ async def entrypoint(ctx: JobContext):
             # Create database helper
             db_helper = DatabaseHelper(manager_api_url, manager_api_secret)
 
-            # Execute all API calls in parallel
+            # Execute all API calls + Mem0 query in parallel
             results = await asyncio.gather(
                 db_helper.get_agent_id(device_mac),                          # ~200ms
                 prompt_service.get_prompt_and_config(room_name, device_mac), # ~500ms
                 db_helper.get_child_profile_by_mac(device_mac),             # ~500ms
+                query_mem0_memories(device_mac),                             # ~1700ms (PARALLEL!)
                 return_exceptions=True  # Don't fail all if one fails
             )
 
             elapsed_time = (asyncio.get_event_loop().time() - start_time) * 1000
-            logger.info(f"⚡✅ Parallel API calls completed in {elapsed_time:.0f}ms")
+            logger.info(f"⚡✅ Parallel API calls + Mem0 completed in {elapsed_time:.0f}ms")
 
             # Unpack results with error handling
-            agent_id_result, prompt_config_result, child_profile_result = results
+            agent_id_result, prompt_config_result, child_profile_result, mem0_result = results
 
             # Process agent_id result
             if isinstance(agent_id_result, Exception):
@@ -253,6 +288,14 @@ async def entrypoint(ctx: JobContext):
                 else:
                     logger.info(f"👶 No child profile assigned to device {device_mac}")
 
+            # Process Mem0 result
+            if isinstance(mem0_result, Exception):
+                logger.error(f"💭❌ Mem0 query failed: {mem0_result}")
+                mem0_provider = None
+                memories = None
+            else:
+                mem0_provider, memories = mem0_result
+
             # Create chat history service if we have agent_id
             if agent_id:
                 chat_history_service = ChatHistoryService(
@@ -278,8 +321,7 @@ async def entrypoint(ctx: JobContext):
         tts_config_from_api = None
         logger.info(f"📄 Using default prompt - no MAC in room name '{room_name}' (length: {len(agent_prompt)} chars)")
 
-    # Initialize mem0 memory provider and conversation buffer
-    mem0_provider = None
+    # Initialize conversation buffer for mem0
     conversation_messages = []  # Buffer to store conversation messages
     EMOJI_List = ["😶", "🙂", "😆", "😂", "😔", "😠", "😭", "😍", "😳",
                   "😲", "😱", "🤔", "😉", "😎", "😌", "🤤", "😘", "😏", "😴", "😜", "🙄"]
@@ -302,49 +344,12 @@ async def entrypoint(ctx: JobContext):
         if child_profile:
             logger.info(f"👶 Personalized for: {template_vars['child_name']}, {template_vars['child_age']} years old")
 
+    # Inject Mem0 memories into prompt (already fetched in parallel)
+    if memories:
+        agent_prompt = agent_prompt.replace("<memory>", f"<memory>\n{memories}")
+        logger.info(f"💭 Injected memories into prompt ({len(memories)} chars)")
+
     logger.info(f"📋 Full Agent Prompt:\n{agent_prompt}")
-
-    mem0_enabled = os.getenv("MEM0_ENABLED", "false").lower() == "true"
-    logger.info(
-        f"💭 Mem0 config - Enabled: {mem0_enabled}, Device MAC: {device_mac}")
-
-    if device_mac and mem0_enabled:
-        try:
-            mem0_api_key = os.getenv("MEM0_API_KEY")
-            logger.info(
-                f"💭 MEM0_API_KEY present: {bool(mem0_api_key and mem0_api_key != 'your_mem0_api_key_here')}")
-
-            if mem0_api_key and mem0_api_key != "your_mem0_api_key_here":
-                logger.info(
-                    f"💭 Initializing Mem0MemoryProvider for MAC: {device_mac}")
-                mem0_provider = Mem0MemoryProvider(
-                    api_key=mem0_api_key,
-                    role_id=device_mac
-                )
-
-                # Fetch existing memories and inject into prompt
-                # Note: Child profile is already in the agent prompt fetched from database,
-                # so we don't store it separately in mem0 to avoid redundancy
-                logger.info("💭 Querying mem0 for existing memories...")
-                memories = await mem0_provider.query_memory("conversation history and user preferences")
-
-                if memories:
-                    agent_prompt = agent_prompt.replace(
-                        "<memory>", f"<memory>\n{memories}")
-                    logger.info(
-                        f"💭✅ Loaded memories from mem0 ({len(memories)} chars)")
-                else:
-                    logger.info("💭 No existing memories found in mem0")
-            else:
-                logger.warning("💭⚠️ MEM0_API_KEY not configured properly")
-        except Exception as e:
-            logger.error(f"💭❌ Failed to initialize mem0: {e}")
-            import traceback
-            logger.error(f"💭❌ Traceback: {traceback.format_exc()}")
-            mem0_provider = None
-    else:
-        logger.info(
-            f"💭 Mem0 disabled - MEM0_ENABLED: {mem0_enabled}, Device MAC present: {bool(device_mac)}")
 
     # Get VAD first as it's needed for STT
     vad = ctx.proc.userdata["vad"]
@@ -497,17 +502,30 @@ async def entrypoint(ctx: JobContext):
             logger.error(
                 f"[INIT] Failed to initialize music/story services: {e}")
     else:
-        # Services are from cache, just log their status
+        # OPTIMIZATION: Services are from cache, check status in parallel
         try:
-            if music_service and music_service.is_initialized:
-                languages = await music_service.get_all_languages()
-                logger.info(
-                    f"[FAST] Music service ready with {len(languages)} languages")
+            logger.info("[FAST] Checking cached services status in parallel...")
+            check_start = asyncio.get_event_loop().time()
 
-            if story_service and story_service.is_initialized:
-                categories = await story_service.get_all_categories()
-                logger.info(
-                    f"[FAST] Story service ready with {len(categories)} categories")
+            # Run service status checks in parallel
+            status_results = await asyncio.gather(
+                music_service.get_all_languages() if (music_service and music_service.is_initialized) else None,
+                story_service.get_all_categories() if (story_service and story_service.is_initialized) else None,
+                return_exceptions=True
+            )
+
+            check_elapsed = (asyncio.get_event_loop().time() - check_start) * 1000
+            logger.info(f"[FAST] Service status checks completed in {check_elapsed:.0f}ms")
+
+            # Process results
+            languages_result, categories_result = status_results
+
+            if languages_result and not isinstance(languages_result, Exception):
+                logger.info(f"[FAST] Music service ready with {len(languages_result)} languages")
+
+            if categories_result and not isinstance(categories_result, Exception):
+                logger.info(f"[FAST] Story service ready with {len(categories_result)} categories")
+
         except Exception as e:
             logger.warning(f"[FAST] Error checking cached services: {e}")
 
