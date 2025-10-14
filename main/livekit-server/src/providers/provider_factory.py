@@ -251,7 +251,7 @@ class ProviderFactory:
 
     @staticmethod
     def create_vad():
-        """Create Voice Activity Detection provider using cache"""
+        """Create Voice Activity Detection provider optimized for children"""
         # Try to use cached VAD first
         try:
             from ..utils.model_cache import model_cache
@@ -261,9 +261,15 @@ class ProviderFactory:
         except Exception:
             pass  # Fall back to direct loading
 
-        # Fallback to direct loading with child-friendly settings
-        # Lower thresholds to better detect children's higher-pitched voices
-        return silero.VAD.load()
+        # Child-friendly VAD settings - lower thresholds for softer, higher-pitched voices
+        # Children's voices are typically higher-pitched (200-300 Hz) and softer than adults
+        return silero.VAD.load(
+            min_speech_duration=0.05,      # Quick detection - keep default
+            min_silence_duration=0.4,      # Reduced from 0.55s - children pause less
+            activation_threshold=0.3,      # CRITICAL: Lowered from 0.5 for children's voices
+            sample_rate=16000,
+            max_buffered_speech=60.0
+        )
 
     @staticmethod
     def create_turn_detection():

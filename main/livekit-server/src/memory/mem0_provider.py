@@ -16,35 +16,52 @@ class Mem0MemoryProvider:
         self.client = MemoryClient(api_key=api_key)
         logger.info(f"💭 Mem0 initialized for user: {role_id}")
 
-    async def save_memory(self, history_dict: dict):
+    async def save_memory(self, history_dict: dict, child_name: str = None):
         """Save session history to mem0
 
         Args:
             history_dict: session.history.to_dict() output
                 Format: {'messages': [{'role': 'user', 'content': '...'}, ...]}
+            child_name: Optional child name to provide context to mem0
         """
         messages = history_dict.get('messages', [])
         if len(messages) < 2:
             logger.info(f"💭 Skipping mem0 save - insufficient messages ({len(messages)})")
             return None
 
-        # Convert to conversation text
+        # Convert to conversation text with proper role identification
         conversation_text = ""
+
+        # Add child name context if available to help mem0 identify the user correctly
+        if child_name:
+            conversation_text += f"[Context: The user's name is {child_name}, and Cheeko is the AI assistant]\n\n"
+
         for msg in messages:
             if msg.get('role') != 'system':
-                role = "User" if msg.get('role') == 'user' else "Assistant"
+                # Clearly label roles to prevent confusion
+                if msg.get('role') == 'user':
+                    role_label = f"Child ({child_name})" if child_name else "Child"
+                else:
+                    role_label = "Cheeko (AI Assistant)"
+
                 content = msg.get('content', '')
                 if isinstance(content, list):
                     content = ' '.join(str(item) for item in content)
-                conversation_text += f"{role}: {content}\n"
+                conversation_text += f"{role_label}: {content}\n"
 
-        # Save to mem0 with v1.1 output format
+        # Save to mem0 with v1.1 output format and metadata
+        metadata = {}
+        if child_name:
+            metadata["child_name"] = child_name
+            metadata["assistant_name"] = "Cheeko"
+
         result = self.client.add(
             conversation_text,
             user_id=self.role_id,
+            metadata=metadata if metadata else None,
             output_format="v1.1"
         )
-        logger.info(f"💭✅ Saved to mem0: {len(messages)} messages")
+        logger.info(f"💭✅ Saved to mem0: {len(messages)} messages (child: {child_name or 'unknown'})")
         logger.debug(f"💭 Save result: {result}")
         return result
 

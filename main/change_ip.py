@@ -4,14 +4,16 @@ from datetime import datetime
 import shutil
 
 # === CONFIGURATION ===
-new_ip = "192.168.1.147"
-old_ip = "192.168.1.78"
+new_ip = "192.168.1.168"
+old_ip = "192.168.1.217"
 
 # List of files you want to modify
 file_paths = [
     r"C:\Users\Acer\Cheeko-esp32-server\main\mqtt-gateway\config\mqtt.json",
     r"C:\Users\Acer\Cheeko-esp32-server\main\livekit-server\.env",
     r"C:\Users\Acer\Cheeko-esp32-server\main\mqtt-gateway\.env",
+    r"C:\Users\Acer\Cheeko-esp32-server\main\livekit-server\config.yaml",
+    r"C:\Users\Acer\Cheeko-esp32-server\main\mqtt-gateway\config\mqtt.json"
 ]
 
 
