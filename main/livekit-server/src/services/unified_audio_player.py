@@ -543,11 +543,13 @@ class StreamingAudioIterator:
             try:
                 if self.response and hasattr(self.response, 'close'):
                     close_result = self.response.close()
-                    if close_result is not None:
+                    # Check if close() returns a coroutine before awaiting
+                    if close_result is not None and asyncio.iscoroutine(close_result):
                         await close_result
                 if self.session and hasattr(self.session, 'close'):
                     close_result = self.session.close()
-                    if close_result is not None:
+                    # Check if close() returns a coroutine before awaiting
+                    if close_result is not None and asyncio.iscoroutine(close_result):
                         await close_result
             except Exception as e:
                 logger.debug(f"🎵 STREAMING: Cleanup error: {e}")

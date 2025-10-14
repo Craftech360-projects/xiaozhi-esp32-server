@@ -530,8 +530,11 @@ async def entrypoint(ctx: JobContext):
                     # Create history dict from conversation buffer
                     history_dict = {'messages': conversation_messages}
 
-                    # Save to mem0
-                    await mem0_provider.save_memory(history_dict)
+                    # Get child name from child_profile for proper identification
+                    child_name = child_profile.get('name') if child_profile else None
+
+                    # Save to mem0 with child name context
+                    await mem0_provider.save_memory(history_dict, child_name=child_name)
 
                     logger.info(
                         f"💭✅ Session saved to mem0 cloud ({message_count} messages)")
@@ -682,7 +685,7 @@ if __name__ == "__main__":
     cli.run_app(WorkerOptions(
         entrypoint_fnc=entrypoint,
         prewarm_fnc=prewarm,
-        num_idle_processes=2,  # Disable process pooling to avoid initialization issues
+        num_idle_processes=3,  # Disable process pooling to avoid initialization issues
         initialize_process_timeout=120.0,  # Increase timeout to 120 seconds for heavy model loading
         job_memory_warn_mb=2000,
     ))

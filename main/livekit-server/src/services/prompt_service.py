@@ -357,7 +357,7 @@ class PromptService:
             result = {'type': tts_type, 'model_id': selected_tts_id}
 
             # Map database TTS types to provider names
-            if tts_type == 'edge_tts':
+            if tts_type == 'edge_tts' or tts_type == 'edge':
                 result['provider'] = 'edge'
                 result['voice'] = tts_config.get('voice', 'en-US-AnaNeural')
                 result['rate'] = tts_config.get('rate', '+0%')
