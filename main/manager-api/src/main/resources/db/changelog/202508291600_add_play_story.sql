@@ -2,13 +2,13 @@
 -- This adds play_story to all agents that currently have play_music
 
 -- 1. Add play_story plugin provider
-DELETE FROM `ai_model_provider` WHERE id = 'SYSTEM_PLUGIN_STORY';
+DELETE FROM ai_model_provider WHERE id = 'SYSTEM_PLUGIN_STORY';
 INSERT INTO ai_model_provider (id, model_type, provider_code, name, fields, sort, creator, create_date, updater, update_date)
-VALUES ('SYSTEM_PLUGIN_STORY', 'Plugin', 'play_story', 'Story Playback', JSON_ARRAY(), 25, 0, NOW(), 0, NOW());
+VALUES ('SYSTEM_PLUGIN_STORY', 'Plugin', 'play_story', 'Story Playback', '[]'::jsonb, 25, 0, NOW(), 0, NOW());
 
 -- 2. Add play_story to all agents that have play_music
 INSERT INTO ai_agent_plugin_mapping (agent_id, plugin_id, param_info)
-SELECT DISTINCT m.agent_id, 'SYSTEM_PLUGIN_STORY', '{}'
+SELECT DISTINCT m.agent_id, 'SYSTEM_PLUGIN_STORY', '{}'::jsonb
 FROM ai_agent_plugin_mapping m
 JOIN ai_model_provider p ON p.id = m.plugin_id
 WHERE p.provider_code = 'play_music'
@@ -19,10 +19,10 @@ WHERE p.provider_code = 'play_music'
   );
 
 -- 3. Add optional configuration fields for play_story
-UPDATE `ai_model_provider` SET 
-fields = JSON_ARRAY(
-    JSON_OBJECT('key', 'story_dir', 'type', 'string', 'label', 'Story Directory', 'default', './stories'),
-    JSON_OBJECT('key', 'story_ext', 'type', 'array', 'label', 'Story File Extensions', 'default', '.mp3;.wav;.p3'),
-    JSON_OBJECT('key', 'refresh_time', 'type', 'number', 'label', 'Refresh Time (seconds)', 'default', '300')
+UPDATE ai_model_provider SET
+fields = jsonb_build_array(
+    jsonb_build_object('key', 'story_dir', 'type', 'string', 'label', 'Story Directory', 'default', './stories'),
+    jsonb_build_object('key', 'story_ext', 'type', 'array', 'label', 'Story File Extensions', 'default', '.mp3;.wav;.p3'),
+    jsonb_build_object('key', 'refresh_time', 'type', 'number', 'label', 'Refresh Time (seconds)', 'default', '300')
 )
 WHERE id = 'SYSTEM_PLUGIN_STORY';

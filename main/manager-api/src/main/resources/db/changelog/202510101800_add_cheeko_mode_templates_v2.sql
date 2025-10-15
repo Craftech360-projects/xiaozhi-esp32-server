@@ -8,8 +8,8 @@ DELETE FROM ai_agent_template WHERE agent_name IN ('Story', 'Music', 'Tutor', 'C
 -- ============================================
 -- 1. STORY MODE TEMPLATE
 -- ============================================
-INSERT INTO `ai_agent_template`
-(`id`, `agent_code`, `agent_name`, `asr_model_id`, `vad_model_id`, `llm_model_id`, `vllm_model_id`, `tts_model_id`, `tts_voice_id`, `mem_model_id`, `intent_model_id`, `chat_history_conf`, `system_prompt`, `summary_memory`, `lang_code`, `language`, `sort`, `is_visible`, `creator`, `created_at`, `updater`, `updated_at`)
+INSERT INTO ai_agent_template
+(id, agent_code, agent_name, asr_model_id, vad_model_id, llm_model_id, tts_model_id, tts_voice_id, mem_model_id, intent_model_id, system_prompt, lang_code, language, sort, creator, created_at, updater, updated_at)
 SELECT
     MD5('cheeko_template_story_mode_2025'),
     'Story',
@@ -17,12 +17,10 @@ SELECT
     asr_model_id,
     vad_model_id,
     llm_model_id,
-    vllm_model_id,
     tts_model_id,
     tts_voice_id,
     mem_model_id,
     intent_model_id,
-    chat_history_conf,
     '<identity>
 {% if child_name %}
 🎯 *Child Profile:*
@@ -77,15 +75,13 @@ When a child requests a story:
 - If they return, recall them naturally ("Hey! Sparkle the Turtle''s back!").
 - Track which story themes excite the child most.
 </memory>',
-    summary_memory,
     lang_code,
     language,
     1,
-    1,
     creator,
-    NOW(),
+    CURRENT_TIMESTAMP,
     updater,
-    NOW()
+    CURRENT_TIMESTAMP
 FROM ai_agent_template
 WHERE id = '9406648b5cc5fde1b8aa335b6f8b4f76'
 LIMIT 1;
@@ -93,8 +89,8 @@ LIMIT 1;
 -- ============================================
 -- 2. MUSIC MODE TEMPLATE
 -- ============================================
-INSERT INTO `ai_agent_template`
-(`id`, `agent_code`, `agent_name`, `asr_model_id`, `vad_model_id`, `llm_model_id`, `vllm_model_id`, `tts_model_id`, `tts_voice_id`, `mem_model_id`, `intent_model_id`, `chat_history_conf`, `system_prompt`, `summary_memory`, `lang_code`, `language`, `sort`, `is_visible`, `creator`, `created_at`, `updater`, `updated_at`)
+INSERT INTO ai_agent_template
+(id, agent_code, agent_name, asr_model_id, vad_model_id, llm_model_id, tts_model_id, tts_voice_id, mem_model_id, intent_model_id, system_prompt, lang_code, language, sort, creator, created_at, updater, updated_at)
 SELECT
     MD5('cheeko_template_music_mode_2025'),
     'Music',
@@ -102,12 +98,10 @@ SELECT
     asr_model_id,
     vad_model_id,
     llm_model_id,
-    vllm_model_id,
     tts_model_id,
     tts_voice_id,
     mem_model_id,
     intent_model_id,
-    chat_history_conf,
     '<identity>
 
 {% if child_name %}
@@ -162,15 +156,13 @@ When a child asks for a rhyme or song:
 - Next time, surprise them with callbacks ("Want your dinosaur jam again?").
 - Track mood and tempo preferences for better suggestions.
 </memory>',
-    summary_memory,
     lang_code,
     language,
     2,
-    1,
     creator,
-    NOW(),
+    CURRENT_TIMESTAMP,
     updater,
-    NOW()
+    CURRENT_TIMESTAMP
 FROM ai_agent_template
 WHERE id = '9406648b5cc5fde1b8aa335b6f8b4f76'
 LIMIT 1;
@@ -178,8 +170,8 @@ LIMIT 1;
 -- ============================================
 -- 3. TUTOR MODE TEMPLATE
 -- ============================================
-INSERT INTO `ai_agent_template`
-(`id`, `agent_code`, `agent_name`, `asr_model_id`, `vad_model_id`, `llm_model_id`, `vllm_model_id`, `tts_model_id`, `tts_voice_id`, `mem_model_id`, `intent_model_id`, `chat_history_conf`, `system_prompt`, `summary_memory`, `lang_code`, `language`, `sort`, `is_visible`, `creator`, `created_at`, `updater`, `updated_at`)
+INSERT INTO ai_agent_template
+(id, agent_code, agent_name, asr_model_id, vad_model_id, llm_model_id, tts_model_id, tts_voice_id, mem_model_id, intent_model_id, system_prompt, lang_code, language, sort, creator, created_at, updater, updated_at)
 SELECT
     MD5('cheeko_template_tutor_mode_2025'),
     'Tutor',
@@ -187,12 +179,10 @@ SELECT
     asr_model_id,
     vad_model_id,
     llm_model_id,
-    vllm_model_id,
     tts_model_id,
     tts_voice_id,
     mem_model_id,
     intent_model_id,
-    chat_history_conf,
     '<identity>
 {% if child_name %}
 🎯 *Child Profile:*
@@ -245,15 +235,13 @@ When a child asks a learning question:
 - Track weak spots ("struggled with spelling") and favorites ("loves space").
 - Recall progress next session to build confidence.
 </memory>',
-    summary_memory,
     lang_code,
     language,
     3,
-    1,
     creator,
-    NOW(),
+    CURRENT_TIMESTAMP,
     updater,
-    NOW()
+    CURRENT_TIMESTAMP
 FROM ai_agent_template
 WHERE id = '9406648b5cc5fde1b8aa335b6f8b4f76'
 LIMIT 1;
@@ -261,8 +249,8 @@ LIMIT 1;
 -- ============================================
 -- 4. CHAT MODE TEMPLATE
 -- ============================================
-INSERT INTO `ai_agent_template`
-(`id`, `agent_code`, `agent_name`, `asr_model_id`, `vad_model_id`, `llm_model_id`, `vllm_model_id`, `tts_model_id`, `tts_voice_id`, `mem_model_id`, `intent_model_id`, `chat_history_conf`, `system_prompt`, `summary_memory`, `lang_code`, `language`, `sort`, `is_visible`, `creator`, `created_at`, `updater`, `updated_at`)
+INSERT INTO ai_agent_template
+(id, agent_code, agent_name, asr_model_id, vad_model_id, llm_model_id, tts_model_id, tts_voice_id, mem_model_id, intent_model_id, system_prompt, lang_code, language, sort, creator, created_at, updater, updated_at)
 SELECT
     MD5('cheeko_template_chat_mode_2025'),
     'Chat',
@@ -270,12 +258,10 @@ SELECT
     asr_model_id,
     vad_model_id,
     llm_model_id,
-    vllm_model_id,
     tts_model_id,
     tts_voice_id,
     mem_model_id,
     intent_model_id,
-    chat_history_conf,
     '<identity>
 {% if child_name %}
 🎯 *Child Profile:*
@@ -328,15 +314,13 @@ If the child suddenly asks for a story or song:
 - Bring them back later to create a sense of friendship.
 - Track moods to make interactions more caring.
 </memory>',
-    summary_memory,
     lang_code,
     language,
     4,
-    1,
     creator,
-    NOW(),
+    CURRENT_TIMESTAMP,
     updater,
-    NOW()
+    CURRENT_TIMESTAMP
 FROM ai_agent_template
 WHERE id = '9406648b5cc5fde1b8aa335b6f8b4f76'
 LIMIT 1;

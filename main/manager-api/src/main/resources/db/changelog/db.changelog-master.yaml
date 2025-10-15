@@ -46,6 +46,13 @@ databaseChangeLog:
             encoding: utf8
             path: classpath:db/changelog/202504112058.sql
   - changeSet:
+      id: 202504151205
+      author: Claude
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202504151205.sql
+  - changeSet:
       id: 202504151206
       author: John
       validCheckSum: ANY
@@ -492,11 +499,16 @@ databaseChangeLog:
             path: classpath:db/changelog/202510101800_add_cheeko_mode_templates_v2.sql
   - changeSet:
       id: 202510111600
-      id: 202510111800
       author: claude
       changes:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202510111600.sql
+  - changeSet:
+      id: 202510111800
+      author: claude
+      changes:
+        - sqlFile:
+            encoding: utf8
             path: classpath:db/changelog/202510111800_add_arabic_template.sql
 

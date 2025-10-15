@@ -4,25 +4,22 @@
 -- ============================================
 -- 1. STORY MODE TEMPLATE
 -- ============================================
-INSERT INTO `ai_agent_template` (
-    `id`,
-    `agent_code`,
-    `agent_name`,
-    `asr_model_id`,
-    `vad_model_id`,
-    `llm_model_id`,
-    `vllm_model_id`,
-    `tts_model_id`,
-    `tts_voice_id`,
-    `mem_model_id`,
-    `intent_model_id`,
-    `system_prompt`,
-    `lang_code`,
-    `language`,
-    `chat_history_conf`,
-    `sort`,
-    `is_visible`,
-    `created_at`
+INSERT INTO ai_agent_template (
+    id,
+    agent_code,
+    agent_name,
+    asr_model_id,
+    vad_model_id,
+    llm_model_id,
+    tts_model_id,
+    tts_voice_id,
+    mem_model_id,
+    intent_model_id,
+    system_prompt,
+    lang_code,
+    language,
+    sort,
+    created_at
 )
 SELECT
     MD5('cheeko_template_story_mode_2025'),
@@ -31,7 +28,6 @@ SELECT
     asr_model_id,
     vad_model_id,
     llm_model_id,
-    vllm_model_id,
     tts_model_id,
     tts_voice_id,
     'Memory_mem_local_short',
@@ -82,9 +78,7 @@ When a child requests a story:
     'en',
     'English',
     1,
-    1,
-    1,
-    NOW()
+    CURRENT_TIMESTAMP
 FROM ai_agent_template
 WHERE id = '9406648b5cc5fde1b8aa335b6f8b4f76'
 LIMIT 1;
@@ -92,25 +86,22 @@ LIMIT 1;
 -- ============================================
 -- 2. MUSIC MODE TEMPLATE
 -- ============================================
-INSERT INTO `ai_agent_template` (
-    `id`,
-    `agent_code`,
-    `agent_name`,
-    `asr_model_id`,
-    `vad_model_id`,
-    `llm_model_id`,
-    `vllm_model_id`,
-    `tts_model_id`,
-    `tts_voice_id`,
-    `mem_model_id`,
-    `intent_model_id`,
-    `system_prompt`,
-    `lang_code`,
-    `language`,
-    `chat_history_conf`,
-    `sort`,
-    `is_visible`,
-    `created_at`
+INSERT INTO ai_agent_template (
+    id,
+    agent_code,
+    agent_name,
+    asr_model_id,
+    vad_model_id,
+    llm_model_id,
+    tts_model_id,
+    tts_voice_id,
+    mem_model_id,
+    intent_model_id,
+    system_prompt,
+    lang_code,
+    language,
+    sort,
+    created_at
 )
 SELECT
     MD5('cheeko_template_music_mode_2025'),
@@ -119,7 +110,6 @@ SELECT
     asr_model_id,
     vad_model_id,
     llm_model_id,
-    vllm_model_id,
     tts_model_id,
     tts_voice_id,
     'Memory_mem_local_short',
@@ -168,10 +158,8 @@ When a child asks for a rhyme or song:
 </memory>',
     'en',
     'English',
-    1,
     2,
-    1,
-    NOW()
+    CURRENT_TIMESTAMP
 FROM ai_agent_template
 WHERE id = '9406648b5cc5fde1b8aa335b6f8b4f76'
 LIMIT 1;
@@ -179,25 +167,22 @@ LIMIT 1;
 -- ============================================
 -- 3. TUTOR MODE TEMPLATE
 -- ============================================
-INSERT INTO `ai_agent_template` (
-    `id`,
-    `agent_code`,
-    `agent_name`,
-    `asr_model_id`,
-    `vad_model_id`,
-    `llm_model_id`,
-    `vllm_model_id`,
-    `tts_model_id`,
-    `tts_voice_id`,
-    `mem_model_id`,
-    `intent_model_id`,
-    `system_prompt`,
-    `lang_code`,
-    `language`,
-    `chat_history_conf`,
-    `sort`,
-    `is_visible`,
-    `created_at`
+INSERT INTO ai_agent_template (
+    id,
+    agent_code,
+    agent_name,
+    asr_model_id,
+    vad_model_id,
+    llm_model_id,
+    tts_model_id,
+    tts_voice_id,
+    mem_model_id,
+    intent_model_id,
+    system_prompt,
+    lang_code,
+    language,
+    sort,
+    created_at
 )
 SELECT
     MD5('cheeko_template_tutor_mode_2025'),
@@ -206,7 +191,6 @@ SELECT
     asr_model_id,
     vad_model_id,
     llm_model_id,
-    vllm_model_id,
     tts_model_id,
     tts_voice_id,
     'Memory_mem_local_short',
@@ -254,10 +238,8 @@ When a child asks a learning question:
 </memory>',
     'en',
     'English',
-    1,
     3,
-    1,
-    NOW()
+    CURRENT_TIMESTAMP
 FROM ai_agent_template
 WHERE id = '9406648b5cc5fde1b8aa335b6f8b4f76'
 LIMIT 1;
@@ -265,25 +247,22 @@ LIMIT 1;
 -- ============================================
 -- 4. CHAT MODE TEMPLATE
 -- ============================================
-INSERT INTO `ai_agent_template` (
-    `id`,
-    `agent_code`,
-    `agent_name`,
-    `asr_model_id`,
-    `vad_model_id`,
-    `llm_model_id`,
-    `vllm_model_id`,
-    `tts_model_id`,
-    `tts_voice_id`,
-    `mem_model_id`,
-    `intent_model_id`,
-    `system_prompt`,
-    `lang_code`,
-    `language`,
-    `chat_history_conf`,
-    `sort`,
-    `is_visible`,
-    `created_at`
+INSERT INTO ai_agent_template (
+    id,
+    agent_code,
+    agent_name,
+    asr_model_id,
+    vad_model_id,
+    llm_model_id,
+    tts_model_id,
+    tts_voice_id,
+    mem_model_id,
+    intent_model_id,
+    system_prompt,
+    lang_code,
+    language,
+    sort,
+    created_at
 )
 SELECT
     MD5('cheeko_template_chat_mode_2025'),
@@ -292,7 +271,6 @@ SELECT
     asr_model_id,
     vad_model_id,
     llm_model_id,
-    vllm_model_id,
     tts_model_id,
     tts_voice_id,
     'Memory_mem_local_short',
@@ -340,10 +318,8 @@ If the child suddenly asks for a story or song:
 </memory>',
     'en',
     'English',
-    1,
     4,
-    1,
-    NOW()
+    CURRENT_TIMESTAMP
 FROM ai_agent_template
 WHERE id = '9406648b5cc5fde1b8aa335b6f8b4f76'
 LIMIT 1;

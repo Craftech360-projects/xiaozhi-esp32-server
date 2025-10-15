@@ -1,8 +1,8 @@
--- 本文件用于初始化模型模版数据，无需手动执行，在项目启动时会自动执行
+-- This file is used to initialize model template data, no need to execute manually, it will be executed automatically when the project starts
 -- -------------------------------------------------------
--- 初始化智能体模板数据 - Updated to include only Cheeko template with proper settings
-DELETE FROM `ai_agent_template`;
-INSERT INTO `ai_agent_template` (
+-- Initialize agent template data - Updated to include only Cheeko template with proper settings
+DELETE FROM ai_agent_template;
+INSERT INTO ai_agent_template (
     id, agent_code, agent_name, asr_model_id, vad_model_id, llm_model_id, tts_model_id, tts_voice_id, mem_model_id, intent_model_id,
     system_prompt, lang_code, language, sort, creator, created_at, updater, updated_at
 ) VALUES (

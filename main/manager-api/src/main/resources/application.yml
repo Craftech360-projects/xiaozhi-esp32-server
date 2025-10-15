@@ -17,7 +17,7 @@ spring:
   # Profile will be set by SPRING_PROFILES_ACTIVE environment variable
   # Default to 'dev' if not specified
   profiles:
-    default: prod
+    default: dev
   messages:
     encoding: UTF-8
     basename: i18n/messages
@@ -87,5 +87,5 @@ mybatis-plus:
     jdbc-type-for-null: "null"
   configuration-properties:
     prefix:
-    blobType: BLOB
+    blobType: BYTEA
     boolValue: TRUE

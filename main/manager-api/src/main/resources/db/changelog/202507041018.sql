@@ -1,12 +1,22 @@
 DROP TABLE IF EXISTS ai_agent_voice_print;
-create table ai_agent_voice_print (
-  id varchar(32) NOT NULL COMMENT '声纹ID',
-  agent_id varchar(32)  NOT NULL COMMENT '关联的智能体ID',
-  source_name varchar(50)  NOT NULL COMMENT '声纹来源的人的姓名',
-  introduce varchar(200) COMMENT '描述声纹来源的这个人',
-  create_date DATETIME COMMENT '创建时间',
-  creator bigint COMMENT '创建者',
-  update_date DATETIME COMMENT '修改时间',
-  updater bigint COMMENT '修改者',
+CREATE TABLE ai_agent_voice_print (
+  id VARCHAR(32) NOT NULL,
+  agent_id VARCHAR(32) NOT NULL,
+  source_name VARCHAR(50) NOT NULL,
+  introduce VARCHAR(200),
+  create_date TIMESTAMP,
+  creator BIGINT,
+  update_date TIMESTAMP,
+  updater BIGINT,
   PRIMARY KEY (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='智能体声纹表'
+);
+
+COMMENT ON TABLE ai_agent_voice_print IS 'Agent voiceprint table';
+COMMENT ON COLUMN ai_agent_voice_print.id IS 'Voiceprint ID';
+COMMENT ON COLUMN ai_agent_voice_print.agent_id IS 'Associated agent ID';
+COMMENT ON COLUMN ai_agent_voice_print.source_name IS 'Name of voiceprint source person';
+COMMENT ON COLUMN ai_agent_voice_print.introduce IS 'Description of voiceprint source person';
+COMMENT ON COLUMN ai_agent_voice_print.create_date IS 'Creation time';
+COMMENT ON COLUMN ai_agent_voice_print.creator IS 'Creator';
+COMMENT ON COLUMN ai_agent_voice_print.update_date IS 'Update time';
+COMMENT ON COLUMN ai_agent_voice_print.updater IS 'Updater';

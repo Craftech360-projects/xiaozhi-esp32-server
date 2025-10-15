@@ -1,185 +1,320 @@
--- 模型供应器表
-DROP TABLE IF EXISTS `ai_model_provider`;
-CREATE TABLE `ai_model_provider` (
-    `id` VARCHAR(32) NOT NULL COMMENT '主键',
-    `model_type` VARCHAR(20) COMMENT '模型类型(Memory/ASR/VAD/LLM/TTS)',
-    `provider_code` VARCHAR(50) COMMENT '供应器类型',
-    `name` VARCHAR(50) COMMENT '供应器名称',
-    `fields` JSON COMMENT '供应器字段列表(JSON格式)',
-    `sort` INT UNSIGNED DEFAULT 0 COMMENT '排序',
-    `creator` BIGINT COMMENT '创建者',
-    `create_date` DATETIME COMMENT '创建时间',
-    `updater` BIGINT COMMENT '更新者',
-    `update_date` DATETIME COMMENT '更新时间',
-    PRIMARY KEY (`id`),
-    INDEX `idx_ai_model_provider_model_type` (`model_type`) COMMENT '创建模型类型的索引，用于快速查找特定类型下的所有供应器信息'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模型配置表';
+-- Model provider table
+DROP TABLE IF EXISTS ai_model_provider;
+CREATE TABLE ai_model_provider (
+    id VARCHAR(32) NOT NULL,
+    model_type VARCHAR(20),
+    provider_code VARCHAR(50),
+    name VARCHAR(50),
+    fields JSON,
+    sort INTEGER DEFAULT 0,
+    creator BIGINT,
+    create_date TIMESTAMP,
+    updater BIGINT,
+    update_date TIMESTAMP,
+    PRIMARY KEY (id)
+);
+CREATE INDEX idx_ai_model_provider_model_type ON ai_model_provider (model_type);
+COMMENT ON TABLE ai_model_provider IS 'Model provider table';
+COMMENT ON COLUMN ai_model_provider.id IS 'Primary key';
+COMMENT ON COLUMN ai_model_provider.model_type IS 'Model type (Memory/ASR/VAD/LLM/TTS)';
+COMMENT ON COLUMN ai_model_provider.provider_code IS 'Provider code';
+COMMENT ON COLUMN ai_model_provider.name IS 'Provider name';
+COMMENT ON COLUMN ai_model_provider.fields IS 'Provider field list (JSON format)';
+COMMENT ON COLUMN ai_model_provider.sort IS 'sort order';
+COMMENT ON COLUMN ai_model_provider.creator IS 'creator';
+COMMENT ON COLUMN ai_model_provider.create_date IS 'creation time';
+COMMENT ON COLUMN ai_model_provider.updater IS 'updater';
+COMMENT ON COLUMN ai_model_provider.update_date IS 'update time';
 
--- 模型配置表
-DROP TABLE IF EXISTS `ai_model_config`;
-CREATE TABLE `ai_model_config` (
-    `id` VARCHAR(32) NOT NULL COMMENT '主键',
-    `model_type` VARCHAR(20) COMMENT '模型类型(Memory/ASR/VAD/LLM/TTS)',
-    `model_code` VARCHAR(50) COMMENT '模型编码(如AliLLM、DoubaoTTS)',
-    `model_name` VARCHAR(50) COMMENT '模型名称',
-    `is_default` TINYINT(1) DEFAULT 0 COMMENT '是否默认配置(0否 1是)',
-    `is_enabled` TINYINT(1) DEFAULT 0 COMMENT '是否启用',
-    `config_json` JSON COMMENT '模型配置(JSON格式)',
-    `doc_link` VARCHAR(200) COMMENT '官方文档链接',
-    `remark` VARCHAR(255) COMMENT '备注',
-    `sort` INT UNSIGNED DEFAULT 0 COMMENT '排序',
-    `creator` BIGINT COMMENT '创建者',
-    `create_date` DATETIME COMMENT '创建时间',
-    `updater` BIGINT COMMENT '更新者',
-    `update_date` DATETIME COMMENT '更新时间',
-    PRIMARY KEY (`id`),
-    INDEX `idx_ai_model_config_model_type` (`model_type`) COMMENT '创建模型类型的索引，用于快速查找特定类型下的所有配置信息'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模型配置表';
+-- Model configuration table
+DROP TABLE IF EXISTS ai_model_config;
+CREATE TABLE ai_model_config (
+    id VARCHAR(32) NOT NULL,
+    model_type VARCHAR(20),
+    model_code VARCHAR(50),
+    model_name VARCHAR(50),
+    is_default BOOLEAN DEFAULT false,
+    is_enabled BOOLEAN DEFAULT false,
+    config_json JSON,
+    doc_link VARCHAR(200),
+    remark VARCHAR(255),
+    sort INTEGER DEFAULT 0,
+    creator BIGINT,
+    create_date TIMESTAMP,
+    updater BIGINT,
+    update_date TIMESTAMP,
+    PRIMARY KEY (id)
+);
+CREATE INDEX idx_ai_model_config_model_type ON ai_model_config (model_type);
+COMMENT ON TABLE ai_model_config IS 'Model configuration table';
+COMMENT ON COLUMN ai_model_config.id IS 'Primary key';
+COMMENT ON COLUMN ai_model_config.model_type IS 'Model type (Memory/ASR/VAD/LLM/TTS)';
+COMMENT ON COLUMN ai_model_config.model_code IS 'Model code (e.g., AliLLM, DoubaoTTS)';
+COMMENT ON COLUMN ai_model_config.model_name IS 'Model name';
+COMMENT ON COLUMN ai_model_config.is_default IS 'Is default configuration (false: no, true: yes)';
+COMMENT ON COLUMN ai_model_config.is_enabled IS 'Is enabled';
+COMMENT ON COLUMN ai_model_config.config_json IS 'Model configuration (JSON format)';
+COMMENT ON COLUMN ai_model_config.doc_link IS 'Official documentation link';
+COMMENT ON COLUMN ai_model_config.remark IS 'remark';
+COMMENT ON COLUMN ai_model_config.sort IS 'sort order';
+COMMENT ON COLUMN ai_model_config.creator IS 'creator';
+COMMENT ON COLUMN ai_model_config.create_date IS 'creation time';
+COMMENT ON COLUMN ai_model_config.updater IS 'updater';
+COMMENT ON COLUMN ai_model_config.update_date IS 'update time';
 
--- TTS 音色表
-DROP TABLE IF EXISTS `ai_tts_voice`;
-CREATE TABLE `ai_tts_voice` (
-    `id` VARCHAR(32) NOT NULL COMMENT '主键',
-    `tts_model_id` VARCHAR(32) COMMENT '对应 TTS 模型主键',
-    `name` VARCHAR(20) COMMENT '音色名称',
-    `tts_voice` VARCHAR(50) COMMENT '音色编码',
-    `languages` VARCHAR(50) COMMENT '语言',
-    `voice_demo` VARCHAR(500) DEFAULT NULL COMMENT '音色 Demo',
-    `remark` VARCHAR(255) COMMENT '备注',
-    `sort` INT UNSIGNED DEFAULT 0 COMMENT '排序',
-    `creator` BIGINT COMMENT '创建者',
-    `create_date` DATETIME COMMENT '创建时间',
-    `updater` BIGINT COMMENT '更新者',
-    `update_date` DATETIME COMMENT '更新时间',
-    PRIMARY KEY (`id`),
-    INDEX `idx_ai_tts_voice_tts_model_id` (`tts_model_id`) COMMENT '创建 TTS 模型主键的索引，用于快速查找对应模型的音色信息'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='TTS 音色表';
+-- TTS voice table
+DROP TABLE IF EXISTS ai_tts_voice;
+CREATE TABLE ai_tts_voice (
+    id VARCHAR(32) NOT NULL,
+    tts_model_id VARCHAR(32),
+    name VARCHAR(20),
+    tts_voice VARCHAR(50),
+    languages VARCHAR(50),
+    voice_demo VARCHAR(500) DEFAULT NULL,
+    remark VARCHAR(255),
+    sort INTEGER DEFAULT 0,
+    creator BIGINT,
+    create_date TIMESTAMP,
+    updater BIGINT,
+    update_date TIMESTAMP,
+    PRIMARY KEY (id)
+);
+CREATE INDEX idx_ai_tts_voice_tts_model_id ON ai_tts_voice (tts_model_id);
+COMMENT ON TABLE ai_tts_voice IS 'TTS voice table';
+COMMENT ON COLUMN ai_tts_voice.id IS 'Primary key';
+COMMENT ON COLUMN ai_tts_voice.tts_model_id IS 'Corresponding TTS model primary key';
+COMMENT ON COLUMN ai_tts_voice.name IS 'Voice name';
+COMMENT ON COLUMN ai_tts_voice.tts_voice IS 'Voice code';
+COMMENT ON COLUMN ai_tts_voice.languages IS 'Languages';
+COMMENT ON COLUMN ai_tts_voice.voice_demo IS 'Voice demo';
+COMMENT ON COLUMN ai_tts_voice.remark IS 'remark';
+COMMENT ON COLUMN ai_tts_voice.sort IS 'sort order';
+COMMENT ON COLUMN ai_tts_voice.creator IS 'creator';
+COMMENT ON COLUMN ai_tts_voice.create_date IS 'creation time';
+COMMENT ON COLUMN ai_tts_voice.updater IS 'updater';
+COMMENT ON COLUMN ai_tts_voice.update_date IS 'update time';
 
--- 智能体配置模板表
-DROP TABLE IF EXISTS `ai_agent_template`;
-CREATE TABLE `ai_agent_template` (
-    `id` VARCHAR(32) NOT NULL COMMENT '智能体唯一标识',
-    `agent_code` VARCHAR(36) COMMENT '智能体编码',
-    `agent_name` VARCHAR(64) COMMENT '智能体名称',
-    `asr_model_id` VARCHAR(32) COMMENT '语音识别模型标识',
-    `vad_model_id` VARCHAR(64) COMMENT '语音活动检测标识',
-    `llm_model_id` VARCHAR(32) COMMENT '大语言模型标识',
-    `tts_model_id` VARCHAR(32) COMMENT '语音合成模型标识',
-    `tts_voice_id` VARCHAR(32) COMMENT '音色标识',
-    `mem_model_id` VARCHAR(32) COMMENT '记忆模型标识',
-    `intent_model_id` VARCHAR(32) COMMENT '意图模型标识',
-    `system_prompt` TEXT COMMENT '角色设定参数',
-    `lang_code` VARCHAR(10) COMMENT '语言编码',
-    `language` VARCHAR(10) COMMENT '交互语种',
-    `sort` INT UNSIGNED DEFAULT 0 COMMENT '排序权重',
-    `creator` BIGINT COMMENT '创建者 ID',
-    `created_at` DATETIME COMMENT '创建时间',
-    `updater` BIGINT COMMENT '更新者 ID',
-    `updated_at` DATETIME COMMENT '更新时间',
-    PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='智能体配置模板表';
+-- Agent configuration template table
+DROP TABLE IF EXISTS ai_agent_template;
+CREATE TABLE ai_agent_template (
+    id VARCHAR(32) NOT NULL,
+    agent_code VARCHAR(36),
+    agent_name VARCHAR(64),
+    asr_model_id VARCHAR(32),
+    vad_model_id VARCHAR(64),
+    llm_model_id VARCHAR(32),
+    tts_model_id VARCHAR(32),
+    tts_voice_id VARCHAR(32),
+    mem_model_id VARCHAR(32),
+    intent_model_id VARCHAR(32),
+    system_prompt TEXT,
+    lang_code VARCHAR(10),
+    language VARCHAR(10),
+    sort INTEGER DEFAULT 0,
+    creator BIGINT,
+    created_at TIMESTAMP,
+    updater BIGINT,
+    updated_at TIMESTAMP,
+    PRIMARY KEY (id)
+);
+COMMENT ON TABLE ai_agent_template IS 'Agent configuration template table';
+COMMENT ON COLUMN ai_agent_template.id IS 'Agent unique identifier';
+COMMENT ON COLUMN ai_agent_template.agent_code IS 'Agent code';
+COMMENT ON COLUMN ai_agent_template.agent_name IS 'Agent name';
+COMMENT ON COLUMN ai_agent_template.asr_model_id IS 'Speech recognition model identifier';
+COMMENT ON COLUMN ai_agent_template.vad_model_id IS 'Voice activity detection identifier';
+COMMENT ON COLUMN ai_agent_template.llm_model_id IS 'Large language model identifier';
+COMMENT ON COLUMN ai_agent_template.tts_model_id IS 'Text-to-speech model identifier';
+COMMENT ON COLUMN ai_agent_template.tts_voice_id IS 'Voice identifier';
+COMMENT ON COLUMN ai_agent_template.mem_model_id IS 'Memory model identifier';
+COMMENT ON COLUMN ai_agent_template.intent_model_id IS 'Intent model identifier';
+COMMENT ON COLUMN ai_agent_template.system_prompt IS 'Role setting parameters';
+COMMENT ON COLUMN ai_agent_template.lang_code IS 'Language code';
+COMMENT ON COLUMN ai_agent_template.language IS 'Interaction language';
+COMMENT ON COLUMN ai_agent_template.sort IS 'sort weight';
+COMMENT ON COLUMN ai_agent_template.creator IS 'creator ID';
+COMMENT ON COLUMN ai_agent_template.created_at IS 'creation time';
+COMMENT ON COLUMN ai_agent_template.updater IS 'updater ID';
+COMMENT ON COLUMN ai_agent_template.updated_at IS 'update time';
 
--- 智能体配置表
-DROP TABLE IF EXISTS `ai_agent`;
-CREATE TABLE `ai_agent` (
-    `id` VARCHAR(32) NOT NULL COMMENT '智能体唯一标识',
-    `user_id` BIGINT COMMENT '所属用户 ID',
-    `agent_code` VARCHAR(36) COMMENT '智能体编码',
-    `agent_name` VARCHAR(64) COMMENT '智能体名称',
-    `asr_model_id` VARCHAR(32) COMMENT '语音识别模型标识',
-    `vad_model_id` VARCHAR(64) COMMENT '语音活动检测标识',
-    `llm_model_id` VARCHAR(32) COMMENT '大语言模型标识',
-    `tts_model_id` VARCHAR(32) COMMENT '语音合成模型标识',
-    `tts_voice_id` VARCHAR(32) COMMENT '音色标识',
-    `mem_model_id` VARCHAR(32) COMMENT '记忆模型标识',
-    `intent_model_id` VARCHAR(32) COMMENT '意图模型标识',
-    `system_prompt` TEXT COMMENT '角色设定参数',
-    `lang_code` VARCHAR(10) COMMENT '语言编码',
-    `language` VARCHAR(10) COMMENT '交互语种',
-    `sort` INT UNSIGNED DEFAULT 0 COMMENT '排序权重',
-    `creator` BIGINT COMMENT '创建者 ID',
-    `created_at` DATETIME COMMENT '创建时间',
-    `updater` BIGINT COMMENT '更新者 ID',
-    `updated_at` DATETIME COMMENT '更新时间',
-    PRIMARY KEY (`id`),
-    INDEX `idx_ai_agent_user_id` (`user_id`) COMMENT '创建用户的索引，用于快速查找用户下的智能体信息'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='智能体配置表';
+-- Agent configuration table
+DROP TABLE IF EXISTS ai_agent;
+CREATE TABLE ai_agent (
+    id VARCHAR(32) NOT NULL,
+    user_id BIGINT,
+    agent_code VARCHAR(36),
+    agent_name VARCHAR(64),
+    asr_model_id VARCHAR(32),
+    vad_model_id VARCHAR(64),
+    llm_model_id VARCHAR(32),
+    tts_model_id VARCHAR(32),
+    tts_voice_id VARCHAR(32),
+    mem_model_id VARCHAR(32),
+    intent_model_id VARCHAR(32),
+    system_prompt TEXT,
+    lang_code VARCHAR(10),
+    language VARCHAR(10),
+    sort INTEGER DEFAULT 0,
+    creator BIGINT,
+    created_at TIMESTAMP,
+    updater BIGINT,
+    updated_at TIMESTAMP,
+    PRIMARY KEY (id)
+);
+CREATE INDEX idx_ai_agent_user_id ON ai_agent (user_id);
+COMMENT ON TABLE ai_agent IS 'Agent configuration table';
+COMMENT ON COLUMN ai_agent.id IS 'Agent unique identifier';
+COMMENT ON COLUMN ai_agent.user_id IS 'User ID';
+COMMENT ON COLUMN ai_agent.agent_code IS 'Agent code';
+COMMENT ON COLUMN ai_agent.agent_name IS 'Agent name';
+COMMENT ON COLUMN ai_agent.asr_model_id IS 'Speech recognition model identifier';
+COMMENT ON COLUMN ai_agent.vad_model_id IS 'Voice activity detection identifier';
+COMMENT ON COLUMN ai_agent.llm_model_id IS 'Large language model identifier';
+COMMENT ON COLUMN ai_agent.tts_model_id IS 'Text-to-speech model identifier';
+COMMENT ON COLUMN ai_agent.tts_voice_id IS 'Voice identifier';
+COMMENT ON COLUMN ai_agent.mem_model_id IS 'Memory model identifier';
+COMMENT ON COLUMN ai_agent.intent_model_id IS 'Intent model identifier';
+COMMENT ON COLUMN ai_agent.system_prompt IS 'Role setting parameters';
+COMMENT ON COLUMN ai_agent.lang_code IS 'Language code';
+COMMENT ON COLUMN ai_agent.language IS 'Interaction language';
+COMMENT ON COLUMN ai_agent.sort IS 'sort weight';
+COMMENT ON COLUMN ai_agent.creator IS 'creator ID';
+COMMENT ON COLUMN ai_agent.created_at IS 'creation time';
+COMMENT ON COLUMN ai_agent.updater IS 'updater ID';
+COMMENT ON COLUMN ai_agent.updated_at IS 'update time';
 
--- 设备信息表
-DROP TABLE IF EXISTS `ai_device`;
-CREATE TABLE `ai_device` (
-    `id` VARCHAR(32) NOT NULL COMMENT '设备唯一标识',
-    `user_id` BIGINT COMMENT '关联用户 ID',
-    `mac_address` VARCHAR(50) COMMENT 'MAC 地址',
-    `last_connected_at` DATETIME COMMENT '最后连接时间',
-    `auto_update` TINYINT UNSIGNED DEFAULT 0 COMMENT '自动更新开关(0 关闭/1 开启)',
-    `board` VARCHAR(50) COMMENT '设备硬件型号',
-    `alias` VARCHAR(64) DEFAULT NULL COMMENT '设备别名',
-    `agent_id` VARCHAR(32) COMMENT '智能体 ID',
-    `app_version` VARCHAR(20) COMMENT '固件版本号',
-    `sort` INT UNSIGNED DEFAULT 0 COMMENT '排序',
-    `creator` BIGINT COMMENT '创建者',
-    `create_date` DATETIME COMMENT '创建时间',
-    `updater` BIGINT COMMENT '更新者',
-    `update_date` DATETIME COMMENT '更新时间',
-    PRIMARY KEY (`id`),
-    INDEX `idx_ai_device_created_at` (`mac_address`) COMMENT '创建mac的索引，用于快速查找设备信息'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='设备信息表';
+-- Device information table
+DROP TABLE IF EXISTS ai_device;
+CREATE TABLE ai_device (
+    id VARCHAR(32) NOT NULL,
+    user_id BIGINT,
+    mac_address VARCHAR(50),
+    last_connected_at TIMESTAMP,
+    auto_update SMALLINT DEFAULT 0,
+    board VARCHAR(50),
+    alias VARCHAR(64) DEFAULT NULL,
+    agent_id VARCHAR(32),
+    app_version VARCHAR(20),
+    sort INTEGER DEFAULT 0,
+    creator BIGINT,
+    create_date TIMESTAMP,
+    updater BIGINT,
+    update_date TIMESTAMP,
+    PRIMARY KEY (id)
+);
+CREATE INDEX idx_ai_device_created_at ON ai_device (mac_address);
+COMMENT ON TABLE ai_device IS 'Device information table';
+COMMENT ON COLUMN ai_device.id IS 'Device unique identifier';
+COMMENT ON COLUMN ai_device.user_id IS 'Associated user ID';
+COMMENT ON COLUMN ai_device.mac_address IS 'MAC address';
+COMMENT ON COLUMN ai_device.last_connected_at IS 'Last connection time';
+COMMENT ON COLUMN ai_device.auto_update IS 'Auto update switch (0: off, 1: on)';
+COMMENT ON COLUMN ai_device.board IS 'Device hardware model';
+COMMENT ON COLUMN ai_device.alias IS 'Device alias';
+COMMENT ON COLUMN ai_device.agent_id IS 'Agent ID';
+COMMENT ON COLUMN ai_device.app_version IS 'Firmware version number';
+COMMENT ON COLUMN ai_device.sort IS 'sort order';
+COMMENT ON COLUMN ai_device.creator IS 'creator';
+COMMENT ON COLUMN ai_device.create_date IS 'creation time';
+COMMENT ON COLUMN ai_device.updater IS 'updater';
+COMMENT ON COLUMN ai_device.update_date IS 'update time';
 
--- 声纹识别表
-DROP TABLE IF EXISTS `ai_voiceprint`;
-CREATE TABLE `ai_voiceprint` (
-    `id` VARCHAR(32) NOT NULL COMMENT '声纹唯一标识',
-    `name` VARCHAR(64) COMMENT '声纹名称',
-    `user_id` BIGINT COMMENT '用户 ID（关联用户表）',
-    `agent_id` VARCHAR(32) COMMENT '关联智能体 ID',
-    `agent_code` VARCHAR(36) COMMENT '关联智能体编码',
-    `agent_name` VARCHAR(36) COMMENT '关联智能体名称',
-    `description` VARCHAR(255) COMMENT '声纹描述',
-    `embedding` LONGTEXT COMMENT '声纹特征向量（JSON 数组格式）',
-    `memory` TEXT COMMENT '关联记忆数据',
-    `sort` INT UNSIGNED DEFAULT 0 COMMENT '排序权重',
-    `creator` BIGINT COMMENT '创建者 ID',
-    `created_at` DATETIME COMMENT '创建时间',
-    `updater` BIGINT COMMENT '更新者 ID',
-    `updated_at` DATETIME COMMENT '更新时间',
-    PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='声纹识别表';
+-- Voiceprint recognition table
+DROP TABLE IF EXISTS ai_voiceprint;
+CREATE TABLE ai_voiceprint (
+    id VARCHAR(32) NOT NULL,
+    name VARCHAR(64),
+    user_id BIGINT,
+    agent_id VARCHAR(32),
+    agent_code VARCHAR(36),
+    agent_name VARCHAR(36),
+    description VARCHAR(255),
+    embedding TEXT,
+    memory TEXT,
+    sort INTEGER DEFAULT 0,
+    creator BIGINT,
+    created_at TIMESTAMP,
+    updater BIGINT,
+    updated_at TIMESTAMP,
+    PRIMARY KEY (id)
+);
+COMMENT ON TABLE ai_voiceprint IS 'Voiceprint recognition table';
+COMMENT ON COLUMN ai_voiceprint.id IS 'Voiceprint unique identifier';
+COMMENT ON COLUMN ai_voiceprint.name IS 'Voiceprint name';
+COMMENT ON COLUMN ai_voiceprint.user_id IS 'User ID (associated with user table)';
+COMMENT ON COLUMN ai_voiceprint.agent_id IS 'Associated agent ID';
+COMMENT ON COLUMN ai_voiceprint.agent_code IS 'Associated agent code';
+COMMENT ON COLUMN ai_voiceprint.agent_name IS 'Associated agent name';
+COMMENT ON COLUMN ai_voiceprint.description IS 'Voiceprint description';
+COMMENT ON COLUMN ai_voiceprint.embedding IS 'Voiceprint feature vector (JSON array format)';
+COMMENT ON COLUMN ai_voiceprint.memory IS 'Associated memory data';
+COMMENT ON COLUMN ai_voiceprint.sort IS 'sort weight';
+COMMENT ON COLUMN ai_voiceprint.creator IS 'creator ID';
+COMMENT ON COLUMN ai_voiceprint.created_at IS 'creation time';
+COMMENT ON COLUMN ai_voiceprint.updater IS 'updater ID';
+COMMENT ON COLUMN ai_voiceprint.updated_at IS 'update time';
 
--- 对话历史表
-DROP TABLE IF EXISTS `ai_chat_history`;
-CREATE TABLE `ai_chat_history` (
-    `id` VARCHAR(32) NOT NULL COMMENT '对话编号',
-    `user_id` BIGINT COMMENT '用户编号',
-    `agent_id` VARCHAR(32) DEFAULT NULL COMMENT '聊天角色',
-    `device_id` VARCHAR(32) DEFAULT NULL COMMENT '设备编号',
-    `message_count` INT COMMENT '信息汇总',
-    `creator` BIGINT COMMENT '创建者',
-    `create_date` DATETIME COMMENT '创建时间',
-    `updater` BIGINT COMMENT '更新者',
-    `update_date` DATETIME COMMENT '更新时间',
-    PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='对话历史表';
+-- Conversation history table
+DROP TABLE IF EXISTS ai_chat_history;
+CREATE TABLE ai_chat_history (
+    id VARCHAR(32) NOT NULL,
+    user_id BIGINT,
+    agent_id VARCHAR(32) DEFAULT NULL,
+    device_id VARCHAR(32) DEFAULT NULL,
+    message_count INTEGER,
+    creator BIGINT,
+    create_date TIMESTAMP,
+    updater BIGINT,
+    update_date TIMESTAMP,
+    PRIMARY KEY (id)
+);
+COMMENT ON TABLE ai_chat_history IS 'Conversation history table';
+COMMENT ON COLUMN ai_chat_history.id IS 'Conversation ID';
+COMMENT ON COLUMN ai_chat_history.user_id IS 'User ID';
+COMMENT ON COLUMN ai_chat_history.agent_id IS 'Chat role';
+COMMENT ON COLUMN ai_chat_history.device_id IS 'Device ID';
+COMMENT ON COLUMN ai_chat_history.message_count IS 'Message summary';
+COMMENT ON COLUMN ai_chat_history.creator IS 'creator';
+COMMENT ON COLUMN ai_chat_history.create_date IS 'creation time';
+COMMENT ON COLUMN ai_chat_history.updater IS 'updater';
+COMMENT ON COLUMN ai_chat_history.update_date IS 'update time';
 
--- 对话信息表
-DROP TABLE IF EXISTS `ai_chat_message`;
-CREATE TABLE `ai_chat_message` (
-    `id` VARCHAR(32) NOT NULL COMMENT '对话记录唯一标识',
-    `user_id` BIGINT COMMENT '用户唯一标识',
-    `chat_id` VARCHAR(64) COMMENT '对话历史 ID',
-    `role` ENUM('user', 'assistant') COMMENT '角色（用户或助理）',
-    `content` TEXT COMMENT '对话内容',
-    `prompt_tokens` INT UNSIGNED DEFAULT 0 COMMENT '提示令牌数',
-    `total_tokens` INT UNSIGNED DEFAULT 0 COMMENT '总令牌数',
-    `completion_tokens` INT UNSIGNED DEFAULT 0 COMMENT '完成令牌数',
-    `prompt_ms` INT UNSIGNED DEFAULT 0 COMMENT '提示耗时（毫秒）',
-    `total_ms` INT UNSIGNED DEFAULT 0 COMMENT '总耗时（毫秒）',
-    `completion_ms` INT UNSIGNED DEFAULT 0 COMMENT '完成耗时（毫秒）',
-    `creator` BIGINT COMMENT '创建者',
-    `create_date` DATETIME COMMENT '创建时间',
-    `updater` BIGINT COMMENT '更新者',
-    `update_date` DATETIME COMMENT '更新时间',
-    PRIMARY KEY (`id`),
-    INDEX `idx_ai_chat_message_user_id_chat_id_role` (`user_id`, `chat_id`) COMMENT '用户 ID、聊天会话 ID 和角色的联合索引，用于快速检索对话记录',
-    INDEX `idx_ai_chat_message_created_at` (`create_date`) COMMENT '创建时间的索引，用于按时间排序或检索对话记录'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='对话信息表';
+-- Conversation message table
+DROP TABLE IF EXISTS ai_chat_message;
+CREATE TABLE ai_chat_message (
+    id VARCHAR(32) NOT NULL,
+    user_id BIGINT,
+    chat_id VARCHAR(64),
+    role VARCHAR(20),
+    content TEXT,
+    prompt_tokens INTEGER DEFAULT 0,
+    total_tokens INTEGER DEFAULT 0,
+    completion_tokens INTEGER DEFAULT 0,
+    prompt_ms INTEGER DEFAULT 0,
+    total_ms INTEGER DEFAULT 0,
+    completion_ms INTEGER DEFAULT 0,
+    creator BIGINT,
+    create_date TIMESTAMP,
+    updater BIGINT,
+    update_date TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT chk_role CHECK (role IN ('user', 'assistant'))
+);
+CREATE INDEX idx_ai_chat_message_user_id_chat_id_role ON ai_chat_message (user_id, chat_id);
+CREATE INDEX idx_ai_chat_message_created_at ON ai_chat_message (create_date);
+COMMENT ON TABLE ai_chat_message IS 'Conversation message table';
+COMMENT ON COLUMN ai_chat_message.id IS 'Conversation record unique identifier';
+COMMENT ON COLUMN ai_chat_message.user_id IS 'User unique identifier';
+COMMENT ON COLUMN ai_chat_message.chat_id IS 'Conversation history ID';
+COMMENT ON COLUMN ai_chat_message.role IS 'Role (user or assistant)';
+COMMENT ON COLUMN ai_chat_message.content IS 'Conversation content';
+COMMENT ON COLUMN ai_chat_message.prompt_tokens IS 'Prompt token count';
+COMMENT ON COLUMN ai_chat_message.total_tokens IS 'Total token count';
+COMMENT ON COLUMN ai_chat_message.completion_tokens IS 'Completion token count';
+COMMENT ON COLUMN ai_chat_message.prompt_ms IS 'Prompt time (milliseconds)';
+COMMENT ON COLUMN ai_chat_message.total_ms IS 'Total time (milliseconds)';
+COMMENT ON COLUMN ai_chat_message.completion_ms IS 'Completion time (milliseconds)';
+COMMENT ON COLUMN ai_chat_message.creator IS 'creator';
+COMMENT ON COLUMN ai_chat_message.create_date IS 'creation time';
+COMMENT ON COLUMN ai_chat_message.updater IS 'updater';
+COMMENT ON COLUMN ai_chat_message.update_date IS 'update time';

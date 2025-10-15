@@ -48,7 +48,7 @@ public class ModelConfigServiceImpl extends BaseServiceImpl<ModelConfigDao, Mode
         List<ModelConfigEntity> entities = modelConfigDao.selectList(
                 new QueryWrapper<ModelConfigEntity>()
                         .eq("model_type", modelType)
-                        .eq("is_enabled", 1)
+                        .eq("is_enabled", true)
                         .like(StringUtils.isNotBlank(modelName), "model_name", "%" + modelName + "%")
                         .select("id", "model_name"));
         return ConvertUtils.sourceToTarget(entities, ModelBasicInfoDTO.class);
@@ -59,7 +59,7 @@ public class ModelConfigServiceImpl extends BaseServiceImpl<ModelConfigDao, Mode
         List<ModelConfigEntity> entities = modelConfigDao.selectList(
                 new QueryWrapper<ModelConfigEntity>()
                         .eq("model_type", "llm")
-                        .eq("is_enabled", 1)
+                        .eq("is_enabled", true)
                         .like(StringUtils.isNotBlank(modelName), "model_name", "%" + modelName + "%")
                         .select("id", "model_name", "config_json"));
         // 处理获取到的内容
@@ -100,7 +100,7 @@ public class ModelConfigServiceImpl extends BaseServiceImpl<ModelConfigDao, Mode
         // 再保存供应器提供的模型
         ModelConfigEntity modelConfigEntity = ConvertUtils.sourceToTarget(modelConfigBodyDTO, ModelConfigEntity.class);
         modelConfigEntity.setModelType(modelType);
-        modelConfigEntity.setIsDefault(0);
+        modelConfigEntity.setIsDefault(false);
         modelConfigDao.insert(modelConfigEntity);
         return ConvertUtils.sourceToTarget(modelConfigEntity, ModelConfigDTO.class);
     }
@@ -145,7 +145,7 @@ public class ModelConfigServiceImpl extends BaseServiceImpl<ModelConfigDao, Mode
     public void delete(String id) {
         // 查看是否是默认
         ModelConfigEntity modelConfig = modelConfigDao.selectById(id);
-        if (modelConfig != null && modelConfig.getIsDefault() == 1) {
+        if (modelConfig != null && Boolean.TRUE.equals(modelConfig.getIsDefault())) {
             throw new RenException("该模型为默认模型，请先设置其他模型为默认模型");
         }
         // 验证是否有引用
@@ -246,7 +246,7 @@ public class ModelConfigServiceImpl extends BaseServiceImpl<ModelConfigDao, Mode
     }
 
     @Override
-    public void setDefaultModel(String modelType, int isDefault) {
+    public void setDefaultModel(String modelType, Boolean isDefault) {
         ModelConfigEntity entity = new ModelConfigEntity();
         entity.setIsDefault(isDefault);
         modelConfigDao.update(entity, new QueryWrapper<ModelConfigEntity>()

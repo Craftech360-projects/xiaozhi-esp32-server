@@ -3,10 +3,10 @@
 -- -------------------------------------------------------
 
 -- Update the checksum for the modified changeset
-UPDATE DATABASECHANGELOG 
-SET MD5SUM = NULL 
-WHERE ID = '202509020001' AND AUTHOR = 'claude';
+UPDATE databasechangelog
+SET md5sum = NULL
+WHERE id = '202509020001' AND author = 'claude';
 
 -- Clear any locks
-DELETE FROM DATABASECHANGELOGLOCK WHERE ID = 1;
-INSERT INTO DATABASECHANGELOGLOCK (ID, LOCKED, LOCKGRANTED, LOCKEDBY) VALUES (1, 0, NULL, NULL);
+DELETE FROM databasechangeloglock WHERE id = 1;
+INSERT INTO databasechangeloglock (id, locked, lockgranted, lockedby) VALUES (1, false, NULL, NULL);

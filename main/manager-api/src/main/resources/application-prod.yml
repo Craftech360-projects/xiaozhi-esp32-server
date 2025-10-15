@@ -10,17 +10,12 @@ knife4j:
 spring:
   datasource:
     druid:
-      #MySQL
-      # driver-class-name: com.mysql.cj.jdbc.Driver
-      # # Railway MySQL Configuration - Updated for Railway database
-      # url: jdbc:mysql://yamanote.proxy.rlwy.net:16958/railway?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&nullCatalogMeansCurrent=true&useSSL=true&allowPublicKeyRetrieval=true
-      # username: root
-      # password: cTefiuLmZSMqGpcQImUmBIsUBhNyUvrK
-      driver-class-name: com.mysql.cj.jdbc.Driver
-      # Railway MySQL Configuration - Updated for Railway database
-      url: jdbc:mysql://nozomi.proxy.rlwy.net:25037/railway?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&nullCatalogMeansCurrent=true&useSSL=true&allowPublicKeyRetrieval=true
-      username: root
-      password: OcaVNLKcwNdyElfaeUPqvvfYZiiEHgdm
+      # PostgreSQL/Supabase Production Configuration
+      # Replace with your actual Supabase connection details
+      driver-class-name: org.postgresql.Driver
+      url: jdbc:postgresql://db.xxxxxxxxxxxxx.supabase.co:5432/postgres?currentSchema=public
+      username: postgres
+      password: your-supabase-password
 
       initial-size: 10
       max-active: 100

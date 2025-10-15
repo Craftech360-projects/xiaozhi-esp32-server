@@ -8,19 +8,25 @@ CREATE TABLE content_library (
     title VARCHAR(255) NOT NULL,
     romanized VARCHAR(255),
     filename VARCHAR(255) NOT NULL,
-    content_type ENUM('music', 'story') NOT NULL,
+    content_type VARCHAR(10) NOT NULL CHECK (content_type IN ('music', 'story')),
     category VARCHAR(50) NOT NULL,
-    alternatives TEXT COMMENT 'JSON array of alternative search terms',
-    aws_s3_url VARCHAR(500) COMMENT 'S3 URL for the audio file',
-    duration_seconds INT DEFAULT NULL COMMENT 'Duration in seconds',
-    file_size_bytes BIGINT DEFAULT NULL COMMENT 'File size in bytes',
-    is_active TINYINT(1) DEFAULT 1 COMMENT '1=active, 0=inactive',
+    alternatives TEXT,
+    aws_s3_url VARCHAR(500),
+    duration_seconds INT DEFAULT NULL,
+    file_size_bytes BIGINT DEFAULT NULL,
+    is_active SMALLINT DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    
-    INDEX idx_content_type_category (content_type, category),
-    INDEX idx_title (title),
-    INDEX idx_active (is_active),
-    INDEX idx_created_at (created_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci 
-COMMENT='Content library for music and stories available on devices';
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_content_type_category ON content_library (content_type, category);
+CREATE INDEX idx_title ON content_library (title);
+CREATE INDEX idx_active ON content_library (is_active);
+CREATE INDEX idx_created_at ON content_library (created_at);
+
+COMMENT ON TABLE content_library IS 'Content library for music and stories available on devices';
+COMMENT ON COLUMN content_library.alternatives IS 'JSON array of alternative search terms';
+COMMENT ON COLUMN content_library.aws_s3_url IS 'S3 URL for the audio file';
+COMMENT ON COLUMN content_library.duration_seconds IS 'Duration in seconds';
+COMMENT ON COLUMN content_library.file_size_bytes IS 'File size in bytes';
+COMMENT ON COLUMN content_library.is_active IS '1=active, 0=inactive';

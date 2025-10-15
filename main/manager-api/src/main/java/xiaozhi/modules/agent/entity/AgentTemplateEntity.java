@@ -104,9 +104,9 @@ public class AgentTemplateEntity implements Serializable {
     private Integer sort;
 
     /**
-     * 是否在应用中显示（0不显示 1显示）
+     * 是否在应用中显示（false不显示 true显示）
      */
-    private Integer isVisible;
+    private Boolean isVisible;
 
     /**
      * 创建者 ID

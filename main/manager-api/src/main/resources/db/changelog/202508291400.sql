@@ -3,8 +3,8 @@
 
 -- Update existing templates with new descriptions
 -- 1. Cheeko (Default) - Update system prompt
-UPDATE `ai_agent_template` 
-SET `system_prompt` = '[Role Setting]
+UPDATE ai_agent_template 
+SET system_prompt = '[Role Setting]
 You are Cheeko, a friendly, curious, and playful AI friend for children aged 4+.
 
 [Core Rules / Priorities]
@@ -27,11 +27,11 @@ You are Cheeko, a friendly, curious, and playful AI friend for children aged 4+.
 
 [Growth / Reward System]
 Keep the child smiling and talking in every message.'
-WHERE `agent_name` LIKE 'Cheeko%' OR `agent_name` = '小智' OR `id` = '9406648b5cc5fde1b8aa335b6f8b4f76';
+WHERE agent_name LIKE 'Cheeko%' OR agent_name = '小智' OR id = '9406648b5cc5fde1b8aa335b6f8b4f76';
 
 -- 2. English Teacher (Lily) - Update system prompt
-UPDATE `ai_agent_template` 
-SET `system_prompt` = '[Role Setting]
+UPDATE ai_agent_template 
+SET system_prompt = '[Role Setting]
 You are Lily, an English teacher who can also speak Chinese.
 
 [Core Rules / Priorities]
@@ -52,12 +52,12 @@ You are Lily, an English teacher who can also speak Chinese.
 
 [Growth / Reward System]
 Celebrate progress with fun roleplay and musical surprises.'
-WHERE `agent_name` LIKE '%英语老师%' OR `agent_name` LIKE '%English%' OR `id` = '6c7d8e9f0a1b2c3d4e5f6a7b8c9d0s24';
+WHERE agent_name LIKE '%英语老师%' OR agent_name LIKE '%English%' OR id = '6c7d8e9f0a1b2c3d4e5f6a7b8c9d0s24';
 
 -- 3. Scientist - Update system prompt  
-UPDATE `ai_agent_template` 
-SET `agent_name` = 'The Scientist',
-    `system_prompt` = '[Role Setting]
+UPDATE ai_agent_template 
+SET agent_name = 'The Scientist',
+    system_prompt = '[Role Setting]
 You are Professor {{assistant_name}}, a curious scientist who explains the universe simply.
 
 [Core Rules / Priorities]
@@ -77,12 +77,12 @@ You are Professor {{assistant_name}}, a curious scientist who explains the unive
 
 [Growth / Reward System]
 Unlock "Discovery Badges" after 3 fun facts learned.'
-WHERE `agent_name` LIKE '%星际游子%' OR `agent_name` LIKE '%scientist%' OR `id` = '0ca32eb728c949e58b1000b2e401f90c';
+WHERE agent_name LIKE '%星际游子%' OR agent_name LIKE '%scientist%' OR id = '0ca32eb728c949e58b1000b2e401f90c';
 
 -- 4. Math Magician - Update existing good boy template
-UPDATE `ai_agent_template` 
-SET `agent_name` = 'Math Magician',
-    `system_prompt` = '[Role Setting]
+UPDATE ai_agent_template 
+SET agent_name = 'Math Magician',
+    system_prompt = '[Role Setting]
 You are {{assistant_name}}, the Math Magician who makes numbers magical.
 
 [Core Rules / Priorities]
@@ -101,12 +101,12 @@ You are {{assistant_name}}, the Math Magician who makes numbers magical.
 
 [Growth / Reward System]
 Earn "Magic Stars" after 5 correct answers.'
-WHERE `agent_name` LIKE '%好奇男孩%' OR `agent_name` LIKE '%math%' OR `id` = 'e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b1';
+WHERE agent_name LIKE '%好奇男孩%' OR agent_name LIKE '%math%' OR id = 'e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b1';
 
 -- 5. Puzzle Solver - Update existing captain template
-UPDATE `ai_agent_template` 
-SET `agent_name` = 'Puzzle Solver',
-    `system_prompt` = '[Role Setting]
+UPDATE ai_agent_template 
+SET agent_name = 'Puzzle Solver',
+    system_prompt = '[Role Setting]
 You are {{assistant_name}}, the Puzzle Solver, living inside a giant puzzle cube.
 
 [Core Rules / Priorities]
@@ -126,12 +126,12 @@ You are {{assistant_name}}, the Puzzle Solver, living inside a giant puzzle cube
 
 [Growth / Reward System]
 Track Puzzle Points → Earn badges for solving puzzles.'
-WHERE `agent_name` LIKE '%汪汪队长%' OR `agent_name` LIKE '%puzzle%' OR `id` = 'a45b6c7d8e9f0a1b2c3d4e5f6a7b8c92';
+WHERE agent_name LIKE '%汪汪队长%' OR agent_name LIKE '%puzzle%' OR id = 'a45b6c7d8e9f0a1b2c3d4e5f6a7b8c92';
 
 -- 6. Robot Coder - Keep the existing template but ensure it has the right name
-UPDATE `ai_agent_template` 
-SET `agent_name` = 'Robot Coder',
-    `system_prompt` = '[Role Setting]
+UPDATE ai_agent_template 
+SET agent_name = 'Robot Coder',
+    system_prompt = '[Role Setting]
 You are {{assistant_name}}, a playful robot who teaches coding logic.
 
 [Core Rules / Priorities]
@@ -150,12 +150,12 @@ You are {{assistant_name}}, a playful robot who teaches coding logic.
 
 [Growth / Reward System]
 Earn "Robot Gears" to unlock special coding powers.'
-WHERE `agent_name` LIKE '%robot%' OR `agent_name` LIKE '%coder%' OR `sort` = 6;
+WHERE agent_name LIKE '%robot%' OR agent_name LIKE '%coder%' OR sort = 6;
 
 -- Insert new assistant templates
 -- 7. RhymeTime
-INSERT INTO `ai_agent_template` 
-(`id`, `agent_code`, `agent_name`, `asr_model_id`, `vad_model_id`, `llm_model_id`, `vllm_model_id`, `tts_model_id`, `tts_voice_id`, `mem_model_id`, `intent_model_id`, `chat_history_conf`, `system_prompt`, `summary_memory`, `lang_code`, `language`, `sort`, `creator`, `created_at`, `updater`, `updated_at`) 
+INSERT INTO ai_agent_template 
+(id, agent_code, agent_name, asr_model_id, vad_model_id, llm_model_id, vllm_model_id, tts_model_id, tts_voice_id, mem_model_id, intent_model_id, chat_history_conf, system_prompt, summary_memory, lang_code, language, sort, creator, created_at, updater, updated_at) 
 VALUES 
 ('71b2c3d4e5f6789abcdef01234567a07', 'RhymeTime', 'RhymeTime', 'ASR_FunASR', 'VAD_SileroVAD', 'LLM_ChatGLMLLM', 'VLLM_ChatGLMVLLM', 'TTS_EdgeTTS', 'TTS_EdgeTTS0001', 'Memory_nomem', 'Intent_function_call', 2, 
 '[Role Setting]
@@ -180,8 +180,8 @@ Collect "Rhyme Stars" for each rhyme created.',
 NULL, 'en', 'English', 7, NULL, NOW(), NULL, NOW());
 
 -- 8. Storyteller
-INSERT INTO `ai_agent_template` 
-(`id`, `agent_code`, `agent_name`, `asr_model_id`, `vad_model_id`, `llm_model_id`, `vllm_model_id`, `tts_model_id`, `tts_voice_id`, `mem_model_id`, `intent_model_id`, `chat_history_conf`, `system_prompt`, `summary_memory`, `lang_code`, `language`, `sort`, `creator`, `created_at`, `updater`, `updated_at`) 
+INSERT INTO ai_agent_template 
+(id, agent_code, agent_name, asr_model_id, vad_model_id, llm_model_id, vllm_model_id, tts_model_id, tts_voice_id, mem_model_id, intent_model_id, chat_history_conf, system_prompt, summary_memory, lang_code, language, sort, creator, created_at, updater, updated_at) 
 VALUES 
 ('82c3d4e5f67890abcdef123456789a08', 'Storyteller', 'Storyteller', 'ASR_FunASR', 'VAD_SileroVAD', 'LLM_ChatGLMLLM', 'VLLM_ChatGLMVLLM', 'TTS_EdgeTTS', 'TTS_EdgeTTS0001', 'Memory_nomem', 'Intent_function_call', 2, 
 '[Role Setting]
@@ -206,8 +206,8 @@ Child earns "Story Gems" for every story co-created.',
 NULL, 'en', 'English', 8, NULL, NOW(), NULL, NOW());
 
 -- 9. Art Buddy
-INSERT INTO `ai_agent_template` 
-(`id`, `agent_code`, `agent_name`, `asr_model_id`, `vad_model_id`, `llm_model_id`, `vllm_model_id`, `tts_model_id`, `tts_voice_id`, `mem_model_id`, `intent_model_id`, `chat_history_conf`, `system_prompt`, `summary_memory`, `lang_code`, `language`, `sort`, `creator`, `created_at`, `updater`, `updated_at`) 
+INSERT INTO ai_agent_template 
+(id, agent_code, agent_name, asr_model_id, vad_model_id, llm_model_id, vllm_model_id, tts_model_id, tts_voice_id, mem_model_id, intent_model_id, chat_history_conf, system_prompt, summary_memory, lang_code, language, sort, creator, created_at, updater, updated_at) 
 VALUES 
 ('93d4e5f67890abcdef123456789ab009', 'ArtBuddy', 'Art Buddy', 'ASR_FunASR', 'VAD_SileroVAD', 'LLM_ChatGLMLLM', 'VLLM_ChatGLMVLLM', 'TTS_EdgeTTS', 'TTS_EdgeTTS0001', 'Memory_nomem', 'Intent_function_call', 2, 
 '[Role Setting]
@@ -232,8 +232,8 @@ Earn "Color Stars" for every drawing idea shared.',
 NULL, 'en', 'English', 9, NULL, NOW(), NULL, NOW());
 
 -- 10. Music Maestro
-INSERT INTO `ai_agent_template` 
-(`id`, `agent_code`, `agent_name`, `asr_model_id`, `vad_model_id`, `llm_model_id`, `vllm_model_id`, `tts_model_id`, `tts_voice_id`, `mem_model_id`, `intent_model_id`, `chat_history_conf`, `system_prompt`, `summary_memory`, `lang_code`, `language`, `sort`, `creator`, `created_at`, `updater`, `updated_at`) 
+INSERT INTO ai_agent_template 
+(id, agent_code, agent_name, asr_model_id, vad_model_id, llm_model_id, vllm_model_id, tts_model_id, tts_voice_id, mem_model_id, intent_model_id, chat_history_conf, system_prompt, summary_memory, lang_code, language, sort, creator, created_at, updater, updated_at) 
 VALUES 
 ('a4e5f67890abcdef123456789abc010a', 'MusicMaestro', 'Music Maestro', 'ASR_FunASR', 'VAD_SileroVAD', 'LLM_ChatGLMLLM', 'VLLM_ChatGLMVLLM', 'TTS_EdgeTTS', 'TTS_EdgeTTS0001', 'Memory_nomem', 'Intent_function_call', 2, 
 '[Role Setting]
@@ -258,8 +258,8 @@ Collect "Music Notes" for singing along.',
 NULL, 'en', 'English', 10, NULL, NOW(), NULL, NOW());
 
 -- 11. Quiz Master
-INSERT INTO `ai_agent_template` 
-(`id`, `agent_code`, `agent_name`, `asr_model_id`, `vad_model_id`, `llm_model_id`, `vllm_model_id`, `tts_model_id`, `tts_voice_id`, `mem_model_id`, `intent_model_id`, `chat_history_conf`, `system_prompt`, `summary_memory`, `lang_code`, `language`, `sort`, `creator`, `created_at`, `updater`, `updated_at`) 
+INSERT INTO ai_agent_template 
+(id, agent_code, agent_name, asr_model_id, vad_model_id, llm_model_id, vllm_model_id, tts_model_id, tts_voice_id, mem_model_id, intent_model_id, chat_history_conf, system_prompt, summary_memory, lang_code, language, sort, creator, created_at, updater, updated_at) 
 VALUES 
 ('b5f67890abcdef123456789abcd011b', 'QuizMaster', 'Quiz Master', 'ASR_FunASR', 'VAD_SileroVAD', 'LLM_ChatGLMLLM', 'VLLM_ChatGLMVLLM', 'TTS_EdgeTTS', 'TTS_EdgeTTS0001', 'Memory_nomem', 'Intent_function_call', 2, 
 '[Role Setting]
@@ -284,8 +284,8 @@ Collect "Quiz Coins" for every correct answer.',
 NULL, 'en', 'English', 11, NULL, NOW(), NULL, NOW());
 
 -- 12. Adventure Guide
-INSERT INTO `ai_agent_template` 
-(`id`, `agent_code`, `agent_name`, `asr_model_id`, `vad_model_id`, `llm_model_id`, `vllm_model_id`, `tts_model_id`, `tts_voice_id`, `mem_model_id`, `intent_model_id`, `chat_history_conf`, `system_prompt`, `summary_memory`, `lang_code`, `language`, `sort`, `creator`, `created_at`, `updater`, `updated_at`) 
+INSERT INTO ai_agent_template 
+(id, agent_code, agent_name, asr_model_id, vad_model_id, llm_model_id, vllm_model_id, tts_model_id, tts_voice_id, mem_model_id, intent_model_id, chat_history_conf, system_prompt, summary_memory, lang_code, language, sort, creator, created_at, updater, updated_at) 
 VALUES 
 ('c67890abcdef123456789abcde012c', 'AdventureGuide', 'Adventure Guide', 'ASR_FunASR', 'VAD_SileroVAD', 'LLM_ChatGLMLLM', 'VLLM_ChatGLMVLLM', 'TTS_EdgeTTS', 'TTS_EdgeTTS0001', 'Memory_nomem', 'Intent_function_call', 2, 
 '[Role Setting]
@@ -310,8 +310,8 @@ Earn "Explorer Badges" for each country or fact discovered.',
 NULL, 'en', 'English', 12, NULL, NOW(), NULL, NOW());
 
 -- 13. Kindness Coach
-INSERT INTO `ai_agent_template` 
-(`id`, `agent_code`, `agent_name`, `asr_model_id`, `vad_model_id`, `llm_model_id`, `vllm_model_id`, `tts_model_id`, `tts_voice_id`, `mem_model_id`, `intent_model_id`, `chat_history_conf`, `system_prompt`, `summary_memory`, `lang_code`, `language`, `sort`, `creator`, `created_at`, `updater`, `updated_at`) 
+INSERT INTO ai_agent_template 
+(id, agent_code, agent_name, asr_model_id, vad_model_id, llm_model_id, vllm_model_id, tts_model_id, tts_voice_id, mem_model_id, intent_model_id, chat_history_conf, system_prompt, summary_memory, lang_code, language, sort, creator, created_at, updater, updated_at) 
 VALUES 
 ('d890abcdef123456789abcdef0013d', 'KindnessCoach', 'Kindness Coach', 'ASR_FunASR', 'VAD_SileroVAD', 'LLM_ChatGLMLLM', 'VLLM_ChatGLMVLLM', 'TTS_EdgeTTS', 'TTS_EdgeTTS0001', 'Memory_nomem', 'Intent_function_call', 2, 
 '[Role Setting]
@@ -336,8 +336,8 @@ Collect "Kindness Hearts" for each kind action.',
 NULL, 'en', 'English', 13, NULL, NOW(), NULL, NOW());
 
 -- 14. Mindful Buddy
-INSERT INTO `ai_agent_template` 
-(`id`, `agent_code`, `agent_name`, `asr_model_id`, `vad_model_id`, `llm_model_id`, `vllm_model_id`, `tts_model_id`, `tts_voice_id`, `mem_model_id`, `intent_model_id`, `chat_history_conf`, `system_prompt`, `summary_memory`, `lang_code`, `language`, `sort`, `creator`, `created_at`, `updater`, `updated_at`) 
+INSERT INTO ai_agent_template 
+(id, agent_code, agent_name, asr_model_id, vad_model_id, llm_model_id, vllm_model_id, tts_model_id, tts_voice_id, mem_model_id, intent_model_id, chat_history_conf, system_prompt, summary_memory, lang_code, language, sort, creator, created_at, updater, updated_at) 
 VALUES 
 ('e890abcdef123456789abcdef014e', 'MindfulBuddy', 'Mindful Buddy', 'ASR_FunASR', 'VAD_SileroVAD', 'LLM_ChatGLMLLM', 'VLLM_ChatGLMVLLM', 'TTS_EdgeTTS', 'TTS_EdgeTTS0001', 'Memory_nomem', 'Intent_function_call', 2, 
 '[Role Setting]

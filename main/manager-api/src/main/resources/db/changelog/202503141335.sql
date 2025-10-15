@@ -4,80 +4,128 @@ DROP TABLE IF EXISTS sys_user_token;
 DROP TABLE IF EXISTS sys_dict_type;
 DROP TABLE IF EXISTS sys_dict_data;
 
--- 系统用户
+-- System user
 CREATE TABLE sys_user (
-  id bigint NOT NULL COMMENT 'id',
-  username varchar(50) NOT NULL COMMENT '用户名',
-  password varchar(100) COMMENT '密码',
-  super_admin tinyint unsigned COMMENT '超级管理员   0：否   1：是',
-  status tinyint COMMENT '状态  0：停用   1：正常',
-  create_date datetime COMMENT '创建时间',
-  updater bigint COMMENT '更新者',
-  creator bigint COMMENT '创建者',
-  update_date datetime COMMENT '更新时间',
-  primary key (id),
-  unique key uk_username (username)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='系统用户';
-
--- 系统用户Token
-CREATE TABLE sys_user_token (
-  id bigint NOT NULL COMMENT 'id',
-  user_id bigint NOT NULL COMMENT '用户id',
-  token varchar(100) NOT NULL COMMENT '用户token',
-  expire_date datetime COMMENT '过期时间',
-  update_date datetime COMMENT '更新时间',
-  create_date datetime COMMENT '创建时间',
+  id bigint NOT NULL,
+  username varchar(50) NOT NULL,
+  password varchar(100),
+  super_admin SMALLINT,
+  status SMALLINT,
+  create_date TIMESTAMP,
+  updater bigint,
+  creator bigint,
+  update_date TIMESTAMP,
   PRIMARY KEY (id),
-  UNIQUE KEY user_id (user_id),
-  UNIQUE KEY token (token)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='系统用户Token';
+  CONSTRAINT uk_username UNIQUE (username)
+);
+COMMENT ON TABLE sys_user IS 'System user';
+COMMENT ON COLUMN sys_user.id IS 'id';
+COMMENT ON COLUMN sys_user.username IS 'username';
+COMMENT ON COLUMN sys_user.password IS 'password';
+COMMENT ON COLUMN sys_user.super_admin IS 'Super administrator 0: no 1: yes';
+COMMENT ON COLUMN sys_user.status IS 'Status 0: disabled 1: normal';
+COMMENT ON COLUMN sys_user.create_date IS 'creation time';
+COMMENT ON COLUMN sys_user.updater IS 'updater';
+COMMENT ON COLUMN sys_user.creator IS 'creator';
+COMMENT ON COLUMN sys_user.update_date IS 'update time';
 
--- 参数管理
+-- System user token
+CREATE TABLE sys_user_token (
+  id bigint NOT NULL,
+  user_id bigint NOT NULL,
+  token varchar(100) NOT NULL,
+  expire_date TIMESTAMP,
+  update_date TIMESTAMP,
+  create_date TIMESTAMP,
+  PRIMARY KEY (id),
+  CONSTRAINT uk_user_id UNIQUE (user_id),
+  CONSTRAINT uk_token UNIQUE (token)
+);
+COMMENT ON TABLE sys_user_token IS 'System user token';
+COMMENT ON COLUMN sys_user_token.id IS 'id';
+COMMENT ON COLUMN sys_user_token.user_id IS 'user id';
+COMMENT ON COLUMN sys_user_token.token IS 'user token';
+COMMENT ON COLUMN sys_user_token.expire_date IS 'expiration time';
+COMMENT ON COLUMN sys_user_token.update_date IS 'update time';
+COMMENT ON COLUMN sys_user_token.create_date IS 'creation time';
+
+-- Parameter management
 create table sys_params
 (
-  id                   bigint NOT NULL COMMENT 'id',
-  param_code           varchar(32) COMMENT '参数编码',
-  param_value          varchar(2000) COMMENT '参数值',
-  param_type           tinyint unsigned default 1 COMMENT '类型   0：系统参数   1：非系统参数',
-  remark               varchar(200) COMMENT '备注',
-  creator              bigint COMMENT '创建者',
-  create_date          datetime COMMENT '创建时间',
-  updater              bigint COMMENT '更新者',
-  update_date          datetime COMMENT '更新时间',
-  primary key (id),
-  unique key uk_param_code (param_code)
-)ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COMMENT='参数管理';
+  id                   bigint NOT NULL,
+  param_code           varchar(32),
+  param_value          varchar(2000),
+  param_type           SMALLINT default 1,
+  remark               varchar(200),
+  creator              bigint,
+  create_date          TIMESTAMP,
+  updater              bigint,
+  update_date          TIMESTAMP,
+  PRIMARY KEY (id),
+  CONSTRAINT uk_param_code UNIQUE (param_code)
+);
+COMMENT ON TABLE sys_params IS 'Parameter management';
+COMMENT ON COLUMN sys_params.id IS 'id';
+COMMENT ON COLUMN sys_params.param_code IS 'parameter code';
+COMMENT ON COLUMN sys_params.param_value IS 'parameter value';
+COMMENT ON COLUMN sys_params.param_type IS 'Type 0: system parameter 1: non-system parameter';
+COMMENT ON COLUMN sys_params.remark IS 'remark';
+COMMENT ON COLUMN sys_params.creator IS 'creator';
+COMMENT ON COLUMN sys_params.create_date IS 'creation time';
+COMMENT ON COLUMN sys_params.updater IS 'updater';
+COMMENT ON COLUMN sys_params.update_date IS 'update time';
 
--- 字典类型
+-- Dictionary type
 create table sys_dict_type
 (
-    id                   bigint NOT NULL COMMENT 'id',
-    dict_type            varchar(100) NOT NULL COMMENT '字典类型',
-    dict_name            varchar(255) NOT NULL COMMENT '字典名称',
-    remark               varchar(255) COMMENT '备注',
-    sort                 int unsigned COMMENT '排序',
-    creator              bigint COMMENT '创建者',
-    create_date          datetime COMMENT '创建时间',
-    updater              bigint COMMENT '更新者',
-    update_date          datetime COMMENT '更新时间',
-    primary key (id),
-    UNIQUE KEY(dict_type)
-)ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COMMENT='字典类型';
+    id                   bigint NOT NULL,
+    dict_type            varchar(100) NOT NULL,
+    dict_name            varchar(255) NOT NULL,
+    remark               varchar(255),
+    sort                 INTEGER,
+    creator              bigint,
+    create_date          TIMESTAMP,
+    updater              bigint,
+    update_date          TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT uk_dict_type UNIQUE (dict_type)
+);
+COMMENT ON TABLE sys_dict_type IS 'Dictionary type';
+COMMENT ON COLUMN sys_dict_type.id IS 'id';
+COMMENT ON COLUMN sys_dict_type.dict_type IS 'dictionary type';
+COMMENT ON COLUMN sys_dict_type.dict_name IS 'dictionary name';
+COMMENT ON COLUMN sys_dict_type.remark IS 'remark';
+COMMENT ON COLUMN sys_dict_type.sort IS 'sort order';
+COMMENT ON COLUMN sys_dict_type.creator IS 'creator';
+COMMENT ON COLUMN sys_dict_type.create_date IS 'creation time';
+COMMENT ON COLUMN sys_dict_type.updater IS 'updater';
+COMMENT ON COLUMN sys_dict_type.update_date IS 'update time';
 
--- 字典数据
+-- Dictionary data
 create table sys_dict_data
 (
-    id                   bigint NOT NULL COMMENT 'id',
-    dict_type_id         bigint NOT NULL COMMENT '字典类型ID',
-    dict_label           varchar(255) NOT NULL COMMENT '字典标签',
-    dict_value           varchar(255) COMMENT '字典值',
-    remark               varchar(255) COMMENT '备注',
-    sort                 int unsigned COMMENT '排序',
-    creator              bigint COMMENT '创建者',
-    create_date          datetime COMMENT '创建时间',
-    updater              bigint COMMENT '更新者',
-    update_date          datetime COMMENT '更新时间',
-    primary key (id),
-    unique key uk_dict_type_value (dict_type_id, dict_value),
-    key idx_sort (sort)
-)ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COMMENT='字典数据';
+    id                   bigint NOT NULL,
+    dict_type_id         bigint NOT NULL,
+    dict_label           varchar(255) NOT NULL,
+    dict_value           varchar(255),
+    remark               varchar(255),
+    sort                 INTEGER,
+    creator              bigint,
+    create_date          TIMESTAMP,
+    updater              bigint,
+    update_date          TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT uk_dict_type_value UNIQUE (dict_type_id, dict_value)
+);
+CREATE INDEX idx_sort ON sys_dict_data(sort);
+COMMENT ON TABLE sys_dict_data IS 'Dictionary data';
+COMMENT ON COLUMN sys_dict_data.id IS 'id';
+COMMENT ON COLUMN sys_dict_data.dict_type_id IS 'dictionary type ID';
+COMMENT ON COLUMN sys_dict_data.dict_label IS 'dictionary label';
+COMMENT ON COLUMN sys_dict_data.dict_value IS 'dictionary value';
+COMMENT ON COLUMN sys_dict_data.remark IS 'remark';
+COMMENT ON COLUMN sys_dict_data.sort IS 'sort order';
+COMMENT ON COLUMN sys_dict_data.creator IS 'creator';
+COMMENT ON COLUMN sys_dict_data.create_date IS 'creation time';
+COMMENT ON COLUMN sys_dict_data.updater IS 'updater';
+COMMENT ON COLUMN sys_dict_data.update_date IS 'update time';

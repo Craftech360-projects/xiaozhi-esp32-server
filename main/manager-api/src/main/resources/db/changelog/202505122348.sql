@@ -1,6 +1,10 @@
--- 添加总结记忆字段
-ALTER TABLE `ai_agent`
-ADD COLUMN `summary_memory` text COMMENT '总结记忆' AFTER `system_prompt`;
+-- Add summary memory field
+ALTER TABLE ai_agent
+ADD COLUMN summary_memory TEXT;
 
-ALTER TABLE `ai_agent_template`
-ADD COLUMN `summary_memory` text COMMENT '总结记忆' AFTER `system_prompt`;
+COMMENT ON COLUMN ai_agent.summary_memory IS 'Summary memory';
+
+ALTER TABLE ai_agent_template
+ADD COLUMN summary_memory TEXT;
+
+COMMENT ON COLUMN ai_agent_template.summary_memory IS 'Summary memory';

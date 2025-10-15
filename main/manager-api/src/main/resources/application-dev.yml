@@ -25,13 +25,16 @@ management:
       show-details: always
 
 spring:
+  liquibase:
+    drop-first: true
   datasource:
     druid:
-      # Local Azure database (same as Azure VM configuration)
-      driver-class-name: com.mysql.cj.jdbc.Driver
-      url: jdbc:mysql://localhost:3307/manager_api?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&nullCatalogMeansCurrent=true&useSSL=false&allowPublicKeyRetrieval=true
-      username: manager
-      password: managerpassword
+      # PostgreSQL/Supabase database configuration (Session Pooler - IPv4 compatible)
+      # Using Session Pooler on port 5432 (same as standard PostgreSQL port)
+      driver-class-name: org.postgresql.Driver
+      url: jdbc:postgresql://aws-1-ap-south-1.pooler.supabase.com:5432/postgres?currentSchema=public&sslmode=require
+      username: postgres.ydtccxhybcsbvxliyxor
+      password: cqhgHYzIGpQC5tLI
 
       initial-size: 5
       max-active: 20

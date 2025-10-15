@@ -43,9 +43,9 @@ public interface ModelConfigService extends BaseService<ModelConfigEntity> {
 
     /**
      * 设置默认模型
-     * 
+     *
      * @param modelType 模型类型
      * @param isDefault 是否默认
      */
-    void setDefaultModel(String modelType, int isDefault);
+    void setDefaultModel(String modelType, Boolean isDefault);
 }

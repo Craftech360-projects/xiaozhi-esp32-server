@@ -1,3 +1,3 @@
--- 更新ai_model_provider的fields字段，将type为dict的改为string
-update ai_model_provider set fields = replace(fields, '"type": "dict"', '"type": "string"') where id not in ('SYSTEM_LLM_fastgpt', 'SYSTEM_TTS_custom');
-update ai_model_provider set fields = replace(fields, '"type":"dict"', '"type": "string"') where id not in ('SYSTEM_LLM_fastgpt', 'SYSTEM_TTS_custom');
+-- Update ai_model_provider fields, change type dict to string
+UPDATE ai_model_provider SET fields = REPLACE(fields::text, '"type": "dict"', '"type": "string"')::json WHERE id NOT IN ('SYSTEM_LLM_fastgpt', 'SYSTEM_TTS_custom');
+UPDATE ai_model_provider SET fields = REPLACE(fields::text, '"type":"dict"', '"type": "string"')::json WHERE id NOT IN ('SYSTEM_LLM_fastgpt', 'SYSTEM_TTS_custom');

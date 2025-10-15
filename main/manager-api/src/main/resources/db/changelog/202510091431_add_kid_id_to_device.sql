@@ -3,14 +3,15 @@
 -- Existing devices will have NULL kid_id (no data loss)
 
 -- Step 1: Add the column with NULL as default (safe for existing data)
-ALTER TABLE `ai_device`
-ADD COLUMN `kid_id` bigint DEFAULT NULL COMMENT 'FK to kid_profile table' AFTER `agent_id`;
+ALTER TABLE ai_device
+ADD COLUMN IF NOT EXISTS kid_id BIGINT DEFAULT NULL;
 
 -- Step 2: Add index for performance
-ALTER TABLE `ai_device`
-ADD KEY `idx_kid_id` (`kid_id`);
+CREATE INDEX IF NOT EXISTS idx_ai_device_kid_id ON ai_device (kid_id);
 
--- Step 3: Add foreign key constraint (only if kid_profile table exists)
+-- Step 3: Add foreign 
 -- The ON DELETE SET NULL ensures that if a kid is deleted, the device just unlinks (no data loss)
-ALTER TABLE `ai_device`
-ADD CONSTRAINT `fk_device_kid` FOREIGN KEY (`kid_id`) REFERENCES `kid_profile` (`id`) ON DELETE SET NULL;
+ALTER TABLE ai_device
+ADD CONSTRAINT fk_device_kid FOREIGN KEY (kid_id) REFERENCES kid_profile (id) ON DELETE SET NULL;
+
+COMMENT ON COLUMN ai_device.kid_id IS 'FK to kid_profile table';

@@ -3,7 +3,7 @@
 
 <mapper namespace="xiaozhi.modules.sys.dao.SysDictDataDao">
     <select id="getDictDataByType" resultType="xiaozhi.modules.sys.vo.SysDictDataItem">
-        SELECT d.dict_label AS `name`, d.dict_value AS `key`
+        SELECT d.dict_label AS name, d.dict_value AS key
         FROM sys_dict_data d
         LEFT JOIN sys_dict_type t ON d.dict_type_id = t.id
         WHERE t.dict_type = #{dictType}

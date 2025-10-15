@@ -119,7 +119,7 @@ public class ModelController {
     @PutMapping("/enable/{id}/{status}")
     @Operation(summary = "Enable/disable model configuration")
     @RequiresPermissions("sys:role:superAdmin")
-    public Result<Void> enableModelConfig(@PathVariable String id, @PathVariable Integer status) {
+    public Result<Void> enableModelConfig(@PathVariable String id, @PathVariable Boolean status) {
         ModelConfigEntity entity = modelConfigService.selectById(id);
         if (entity == null) {
             return new Result<Void>().error("模型配置不存在");
@@ -138,9 +138,9 @@ public class ModelController {
             return new Result<Void>().error("模型配置不存在");
         }
         // 将其他模型设置为非默认
-        modelConfigService.setDefaultModel(entity.getModelType(), 0);
-        entity.setIsEnabled(1);
-        entity.setIsDefault(1);
+        modelConfigService.setDefaultModel(entity.getModelType(), false);
+        entity.setIsEnabled(true);
+        entity.setIsDefault(true);
         modelConfigService.updateById(entity);
 
         // 更新模板表中对应的模型ID

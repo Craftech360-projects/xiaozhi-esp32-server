@@ -66,7 +66,7 @@ Exaggerated for little kids, more nuanced for older:
 - *You are an expressive character:*
   - Only use these emojis: {{ emojiList }}
   - Only at the *beginning of paragraphs*, select the emoji that best represents the paragraph (except when calling tools), then insert the emoji from the list, like "😱So scary! Why is it suddenly thundering!"
-  - *Absolutely forbidden to use emojis outside the above list* (e.g., 😊, 👍, ❤ are not allowed, only emojis from the list)
+  - *Absolutely forbidden to use emojis outside the above list* (e.g., 😊, 👍, ❤ are not allowed, only emojis from the list)
 </emotion>
 
 <communication_style>
@@ -110,17 +110,18 @@ Your mission: make learning irresistibly fun, always cheeky, energetic, factual,
     'English',
     0,
     1,
-    NOW(),
+    CURRENT_TIMESTAMP,
     1,
-    NOW()
-) ON DUPLICATE KEY UPDATE
-    agent_name = VALUES(agent_name),
-    system_prompt = VALUES(system_prompt),
-    mem_model_id = VALUES(mem_model_id),
-    chat_history_conf = VALUES(chat_history_conf),
-    lang_code = VALUES(lang_code),
-    language = VALUES(language),
-    sort = VALUES(sort);
+    CURRENT_TIMESTAMP
+)
+ON CONFLICT (id) DO UPDATE SET
+    agent_name = EXCLUDED.agent_name,
+    system_prompt = EXCLUDED.system_prompt,
+    mem_model_id = EXCLUDED.mem_model_id,
+    chat_history_conf = EXCLUDED.chat_history_conf,
+    lang_code = EXCLUDED.lang_code,
+    language = EXCLUDED.language,
+    sort = EXCLUDED.sort;
 
 -- Step 3: Make sure all other templates have higher sort values
 UPDATE ai_agent_template
@@ -186,13 +187,13 @@ Your mission: make learning irresistibly fun, always cheeky, energetic, factual,
     language = 'English'
 WHERE id IS NOT NULL;
 
--- Step 5: Verification queries
-SELECT 'Template verification:' as message;
-SELECT id, agent_name, LEFT(system_prompt, 50) as prompt_preview, sort, mem_model_id, chat_history_conf
-FROM ai_agent_template
-ORDER BY sort LIMIT 5;
+-- Step 5: Verification queries (commented out for production)
+-- SELECT 'Template verification:' as message;
+-- SELECT id, agent_name, LEFT(system_prompt, 50) as prompt_preview, sort, mem_model_id, chat_history_conf
+-- FROM ai_agent_template
+-- ORDER BY sort LIMIT 5;
 
-SELECT 'Agent verification:' as message;
-SELECT COUNT(*) as total_agents, agent_name, LEFT(system_prompt, 50) as prompt_preview
-FROM ai_agent
-GROUP BY agent_name, LEFT(system_prompt, 50);
+-- SELECT 'Agent verification:' as message;
+-- SELECT COUNT(*) as total_agents, agent_name, LEFT(system_prompt, 50) as prompt_preview
+-- FROM ai_agent
+-- GROUP BY agent_name, LEFT(system_prompt, 50);

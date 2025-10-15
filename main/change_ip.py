@@ -1,11 +1,9 @@
 import re
 from pathlib import Path
-from datetime import datetime
-import shutil
 
 # === CONFIGURATION ===
-new_ip = "192.168.1.168"
-old_ip = "192.168.1.217"
+new_ip = "192.168.1.166"
+old_ip = "192.168.1.168"
 
 # List of files you want to modify
 file_paths = [
@@ -31,17 +29,11 @@ def replace_in_file(path: Path, old_ip: str, new_ip: str):
         print(f"➡ No matches in {path}")
         return
 
-    # Create backup
-    ts = datetime.now().strftime("%Y%m%d%H%M%S")
-    backup_path = path.with_suffix(path.suffix + f".bak.{ts}")
-    shutil.copy2(path, backup_path)
-
     # Replace IPs
     new_text = pattern.sub(new_ip, text)
     path.write_text(new_text, encoding="utf-8")
 
-    print(
-        f"✅ Replaced {len(matches)} occurrence(s) in {path} (backup: {backup_path})")
+    print(f"✅ Replaced {len(matches)} occurrence(s) in {path}")
 
 
 def main():

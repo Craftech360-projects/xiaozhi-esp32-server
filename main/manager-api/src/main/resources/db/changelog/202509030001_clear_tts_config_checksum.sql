@@ -3,6 +3,6 @@
 -- -------------------------------------------------------------------------
 
 -- Clear the checksum for the modified changeset 202509020005
-UPDATE DATABASECHANGELOG 
-SET MD5SUM = NULL 
-WHERE ID = '202509020005' AND AUTHOR = 'claude';
+UPDATE databasechangelog
+SET md5sum = NULL
+WHERE id = '202509020005' AND author = 'claude';

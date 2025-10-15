@@ -31,11 +31,11 @@ public class ModelConfigEntity {
     @Schema(description = "模型名称")
     private String modelName;
 
-    @Schema(description = "是否默认配置(0否 1是)")
-    private Integer isDefault;
+    @Schema(description = "是否默认配置(false否 true是)")
+    private Boolean isDefault;
 
     @Schema(description = "是否启用")
-    private Integer isEnabled;
+    private Boolean isEnabled;
 
     @TableField(typeHandler = JacksonTypeHandler.class)
     @Schema(description = "模型配置(JSON格式)")
