@@ -535,3 +535,139 @@ class QdrantEducationManager:
         except Exception as e:
             logger.error(f"Failed to get collection stats: {e}")
             return stats
+
+    async def create_visual_collection(self, base_collection_name: str) -> bool:
+        """
+        Create visual content collection for figures/tables
+
+        Args:
+            base_collection_name: Base collection name (e.g., "grade_06_science")
+
+        Returns:
+            True if successful
+        """
+        try:
+            visual_collection_name = f"{base_collection_name}_visual"
+
+            # Check if visual collection already exists
+            existing_collections = await self.get_existing_collections()
+            if visual_collection_name in existing_collections:
+                logger.info(f"Visual collection {visual_collection_name} already exists")
+                return True
+
+            # Create collection with CLIP vector size (512-dim)
+            vectors_config = self.vector_config["visual"]
+
+            self.client.create_collection(
+                collection_name=visual_collection_name,
+                vectors_config=vectors_config
+            )
+
+            logger.info(f"Successfully created visual collection: {visual_collection_name}")
+
+            # Create payload indexes for visual content
+            await self.create_visual_payload_indexes(visual_collection_name)
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to create visual collection: {e}")
+            return False
+
+    async def create_visual_payload_indexes(self, collection_name: str) -> bool:
+        """Create payload indexes for visual content collections"""
+        try:
+            # Visual-specific indexes
+            indexes_to_create = [
+                ("type", PayloadSchemaType.KEYWORD),  # figure or table
+                ("figure_id", PayloadSchemaType.KEYWORD),  # fig_1_1, fig_1_2
+                ("table_id", PayloadSchemaType.KEYWORD),  # table_1_1, table_1_2
+                ("page", PayloadSchemaType.INTEGER),
+                ("caption", PayloadSchemaType.TEXT),
+                ("nearby_text", PayloadSchemaType.TEXT),
+                ("chapter_number", PayloadSchemaType.INTEGER),
+                ("section_id", PayloadSchemaType.KEYWORD),
+                ("has_image_data", PayloadSchemaType.BOOL),
+            ]
+
+            for field_name, schema_type in indexes_to_create:
+                try:
+                    self.client.create_payload_index(
+                        collection_name=collection_name,
+                        field_name=field_name,
+                        field_schema=schema_type
+                    )
+                    logger.debug(f"Created visual index for {field_name} in {collection_name}")
+                except Exception as e:
+                    if "already exists" in str(e).lower() or "index exists" in str(e).lower():
+                        logger.debug(f"Index {field_name} already exists in {collection_name}")
+                    else:
+                        logger.warning(f"Failed to create visual index for {field_name}: {e}")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to create visual payload indexes: {e}")
+            return False
+
+    async def upsert_visual_content(
+        self,
+        collection_name: str,
+        visual_chunks: List[Dict[str, Any]]
+    ) -> bool:
+        """
+        Insert visual content (figures/tables) into visual collection
+
+        Args:
+            collection_name: Visual collection name (e.g., "grade_06_science_visual")
+            visual_chunks: List of processed figures/tables with embeddings
+
+        Returns:
+            True if successful
+        """
+        try:
+            points = []
+
+            for chunk in visual_chunks:
+                embedding = chunk.get("embedding")
+                if not embedding:
+                    logger.warning(f"No embedding found in visual chunk {chunk.get('figure_id') or chunk.get('table_id')}")
+                    continue
+
+                # Prepare payload (remove embedding from payload)
+                payload = {k: v for k, v in chunk.items() if k not in ['embedding', 'image_data']}
+
+                # Add has_image_data flag
+                payload['has_image_data'] = chunk.get('image_data') is not None
+
+                # Generate ID if not present
+                chunk_id = chunk.get('id') or chunk.get('figure_id') or chunk.get('table_id') or len(points)
+
+                point = PointStruct(
+                    id=chunk_id if isinstance(chunk_id, (int, str)) else str(chunk_id),
+                    vector=embedding,
+                    payload=payload
+                )
+                points.append(point)
+
+            if not points:
+                logger.warning("No valid visual content points to upsert")
+                return True
+
+            # Batch upsert
+            batch_size = 50  # Smaller batch for visual content
+            for i in range(0, len(points), batch_size):
+                batch = points[i:i + batch_size]
+                operation_info = self.client.upsert(
+                    collection_name=collection_name,
+                    points=batch,
+                    wait=True
+                )
+                logger.info(f"Upserted visual batch {i//batch_size + 1} to {collection_name}")
+
+            logger.info(f"Successfully upserted {len(points)} visual points to {collection_name}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to upsert visual content to {collection_name}: {e}")
+            return False

@@ -219,6 +219,79 @@ class EducationService:
             logger.error(f"Failed to answer question: {e}")
             return {"error": f"Failed to process question: {str(e)}"}
 
+    async def search_visual_content(
+        self,
+        query: str,
+        grade: Optional[int] = None,
+        subject: Optional[str] = None,
+        limit: int = 5
+    ) -> Dict[str, Any]:
+        """
+        Search for visual content (figures, tables) using text query
+
+        Args:
+            query: Text query (e.g., "show me diagram of photosynthesis")
+            grade: Student grade level
+            subject: Subject area
+            limit: Number of results to return
+
+        Returns:
+            Dictionary with visual content results
+        """
+        try:
+            student_grade = grade or self.current_student_grade
+            target_subject = subject or self.current_subject
+
+            if not student_grade or not target_subject:
+                return {"error": "Grade and subject must be specified"}
+
+            # Import visual embedding manager
+            from ..rag.visual_embeddings import VisualEmbeddingManager
+
+            # Initialize visual manager if not already
+            visual_manager = VisualEmbeddingManager()
+            if not visual_manager.is_initialized():
+                visual_manager.initialize()
+
+            # Determine visual collection name
+            collection_name = f"grade_{student_grade:02d}_{target_subject}_visual"
+
+            # Search for visual content
+            results = await visual_manager.search_visual_content(
+                query=query,
+                qdrant_client=self.qdrant_manager.client,
+                collection_name=collection_name,
+                limit=limit
+            )
+
+            if not results:
+                return {
+                    "visual_aids": [],
+                    "message": "No visual content found for this query. Try asking about diagrams, figures, or tables in your textbook."
+                }
+
+            # Format results
+            formatted_results = []
+            for result in results:
+                formatted_results.append({
+                    "type": result.get("type", "unknown"),
+                    "id": result.get("figure_id") or result.get("id"),
+                    "caption": result.get("caption", "No caption available"),
+                    "page": result.get("page", 0),
+                    "relevance_score": result.get("score", 0.0),
+                    "context": result.get("nearby_text", "")[:200]  # Truncate to 200 chars
+                })
+
+            return {
+                "visual_aids": formatted_results,
+                "total_found": len(formatted_results),
+                "message": f"Found {len(formatted_results)} visual aids related to your query."
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to search visual content: {e}")
+            return {"error": f"Failed to search visual content: {str(e)}"}
+
     async def explain_concept(
         self,
         concept: str,
