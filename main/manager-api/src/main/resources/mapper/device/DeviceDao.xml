@@ -7,6 +7,6 @@
         WHERE
             agent_id = #{agentId}
         order by
-            last_connected_at desc limit 0,1
+            last_connected_at desc limit 1
     </select>
 </mapper> 

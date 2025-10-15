@@ -48,8 +48,8 @@
                a.mem_model_id      AS memModelId,
                a.intent_model_id   AS intentModelId,
                COALESCE(
-                       (SELECT JSON_ARRAYAGG(
-                                       JSON_OBJECT(
+                       (SELECT json_agg(
+                                       json_build_object(
                                                'id', m.id,
                                                'agentId', m.agent_id,
                                                'pluginId', m.plugin_id,
@@ -58,7 +58,7 @@
                                )
                         FROM ai_agent_plugin_mapping m
                         WHERE m.agent_id = a.id),
-                       JSON_ARRAY()
+                       '[]'::json
                )                   AS functions,
                a.chat_history_conf AS chatHistoryConf,
                a.system_prompt     AS systemPrompt,

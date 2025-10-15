@@ -61,7 +61,9 @@ public class ModelProviderServiceImpl extends BaseServiceImpl<ModelProviderDao, 
     public List<ModelProviderDTO> getListByModelType(String modelType) {
 
         QueryWrapper<ModelProviderEntity> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("model_type", StringUtils.isBlank(modelType) ? "" : modelType);
+        // Convert to uppercase for case-insensitive matching (database stores as uppercase)
+        String modelTypeUpper = StringUtils.isBlank(modelType) ? "" : modelType.toUpperCase();
+        queryWrapper.eq("model_type", modelTypeUpper);
         List<ModelProviderEntity> providerEntities = modelProviderDao.selectList(queryWrapper);
         return ConvertUtils.sourceToTarget(providerEntities, ModelProviderDTO.class);
     }
@@ -80,7 +82,8 @@ public class ModelProviderServiceImpl extends BaseServiceImpl<ModelProviderDao, 
         QueryWrapper<ModelProviderEntity> wrapper = new QueryWrapper<ModelProviderEntity>();
 
         if (StringUtils.isNotBlank(modelProviderDTO.getModelType())) {
-            wrapper.eq("model_type", modelProviderDTO.getModelType());
+            // Convert to uppercase for case-insensitive matching
+            wrapper.eq("model_type", modelProviderDTO.getModelType().toUpperCase());
         }
 
         if (StringUtils.isNotBlank(modelProviderDTO.getName())) {
@@ -144,7 +147,9 @@ public class ModelProviderServiceImpl extends BaseServiceImpl<ModelProviderDao, 
     @Override
     public List<ModelProviderDTO> getList(String modelType, String providerCode) {
         QueryWrapper<ModelProviderEntity> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("model_type", StringUtils.isBlank(modelType) ? "" : modelType);
+        // Convert to uppercase for case-insensitive matching
+        String modelTypeUpper = StringUtils.isBlank(modelType) ? "" : modelType.toUpperCase();
+        queryWrapper.eq("model_type", modelTypeUpper);
         queryWrapper.eq("provider_code", StringUtils.isBlank(providerCode) ? "" : providerCode);
         List<ModelProviderEntity> providerEntities = modelProviderDao.selectList(queryWrapper);
         return ConvertUtils.sourceToTarget(providerEntities, ModelProviderDTO.class);

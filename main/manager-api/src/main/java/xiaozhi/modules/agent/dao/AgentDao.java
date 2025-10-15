@@ -42,11 +42,11 @@ public interface AgentDao extends BaseDao<AgentEntity> {
             "a.llm_model_id, a.vllm_model_id, a.mem_model_id, a.tts_voice_id, " +
             "a.created_at, a.updated_at, a.user_id, " +
             "u.username as owner_username, " +
-            "GROUP_CONCAT(d.mac_address SEPARATOR ',') as device_mac_addresses " +
+            "STRING_AGG(d.mac_address, ',') as device_mac_addresses " +
             "FROM ai_agent a " +
             "LEFT JOIN sys_user u ON a.user_id = u.id " +
             "LEFT JOIN ai_device d ON a.id = d.agent_id " +
-            "GROUP BY a.id " +
+            "GROUP BY a.id, u.username " +
             "ORDER BY a.created_at DESC")
     List<Map<String, Object>> getAllAgentsWithOwnerInfo();
 

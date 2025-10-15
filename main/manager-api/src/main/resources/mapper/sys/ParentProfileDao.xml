@@ -35,20 +35,20 @@
 
     <!-- Update terms acceptance -->
     <update id="updateTermsAcceptance">
-        UPDATE parent_profile 
-        SET 
+        UPDATE parent_profile
+        SET
             terms_accepted_at = #{termsAcceptedAt},
             privacy_policy_accepted_at = #{privacyPolicyAcceptedAt},
-            update_date = NOW()
+            update_date = CURRENT_TIMESTAMP
         WHERE user_id = #{userId}
     </update>
 
     <!-- Update onboarding completion status -->
     <update id="updateOnboardingStatus">
-        UPDATE parent_profile 
-        SET 
+        UPDATE parent_profile
+        SET
             onboarding_completed = #{onboardingCompleted},
-            update_date = NOW()
+            update_date = CURRENT_TIMESTAMP
         WHERE user_id = #{userId}
     </update>
 

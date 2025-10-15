@@ -8,7 +8,7 @@
         <id property="id" column="id" jdbcType="BIGINT"/>
         <result property="agentId" column="agent_id" jdbcType="VARCHAR"/>
         <result property="pluginId" column="plugin_id" jdbcType="VARCHAR"/>
-        <result property="paramInfo" column="param_info" jdbcType="VARCHAR"/>
+        <result property="paramInfo" column="param_info" jdbcType="OTHER" typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
     </resultMap>
 
     <!-- 用于映射根据agentId查询完整插件信息 -->
@@ -16,14 +16,26 @@
         <id column="id" property="id" jdbcType="BIGINT"/>
         <result column="agentId" property="agentId" jdbcType="VARCHAR"/>
         <result column="pluginId" property="pluginId" jdbcType="VARCHAR"/>
-        <result column="paramInfo" property="paramInfo" jdbcType="VARCHAR"/>
+        <result column="paramInfo" property="paramInfo" jdbcType="OTHER" typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
         <result column="providerCode" property="providerCode" jdbcType="VARCHAR"/>
     </resultMap>
 
     <sql id="Base_Column_List">
-        id,agent_id,plugin_id
+        id,agent_id,plugin_id,param_info
     </sql>
 
+    <insert id="insert" parameterType="xiaozhi.modules.agent.entity.AgentPluginMapping">
+        INSERT INTO ai_agent_plugin_mapping (id, agent_id, plugin_id, param_info)
+        VALUES (#{id}, #{agentId}, #{pluginId}, #{paramInfo,jdbcType=OTHER,typeHandler=com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler}::json)
+    </insert>
+
+    <update id="updateById" parameterType="xiaozhi.modules.agent.entity.AgentPluginMapping">
+        UPDATE ai_agent_plugin_mapping
+        SET agent_id = #{agentId},
+            plugin_id = #{pluginId},
+            param_info = #{paramInfo,jdbcType=OTHER,typeHandler=com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler}::json
+        WHERE id = #{id}
+    </update>
 
     <select id="selectPluginsByAgentId" resultMap="AgentPluginWithCodeMap">
         SELECT m.id         AS id,

@@ -32,7 +32,7 @@ public interface OtaService extends BaseService<OtaEntity> {
      * Automatically disables force update for other firmwares of the same type
      * @param id Firmware ID
      * @param type Firmware type
-     * @param forceUpdate 0-disable, 1-enable
+     * @param forceUpdate false-disable, true-enable
      */
-    void setForceUpdate(String id, String type, Integer forceUpdate);
+    void setForceUpdate(String id, String type, Boolean forceUpdate);
 }

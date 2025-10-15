@@ -314,13 +314,13 @@ databaseChangeLog:
             encoding: utf8
             path: classpath:db/changelog/202508131557.sql
   - changeSet:
-
       id: 202508231800
       author: Claude
       changes:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202508231800.sql
+            splitStatements: false
   - changeSet:
       id: 202508291400
       author: Claude
@@ -511,4 +511,11 @@ databaseChangeLog:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202510111800_add_arabic_template.sql
-
+  - changeSet:
+      id: 202510151800
+      author: claude
+      validCheckSum: ANY
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202510151800_change_force_update_to_boolean.sql

@@ -161,7 +161,7 @@ public class AgentController {
     public Result<List<AgentTemplateEntity>> templateList() {
         List<AgentTemplateEntity> list = agentTemplateService
                 .list(new QueryWrapper<AgentTemplateEntity>()
-                        .eq("is_visible", 1)
+                        .eq("is_visible", true)
                         .orderByAsc("sort"));
         return new Result<List<AgentTemplateEntity>>().ok(list);
     }

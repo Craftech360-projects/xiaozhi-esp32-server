@@ -11,18 +11,18 @@ knife4j:
 spring:
   datasource:
     druid:
-      #Railway MySQL Configuration
-      driver-class-name: com.mysql.cj.jdbc.Driver
+      #Railway PostgreSQL Configuration
+      driver-class-name: org.postgresql.Driver
       # Railway database connection
-      url: jdbc:mysql://nozomi.proxy.rlwy.net:25037/railway?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&nullCatalogMeansCurrent=true&useSSL=true&allowPublicKeyRetrieval=true
+      url: jdbc:postgresql://nozomi.proxy.rlwy.net:25037/railway?currentSchema=public&sslmode=require&connectTimeout=120&socketTimeout=120&tcpKeepAlive=true&loginTimeout=120
       username: root
       password: OcaVNLKcwNdyElfaeUPqvvfYZiiEHgdm
-      initial-size: 10
-      max-active: 100
-      min-idle: 10
-      max-wait: 6000
-      pool-prepared-statements: true
-      max-pool-prepared-statement-per-connection-size: 20
+      initial-size: 5
+      max-active: 50
+      min-idle: 5
+      max-wait: 120000
+      pool-prepared-statements: false
+      max-pool-prepared-statement-per-connection-size: -1
       time-between-eviction-runs-millis: 60000
       min-evictable-idle-time-millis: 300000
       test-while-idle: true

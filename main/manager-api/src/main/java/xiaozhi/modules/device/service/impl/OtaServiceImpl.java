@@ -88,30 +88,30 @@ public class OtaServiceImpl extends BaseServiceImpl<OtaDao, OtaEntity> implement
     public OtaEntity getForceUpdateFirmware(String type) {
         QueryWrapper<OtaEntity> wrapper = new QueryWrapper<>();
         wrapper.eq("type", type)
-                .eq("force_update", 1)
+                .eq("force_update", true)
                 .last("LIMIT 1");
         return baseDao.selectOne(wrapper);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void setForceUpdate(String id, String type, Integer forceUpdate) {
-        if (forceUpdate == null || (forceUpdate != 0 && forceUpdate != 1)) {
-            throw new RuntimeException("force_update值必须为0或1");
+    public void setForceUpdate(String id, String type, Boolean forceUpdate) {
+        if (forceUpdate == null) {
+            throw new RuntimeException("force_update值不能为空");
         }
 
         // If enabling force update, first disable it for all other firmwares of the same type
-        if (forceUpdate == 1) {
+        if (Boolean.TRUE.equals(forceUpdate)) {
             QueryWrapper<OtaEntity> wrapper = new QueryWrapper<>();
             wrapper.eq("type", type)
-                    .eq("force_update", 1)
+                    .eq("force_update", true)
                     .ne("id", id);
 
             List<OtaEntity> existingForceUpdates = baseDao.selectList(wrapper);
             if (!existingForceUpdates.isEmpty()) {
                 // Disable force update for other firmwares
                 for (OtaEntity otaEntity : existingForceUpdates) {
-                    otaEntity.setForceUpdate(0);
+                    otaEntity.setForceUpdate(false);
                     baseDao.updateById(otaEntity);
                 }
             }

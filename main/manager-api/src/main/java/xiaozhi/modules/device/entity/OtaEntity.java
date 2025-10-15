@@ -40,8 +40,8 @@ public class OtaEntity {
     @Schema(description = "固件路径")
     private String firmwarePath;
 
-    @Schema(description = "是否强制更新: 0-否, 1-是")
-    private Integer forceUpdate;
+    @Schema(description = "是否强制更新")
+    private Boolean forceUpdate;
 
     @Schema(description = "排序")
     private Integer sort;

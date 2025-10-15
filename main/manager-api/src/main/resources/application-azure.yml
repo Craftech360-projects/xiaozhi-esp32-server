@@ -19,9 +19,9 @@ server:
 spring:
   datasource:
     druid:
-      # AZURE VM LOCAL DATABASE ONLY
-      driver-class-name: com.mysql.cj.jdbc.Driver
-      url: jdbc:mysql://localhost:3306/xiaozhi_db?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&nullCatalogMeansCurrent=true&useSSL=false&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true
+      # AZURE VM LOCAL POSTGRESQL DATABASE ONLY
+      driver-class-name: org.postgresql.Driver
+      url: jdbc:postgresql://localhost:5432/xiaozhi_db?currentSchema=public
       username: xiaozhi_user
       password: xiaozhi_password123
 
@@ -29,8 +29,8 @@ spring:
       max-active: 20
       min-idle: 5
       max-wait: 6000
-      pool-prepared-statements: true
-      max-pool-prepared-statement-per-connection-size: 20
+      pool-prepared-statements: false
+      max-pool-prepared-statement-per-connection-size: -1
       time-between-eviction-runs-millis: 60000
       min-evictable-idle-time-millis: 300000
       test-while-idle: true

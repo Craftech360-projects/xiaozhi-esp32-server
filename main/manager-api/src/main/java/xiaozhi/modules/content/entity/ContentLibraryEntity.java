@@ -71,9 +71,9 @@ public class ContentLibraryEntity implements Serializable {
     private Long fileSizeBytes;
 
     /**
-     * Active status (1=active, 0=inactive)
+     * Active status
      */
-    private Integer isActive;
+    private Boolean isActive;
 
     /**
      * Creation timestamp

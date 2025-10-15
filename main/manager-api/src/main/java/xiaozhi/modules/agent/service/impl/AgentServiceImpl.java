@@ -345,7 +345,7 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
                 AgentPluginMapping m = new AgentPluginMapping();
                 m.setAgentId(agentId);
                 m.setPluginId(info.getPluginId());
-                m.setParamInfo(JsonUtils.toJsonString(info.getParamInfo()));
+                m.setParamInfo(info.getParamInfo());
                 AgentPluginMapping old = existMap.get(info.getPluginId());
                 if (old != null) {
                     // 已存在，设置id表示更新
@@ -508,7 +508,7 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
                     paramInfo.put((String) field.get("key"), field.get("default"));
                 }
             }
-            mapping.setParamInfo(JsonUtils.toJsonString(paramInfo));
+            mapping.setParamInfo(paramInfo);
             mapping.setAgentId(entity.getId());
             toInsert.add(mapping);
         }
@@ -613,7 +613,7 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
         // 3. Get all visible templates ordered by sort
         List<AgentTemplateEntity> allTemplates = agentTemplateService.list(
             new QueryWrapper<AgentTemplateEntity>()
-                .eq("is_visible", 1)
+                .eq("is_visible", true)
                 .orderByAsc("sort")
         );
 

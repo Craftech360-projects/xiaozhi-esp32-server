@@ -136,8 +136,18 @@ public class OTAMagController {
             return new Result<Void>().error("参数不完整");
         }
 
-        Integer forceUpdate = (Integer) params.get("forceUpdate");
+        Object forceUpdateObj = params.get("forceUpdate");
         String type = (String) params.get("type");
+
+        // Convert Integer (0/1) to Boolean if needed
+        Boolean forceUpdate;
+        if (forceUpdateObj instanceof Boolean) {
+            forceUpdate = (Boolean) forceUpdateObj;
+        } else if (forceUpdateObj instanceof Integer) {
+            forceUpdate = ((Integer) forceUpdateObj) == 1;
+        } else {
+            return new Result<Void>().error("forceUpdate参数类型错误");
+        }
 
         try {
             otaService.setForceUpdate(id, type, forceUpdate);

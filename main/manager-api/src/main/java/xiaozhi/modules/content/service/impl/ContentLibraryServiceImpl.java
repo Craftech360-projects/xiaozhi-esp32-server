@@ -104,8 +104,8 @@ public class ContentLibraryServiceImpl implements ContentLibraryService {
     public String addContent(ContentLibraryDTO contentDTO) {
         ContentLibraryEntity entity = convertToEntity(contentDTO);
         entity.setId(UUID.randomUUID().toString());
-        entity.setIsActive(1);
-        
+        entity.setIsActive(true);
+
         int result = contentLibraryDao.insert(entity);
         return result > 0 ? entity.getId() : null;
     }
@@ -123,8 +123,8 @@ public class ContentLibraryServiceImpl implements ContentLibraryService {
     public boolean deleteContent(String id) {
         ContentLibraryEntity entity = new ContentLibraryEntity();
         entity.setId(id);
-        entity.setIsActive(0);
-        
+        entity.setIsActive(false);
+
         int result = contentLibraryDao.updateById(entity);
         return result > 0;
     }
@@ -139,7 +139,7 @@ public class ContentLibraryServiceImpl implements ContentLibraryService {
                 .map(dto -> {
                     ContentLibraryEntity entity = convertToEntity(dto);
                     entity.setId(UUID.randomUUID().toString());
-                    entity.setIsActive(1);
+                    entity.setIsActive(true);
                     return entity;
                 })
                 .collect(Collectors.toList());
@@ -204,10 +204,10 @@ public class ContentLibraryServiceImpl implements ContentLibraryService {
         }
         
         // Set calculated fields
-        dto.setIsActive(entity.getIsActive() == 1);
+        dto.setIsActive(Boolean.TRUE.equals(entity.getIsActive()));
         dto.setFormattedDuration(dto.getFormattedDuration());
         dto.setFormattedFileSize(dto.getFormattedFileSize());
-        
+
         return dto;
     }
 
@@ -221,10 +221,10 @@ public class ContentLibraryServiceImpl implements ContentLibraryService {
         if (dto.getAlternatives() != null && !dto.getAlternatives().isEmpty()) {
             entity.setAlternatives(gson.toJson(dto.getAlternatives()));
         }
-        
+
         // Set active status
-        entity.setIsActive(dto.getIsActive() != null && dto.getIsActive() ? 1 : 0);
-        
+        entity.setIsActive(Boolean.TRUE.equals(dto.getIsActive()));
+
         return entity;
     }
 }
