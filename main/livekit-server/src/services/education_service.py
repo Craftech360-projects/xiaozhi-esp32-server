@@ -446,13 +446,14 @@ class EducationService:
         include_examples: bool = True,
         include_visual_aids: bool = True
     ) -> Dict[str, Any]:
-        """Generate a comprehensive educational answer"""
+        """Generate a comprehensive educational answer with formatting"""
 
         # Combine content from top results
         main_content = []
         sources = []
         examples = []
         visual_aids = []
+        key_concepts = set()
 
         for result in results:
             main_content.append(result.content)
@@ -465,6 +466,10 @@ class EducationService:
                 "section": result.metadata.get("section_title", "")
             })
 
+            # Collect key concepts
+            if result.metadata.get("key_concepts"):
+                key_concepts.update(result.metadata.get("key_concepts", []))
+
             # Collect examples if requested
             if include_examples and result.related_content:
                 for related in result.related_content:
@@ -475,8 +480,36 @@ class EducationService:
             if include_visual_aids and result.metadata.get("figure_refs"):
                 visual_aids.extend(result.metadata.get("figure_refs", []))
 
-        # Create the main answer
-        answer = self._format_answer_for_grade(main_content, grade)
+        # Create the main answer with grade-appropriate formatting
+        base_answer = self._format_answer_for_grade(main_content, grade)
+
+        # Apply answer template formatting based on question type
+        try:
+            from ..rag.answer_templates import detect_question_type, AnswerFormatter
+
+            question_type = detect_question_type(question)
+            formatter = AnswerFormatter()
+
+            # Prepare content for formatting
+            formatted_content = {
+                'answer': base_answer,
+                'key_concepts': list(key_concepts)
+            }
+
+            # Format answer based on question type
+            formatted_answer = formatter.format_answer(formatted_content, question_type)
+
+            # Use formatted answer if it's substantially different and improves clarity
+            if formatted_answer and len(formatted_answer) > len(base_answer) * 0.8:
+                answer = formatted_answer
+            else:
+                answer = base_answer
+
+        except Exception as e:
+            # Fallback to base answer if formatting fails
+            import logging
+            logging.getLogger(__name__).warning(f"Answer formatting failed: {e}")
+            answer = base_answer
 
         # Calculate confidence score
         confidence = sum(r.score for r in results) / len(results) if results else 0.0

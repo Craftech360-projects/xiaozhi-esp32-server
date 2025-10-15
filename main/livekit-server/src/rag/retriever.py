@@ -31,15 +31,21 @@ logger = logging.getLogger(__name__)
 
 
 class QuestionType(Enum):
-    """Types of educational questions"""
-    DEFINITION = "definition"
-    EXPLANATION = "explanation"
-    PROBLEM_SOLVING = "problem_solving"
-    EXAMPLE_REQUEST = "example_request"
-    COMPARISON = "comparison"
-    PROCESS = "process"
-    CALCULATION = "calculation"
-    GENERAL = "general"
+    """Types of educational questions (extended for answer formatting)"""
+    DEFINITION = "definition"           # What is X?
+    EXPLANATION = "explanation"         # Why/How does X work?
+    PROBLEM_SOLVING = "problem_solving" # Solve/Find/Calculate
+    EXAMPLE_REQUEST = "example_request" # Give example of X  (alias: EXAMPLE)
+    COMPARISON = "comparison"           # Compare X and Y
+    PROCESS = "process"                 # Steps/Procedure (alias: PROCEDURE)
+    CALCULATION = "calculation"         # Calculate/Compute
+    GENERAL = "general"                 # General queries
+    # New detailed types for answer formatting
+    PROCEDURE = "procedure"             # How to do X? (same as PROCESS)
+    EXAMPLE = "example"                 # Show example (same as EXAMPLE_REQUEST)
+    LIST = "list"                       # List/Name types of X
+    CAUSE_EFFECT = "cause_effect"       # Why does X happen?
+    APPLICATION = "application"         # When/where to use X?
 
 
 @dataclass
@@ -83,25 +89,37 @@ class QueryAnalyzer:
 
         self.question_patterns = {
             QuestionType.DEFINITION: [
-                r"what is", r"define", r"definition of", r"meaning of", r"explain what"
+                r"what is", r"what are", r"define", r"definition of", r"meaning of", r"explain what"
             ],
             QuestionType.EXPLANATION: [
-                r"how does", r"why does", r"explain how", r"explain why", r"how can"
+                r"how does", r"why does", r"explain how", r"explain why", r"how can", r"explain"
             ],
             QuestionType.PROBLEM_SOLVING: [
-                r"solve", r"find", r"calculate", r"determine", r"how to"
+                r"solve", r"find", r"determine"
             ],
             QuestionType.EXAMPLE_REQUEST: [
-                r"example", r"show me", r"give me", r"provide", r"demonstrate"
+                r"example", r"examples of", r"show me", r"give me", r"provide", r"demonstrate", r"illustrate"
             ],
             QuestionType.COMPARISON: [
-                r"difference", r"compare", r"contrast", r"vs", r"versus", r"between"
+                r"difference between", r"compare", r"comparison", r"contrast", r"vs", r"versus", r"between", r"differ"
             ],
             QuestionType.PROCESS: [
-                r"steps", r"process", r"procedure", r"how to", r"method"
+                r"steps", r"process", r"method"
+            ],
+            QuestionType.PROCEDURE: [
+                r"how to", r"how do", r"procedure", r"method to", r"process of"
             ],
             QuestionType.CALCULATION: [
                 r"calculate", r"compute", r"find the value", r"solve for", r"what is the"
+            ],
+            QuestionType.LIST: [
+                r"list", r"name", r"types of", r"kinds of", r"what are the"
+            ],
+            QuestionType.CAUSE_EFFECT: [
+                r"why does", r"why is", r"why do", r"what causes", r"reason for", r"cause of"
+            ],
+            QuestionType.APPLICATION: [
+                r"when to", r"where to", r"when is", r"where is", r"in what situation", r"application"
             ]
         }
 
