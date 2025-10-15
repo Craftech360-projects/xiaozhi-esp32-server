@@ -542,6 +542,30 @@ class EducationalRetriever:
 
         # Score adjustments based on educational factors
         for result in results:
+            # Apply content weighting (TOC-guided retrieval)
+            # Content weight: teaching_text=1.0, activity=0.95, example=0.85, practice=0.75
+            content_weight = result.metadata.get("content_weight", 1.0)
+            result.score *= content_weight
+
+            # Apply content priority boosting
+            # Priority: high=1.2x, medium=1.0x, low=0.85x
+            content_priority = result.metadata.get("content_priority", "medium")
+            priority_boost = {
+                "high": 1.2,
+                "medium": 1.0,
+                "low": 0.85
+            }
+            result.score *= priority_boost.get(content_priority, 1.0)
+
+            # Boost activities for certain question types
+            is_activity = result.metadata.get("is_activity", False)
+            if is_activity and analysis.question_type in [
+                QuestionType.PROBLEM_SOLVING,
+                QuestionType.EXAMPLE_REQUEST,
+                QuestionType.PROCESS
+            ]:
+                result.score *= 1.25
+
             # Boost score for content type match
             content_type = result.metadata.get("content_type", "")
             if self._is_content_type_relevant(content_type, analysis.question_type):

@@ -229,7 +229,14 @@ class QdrantEducationManager:
                 ("textbook_name", PayloadSchemaType.KEYWORD),
                 ("cognitive_level", PayloadSchemaType.KEYWORD),
                 ("keywords", PayloadSchemaType.KEYWORD),
-                ("concepts", PayloadSchemaType.KEYWORD)
+                ("concepts", PayloadSchemaType.KEYWORD),
+
+                # TOC-guided retrieval indexes
+                ("toc_section_id", PayloadSchemaType.KEYWORD),  # Section ID from TOC (1.1, activity_1.1, etc.)
+                ("section_type", PayloadSchemaType.KEYWORD),  # teaching_text, activity, example, practice
+                ("content_priority", PayloadSchemaType.KEYWORD),  # high, medium, low
+                ("content_weight", PayloadSchemaType.FLOAT),  # Content weighting score (0.7-1.0)
+                ("is_activity", PayloadSchemaType.BOOL)  # Quick filter for activities
             ]
 
             for field_name, schema_type in indexes_to_create:
