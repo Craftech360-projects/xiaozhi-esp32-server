@@ -145,12 +145,12 @@ async def handle_light_color_set(mcp_client: LiveKitMCPClient, rgb_color: dict) 
 
 
 # Battery status handler
-async def handle_battery_status_get(mcp_client: LiveKitMCPClient) -> Dict:
+async def handle_battery_status_get(mcp_client: LiveKitMCPClient, wait_for_response: bool = False) -> Dict:
     """Handle get battery status command"""
     if not validate_function_call("self_get_battery_status"):
         raise ValueError("Invalid battery status parameters")
 
-    return await send_mcp_function_call(mcp_client, "self_get_battery_status")
+    return await mcp_client.send_function_call("self_get_battery_status", wait_for_response=wait_for_response)
 
 async def handle_light_mode_set(mcp_client, mode: str):
     """

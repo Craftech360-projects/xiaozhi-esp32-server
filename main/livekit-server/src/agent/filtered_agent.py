@@ -1,5 +1,6 @@
 import logging
 import json
+import asyncio
 from typing import AsyncIterable
 from livekit.agents import Agent
 from livekit import rtc
@@ -85,77 +86,112 @@ class FilteredAgent(Agent):
             """
             Buffer and filter text chunks before TTS.
             Accumulates chunks until we have complete sentences for more natural speech.
+            Detects empty LLM responses and provides fallback messages.
             """
             buffer = ""
             chunk_count = 0
+            total_chars_received = 0  # Track total characters for empty detection
             emotion_sent = False  # Track if emotion has been sent
             emotion_buffer = ""  # Buffer to accumulate text for emotion detection
+            llm_timeout = 30.0  # 30 second timeout for LLM response
+            llm_timed_out = False
 
             # Punctuation marks that indicate good breaking points
             breaking_punctuation = {'.', '!', '?', ':', '\n'}
             pause_punctuation = {',', ';'}
 
-            async for text_chunk in text:
-                if not text_chunk:
-                    continue
+            try:
+                # Process LLM stream with timeout detection
+                async for text_chunk in text:
+                    if not text_chunk:
+                        continue
 
-                chunk_count += 1
-                logger.info(f"📝 LLM Output: {text_chunk}")
+                    chunk_count += 1
+                    total_chars_received += len(text_chunk)
+                    # logger.info(f"📝 LLM Output: {text_chunk}")
 
-                # 🆕 EMOTION DETECTION - Accumulate chunks until we find emoji or hit sentence boundary
-                if not emotion_sent:
-                    emotion_buffer += text_chunk
+                    # 🆕 EMOTION DETECTION - Accumulate chunks until we find emoji or hit sentence boundary
+                    if not emotion_sent:
+                        emotion_buffer += text_chunk
 
-                    # Check if we have an emoji in accumulated text
-                    emoji, emotion = self.get_emotion(emotion_buffer)
+                        # Check if we have an emoji in accumulated text
+                        emoji, emotion = self.get_emotion(emotion_buffer)
 
-                    # Send emotion if: 1) Found non-default emoji, OR 2) Hit sentence boundary
-                    has_emoji = emoji != "🙂"
-                    hit_sentence_boundary = any(
-                        punct in emotion_buffer for punct in breaking_punctuation)
+                        # Send emotion if: 1) Found non-default emoji, OR 2) Hit sentence boundary
+                        has_emoji = emoji != "🙂"
+                        hit_sentence_boundary = any(
+                            punct in emotion_buffer for punct in breaking_punctuation)
 
-                    if has_emoji or hit_sentence_boundary:
-                        await self.publish_emotion(emoji, emotion)
-                        emotion_sent = True
-                        logger.info(
-                            f"😊 Emotion detected from {len(emotion_buffer)} chars: {emotion} ({emoji})")
+                        if has_emoji or hit_sentence_boundary:
+                            await self.publish_emotion(emoji, emotion)
+                            emotion_sent = True
+                            logger.info(
+                                f"😊 Emotion detected from {len(emotion_buffer)} chars: {emotion} ({emoji})")
 
-                # Apply filtering with boundary preservation
-                if self._filtering_enabled:
-                    filtered_chunk = await self.llm_output_filter(text_chunk, preserve_boundaries=True)
-                else:
-                    filtered_chunk = text_chunk
+                    # Apply filtering with boundary preservation
+                    if self._filtering_enabled:
+                        filtered_chunk = await self.llm_output_filter(text_chunk, preserve_boundaries=True)
+                    else:
+                        filtered_chunk = text_chunk
 
-                buffer += filtered_chunk
+                    buffer += filtered_chunk
 
-                # Check if we should flush the buffer
-                should_flush = False
+                    # Check if we should flush the buffer
+                    should_flush = False
 
-                # Flush on sentence-ending punctuation
-                if any(punct in buffer for punct in breaking_punctuation):
-                    should_flush = True
+                    # Flush on sentence-ending punctuation
+                    if any(punct in buffer for punct in breaking_punctuation):
+                        should_flush = True
 
-                # Also flush on commas/semicolons if buffer is getting long
-                elif any(punct in buffer for punct in pause_punctuation) and len(buffer) > 50:
-                    should_flush = True
+                    # Also flush on commas/semicolons if buffer is getting long
+                    elif any(punct in buffer for punct in pause_punctuation) and len(buffer) > 50:
+                        should_flush = True
 
-                # Flush if buffer is too large (avoid excessive delays)
-                elif len(buffer) > 100:
-                    should_flush = True
+                    # Flush if buffer is too large (avoid excessive delays)
+                    elif len(buffer) > 100:
+                        should_flush = True
 
-                # Flush the buffer
-                if should_flush and buffer.strip():
-                    logger.debug(
-                        f"🔊 Buffered {chunk_count} chunks into phrase: '{buffer[:50]}...'")
-                    yield buffer
-                    buffer = ""
-                    chunk_count = 0
+                    # Flush the buffer
+                    if should_flush and buffer.strip():
+                        logger.debug(
+                            f"🔊 Buffered {chunk_count} chunks into phrase: '{buffer[:50]}...'")
+                        yield buffer
+                        buffer = ""
+                        chunk_count = 0
+
+            except asyncio.TimeoutError:
+                logger.error(f"⏱️ LLM response timeout after {llm_timeout} seconds")
+                llm_timed_out = True
+            except Exception as e:
+                logger.error(f"❌ Error processing LLM stream: {e}")
+                import traceback
+                logger.error(f"❌ Traceback: {traceback.format_exc()}")
+                # Let LiveKit's error handling system handle this - don't generate fallback here
 
             # Flush any remaining buffer at the end
             if buffer.strip():
                 logger.debug(
                     f"🔊 Final buffer flush ({chunk_count} chunks): '{buffer[:50]}...'")
                 yield buffer
+
+            # 🆕 TIMEOUT HANDLING ONLY
+            # Only handle timeouts, not empty responses (empty responses are often normal for tool calls)
+            if llm_timed_out:
+                logger.error("⏱️ LLM timeout detected - generating timeout message")
+                timeout_messages = [
+                    "I'm sorry, I'm taking too long to think. Could you try asking me something else?",
+                    "Hmm, my response is taking longer than expected. Let's try again?",
+                    "Sorry, I seem to be running slow. Could you ask me that again?"
+                ]
+                import random
+                fallback = random.choice(timeout_messages)
+                logger.warning(f"🔊 Using timeout message: '{fallback}'")
+                yield fallback
+            elif total_chars_received == 0:
+                # Empty response is often normal (tool calls, etc.) - just log it
+                logger.info("📝 Empty LLM response detected - likely normal (tool execution or silent response)")
+                # Yield empty string to signal completion and allow state transition
+                yield ""
 
         # Use parent's TTS node with buffered and filtered text stream
         async for frame in super().tts_node(buffered_filtered_text_stream(), model_settings):
