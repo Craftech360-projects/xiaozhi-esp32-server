@@ -45,11 +45,11 @@ class FilteredAgent(Agent):
         """Initialize the FilteredAgent with text filtering capabilities."""
         super().__init__(instructions=instructions, **kwargs)
         self.text_filter = text_filter
-        self._filtering_enabled = True  # Enable filtering at LLM output level
+        self._filtering_enabled = False  # DISABLED - Text filtering disabled for Hindi support
         self._tts_provider = tts_provider
         self._session_context = None  # Store session context for data publishing
         logger.info(
-            "FilteredAgent initialized with LLM response filtering (ENABLED)")
+            "FilteredAgent initialized with LLM response filtering (DISABLED)")
 
     async def llm_output_filter(self, text: str, preserve_boundaries: bool = True) -> str:
         """

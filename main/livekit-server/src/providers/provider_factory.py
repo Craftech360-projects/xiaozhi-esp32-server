@@ -86,11 +86,17 @@ class ProviderFactory:
                 api_key = os.getenv('DEEPGRAM_API_KEY')
                 if not api_key:
                     raise ValueError("DEEPGRAM_API_KEY environment variable is not set")
+
+                # Configure Deepgram with language and endpointing settings
+                deepgram_lang = config.get('deepgram_language')
+                endpointing_ms = config.get('deepgram_endpointing_ms', 25)
+
                 providers.append(stt.StreamAdapter(
                     stt=deepgram.STT(
                         api_key=api_key,
                         model=config.get('deepgram_model', 'nova-3'),
-                        language=config['stt_language']
+                        language=deepgram_lang if deepgram_lang else 'en-US',
+                        endpointing_ms=endpointing_ms
                     ),
                     vad=vad
                 ))
@@ -143,11 +149,17 @@ class ProviderFactory:
                 api_key = os.getenv('DEEPGRAM_API_KEY')
                 if not api_key:
                     raise ValueError("DEEPGRAM_API_KEY environment variable is not set")
+
+                # Configure Deepgram with language and endpointing settings
+                deepgram_lang = config.get('deepgram_language')
+                endpointing_ms = config.get('deepgram_endpointing_ms', 25)
+
                 return stt.StreamAdapter(
                     stt=deepgram.STT(
                         api_key=api_key,
                         model=config.get('deepgram_model', 'nova-3'),
-                        language=config['stt_language']
+                        language=deepgram_lang if deepgram_lang else 'en-US',
+                        endpointing_ms=endpointing_ms
                     ),
                     vad=vad
                 )

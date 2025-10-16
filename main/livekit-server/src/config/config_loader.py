@@ -25,6 +25,8 @@ class ConfigLoader:
             'stt_language': os.getenv('STT_LANGUAGE', 'en'),
             'stt_provider': os.getenv('STT_PROVIDER', 'groq'),  # groq or deepgram
             'deepgram_model': os.getenv('DEEPGRAM_MODEL', 'nova-3'),
+            'deepgram_language': os.getenv('DEEPGRAM_LANGUAGE'),  # None if not set = auto multilingual
+            'deepgram_endpointing_ms': int(os.getenv('DEEPGRAM_ENDPOINTING_MS', '25')),  # Default 25ms, use 100ms for code-switching
             # Fallback configuration
             'fallback_enabled': os.getenv('FALLBACK_ENABLED', 'false').lower() == 'true',
             'fallback_llm_model': os.getenv('FALLBACK_LLM_MODEL', 'llama-3.1-8b-instant'),

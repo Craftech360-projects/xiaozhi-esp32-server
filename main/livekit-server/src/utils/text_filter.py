@@ -36,9 +36,11 @@ class TextFilter:
         # Pattern for excessive spaces/newlines
         self.whitespace_pattern = re.compile(r'\s+')
 
-        # Pattern for common TTS-unfriendly characters (preserve math symbols and common symbols)
+        # Pattern for common TTS-unfriendly characters (preserve math symbols, common symbols, and Indic scripts)
         # Include math symbols: × (U+00D7), ÷ (U+00F7), √ (U+221A), ² (U+00B2), ³ (U+00B3), ± (U+00B1)
-        self.special_chars_pattern = re.compile(r'[^\w\s.,!?;:()\'+\-*/=<>%$^&@°:×÷√²³±]', re.UNICODE)
+        # Preserve Unicode word characters (includes Devanagari, Arabic, Chinese, etc.) using \w with UNICODE flag
+        # Only remove actual problematic characters like control chars, weird symbols, etc.
+        self.special_chars_pattern = re.compile(r'[^\w\s.,!?;:()\'+\-*/=<>%$^&@°:×÷√²³±।॥]', re.UNICODE)
 
         # Keep these punctuation marks for natural speech rhythm and math
         self.speech_punctuation = {'.', ',', '!', '?', ';', ':', '(', ')', '-', "'", '+', '*', '/', '=', '<', '>', '%', '$', '^', '&', '@', '°', '×', '÷', '√', '²', '³', '±'}
@@ -115,9 +117,9 @@ class TextFilter:
             logger.error(f"Error filtering text for TTS: {e}")
             # Return a basic cleaned version as fallback
             if preserve_boundaries:
-                return re.sub(r'[^\w\s.,!?;:()\'+\-*/=<>%$×÷√²³±]', '', original_text)
+                return re.sub(r'[^\w\s.,!?;:()\'+\-*/=<>%$×÷√²³±।॥]', '', original_text, flags=re.UNICODE)
             else:
-                return re.sub(r'[^\w\s.,!?;:()\'+\-*/=<>%$×÷√²³±]', '', original_text).strip()
+                return re.sub(r'[^\w\s.,!?;:()\'+\-*/=<>%$×÷√²³±।॥]', '', original_text, flags=re.UNICODE).strip()
 
     def remove_unicode_categories(self, text: str, categories_to_remove: list = None) -> str:
         """
