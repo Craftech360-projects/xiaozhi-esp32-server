@@ -54,8 +54,12 @@ class SemanticChunker:
 
             # Create chunk objects with rich metadata
             for i, chunk_text in enumerate(section_chunks):
+                # Generate unique ID across all chapters: "ch{chapter}_{chunk_id}"
+                chapter_num = expanded_toc['chapter']
+                unique_id = f"ch{chapter_num}_{chunk_id}"
+
                 chunk = {
-                    'id': chunk_id,
+                    'id': unique_id,
                     'content': chunk_text.strip(),
                     'toc_section_id': section['id'],
                     'chunk_index': i,

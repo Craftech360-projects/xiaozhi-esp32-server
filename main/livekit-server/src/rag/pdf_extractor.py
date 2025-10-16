@@ -98,6 +98,9 @@ class PDFExtractor:
     def _clean_text(self, text: str) -> str:
         """Clean extracted text"""
 
+        # Fix reversed text if detected
+        text = self._fix_reversed_text(text)
+
         # Remove excessive whitespace
         text = re.sub(r'\s+', ' ', text)
 
@@ -112,6 +115,34 @@ class PDFExtractor:
         text = re.sub(r'Chapter\s+\d+\.indd\s+\d+\s+\d+/\d+/\d+\s+\d+:\d+', '', text)
 
         return text.strip()
+
+    def _detect_reversed_text(self, text: str) -> bool:
+        """Detect if text is reversed (common PDF extraction issue)"""
+        # Check for reversed common words at the start of text
+        reversed_indicators = ['edarG', 'ecneicS', 'koobtxeT', 'ytisoiruC', 'dlroW']
+        text_start = text[:200]  # Check first 200 chars
+        return any(indicator in text_start for indicator in reversed_indicators)
+
+    def _fix_reversed_text(self, text: str) -> str:
+        """Fix reversed text by reversing each word"""
+        if not self._detect_reversed_text(text):
+            return text
+
+        logger.info("Detected reversed text, fixing...")
+
+        # Split into lines to preserve structure
+        lines = text.split('\n')
+        fixed_lines = []
+
+        for line in lines:
+            # Split line into words
+            words = line.split()
+            # Reverse each word
+            fixed_words = [word[::-1] for word in words]
+            # Join back
+            fixed_lines.append(' '.join(fixed_words))
+
+        return '\n'.join(fixed_lines)
 
     def _detect_heading(self, text: str) -> bool:
         """Detect if text contains a heading"""

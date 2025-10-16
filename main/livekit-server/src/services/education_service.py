@@ -587,8 +587,11 @@ class EducationService:
         # Calculate confidence score
         confidence = sum(r.score for r in results) / len(results) if results else 0.0
 
+        # QUICK WIN 2: Clean and validate response for voice output
+        cleaned_answer = self.validate_and_clean_response(answer)
+
         response = {
-            "answer": answer,
+            "answer": cleaned_answer,
             "confidence": confidence,
             "sources": sources,
             "grade_level": grade
@@ -1557,3 +1560,94 @@ class EducationService:
         except Exception as e:
             logger.error(f"Failed to get service stats: {e}")
             return {"error": str(e)}
+
+    def validate_and_clean_response(self, response: str) -> str:
+        """
+        Validate and clean response for voice output (Quick Win 2)
+
+        Fixes:
+        - Strips markdown formatting (bold, italic, underline)
+        - Removes extra whitespace
+        - Truncates to max 150 words for voice
+        - Detects and fixes any remaining reversed text
+
+        Args:
+            response: Raw response text
+
+        Returns:
+            Cleaned response suitable for TTS
+        """
+        import re
+
+        if not response:
+            return response
+
+        # 1. Fix any remaining reversed text
+        if self._detect_reversed_text(response):
+            response = self._fix_reversed_text(response)
+
+        # 2. Strip markdown formatting
+        # Remove bold (**text** or __text__)
+        response = re.sub(r'\*\*(.+?)\*\*', r'\1', response)
+        response = re.sub(r'__(.+?)__', r'\1', response)
+
+        # Remove italic (*text* or _text_)
+        response = re.sub(r'\*(.+?)\*', r'\1', response)
+        response = re.sub(r'_(.+?)_', r'\1', response)
+
+        # Remove code blocks
+        response = re.sub(r'`(.+?)`', r'\1', response)
+
+        # Remove headers (# Header)
+        response = re.sub(r'^#+\s+', '', response, flags=re.MULTILINE)
+
+        # Remove bullet points and list markers
+        response = re.sub(r'^\s*[-*•]\s+', '', response, flags=re.MULTILINE)
+        response = re.sub(r'^\s*\d+\.\s+', '', response, flags=re.MULTILINE)
+
+        # 3. Remove extra whitespace
+        response = re.sub(r'\s+', ' ', response).strip()
+
+        # 4. Truncate if too long (max 150 words for voice)
+        words = response.split()
+        if len(words) > 150:
+            response = ' '.join(words[:150])
+            # Try to end at a sentence boundary
+            last_period = response.rfind('.')
+            last_exclamation = response.rfind('!')
+            last_question = response.rfind('?')
+            last_sentence_end = max(last_period, last_exclamation, last_question)
+
+            if last_sentence_end > len(response) * 0.7:  # If we're at least 70% through
+                response = response[:last_sentence_end + 1]
+            else:
+                response += '...'
+
+        return response
+
+    def _detect_reversed_text(self, text: str) -> bool:
+        """Detect if text contains reversed content"""
+        if not text:
+            return False
+
+        reversed_indicators = ['edarG', 'ecneicS', 'koobtxeT', 'ytisoiruC', 'dlroW']
+        text_sample = text[:500]  # Check first 500 chars
+        return any(indicator in text_sample for indicator in reversed_indicators)
+
+    def _fix_reversed_text(self, text: str) -> str:
+        """Fix reversed text by reversing each word"""
+        logger.info("Detected reversed text in response, fixing...")
+
+        # Split into lines to preserve structure
+        lines = text.split('\n')
+        fixed_lines = []
+
+        for line in lines:
+            # Split line into words
+            words = line.split()
+            # Reverse each word
+            fixed_words = [word[::-1] for word in words]
+            # Join back
+            fixed_lines.append(' '.join(fixed_words))
+
+        return '\n'.join(fixed_lines)

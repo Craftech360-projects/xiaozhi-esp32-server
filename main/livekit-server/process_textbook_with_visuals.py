@@ -9,9 +9,14 @@ import sys
 import logging
 from pathlib import Path
 from typing import Dict, List
+from dotenv import load_dotenv
 
-# Set API key
-os.environ['OPENAI_API_KEY'] = '***REMOVED***'
+# Load environment variables from .env file
+load_dotenv()
+
+# Set API key (if not already set in .env)
+if not os.getenv('OPENAI_API_KEY'):
+    os.environ['OPENAI_API_KEY'] = '***REMOVED***'
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
@@ -216,6 +221,18 @@ async def process_textbook_with_visuals(
     processed_figures = await visual_processor.process_figures(figures)
     processed_tables = await visual_processor.process_tables(tables)
 
+    # Add chapter info and create unique IDs
+    chapter_num = chapter_info['chapter_number']
+    for item in processed_figures + processed_tables:
+        item['chapter_number'] = chapter_num
+        item['chapter'] = chapter_info['chapter_title']
+
+        # Make ID unique across chapters
+        original_id = item.get('figure_id') or item.get('table_id')
+        item['original_id'] = original_id
+        item['figure_id'] = f"ch{chapter_num}_{original_id}" if 'figure_id' in item else None
+        item['table_id'] = f"ch{chapter_num}_{original_id}" if 'table_id' in item else None
+
     visual_with_embeddings = [v for v in processed_figures + processed_tables if v.get('embedding')]
 
     print(f"  [OK] Generated {len(visual_with_embeddings)} visual embeddings")
@@ -232,7 +249,7 @@ async def process_textbook_with_visuals(
         batch = chunks[i:i + batch_size]
         texts = [chunk['content'] for chunk in batch]
 
-        embeddings = await embedding_manager.embed_batch(texts)
+        embeddings = await embedding_manager.batch_text_embeddings(texts)
 
         for chunk, embedding in zip(batch, embeddings):
             chunks_with_embeddings.append({
@@ -240,18 +257,20 @@ async def process_textbook_with_visuals(
                 "text_embedding": embedding,
                 "payload": {
                     "content": chunk['content'],
-                    "chapter_number": chunk['metadata']['chapter_number'],
-                    "chapter": chunk['metadata']['chapter_title'],
-                    "toc_section_id": chunk['metadata']['toc_section_id'],
-                    "section_type": chunk['metadata']['section_type'],
-                    "content_priority": chunk['metadata']['content_priority'],
-                    "content_weight": chunk['metadata']['content_weight'],
-                    "is_activity": chunk['metadata']['is_activity'],
+                    "chapter_number": chunk['metadata'].get('chapter_number', 0),
+                    "chapter": chunk['metadata'].get('chapter_title', ''),
+                    "toc_section_id": chunk.get('toc_section_id', ''),
+                    "section_type": chunk['metadata'].get('section_type', 'teaching_text'),
+                    "content_priority": chunk['metadata'].get('content_priority', 'medium'),
+                    "content_weight": chunk['metadata'].get('content_weight', 1.0),
+                    "is_activity": chunk['metadata'].get('is_activity', False),
                     "difficulty_level": chunk['metadata'].get('difficulty_level', 'beginner'),
                     "cognitive_level": chunk['metadata'].get('cognitive_level', 'understand'),
                     "key_concepts": chunk['metadata'].get('key_concepts', []),
                     "learning_objectives": chunk['metadata'].get('learning_objectives', []),
                     "page_number": chunk['metadata'].get('page_number', 0),
+                    "grade": 6,
+                    "subject": "science"
                 }
             })
 
@@ -338,19 +357,19 @@ async def process_textbook_with_visuals(
 
 
 async def main():
-    """Process Grade 6 Science textbooks"""
+    """Process Grade 6 Science textbooks - ALL chapters to same collection"""
 
-    # Process Chapter 1
+    # Process Chapter 1 - adds to grade_06_science collection
     result1 = await process_textbook_with_visuals(
         pdf_path="scripts/grade_06_science/Chapter 1 The Wonderful World of Science.pdf",
-        collection_name="grade_06_science_ch1",
+        collection_name="grade_06_science",  # Unified collection name
         skip_existing=False
     )
 
-    # Process Chapter 2
+    # Process Chapter 2 - adds to SAME grade_06_science collection
     result2 = await process_textbook_with_visuals(
         pdf_path="scripts/grade_06_science/Chapter 2 Diversity in the Living World.pdf",
-        collection_name="grade_06_science_ch2",
+        collection_name="grade_06_science",  # Same collection name
         skip_existing=False
     )
 
@@ -361,18 +380,22 @@ async def main():
     print(f"\nChapter 1 Results:")
     print(f"  - Text chunks: {result1.get('text_chunks', 0)}")
     print(f"  - Visual items: {result1.get('visual_items', 0)}")
-    print(f"  - Collection: {result1.get('collection', 'N/A')}")
+    print(f"  - Figures: {result1.get('figures', 0)}")
+    print(f"  - Tables: {result1.get('tables', 0)}")
 
     print(f"\nChapter 2 Results:")
     print(f"  - Text chunks: {result2.get('text_chunks', 0)}")
     print(f"  - Visual items: {result2.get('visual_items', 0)}")
-    print(f"  - Collection: {result2.get('collection', 'N/A')}")
+    print(f"  - Figures: {result2.get('figures', 0)}")
+    print(f"  - Tables: {result2.get('tables', 0)}")
 
-    print(f"\nCombined Statistics:")
+    print(f"\nCombined in Collection: grade_06_science")
     print(f"  - Total text chunks: {result1.get('text_chunks', 0) + result2.get('text_chunks', 0)}")
     print(f"  - Total visual items: {result1.get('visual_items', 0) + result2.get('visual_items', 0)}")
     print(f"  - Total figures: {result1.get('figures', 0) + result2.get('figures', 0)}")
     print(f"  - Total tables: {result1.get('tables', 0) + result2.get('tables', 0)}")
+    print(f"  - Text collection: grade_06_science (384-dim)")
+    print(f"  - Visual collection: grade_06_science_visual (512-dim)")
 
     print(f"\n" + "="*80 + "\n")
 

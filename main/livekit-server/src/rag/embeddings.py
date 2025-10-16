@@ -66,7 +66,8 @@ class EmbeddingManager:
                 logger.info("Using OpenAI embeddings for text")
                 self.text_model = "openai"
             elif SENTENCE_TRANSFORMERS_AVAILABLE:
-                logger.info("Loading Sentence Transformers for text embeddings")
+                logger.info("Loading Sentence Transformers for text embeddings (384-dim)")
+                # all-MiniLM-L6-v2 is better: faster, smaller, good quality
                 self.text_model = SentenceTransformer('all-MiniLM-L6-v2')
             else:
                 logger.warning("No text embedding model available")

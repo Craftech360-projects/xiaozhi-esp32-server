@@ -58,7 +58,7 @@ class QdrantEducationManager:
 
         # Vector configurations for different content types
         self.vector_config = {
-            "text": VectorParams(size=384, distance=Distance.COSINE),  # Sentence Transformers all-MiniLM-L6-v2
+            "text": VectorParams(size=1536, distance=Distance.COSINE),  # OpenAI text-embedding-3-small
             "visual": VectorParams(size=512, distance=Distance.COSINE),  # CLIP ViT-B/32
             "formula": VectorParams(size=768, distance=Distance.COSINE)  # all-mpnet-base-v2
         }
@@ -433,11 +433,26 @@ class QdrantEducationManager:
                     logger.warning(f"No text_embedding found in chunk {chunk.get('id', 'unknown')}")
                     continue
 
+                # Generate numeric ID from string ID (Qdrant requires int or UUID)
+                chunk_id = chunk.get("id", f"chunk_{len(points)}")
+
+                # If ID is string, convert to integer using hash
+                if isinstance(chunk_id, str):
+                    import hashlib
+                    hash_object = hashlib.md5(chunk_id.encode())
+                    numeric_id = int(hash_object.hexdigest()[:8], 16)
+                else:
+                    numeric_id = chunk_id
+
+                # Store original ID in payload
+                payload = chunk.get("payload", {})
+                payload['chunk_id'] = str(chunk_id)
+
                 # Create point with single vector
                 point = PointStruct(
-                    id=chunk.get("id", len(points)),
+                    id=numeric_id,
                     vector=vector,
-                    payload=chunk.get("payload", {})
+                    payload=payload
                 )
                 points.append(point)
 
@@ -640,11 +655,20 @@ class QdrantEducationManager:
                 # Add has_image_data flag
                 payload['has_image_data'] = chunk.get('image_data') is not None
 
-                # Generate ID if not present
-                chunk_id = chunk.get('id') or chunk.get('figure_id') or chunk.get('table_id') or len(points)
+                # Generate numeric ID (Qdrant requires int or UUID)
+                # Use hash of figure_id/table_id to generate consistent integer ID
+                chunk_id_str = chunk.get('figure_id') or chunk.get('table_id') or f"visual_{len(points)}"
+
+                # Convert string ID to integer using hash (ensures consistency)
+                import hashlib
+                hash_object = hashlib.md5(chunk_id_str.encode())
+                numeric_id = int(hash_object.hexdigest()[:8], 16)  # Use first 8 hex chars as int
+
+                # Store original ID in payload
+                payload['visual_id'] = chunk_id_str
 
                 point = PointStruct(
-                    id=chunk_id if isinstance(chunk_id, (int, str)) else str(chunk_id),
+                    id=numeric_id,
                     vector=embedding,
                     payload=payload
                 )

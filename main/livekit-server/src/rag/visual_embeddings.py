@@ -129,12 +129,14 @@ class VisualEmbeddingManager:
         """Generate combined image + text embedding"""
 
         with torch.no_grad():
-            # Process both image and text
+            # Process both image and text (truncate text to max 77 tokens)
             inputs = self.processor(
                 text=[text],
                 images=image,
                 return_tensors="pt",
-                padding=True
+                padding=True,
+                truncation=True,
+                max_length=77  # CLIP's maximum token length
             )
             inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
@@ -209,8 +211,14 @@ class VisualEmbeddingManager:
         """Generate text-only embedding"""
 
         with torch.no_grad():
-            # Process text
-            inputs = self.processor(text=[text], return_tensors="pt", padding=True)
+            # Process text (truncate to max 77 tokens)
+            inputs = self.processor(
+                text=[text],
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=77  # CLIP's maximum token length
+            )
             inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
             # Get text features
