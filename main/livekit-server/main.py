@@ -386,6 +386,18 @@ async def entrypoint(ctx: JobContext):
         min_interruption_duration=0.6,   # Reduced from 1.0s to allow children to interrupt
     )
 
+    # Add comprehensive error handling using our error handler module
+    from src.agent.error_handler import setup_error_handling
+    
+    # Set up comprehensive error handling with retry logic
+    error_manager = setup_error_handling(
+        session=session,
+        max_retries=3,
+        custom_audio_path=None  # Will use default path
+    )
+    
+    logger.info("🛡️ Comprehensive error handling enabled with retry logic")
+
     # Get preloaded models from prewarm
     preloaded_embedding_model = ctx.proc.userdata.get("embedding_model")
     preloaded_qdrant_client = ctx.proc.userdata.get("qdrant_client")
@@ -644,7 +656,22 @@ async def entrypoint(ctx: JobContext):
                 import traceback
                 logger.debug(f"💭❌ Traceback: {traceback.format_exc()}")
 
-            # 2. Cleanup chat history service
+            # 2. Log error statistics from our error handler
+            try:
+                error_stats = error_manager.get_error_stats()
+                if error_stats:
+                    logger.info(f"📊 Session error statistics: {error_stats}")
+                    total_errors = sum(error_stats.values())
+                    if total_errors > 0:
+                        logger.warning(f"⚠️ Total errors encountered: {total_errors}")
+                    else:
+                        logger.info("✅ No errors encountered during session")
+                else:
+                    logger.info("📊 No error statistics available")
+            except Exception as e:
+                logger.warning(f"📊 Could not retrieve error statistics: {e}")
+
+            # 3. Cleanup chat history service
             try:
                 if chat_history_service:
                     logger.info("📝 Cleaning up chat history service")
@@ -652,7 +679,7 @@ async def entrypoint(ctx: JobContext):
             except Exception as e:
                 logger.warning(f"📝❌ Chat history cleanup error: {e}")
 
-            # 3. End the agent session (use aclose() method)
+            # 4. End the agent session (use aclose() method)
             try:
                 if session and hasattr(session, 'aclose'):
                     logger.info("Ending agent session")
@@ -661,7 +688,7 @@ async def entrypoint(ctx: JobContext):
                 logger.warning(
                     f"Session close error (expected during shutdown): {e}")
 
-            # 4. Stop audio services and clear audio state
+            # 5. Stop audio services and clear audio state
             try:
                 if audio_player:
                     await audio_player.stop()
@@ -675,7 +702,7 @@ async def entrypoint(ctx: JobContext):
             except Exception as e:
                 logger.warning(f"Audio service stop error: {e}")
 
-            # 5. Clean up music and story services (if cleanup methods exist)
+            # 6. Clean up music and story services (if cleanup methods exist)
             try:
                 if music_service and hasattr(music_service, 'cleanup'):
                     await music_service.cleanup()
@@ -684,7 +711,7 @@ async def entrypoint(ctx: JobContext):
             except Exception as e:
                 logger.warning(f"Service cleanup error: {e}")
 
-            # 6. Disconnect from room (gracefully handle already disconnected)
+            # 7. Disconnect from room (gracefully handle already disconnected)
             try:
                 if ctx.room and hasattr(ctx.room, 'disconnect'):
                     logger.info("Disconnecting from LiveKit room")
@@ -693,7 +720,7 @@ async def entrypoint(ctx: JobContext):
                 logger.warning(
                     f"Room disconnect error (may already be disconnected): {e}")
 
-            # 7. Request room deletion via API (requires admin token)
+            # 8. Request room deletion via API (requires admin token)
             try:
                 room_name = ctx.room.name if ctx.room else "unknown"
                 await delete_livekit_room(room_name)

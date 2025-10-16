@@ -166,17 +166,7 @@ class FilteredAgent(Agent):
                 logger.error(f"❌ Error processing LLM stream: {e}")
                 import traceback
                 logger.error(f"❌ Traceback: {traceback.format_exc()}")
-                # Generate fallback message for actual errors
-                error_messages = [
-                    "I'm sorry, I encountered an error. Could you please try again?",
-                    "Something went wrong on my end. Let me try to help you - what did you need?",
-                    "I had a technical issue. Could you repeat your question?"
-                ]
-                import random
-                fallback = random.choice(error_messages)
-                logger.warning(f"🔊 Using error fallback: '{fallback}'")
-                yield fallback
-                return  # Exit early on error
+                # Let LiveKit's error handling system handle this - don't generate fallback here
 
             # Flush any remaining buffer at the end
             if buffer.strip():
@@ -198,7 +188,7 @@ class FilteredAgent(Agent):
                 logger.warning(f"🔊 Using timeout message: '{fallback}'")
                 yield fallback
             elif total_chars_received == 0:
-                # Empty response is often normal (tool calls, etc.) - just log it, don't generate fallback
+                # Empty response is often normal (tool calls, etc.) - just log it
                 logger.info("📝 Empty LLM response detected - likely normal (tool execution or silent response)")
                 # Yield empty string to signal completion and allow state transition
                 yield ""
