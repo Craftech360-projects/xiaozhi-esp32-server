@@ -7,6 +7,7 @@ from typing import Optional, Dict, Any
 import pytz
 import random
 import inspect
+import asyncio
 from livekit.agents import (
     Agent,
     RunContext,
@@ -577,7 +578,7 @@ class Assistant(FilteredAgent):
     async def get_weather(
         self,
         context: RunContext,
-        location: str = None
+        location: Optional[str] = None
     ) -> str:
         """
         Get weather for specified or default location.

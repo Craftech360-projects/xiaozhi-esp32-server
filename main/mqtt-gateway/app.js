@@ -1578,6 +1578,10 @@ class LiveKitBridge extends Emitter {
       );
 
       console.log(`🛑 [ABORT] Sent abort signal to LiveKit agent via data channel`);
+
+      // CRITICAL: Clear the audio playing flag immediately when abort is sent
+      this.isAudioPlaying = false;
+      console.log(`🎵 [ABORT-CLEAR] Cleared audio playing flag for device: ${this.macAddress}`);
     } catch (error) {
       console.error(`[LiveKitBridge] Failed to send abort signal:`, error);
       throw error;
@@ -3231,6 +3235,32 @@ class MQTTGateway {
         } else if (originalPayload.type === 'mode-change') {
           console.log(`🔘 [MODE-CHANGE] Processing mode change from internal/server-ingest: ${deviceId}`);
           this.handleDeviceModeChange(deviceId, enhancedPayload);
+        } else if (originalPayload.type === 'abort') {
+          // Special handling for abort messages - send to BOTH real and virtual devices
+          console.log(`🛑 [ABORT] Processing abort message from internal/server-ingest: ${deviceId}`);
+
+          let abortSent = false;
+
+          // Send abort to real ESP32 connection if exists
+          const realConnection = this.findRealDeviceConnection(deviceId);
+          if (realConnection) {
+            console.log(`🛑 [ABORT] Routing abort to real ESP32 device: ${deviceId}`);
+            realConnection.handlePublish({ payload: JSON.stringify(originalPayload) });
+            abortSent = true;
+          }
+
+          // ALSO send abort to virtual device connection if exists
+          const deviceInfo = this.deviceConnections.get(deviceId);
+          if (deviceInfo && deviceInfo.connection) {
+            console.log(`🛑 [ABORT] Routing abort to virtual device (LiveKit): ${deviceId}`);
+            // Forward abort to the virtual device's handlePublish
+            deviceInfo.connection.handlePublish({ payload: JSON.stringify(originalPayload) });
+            abortSent = true;
+          }
+
+          if (!abortSent) {
+            console.log(`⚠️ [ABORT] No connections found for device: ${deviceId}, abort cannot be processed`);
+          }
         } else {
           // ALWAYS check for real ESP32 connection FIRST (prioritize over virtual)
           const realConnection = this.findRealDeviceConnection(deviceId);

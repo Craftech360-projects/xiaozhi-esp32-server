@@ -340,14 +340,26 @@ class ChatEventHandler:
                         f"📝❌ Failed to capture user message for chat history: {e}")
             else:
                 if not user_text:
-                    logger.debug(
-                        f"📝⚠️ No user text found in event - available attributes: {[attr for attr in dir(ev) if not attr.startswith('_')]}")
+                    logger.warning(
+                        f"📝⚠️ Empty transcript detected - triggering clarification response")
                     # Also log the event dict for debugging
                     try:
                         event_dict = ev.dict() if hasattr(ev, 'dict') else {}
                         logger.debug(f"📝⚠️ Event dict: {event_dict}")
                     except Exception as e:
                         logger.debug(f"📝⚠️ Could not get event dict: {e}")
+
+                    # Generate a user-friendly clarification message
+                    clarification_messages = [
+                        "Sorry, I couldn't hear you properly. Could you please repeat that?",
+                        "I didn't catch that. Could you say it again?",
+                        "Sorry, I couldn't understand. Can you repeat what you said?",
+                        "I couldn't hear you clearly. Could you please try again?"
+                    ]
+                    import random
+                    clarification = random.choice(clarification_messages)
+                    logger.info(f"🔊 Asking for clarification: '{clarification}'")
+                    session.generate_reply(instructions=f"Say this exact message to the user: '{clarification}'. Do not add anything else, just say this message naturally.")
 
             payload = json.dumps({
                 "type": "user_input_transcribed",
