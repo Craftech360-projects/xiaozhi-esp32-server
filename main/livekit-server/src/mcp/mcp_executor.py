@@ -255,23 +255,15 @@ class LiveKitMCPExecutor:
                     charging = battery_data.get("charging", False)
                     state = battery_data.get("state", "unknown")
 
-                    # Build response message
-                    message = f"Battery is at {percentage}%"
-
-                    # Add charging status
+                    # Build response message - keep it simple and concise
                     if charging:
-                        message += " and charging"
-
-                    # Add voltage if available
-                    if voltage > 0:
-                        voltage_v = voltage / 1000
-                        message += f" ({voltage_v:.2f}V)"
-
-                    # Add state warning if low or critical
-                    if state == "low":
-                        message += ". Battery is low, please charge soon."
+                        message = f"Battery is at {percentage}% and charging"
                     elif state == "critical":
-                        message += ". Battery is critically low!"
+                        message = f"Battery is at {percentage}%, critically low"
+                    elif state == "low":
+                        message = f"Battery is at {percentage}%, running low"
+                    else:
+                        message = f"Battery is at {percentage}%"
 
                     logger.info(f"Returning battery status: {message}")
                     return message

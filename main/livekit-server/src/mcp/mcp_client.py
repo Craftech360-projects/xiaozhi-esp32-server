@@ -18,7 +18,7 @@ class LiveKitMCPClient:
         self.audio_player = None
         self.unified_audio_player = None
         self._response_futures: Dict[str, asyncio.Future] = {}
-        self._response_timeout = 5.0  # 5 seconds timeout for responses
+        self._response_timeout = 10.0  # 5 seconds timeout for responses
 
     def set_context(self, context, audio_player=None, unified_audio_player=None):
         """Set the agent context for sending data channel messages"""
