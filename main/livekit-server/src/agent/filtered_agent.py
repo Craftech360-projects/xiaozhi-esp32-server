@@ -100,7 +100,7 @@ class FilteredAgent(Agent):
                     continue
 
                 chunk_count += 1
-                logger.info(f"📝 LLM Output: {text_chunk}")
+                # logger.info(f"📝 LLM Output: {text_chunk}")
 
                 # 🆕 EMOTION DETECTION - Accumulate chunks until we find emoji or hit sentence boundary
                 if not emotion_sent:

@@ -349,7 +349,7 @@ async def entrypoint(ctx: JobContext):
         agent_prompt = agent_prompt.replace("<memory>", f"<memory>\n{memories}")
         logger.info(f"💭 Injected memories into prompt ({len(memories)} chars)")
 
-    logger.info(f"📋 Full Agent Prompt:\n{agent_prompt}")
+    # logger.info(f"📋 Full Agent Prompt:\n{agent_prompt}")
 
     # Get VAD first as it's needed for STT
     vad = ctx.proc.userdata["vad"]

@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 import pytz
 import random
+import inspect
 from livekit.agents import (
     Agent,
     RunContext,
@@ -90,6 +91,39 @@ class Assistant(FilteredAgent):
 
         # Session reference for dynamic updates
         self._agent_session = None
+
+        # Log registered function tools (for debugging)
+        logger.info("🔧 Assistant initialized, checking function tools...")
+        try:
+            # Log check_battery_level function signature specifically
+            if hasattr(self, 'check_battery_level'):
+                battery_func = getattr(self, 'check_battery_level')
+                sig = inspect.signature(battery_func)
+                logger.info(f"🔋 check_battery_level signature: {sig}")
+                logger.info(f"🔋 check_battery_level parameters: {sig.parameters}")
+                for param_name, param in sig.parameters.items():
+                    if param_name not in ['self', 'context']:
+                        logger.info(f"🔋   - {param_name}: default={param.default}, annotation={param.annotation}")
+                logger.info(f"🔋 check_battery_level return annotation: {sig.return_annotation}")
+                logger.info(f"🔋 check_battery_level docstring: {battery_func.__doc__}")
+
+            # Try to access function tools from the agent's internal attributes
+            if hasattr(self, '_function_tools'):
+                logger.info(f"🔧 Found {len(self._function_tools)} function tools")
+                for tool_name, tool in self._function_tools.items():
+                    logger.info(f"🔧   - {tool_name}: {tool}")
+                    if tool_name == 'check_battery_level':
+                        logger.info(f"🔋 DETAILED check_battery_level tool info: {dir(tool)}")
+                        if hasattr(tool, 'schema'):
+                            logger.info(f"🔋 check_battery_level schema: {tool.schema}")
+                        if hasattr(tool, 'parameters'):
+                            logger.info(f"🔋 check_battery_level parameters: {tool.parameters}")
+            else:
+                logger.info("🔧 No _function_tools attribute found")
+        except Exception as e:
+            logger.warning(f"🔧 Error inspecting function tools: {e}")
+            import traceback
+            logger.warning(f"🔧 Traceback: {traceback.format_exc()}")
 
 
 
@@ -839,19 +873,34 @@ class Assistant(FilteredAgent):
         return await self.mcp_executor.set_light_color(color)
 
     @function_tool
-    async def get_battery_status(self, context: RunContext):
-        """Get current battery percentage level
+    async def check_battery_level(self, context: RunContext, unused: str = ""):
+        """Check the device battery percentage.
+
+        Use this to find out how much battery charge remains on the device.
+        Call this function without any parameters.
+
+        Args:
+            unused: Internal parameter, leave empty or omit
 
         Returns:
-            Battery percentage status
+            str: Battery percentage status message
         """
+        logger.info("🔋 check_battery_level called")
+        logger.info(f"🔋 context type: {type(context)}")
+        logger.info(f"🔋 unused parameter received: '{unused}'")
+        logger.info(f"🔋 mcp_executor available: {self.mcp_executor is not None}")
+
         if not self.mcp_executor:
+            logger.warning("🔋 mcp_executor is not available")
             return "Battery status is not available right now."
 
         # Always set context for each call to ensure correct room access
         self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
+        logger.info("🔋 Context set on mcp_executor, calling get_battery_status")
 
-        return await self.mcp_executor.get_battery_status()
+        result = await self.mcp_executor.get_battery_status()
+        logger.info(f"🔋 check_battery_level result: {result}")
+        return result
     
     
     @function_tool

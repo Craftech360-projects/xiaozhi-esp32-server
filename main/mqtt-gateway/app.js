@@ -1398,6 +1398,41 @@ class LiveKitBridge extends Emitter {
     }
   }
 
+  // Forward MCP response to LiveKit agent
+  async forwardMcpResponse(mcpPayload, sessionId, requestId) {
+    console.log(`🔋 [MCP-FORWARD] Forwarding MCP response for device ${this.macAddress}`);
+
+    if (!this.room || !this.room.localParticipant) {
+      console.error(`❌ [MCP-FORWARD] No room available for device ${this.macAddress}`);
+      return false;
+    }
+
+    try {
+      const responseMessage = {
+        type: 'mcp',
+        payload: mcpPayload,
+        session_id: sessionId,
+        request_id: requestId,
+        timestamp: new Date().toISOString()
+      };
+
+      const messageString = JSON.stringify(responseMessage);
+      const messageData = new Uint8Array(Buffer.from(messageString, 'utf8'));
+
+      await this.room.localParticipant.publishData(
+        messageData,
+        { reliable: true }
+      );
+
+      console.log(`✅ [MCP-FORWARD] Successfully forwarded MCP response to LiveKit agent`);
+      console.log(`✅ [MCP-FORWARD] Request ID: ${requestId}`);
+      return true;
+    } catch (error) {
+      console.error(`❌ [MCP-FORWARD] Error forwarding MCP response:`, error);
+      return false;
+    }
+  }
+
   // Send LLM response to device
   sendLlmMessage(text) {
     if (!this.connection || !text) return;
@@ -2449,6 +2484,41 @@ class VirtualMQTTConnection {
     }
   }
 
+  // Forward MCP response to LiveKit agent
+  async forwardMcpResponse(mcpPayload, sessionId, requestId) {
+    console.log(`🔋 [MCP-FORWARD] Forwarding MCP response for device ${this.deviceId}`);
+
+    if (!this.bridge || !this.bridge.room || !this.bridge.room.localParticipant) {
+      console.error(`❌ [MCP-FORWARD] No LiveKit room available for device ${this.deviceId}`);
+      return false;
+    }
+
+    try {
+      const responseMessage = {
+        type: 'mcp',
+        payload: mcpPayload,
+        session_id: sessionId,
+        request_id: requestId,
+        timestamp: new Date().toISOString()
+      };
+
+      const messageString = JSON.stringify(responseMessage);
+      const messageData = new Uint8Array(Buffer.from(messageString, 'utf8'));
+
+      await this.bridge.room.localParticipant.publishData(
+        messageData,
+        { reliable: true }
+      );
+
+      console.log(`✅ [MCP-FORWARD] Successfully forwarded MCP response to LiveKit agent`);
+      console.log(`✅ [MCP-FORWARD] Request ID: ${requestId}`);
+      return true;
+    } catch (error) {
+      console.error(`❌ [MCP-FORWARD] Error forwarding MCP response:`, error);
+      return false;
+    }
+  }
+
   sendUdpMessage(payload, timestamp) {
     // Check if this is a mobile-initiated connection that needs routing to a physical toy
     if (!this.udp.remoteAddress && this.isMobileConnection && this.macAddress) {
@@ -3090,7 +3160,7 @@ class MQTTGateway {
     });
   }
 
-  handleMqttMessage(topic, message) {
+  async handleMqttMessage(topic, message) {
     // Add detailed logging for all incoming MQTT messages
     console.log(`📨 [MQTT IN] Received message on topic: ${topic}`);
     console.log(`📨 [MQTT IN] Message length: ${message.length} bytes`);
@@ -3134,6 +3204,26 @@ class MQTTGateway {
           username: 'extracted_from_emqx',
           password: 'extracted_from_emqx'
         };
+
+        // Handle MCP responses - forward to LiveKit agent
+        if (originalPayload.type === 'mcp' && originalPayload.payload && originalPayload.payload.result) {
+          console.log(`🔋 [MCP-RESPONSE] Processing MCP response from device ${deviceId}`);
+
+          // Find the device connection
+          const deviceInfo = this.deviceConnections.get(deviceId);
+          if (deviceInfo && deviceInfo.connection) {
+            const requestId = `req_${originalPayload.payload.id}`;
+
+            // Use the connection's method to forward the response
+            await deviceInfo.connection.forwardMcpResponse(
+              originalPayload.payload,
+              originalPayload.session_id,
+              requestId
+            );
+          } else {
+            console.warn(`⚠️ [MCP-RESPONSE] No connection found for device ${deviceId}, cannot forward response`);
+          }
+        }
 
         if (originalPayload.type === 'hello') {
           console.log(`👋 [HELLO] Processing hello message from internal/server-ingest: ${deviceId}`);

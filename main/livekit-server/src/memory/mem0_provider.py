@@ -82,7 +82,7 @@ class Mem0MemoryProvider:
                 output_format="v1.1"
             )
 
-            logger.debug(f"💭 Raw mem0 results: {results}")
+            # logger.debug(f"💭 Raw mem0 results: {results}")
 
             if not results or "results" not in results:
                 logger.info(f"💭 No memories found - results empty or invalid format")

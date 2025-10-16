@@ -176,6 +176,78 @@ class ChatEventHandler:
             logger.error(f"❌ [MOBILE] Traceback: {traceback.format_exc()}")
 
     @staticmethod
+    async def _handle_mcp_response(session, ctx, message):
+        """Handle MCP response from MQTT gateway and pass to MCP client"""
+        try:
+            logger.info(f"🔋 [MCP-RECEIVE] ====== MCP RESPONSE RECEIVED ======")
+            logger.info(f"🔋 [MCP-RECEIVE] Full message received: {message}")
+            logger.info(f"🔋 [MCP-RECEIVE] Message type: {type(message)}")
+            logger.info(f"🔋 [MCP-RECEIVE] Message keys: {list(message.keys()) if isinstance(message, dict) else 'N/A'}")
+
+            if not ChatEventHandler._assistant_instance:
+                logger.error("❌ [MCP] No assistant instance available")
+                return
+
+            assistant = ChatEventHandler._assistant_instance
+            logger.info(f"✅ [MCP] Assistant instance found: {type(assistant).__name__}")
+
+            # Check if assistant has MCP executor
+            if not hasattr(assistant, 'mcp_executor') or not assistant.mcp_executor:
+                logger.error("❌ [MCP] No MCP executor available in assistant")
+                return
+
+            logger.info(f"✅ [MCP] MCP executor found: {type(assistant.mcp_executor).__name__}")
+
+            # Get the MCP client from the executor
+            mcp_client = assistant.mcp_executor.mcp_client
+            logger.info(f"✅ [MCP] MCP client retrieved: {type(mcp_client).__name__}")
+
+            # Extract the response data
+            # The message structure from MQTT is: {"type": "mcp", "payload": {...}}
+            payload = message.get('payload', {})
+            logger.info(f"🔋 [MCP-PAYLOAD] Extracted payload: {payload}")
+            logger.info(f"🔋 [MCP-PAYLOAD] Payload type: {type(payload)}")
+
+            # Extract request_id from the message (if available)
+            request_id = message.get('request_id')
+            session_id = message.get('session_id')
+            logger.info(f"🔋 [MCP-IDS] Request ID: {request_id}")
+            logger.info(f"🔋 [MCP-IDS] Session ID: {session_id}")
+
+            # Check if payload has the expected structure
+            if payload and 'result' in payload:
+                logger.info(f"🔋 [MCP-RESULT] Payload contains 'result' key")
+                result = payload.get('result', {})
+                logger.info(f"🔋 [MCP-RESULT] Result: {result}")
+
+                if 'content' in result:
+                    content = result.get('content', [])
+                    logger.info(f"🔋 [MCP-CONTENT] Content array: {content}")
+                    if content and len(content) > 0:
+                        text_data = content[0].get('text', 'N/A')
+                        logger.info(f"🔋 [MCP-DATA] Actual battery data: {text_data}")
+
+            # Pass the response to the MCP client's handler
+            if request_id:
+                logger.info(f"✅ [MCP-FORWARD] Forwarding to mcp_client.handle_response()")
+                logger.info(f"✅ [MCP-FORWARD] Request ID: {request_id}")
+                logger.info(f"✅ [MCP-FORWARD] Payload being sent: {payload}")
+                mcp_client.handle_response(request_id, payload)
+                logger.info(f"✅ [MCP-FORWARD] handle_response() call completed")
+            else:
+                logger.warning("⚠️ [MCP] No request_id in MCP response, attempting fallback matching")
+                logger.warning(f"⚠️ [MCP] Trying to call handle_response with no request_id...")
+                mcp_client.handle_response(None, payload)
+                logger.info(f"✅ [MCP-FALLBACK] Fallback handle_response() call completed")
+
+            logger.info(f"🔋 [MCP-RECEIVE] ====== MCP RESPONSE PROCESSING COMPLETE ======")
+
+        except Exception as e:
+            logger.error(f"❌ [MCP] Error handling MCP response: {e}")
+            import traceback
+            logger.error(f"❌ [MCP] Traceback: {traceback.format_exc()}")
+
+    @staticmethod
     def setup_session_handlers(session, ctx):
         """Setup all event handlers for the agent session"""
 
@@ -289,14 +361,14 @@ class ChatEventHandler:
         try:
             @session.on("conversation_item_added")
             def _on_conversation_item_added(ev):
-                logger.info(f"💬 Conversation item added: {ev}")
+                # logger.info(f"💬 Conversation item added: {ev}")
                 try:
                     # Extract the conversation item
                     if hasattr(ev, 'item') and ev.item:
                         item = ev.item
-                        logger.debug(f"💬 Item type: {type(item)}")
-                        logger.debug(
-                            f"💬 Item attributes: {[attr for attr in dir(item) if not attr.startswith('_')]}")
+                        # logger.debug(f"💬 Item type: {type(item)}")
+                        # logger.debug(
+                        #     f"💬 Item attributes: {[attr for attr in dir(item) if not attr.startswith('_')]}")
 
                         # Get role and content
                         role = getattr(item, 'role', 'unknown')
@@ -619,6 +691,12 @@ class ChatEventHandler:
 
                     asyncio.create_task(ChatEventHandler._handle_function_call(
                         session, ctx, function_name, arguments))
+
+                # Handle MCP response from MQTT gateway
+                elif message.get('type') == 'mcp':
+                    logger.info("🔋 Processing MCP response from MQTT gateway")
+                    asyncio.create_task(ChatEventHandler._handle_mcp_response(
+                        session, ctx, message))
 
             except Exception as e:
                 logger.error(f"Error processing data channel message: {e}")
