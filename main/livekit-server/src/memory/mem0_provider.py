@@ -29,25 +29,29 @@ class Mem0MemoryProvider:
             logger.info(f"💭 Skipping mem0 save - insufficient messages ({len(messages)})")
             return None
 
-        # Convert to conversation text with proper role identification
-        conversation_text = ""
+        # Build messages list in the format mem0 expects
+        formatted_messages = []
 
-        # Add child name context if available to help mem0 identify the user correctly
+        # Add context message if child name is available
         if child_name:
-            conversation_text += f"[Context: The user's name is {child_name}, and Cheeko is the AI assistant]\n\n"
+            formatted_messages.append({
+                "role": "system",
+                "content": f"The user's name is {child_name}, and Cheeko is the AI assistant"
+            })
 
         for msg in messages:
             if msg.get('role') != 'system':
-                # Clearly label roles to prevent confusion
-                if msg.get('role') == 'user':
-                    role_label = f"Child ({child_name})" if child_name else "Child"
-                else:
-                    role_label = "Cheeko (AI Assistant)"
-
                 content = msg.get('content', '')
                 if isinstance(content, list):
                     content = ' '.join(str(item) for item in content)
-                conversation_text += f"{role_label}: {content}\n"
+
+                # Map role to standard format
+                role = 'user' if msg.get('role') == 'user' else 'assistant'
+
+                formatted_messages.append({
+                    "role": role,
+                    "content": content
+                })
 
         # Save to mem0 with v1.1 output format and metadata
         metadata = {}
@@ -56,7 +60,7 @@ class Mem0MemoryProvider:
             metadata["assistant_name"] = "Cheeko"
 
         result = self.client.add(
-            conversation_text,
+            formatted_messages,  # Pass list of messages instead of string
             user_id=self.role_id,
             metadata=metadata if metadata else None,
             output_format="v1.1"
