@@ -22,3 +22,5 @@ PyJWT
 mem0
 
 jinja2
+gtts
+pyttsx3
