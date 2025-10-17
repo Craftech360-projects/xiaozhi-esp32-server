@@ -107,7 +107,7 @@ class ProviderFactory:
             primary_provider = tts_config.get('provider', 'edge').lower()
             if primary_provider == 'edge':
                 providers.append(EdgeTTS(
-                    voice=tts_config.get('edge_voice', 'en-US-AvaNeural'),
+                    voice=tts_config.get('edge_voice', 'en-US-AnaNeural'),
                     rate=tts_config.get('edge_rate', '+0%'),
                     volume=tts_config.get('edge_volume', '+0%'),
                     pitch=tts_config.get('edge_pitch', '+0Hz'),
@@ -131,7 +131,7 @@ class ProviderFactory:
             # Fallback providers (in order of preference)
             if primary_provider != 'edge':
                 providers.append(EdgeTTS(
-                    voice=tts_config.get('edge_voice', 'en-US-AvaNeural'),
+                    voice=tts_config.get('edge_voice', 'en-US-AnaNeural'),
                     rate=tts_config.get('edge_rate', '+0%'),
                     volume=tts_config.get('edge_volume', '+0%'),
                     pitch=tts_config.get('edge_pitch', '+0Hz'),
@@ -157,7 +157,7 @@ class ProviderFactory:
                 )
             elif provider == 'edge':
                 return EdgeTTS(
-                    voice=tts_config.get('edge_voice', 'en-US-AvaNeural'),
+                    voice=tts_config.get('edge_voice', 'en-US-AnaNeural'),
                     rate=tts_config.get('edge_rate', '+0%'),
                     volume=tts_config.get('edge_volume', '+0%'),
                     pitch=tts_config.get('edge_pitch', '+0Hz'),
