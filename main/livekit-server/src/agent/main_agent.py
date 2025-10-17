@@ -753,7 +753,7 @@ class Assistant(FilteredAgent):
                         description = re.sub('<[^<]+?>', '', description).strip()
                     except:
                         pass  # Use as is if regex fails
-
+                #jsadkjha
                 news_items.append({
                     "title": title,
                     "description": description,
