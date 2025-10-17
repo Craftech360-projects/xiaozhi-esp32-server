@@ -332,8 +332,9 @@ jobs:
             echo "=== Testing ${SVC} ==="
             cd "$DIR"
 
-                            # Install dependencies from pyproject.toml (including dev dependencies)
-                            python3 -m pip install ".[dev]"
+            # Install dependencies from pyproject.toml (including dev dependencies)
+            python3 -m pip install ".[dev]"
+
             # Create test results directory
             mkdir -p test-results
 
@@ -674,7 +675,7 @@ jobs:
             fi
       - restore_cache:
           keys:
-            - python-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/requirements.txt" }}
+            - python-<< parameters.service_name >>-v2-{{ checksum "<< parameters.service_path >>/pyproject.toml" }}
       - run:
           name: Package Python app
           command: |
@@ -682,11 +683,9 @@ jobs:
             DIR="<< parameters.service_path >>"
             cd "$DIR"
 
-            # Remove .python-version to use system Python
-            rm -f .python-version
-            if [ -f requirements.txt ]; then
-              pip install -r requirements.txt
-            fi
+            # Install dependencies from pyproject.toml
+            python3 -m pip install .
+            
             cd ..
             mkdir -p /tmp/workspace
             tar -czf "/tmp/workspace/${SVC}.tar.gz" -C "." "$(basename "$DIR")"
@@ -694,14 +693,14 @@ jobs:
       - save_cache:
           paths:
             - ~/.cache/pip
-          key: python-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/requirements.txt" }}
+          key: python-<< parameters.service_name >>-v2-{{ checksum "<< parameters.service_path >>/pyproject.toml" }}
       - persist_to_workspace:
           root: /tmp/workspace
           paths:
             - << parameters.service_name >>.tar.gz
 
   # Deploy Java service with PM2
-    deploy_java_pm2_azure:
+  deploy_java_pm2_azure:
       parameters:
         service_name: { type: string }
         env: { type: string, default: "staging" }
