@@ -3,9 +3,9 @@ python-dotenv
 pydub
 aiohttp
 
-# Local AI Models (for offline operation)
-faster-whisper  # Local STT using Whisper
-TTS  # Coqui TTS for local text-to-speech
+# # Local AI Models (for offline operation)
+# faster-whisper  # Local STT using Whisper
+# TTS  # Coqui TTS for local text-to-speech
 
 # Optional dependencies for enhanced semantic search
 qdrant-client
