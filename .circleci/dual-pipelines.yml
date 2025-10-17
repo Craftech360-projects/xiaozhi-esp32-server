@@ -155,7 +155,7 @@ jobs:
       - checkout
       - add_ssh_keys:
           fingerprints:
-            - "SHA256:VlAMfJstRWT1o3ZLc7LT00HxvqwqVsAR+F5X1ZSaXh0"
+            - "SHA256:yOFaQhaMF3+XYAcEjYL/BwibjpbAPUubeCj7b/ezBXU"
       - run:
           name: Deploy to test environment using Azure credentials
           command: |
@@ -258,7 +258,7 @@ jobs:
           at: /tmp/workspace
       - add_ssh_keys:
           fingerprints:
-            - "SHA256:VlAMfJstRWT1o3ZLc7LT00HxvqwqVsAR+F5X1ZSaXh0"
+            - "SHA256:yOFaQhaMF3+XYAcEjYL/BwibjpbAPUubeCj7b/ezBXU"
       - run:
           name: Deploy to Azure VM with PM2
           command: |
@@ -338,7 +338,7 @@ workflows:
   # ==========================================
   production-workflow:
     when:
-      equal: [ dev, << pipeline.git.branch >> ]
+      equal: [dev, << pipeline.git.branch >>]
     jobs:
       - prod_pipeline_notification:
           name: "[PROD] 🚀 Pipeline Notification"

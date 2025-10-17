@@ -611,7 +611,7 @@ jobs:
           at: /tmp/workspace
       - add_ssh_keys:
           fingerprints:
-            - "SHA256:VlAMfJstRWT1o3ZLc7LT00HxvqwqVsAR+F5X1ZSaXh0" # Azure VM key
+            - "SHA256:yOFaQhaMF3+XYAcEjYL/BwibjpbAPUubeCj7b/ezBXU" # Azure VM key
       - run:
           name: Skip deploy if artifact missing
           command: |
@@ -839,7 +839,7 @@ jobs:
           at: /tmp/workspace
       - add_ssh_keys:
           fingerprints:
-            - "SHA256:VlAMfJstRWT1o3ZLc7LT00HxvqwqVsAR+F5X1ZSaXh0" # Azure VM key
+            - "SHA256:yOFaQhaMF3+XYAcEjYL/BwibjpbAPUubeCj7b/ezBXU" # Azure VM key
       - run:
           name: Skip deploy if artifact missing
           command: |
@@ -1148,7 +1148,7 @@ jobs:
           at: /tmp/workspace
       - add_ssh_keys:
           fingerprints:
-            - "SHA256:VlAMfJstRWT1o3ZLc7LT00HxvqwqVsAR+F5X1ZSaXh0" # Azure VM key
+            - "SHA256:yOFaQhaMF3+XYAcEjYL/BwibjpbAPUubeCj7b/ezBXU" # Azure VM key
       - run:
           name: Skip deploy if artifact missing
           command: |
@@ -1362,7 +1362,7 @@ jobs:
           at: /tmp/workspace
       - add_ssh_keys:
           fingerprints:
-            - "SHA256:VlAMfJstRWT1o3ZLc7LT00HxvqwqVsAR+F5X1ZSaXh0" # Azure VM key
+            - "SHA256:yOFaQhaMF3+XYAcEjYL/BwibjpbAPUubeCj7b/ezBXU" # Azure VM key
       - run:
           name: Skip deploy if artifact missing
           command: |
@@ -1509,7 +1509,7 @@ jobs:
           at: /tmp/workspace
       - add_ssh_keys:
           fingerprints:
-            - "SHA256:VlAMfJstRWT1o3ZLc7LT00HxvqwqVsAR+F5X1ZSaXh0" # Azure VM key
+            - "SHA256:yOFaQhaMF3+XYAcEjYL/BwibjpbAPUubeCj7b/ezBXU" # Azure VM key
       - run:
           name: Skip deploy if artifact missing
           command: |
@@ -1708,7 +1708,7 @@ workflows:
   # ==========================================
   prod-pipeline-xiaozhi-deployment:
     when:
-      equal: [ dev, << pipeline.git.branch >> ]
+      equal: [dev, << pipeline.git.branch >>]
     jobs:
       # ==========================================
       # PHASE 0: PIPELINE IDENTIFICATION
