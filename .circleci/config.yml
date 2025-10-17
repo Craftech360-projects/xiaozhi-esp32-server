@@ -757,18 +757,18 @@ jobs:
               # Start the application using PM2
               echo '--- Starting application with PM2 ---'
               
-              # Create PM2 ecosystem file using a here document for reliability
-              cat <<EOF > ecosystem.config.js
-module.exports = {
-  apps: [{
-    name: "${SVC}",
-    script: "mvn",
-    args: "spring-boot:run -Dspring-boot.run.arguments=--spring.profiles.active=${ENV_NAME}",
-    interpreter: "none",
-    cwd: "${SERVICE_DIR}"
-  }]
-};
-EOF
+              # Create PM2 ecosystem file line-by-line to avoid YAML parsing issues
+              ( 
+                echo "module.exports = {"
+                echo "  apps: [{"
+                echo "    name: \"${SVC}\","
+                echo "    script: \"mvn\","
+                echo "    args: \"spring-boot:run -Dspring-boot.run.arguments=--spring.profiles.active=${ENV_NAME}\","
+                echo "    interpreter: \"none\","
+                echo "    cwd: \"${SERVICE_DIR}\""
+                echo "  }]"
+                echo "};"
+              ) > ecosystem.config.js
 
               pm2 delete ${SVC} || true
               pm2 start ecosystem.config.js
