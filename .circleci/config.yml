@@ -332,12 +332,8 @@ jobs:
             echo "=== Testing ${SVC} ==="
             cd "$DIR"
 
-            # Install dependencies including pytest
-            if [ -f requirements.txt ]; then
-              pip install -r requirements.txt
-            fi
-            pip install pytest pytest-cov
-
+                            # Install dependencies from pyproject.toml (including dev dependencies)
+                            python3 -m pip install ".[dev]"
             # Create test results directory
             mkdir -p test-results
 
@@ -532,26 +528,30 @@ jobs:
             # Upload and deploy
             scp -o StrictHostKeyChecking=no "/tmp/workspace/${SVC}.tar.gz" "${AZURE_USER}@${AZURE_HOST}:/tmp/"
 
-            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
-              mkdir -p ${AZURE_DEPLOY_PATH}/main
-              cd ${AZURE_DEPLOY_PATH}/main
-              tar -xzf /tmp/${SVC}.tar.gz
-              cd ${SVC}
-
-              # Install PM2 if needed
-              if ! command -v pm2 >/dev/null 2>&1; then
-                curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-                sudo apt-get install -y nodejs
-                sudo npm install -g pm2
-              fi
-
-              npm ci --omit=dev --no-audit --no-fund
-              pm2 delete ${SVC} || true
-              pm2 start << parameters.entry_file >> --name ${SVC} --env ${ENV_NAME}
-              pm2 save
-              echo \"✅ ${SVC} deployed successfully\"
-            "
-
+                          ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
+                            set -e
+                            
+                            mkdir -p ${AZURE_DEPLOY_PATH}/main
+                            cd ${AZURE_DEPLOY_PATH}/main
+                            tar -xzf /tmp/${SVC}.tar.gz
+                            cd ${SVC}
+            
+                            # Install PM2 if needed
+                            if ! command -v pm2 >/dev/null 2>&1; then
+                              curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+                              sudo apt-get install -y nodejs
+                              sudo npm install -g pm2
+                            fi
+            
+                            echo '--- Installing Node.js dependencies ---'
+                            npm install --omit=dev --no-audit --no-fund
+                            echo '--- Dependencies installed successfully ---'
+            
+                            pm2 delete ${SVC} || true
+                            pm2 start << parameters.entry_file >> --name ${SVC} --env ${ENV_NAME}
+                            pm2 save
+                            echo \"✅ ${SVC} deployed successfully\"
+                          "
   # Build Java services
   build_java_service:
     parameters:
@@ -701,69 +701,71 @@ jobs:
             - << parameters.service_name >>.tar.gz
 
   # Deploy Java service with PM2
-  deploy_java_pm2_azure:
-    parameters:
-      service_name: { type: string }
-      env: { type: string, default: "staging" }
-      http_port: { type: integer, default: 8002 }
-    executor: node-executor
-    steps:
-      - attach_workspace:
-          at: /tmp/workspace
-      - add_ssh_keys:
-          fingerprints:
-            - "SHA256:yOFaQhaMF3+XYAcEjYL/BwibjpbAPUubeCj7b/ezBXU"
-      - run:
-          name: Deploy Java service to Azure with PM2
-          command: |
-            SVC="<< parameters.service_name >>"
-            ENV_NAME="<< parameters.env >>"
-            HTTP_PORT="<< parameters.http_port >>"
-
-            : "${AZURE_HOST:?Set AZURE_HOST in CircleCI context}"
-            : "${AZURE_USER:?Set AZURE_USER in CircleCI context}"
-            : "${AZURE_DEPLOY_PATH:?Set AZURE_DEPLOY_PATH in CircleCI context}"
-
-            echo "🚀 Deploying ${SVC} JAR to Azure VM"
-
-            # Upload JAR
-            scp -o StrictHostKeyChecking=no "/tmp/workspace/${SVC}.jar" "${AZURE_USER}@${AZURE_HOST}:${AZURE_DEPLOY_PATH}/main/${SVC}/app.jar"
-
-            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
-              mkdir -p ${AZURE_DEPLOY_PATH}/main/${SVC}
-              cd ${AZURE_DEPLOY_PATH}/main/${SVC}
-
-              # Install Java and PM2
-              if ! java -version 2>&1 | grep -q '17\.'; then
+    deploy_java_pm2_azure:
+      parameters:
+        service_name: { type: string }
+        env: { type: string, default: "staging" }
+        http_port: { type: integer, default: 8002 }
+      executor: node-executor # This executor has node for pm2, but we'll install other deps on the VM
+      steps:
+        - checkout # We need checkout to have access to the repo URL
+        - add_ssh_keys:
+            fingerprints:
+              - "SHA256:yOFaQhaMF3+XYAcEjYL/BwibjpbAPUubeCj7b/ezBXU"
+        - run:
+            name: Deploy Java service from source with Maven
+            command: |
+              SVC="<< parameters.service_name >>"
+              ENV_NAME="<< parameters.env >>"
+              # Using CircleCI's built-in variable for the repo URL
+              REPO_URL="$CIRCLE_REPOSITORY_URL"
+  
+              : "${AZURE_HOST:?Set AZURE_HOST in CircleCI context}"
+              : "${AZURE_USER:?Set AZURE_USER in CircleCI context}"
+              : "${AZURE_DEPLOY_PATH:?Set AZURE_DEPLOY_PATH in CircleCI context}"
+  
+              echo "🚀 Deploying ${SVC} from source to Azure VM using Maven"
+  
+              ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
+                # Ensure dependencies are installed on the VM
+                echo '--- Installing dependencies (git, maven, java, nodejs) ---'
                 sudo apt-get update -y
-                sudo apt-get install -y openjdk-17-jre-headless
-                export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-              fi
-
-              if ! command -v pm2 >/dev/null 2>&1; then
-                curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-                sudo apt-get install -y nodejs
-                sudo npm install -g pm2
-              fi
-
-              # Create PM2 ecosystem
-              echo 'module.exports = {
-                apps: [{
-                  name: \"${SVC}\",
-                  script: \"/usr/lib/jvm/java-17-openjdk-amd64/bin/java\",
-                  args: [\"-jar\", \"app.jar\"],
-                  cwd: \"${AZURE_DEPLOY_PATH}/main/${SVC}\",
-                  env: { SPRING_PROFILES_ACTIVE: \"${ENV_NAME}\", SERVER_PORT: \"${HTTP_PORT}\" },
-                  autorestart: true
-                }]
-              };' > ecosystem.config.js
-
-              pm2 delete ${SVC} || true
-              pm2 start ecosystem.config.js
-              pm2 save
-              echo \"✅ ${SVC} deployed successfully\"
-            "
-
+                sudo apt-get install -y git maven openjdk-17-jre-headless nodejs
+  
+                # Install PM2 if not present
+                if ! command -v pm2 >/dev/null 2>&1; then
+                  sudo npm install -g pm2
+                fi
+  
+                PROJECT_ROOT_DIR=\\"${AZURE_DEPLOY_PATH}/xiaozhi-esp32-server\\"
+                SERVICE_DIR=\\"\\\${PROJECT_ROOT_DIR}/main/${SVC}\\"
+  
+                # Clone or update the source code on the VM
+                echo '--- Cloning or updating source code ---'
+                if [ -d \\"\${PROJECT_ROOT_DIR}/.git\\" ]; then
+                  echo 'Repository exists, pulling latest changes...'
+                  cd \\"\${PROJECT_ROOT_DIR}\\"
+                  git pull
+                else
+                  echo 'Cloning new repository...'
+                  # This command requires that your VM has an SSH key with read access to your Git repository.
+                  git clone \\"\${REPO_URL}\\" \\"\${PROJECT_ROOT_DIR}\\"
+                fi
+  
+                # Navigate to the service directory
+                cd \\"\${SERVICE_DIR}\\"
+  
+                # Start the application using PM2
+                echo '--- Starting application with PM2 ---'
+                pm2 delete ${SVC} || true
+                
+                # Use PM2 to run the mvn spring-boot:run command
+                # The '--' separates pm2 arguments from script arguments
+                pm2 start mvn --name \\"${SVC}\\" -- spring-boot:run -Dspring-boot.run.arguments=--spring.profiles.active=${ENV_NAME}
+                
+                pm2 save
+                echo \\"✅ ${SVC} deployed successfully from source\\"
+              " 
   # Deploy Vue.js frontend with PM2
   deploy_vue_pm2_azure:
     parameters:
@@ -861,12 +863,10 @@ jobs:
                 sudo npm install -g pm2
               fi
 
-              # Create virtual environment and install dependencies
+              # Create virtual environment and install dependencies from pyproject.toml
               python3 -m venv venv
               source venv/bin/activate
-              if [ -f requirements.txt ]; then
-                pip install -r requirements.txt
-              fi
+              pip install .
 
               # Create PM2 ecosystem
               echo 'module.exports = {
