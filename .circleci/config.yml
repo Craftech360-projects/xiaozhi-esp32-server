@@ -847,15 +847,25 @@ jobs:
             : "${AZURE_USER:?Set AZURE_USER in CircleCI context}"
             : "${AZURE_DEPLOY_PATH:?Set AZURE_DEPLOY_PATH in CircleCI context}"
 
+            # Get repository URL and ensure it's in SSH format
+            if [ -z "$CIRCLE_REPOSITORY_URL" ]; then
+              echo "Error: CIRCLE_REPOSITORY_URL is not set"
+              exit 1
+            fi
+
             # Convert HTTPS URL to SSH URL if needed
-            if [[ $REPO_URL == https://github.com/* ]]; then
-              REPO_URL="git@github.com:${REPO_URL#https://github.com/}"
+            if [[ $CIRCLE_REPOSITORY_URL == https://github.com/* ]]; then
+              REPO_URL="git@github.com:${CIRCLE_REPOSITORY_URL#https://github.com/}"
+            else
+              REPO_URL="$CIRCLE_REPOSITORY_URL"
             fi
 
             echo "🚀 Deploying ${SVC} from source to Azure VM using Maven"
             echo "Repository URL: ${REPO_URL}"
 
-            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
+            # Pass the repository URL as an environment variable to the SSH command
+            export REPO_URL
+            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "export REPO_URL='${REPO_URL}'; bash -s" << 'ENDSSH'
               set -e
               
               # Ensure dependencies are installed on the VM
@@ -868,20 +878,24 @@ jobs:
                 sudo npm install -g pm2
               fi
 
-              PROJECT_ROOT_DIR=\"${AZURE_DEPLOY_PATH}/xiaozhi-esp32-server\"
-              SERVICE_DIR=\"\${PROJECT_ROOT_DIR}/main/${SVC}\"
+              PROJECT_ROOT_DIR="${AZURE_DEPLOY_PATH}/xiaozhi-esp32-server"
+              SERVICE_DIR="${PROJECT_ROOT_DIR}/main/${SVC}"
+
+              # Debug: Show repository URL
+              echo "Using repository URL: ${REPO_URL}"
 
               # Clone or update the source code on the VM
               echo '--- Cloning or updating source code ---'
-              if [ -d \"\${PROJECT_ROOT_DIR}/.git\" ]; then
+              if [ -d "${PROJECT_ROOT_DIR}/.git" ]; then
                 echo 'Repository exists, pulling latest changes...'
-                cd \"\${PROJECT_ROOT_DIR}\"
+                cd "${PROJECT_ROOT_DIR}"
                 git pull
               else
                 echo 'Cloning new repository...'
                 # Clone using the repository URL
-                git clone \"${REPO_URL}\" \"\${PROJECT_ROOT_DIR}\"
+                git clone "${REPO_URL}" "${PROJECT_ROOT_DIR}"
               fi
+ENDSSH
 
               # Navigate to the service directory
               cd \"\${SERVICE_DIR}\"
