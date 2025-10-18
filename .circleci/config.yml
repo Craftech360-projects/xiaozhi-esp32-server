@@ -52,6 +52,9 @@ jobs:
     executor: base-executor
     parameters:
       env: { type: string, default: "staging" }
+      mqtt_port: { type: integer, default: 1883 }
+      mqtt_ws_port: { type: integer, default: 8083 }
+      http_port: { type: integer, default: 18083 }
     steps:
       - add_ssh_keys:
           fingerprints:
@@ -84,11 +87,11 @@ jobs:
               # Pull and run EMQX container
               docker run -d --name xiaozhi-emqx \\
                 --restart unless-stopped \\
-                -p 1883:1883 \\
+                -p << parameters.mqtt_port >>:1883 \\
                 -p 8883:8883 \\
-                -p 8083:8083 \\
+                -p << parameters.mqtt_ws_port >>:8083 \\
                 -p 8084:8084 \\
-                -p 18083:18083 \\
+                -p << parameters.http_port >>:18083 \\
                 -v ${AZURE_DEPLOY_PATH}/emqx/data:/opt/emqx/data \\
                 -v ${AZURE_DEPLOY_PATH}/emqx/log:/opt/emqx/log \\
                 -e EMQX_NAME=emqx \\
