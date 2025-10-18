@@ -699,6 +699,23 @@ jobs:
               npm install --omit=dev --no-audit --no-fund
               echo '--- Dependencies installed successfully ---'
 
+              # Create .env file for MQTT gateway (fixes UDP port binding issue)
+              if [ \"${SVC}\" = \"mqtt-gateway\" ]; then
+                echo '--- Creating .env file for MQTT gateway ---'
+                cat > .env <<'ENV_EOF'
+# MQTT Gateway Configuration
+UDP_PORT=8884
+PUBLIC_IP=20.15.253.121
+MQTT_SIGNATURE_KEY=test-signature-key-12345
+
+# EMQX Broker Configuration
+EMQX_HOST=192.168.1.166
+EMQX_PORT=${MQTT_PORT}
+EMQX_PROTOCOL=mqtt
+ENV_EOF
+                echo '.env file created with UDP_PORT=8884'
+              fi
+
               # Create PM2 ecosystem file
               CONFIG_CONTENT=\"module.exports = {
                 apps: [{
@@ -929,9 +946,15 @@ jobs:
               set -e
 
               # Ensure dependencies are installed on the VM
-              echo '--- Installing dependencies (git, maven, java, nodejs) ---'
+              echo '--- Installing dependencies (git, maven, java, nodejs, redis) ---'
               sudo apt-get update -y
-              sudo apt-get install -y git maven openjdk-17-jdk nodejs
+              sudo apt-get install -y git maven openjdk-17-jdk nodejs redis-server
+
+              # Start and enable Redis service
+              echo '--- Starting Redis server ---'
+              sudo systemctl start redis-server || true
+              sudo systemctl enable redis-server || true
+              redis-cli ping || echo 'Redis may not be fully started yet'
 
               # Set JAVA_HOME globally for the session
               export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64

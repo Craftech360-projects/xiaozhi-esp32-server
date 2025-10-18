@@ -58,6 +58,7 @@ spring:
   data:
     redis:
       # Local Azure Redis (same as Azure VM configuration)
+      url: redis://default:HUWlOebkEFahegpfkksWJSTuOBuSfEaT@hopper.proxy.rlwy.net:36680
       host: maglev.proxy.rlwy.net
       port: 36680
       password: HUWlOebkEFahegpfkksWJSTuOBuSfEaT
