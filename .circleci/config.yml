@@ -1330,7 +1330,7 @@ workflows:
       # ==========================================
 
       # Deploy EMQX Broker first as it's required by MQTT Gateway
-      - deploy_emqx_service:
+      - deploy_emqx_docker:
           name: "[DEV] 🔧 Deploy EMQX Broker"
           context: "azure-mqtt-gateway"
           env: "development"
@@ -1474,7 +1474,7 @@ workflows:
             - "[PROD] 🚀 Test LiveKit Server"
 
       # Deploy EMQX first
-      - deploy_emqx_service:
+      - deploy_emqx_docker:
           name: "[PROD] 🚀 Deploy EMQX Broker"
           context: "azure-mqtt-gateway"
           env: "production"
