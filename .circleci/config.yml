@@ -110,11 +110,15 @@ jobs:
                 -p 8084:8084 \\
                 -p << parameters.http_port >>:18083 \\
                 -v ${AZURE_DEPLOY_PATH}/emqx/data:/opt/emqx/data \\
-                -v ${AZURE_DEPLOY_PATH}/emqx/log:/opt/emqx/log \\
-                -e EMQX_NAME=emqx \\
-                -e EMQX_HOST=127.0.0.1 \\
-                -e EMQX_DASHBOARD__DEFAULT_USERNAME=admin \\
-                -e EMQX_DASHBOARD__DEFAULT_PASSWORD=public \\
+                -v ${AZURE_DEPLOY_PATH}/emqx/log:/opt/emqx/log \
+                -e EMQX_NODE_NAME=emqx@xiaozhi-emqx \
+                -e EMQX_NODE__NAME=emqx@xiaozhi-emqx \
+                -e EMQX_NODE__COOKIE=xiaozhi_secret_cookie \
+                -e EMQX_CLUSTER__DISCOVERY_STRATEGY=manual \
+                -e EMQX_ALLOW_ANONYMOUS=true \
+                -e EMQX_DASHBOARD__DEFAULT_USERNAME=admin \
+                -e EMQX_DASHBOARD__DEFAULT_PASSWORD=public \
+                --hostname xiaozhi-emqx \
                 emqx/emqx:5.8.3
 
               # Wait for EMQX to be ready
@@ -1285,18 +1289,6 @@ workflows:
                 - circleci-validation
 
       # ==========================================
-      # DEPLOY EMQX: Deploy EMQX container first
-      # ==========================================
-      - deploy_emqx_docker:
-          name: "[DEV] 🔧 Deploy EMQX"
-          context: "azure-mqtt-gateway"
-          env: "development"
-          requires: ["[DEV] 🔧 Code Quality"]
-          filters:
-            branches:
-              only: dev
-
-      # ==========================================
       # BUILD PHASE: All 4 services build in parallel (after tests pass)
       # Runs on dev branch AND circleci-validation branch
       # ==========================================
@@ -1349,17 +1341,6 @@ workflows:
       # ONLY runs on dev branch (NOT on circleci-validation for safety)
       # ==========================================
 
-      # Deploy EMQX Broker first as it's required by MQTT Gateway
-      - deploy_emqx_docker:
-          name: "[DEV] 🔧 Deploy EMQX Broker"
-          context: "azure-mqtt-gateway"
-          env: "development"
-          mqtt_port: 1883
-          mqtt_ws_port: 8083
-          http_port: 18083
-          filters:
-            branches:
-              only: dev
       - deploy_node_pm2_azure:
           name: "[DEV] 🔧 Deploy MQTT Gateway"
           context: "azure-mqtt-gateway"
