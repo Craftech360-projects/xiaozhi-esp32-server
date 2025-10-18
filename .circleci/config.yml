@@ -1217,16 +1217,17 @@ jobs:
                 deactivate
               fi
 
-              # Create PM2 ecosystem file
+              # Create PM2 ecosystem file - livekit needs 'dev' command
               printf '%s\n' \"module.exports = {\" > ecosystem.config.js
               printf '%s\n' \"  apps: [{\" >> ecosystem.config.js
               printf '%s\n' \"    name: '${SVC}',\" >> ecosystem.config.js
               printf '%s\n' \"    script: '${AZURE_DEPLOY_PATH}/main/${SVC}/venv/bin/python',\" >> ecosystem.config.js
-              printf '%s\n' \"    args: ['${ENTRY}', '${ENV_NAME}'],\" >> ecosystem.config.js
+              printf '%s\n' \"    args: '${ENTRY} dev',\" >> ecosystem.config.js
               printf '%s\n' \"    cwd: '${AZURE_DEPLOY_PATH}/main/${SVC}',\" >> ecosystem.config.js
               printf '%s\n' \"    env: {\" >> ecosystem.config.js
               printf '%s\n' \"      HTTP_PORT: '${HTTP_PORT}',\" >> ecosystem.config.js
-              printf '%s\n' \"      NODE_ENV: '${ENV_NAME}'\" >> ecosystem.config.js
+              printf '%s\n' \"      NODE_ENV: '${ENV_NAME}',\" >> ecosystem.config.js
+              printf '%s\n' \"      ENVIRONMENT: '${ENV_NAME}'\" >> ecosystem.config.js
               printf '%s\n' \"    },\" >> ecosystem.config.js
               printf '%s\n' \"    autorestart: true\" >> ecosystem.config.js
               printf '%s\n' \"  }]\" >> ecosystem.config.js
