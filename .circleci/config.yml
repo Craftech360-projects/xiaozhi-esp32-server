@@ -650,25 +650,25 @@ jobs:
 
               # Create PM2 ecosystem file
               cat > ecosystem.config.js << 'EOL'
-module.exports = {
-  apps: [{
-    name: "${SVC}",
-    script: "node",
-    args: "app.js",
-    cwd: "${AZURE_DEPLOY_PATH}/main/${SVC}",
-    env: {
-      NODE_ENV: "${ENV_NAME}",
-      HTTP_PORT: "${HTTP_PORT}",
-      MQTT_PORT: "${MQTT_PORT}"
-    }
-  }]
-};
+              module.exports = {
+                apps: [{
+                  name: "${SVC}",
+                  script: "node",
+                  args: "app.js",
+                  cwd: "${AZURE_DEPLOY_PATH}/main/${SVC}",
+                  env: {
+                    NODE_ENV: "${ENV_NAME}",
+                    HTTP_PORT: "${HTTP_PORT}",
+                    MQTT_PORT: "${MQTT_PORT}"
+                  }
+                }]
+              };
 EOL
 
               # Debug: Show ecosystem file content
               echo \"Generated ecosystem.config.js content:\"
               cat ecosystem.config.js
-                            
+              
               # Start the application with PM2
               echo \"Starting application with PM2...\"
               pm2 delete \"${SVC}\" || true
@@ -678,13 +678,6 @@ EOL
               pm2 show \"${SVC}\"
               
               echo \"✅ ${SVC} deployed successfully\"
-'"
-                            pm2 save
-
-                            pm2 delete ${SVC} || true
-                            pm2 start << parameters.entry_file >> --name ${SVC} --env ${ENV_NAME}
-                            pm2 save
-                            echo \"✅ ${SVC} deployed successfully\"
                           "
   # Build Java services
   build_java_service:
@@ -904,15 +897,15 @@ ENDSSH
               
               # Create PM2 ecosystem file
               cat > ecosystem.config.js << 'EOL'
-module.exports = {
-  apps: [{
-    name: "${SVC}",
-    script: "mvn",
-    args: "spring-boot:run -Dspring-boot.run.arguments=--spring.profiles.active=${ENV_NAME}",
-    interpreter: "none",
-    cwd: "${SERVICE_DIR}"
-  }]
-};
+              module.exports = {
+                apps: [{
+                  name: "${SVC}",
+                  script: "mvn",
+                  args: "spring-boot:run -Dspring-boot.run.arguments=--spring.profiles.active=${ENV_NAME}",
+                  interpreter: "none",
+                  cwd: "${SERVICE_DIR}"
+                }]
+              };
 EOL
               
               pm2 delete ${SVC} || true
@@ -1040,19 +1033,19 @@ EOL
 
               # Create PM2 ecosystem file
               cat > ecosystem.config.js << 'EOL'
-module.exports = {
-  apps: [{
-    name: "${SVC}",
-    script: "${AZURE_DEPLOY_PATH}/main/${SVC}/venv/bin/python",
-    args: ["${ENTRY}", "${ENV_NAME}"],
-    cwd: "${AZURE_DEPLOY_PATH}/main/${SVC}",
-    env: {
-      HTTP_PORT: "${HTTP_PORT}",
-      NODE_ENV: "${ENV_NAME}"
-    },
-    autorestart: true
-  }]
-};
+              module.exports = {
+                apps: [{
+                  name: "${SVC}",
+                  script: "${AZURE_DEPLOY_PATH}/main/${SVC}/venv/bin/python",
+                  args: ["${ENTRY}", "${ENV_NAME}"],
+                  cwd: "${AZURE_DEPLOY_PATH}/main/${SVC}",
+                  env: {
+                    HTTP_PORT: "${HTTP_PORT}",
+                    NODE_ENV: "${ENV_NAME}"
+                  },
+                  autorestart: true
+                }]
+              };
 EOL
               
               # Verify the file content
