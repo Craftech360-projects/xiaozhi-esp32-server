@@ -88,8 +88,20 @@ jobs:
               ls -la ${AZURE_DEPLOY_PATH}/emqx
 
               # Stop and remove existing container if it exists
-              docker stop xiaozhi-emqx 2>/dev/null || true
-              docker rm xiaozhi-emqx 2>/dev/null || true
+              echo 'Cleaning up existing EMQX container...'
+              if docker ps -a --format '{{.Names}}' | grep -q '^xiaozhi-emqx$'; then
+                echo 'Found existing container, stopping and removing...'
+                docker stop xiaozhi-emqx || true
+                docker rm -f xiaozhi-emqx || true
+                # Double check if container is really removed
+                if docker ps -a --format '{{.Names}}' | grep -q '^xiaozhi-emqx$'; then
+                  echo 'Forcing container removal...'
+                  docker rm -f xiaozhi-emqx || {
+                    echo 'Failed to remove container, trying with sudo...'
+                    sudo docker rm -f xiaozhi-emqx
+                  }
+                fi
+              fi
 
               # Pull EMQX image first
               echo 'Pulling EMQX image...'
@@ -835,11 +847,19 @@ jobs:
             : "${AZURE_USER:?Set AZURE_USER in CircleCI context}"
             : "${AZURE_DEPLOY_PATH:?Set AZURE_DEPLOY_PATH in CircleCI context}"
 
-            echo "🚀 Deploying ${SVC} from source to Azure VM using Maven"
+            # Convert HTTPS URL to SSH URL if needed
+            if [[ $REPO_URL == https://github.com/* ]]; then
+              REPO_URL="git@github.com:${REPO_URL#https://github.com/}"
+            fi
 
-                          ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
-                            set -e
-                            # Ensure dependencies are installed on the VM              echo '--- Installing dependencies (git, maven, java, nodejs) ---'
+            echo "🚀 Deploying ${SVC} from source to Azure VM using Maven"
+            echo "Repository URL: ${REPO_URL}"
+
+            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
+              set -e
+              
+              # Ensure dependencies are installed on the VM
+              echo '--- Installing dependencies (git, maven, java, nodejs) ---'
               sudo apt-get update -y
               sudo apt-get install -y git maven openjdk-17-jre-headless nodejs
 
@@ -859,8 +879,8 @@ jobs:
                 git pull
               else
                 echo 'Cloning new repository...'
-                # This command requires that your VM has an SSH key with read access to your Git repository.
-                git clone \"\${REPO_URL}\" \"\${PROJECT_ROOT_DIR}\"
+                # Clone using the repository URL
+                git clone \"${REPO_URL}\" \"\${PROJECT_ROOT_DIR}\"
               fi
 
               # Navigate to the service directory
