@@ -631,48 +631,50 @@ jobs:
             # Upload and deploy
             scp -o StrictHostKeyChecking=no "/tmp/workspace/${SVC}.tar.gz" "${AZURE_USER}@${AZURE_HOST}:/tmp/"
 
-            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" bash -c '
-              set -e
-              
-              mkdir -p "${AZURE_DEPLOY_PATH}/main"
-              cd "${AZURE_DEPLOY_PATH}/main"
-              tar -xzf /tmp/${SVC}.tar.gz
-              cd "${SVC}"
+                          ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
+                            set -e
+                            
+                            mkdir -p ${AZURE_DEPLOY_PATH}/main
+                            cd ${AZURE_DEPLOY_PATH}/main
+                            tar -xzf /tmp/${SVC}.tar.gz
+                            cd ${SVC}
 
-              # Install PM2 if needed
-              if ! command -v pm2 >/dev/null 2>&1; then
-                curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-                sudo apt-get install -y nodejs
-                sudo npm install -g pm2
-              fi
+                            # Install PM2 if needed
+                            if ! command -v pm2 >/dev/null 2>&1; then
+                              curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+                              sudo apt-get install -y nodejs
+                              sudo npm install -g pm2
+                            fi
 
-              echo "--- Installing Node.js dependencies ---"
-              npm install --omit=dev --no-audit --no-fund
-              echo "--- Dependencies installed successfully ---"
+                            echo '--- Installing Node.js dependencies ---'
+                            npm install --omit=dev --no-audit --no-fund
+                            echo '--- Dependencies installed successfully ---'
 
-              # Create PM2 ecosystem file
-              cat > ecosystem.config.js << "EOF"
-module.exports = {
-  apps: [{
-    name: "${SVC}",
-    script: "app.js",
-    cwd: "${AZURE_DEPLOY_PATH}/main/${SVC}",
-    env: {
-      NODE_ENV: "${ENV_NAME}",
-      HTTP_PORT: "${HTTP_PORT}",
-      MQTT_PORT: "${MQTT_PORT}"
-    }
-  }]
-}
-EOF
+                            # Create PM2 ecosystem file
+                            CONFIG_CONTENT="module.exports = {
+                              apps: [{
+                                name: \\\"${SVC}\\\",
+                                script: \\\"node\\\",
+                                args: \\\"app.js\\\",
+                                cwd: \\\"${AZURE_DEPLOY_PATH}/main/${SVC}\\\",
+                                env: { 
+                                  NODE_ENV: \\\"${ENV_NAME}\\\",
+                                  HTTP_PORT: \\\"${HTTP_PORT}\\\",
+                                  MQTT_PORT: \\\"${MQTT_PORT}\\\"
+                                }
+                              }]
+                            };"
+                            printf "%s" "$CONFIG_CONTENT" > ecosystem.config.js
+                            
+                            pm2 delete ${SVC} || true
+                            pm2 start ecosystem.config.js
+                            pm2 save
 
-              # Start the application with PM2
-              pm2 delete "${SVC}" || true
-              pm2 start ecosystem.config.js
-              pm2 save
-              
-              echo "✅ ${SVC} deployed successfully"
-            '
+                            pm2 delete ${SVC} || true
+                            pm2 start << parameters.entry_file >> --name ${SVC} --env ${ENV_NAME}
+                            pm2 save
+                            echo \"✅ ${SVC} deployed successfully\"
+                          "
   # Build Java services
   build_java_service:
     parameters:
