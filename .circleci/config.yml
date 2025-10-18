@@ -1197,23 +1197,21 @@ jobs:
               fi
 
               # Create a stable Express server for serving the Vue app
-              echo '--- Creating Express server for \${SVC} ---'
-              cat > server.js <<'SERVEREOF'
-const express = require('express');
-const path = require('path');
-const app = express();
-const PORT = process.env.HTTP_PORT || 8886;
-
-app.use(express.static(path.join(__dirname, 'dist')));
-
-app.use((req, res) => {
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
-});
-
-app.listen(PORT, '0.0.0.0', () => {
-  console.log('Manager Web started on port ' + PORT);
-});
-SERVEREOF
+              echo '--- Creating Express server for ${SVC} ---'
+              printf '%s\n' \"const express = require('express');\" > server.js
+              printf '%s\n' \"const path = require('path');\" >> server.js
+              printf '%s\n' \"const app = express();\" >> server.js
+              printf '%s\n' \"const PORT = process.env.HTTP_PORT || 8886;\" >> server.js
+              printf '%s\n' \"\" >> server.js
+              printf '%s\n' \"app.use(express.static(path.join(__dirname, 'dist')));\" >> server.js
+              printf '%s\n' \"\" >> server.js
+              printf '%s\n' \"app.use((req, res) => {\" >> server.js
+              printf '%s\n' \"  res.sendFile(path.join(__dirname, 'dist', 'index.html'));\" >> server.js
+              printf '%s\n' \"});\" >> server.js
+              printf '%s\n' \"\" >> server.js
+              printf '%s\n' \"app.listen(PORT, '0.0.0.0', () => {\" >> server.js
+              printf '%s\n' \"  console.log('Manager Web started on port ' + PORT);\" >> server.js
+              printf '%s\n' \"});\" >> server.js
 
               # Install express if not present
               if ! npm list express >/dev/null 2>&1; then
