@@ -700,19 +700,17 @@ jobs:
               echo '--- Dependencies installed successfully ---'
 
               # Create .env file for MQTT gateway (fixes UDP port binding issue)
-              if [ \"${SVC}\" = \"mqtt-gateway\" ]; then
+              if [ \"\${SVC}\" = \"mqtt-gateway\" ]; then
                 echo '--- Creating .env file for MQTT gateway ---'
-                cat > .env <<'ENV_EOF'
-# MQTT Gateway Configuration
-UDP_PORT=8884
-PUBLIC_IP=20.15.253.121
-MQTT_SIGNATURE_KEY=test-signature-key-12345
-
-# EMQX Broker Configuration
-EMQX_HOST=192.168.1.166
-EMQX_PORT=${MQTT_PORT}
-EMQX_PROTOCOL=mqtt
-ENV_EOF
+                printf '%s\n' '# MQTT Gateway Configuration' > .env
+                printf '%s\n' 'UDP_PORT=8884' >> .env
+                printf '%s\n' 'PUBLIC_IP=20.15.253.121' >> .env
+                printf '%s\n' 'MQTT_SIGNATURE_KEY=test-signature-key-12345' >> .env
+                printf '%s\n' '' >> .env
+                printf '%s\n' '# EMQX Broker Configuration' >> .env
+                printf '%s\n' 'EMQX_HOST=192.168.1.166' >> .env
+                printf '%s\n' \"EMQX_PORT=\${MQTT_PORT}\" >> .env
+                printf '%s\n' 'EMQX_PROTOCOL=mqtt' >> .env
                 echo '.env file created with UDP_PORT=8884'
               fi
 
