@@ -1209,6 +1209,9 @@ jobs:
             : "${AZURE_HOST:?Set AZURE_HOST in CircleCI context}"
             : "${AZURE_USER:?Set AZURE_USER in CircleCI context}"
             : "${AZURE_DEPLOY_PATH:?Set AZURE_DEPLOY_PATH in CircleCI context}"
+            : "${LIVEKIT_URL:?Set LIVEKIT_URL in CircleCI context}"
+            : "${LIVEKIT_API_KEY:?Set LIVEKIT_API_KEY in CircleCI context}"
+            : "${LIVEKIT_API_SECRET:?Set LIVEKIT_API_SECRET in CircleCI context}"
 
             echo "🚀 Deploying ${SVC} Python service to Azure VM"
 
@@ -1217,6 +1220,12 @@ jobs:
 
             ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
               set -e
+
+              # Export LiveKit environment variables for use in the script
+              export LIVEKIT_URL='${LIVEKIT_URL}'
+              export LIVEKIT_API_KEY='${LIVEKIT_API_KEY}'
+              export LIVEKIT_API_SECRET='${LIVEKIT_API_SECRET}'
+
               mkdir -p ${AZURE_DEPLOY_PATH}/main
               cd ${AZURE_DEPLOY_PATH}/main
               tar -xzf /tmp/${SVC}.tar.gz
@@ -1307,7 +1316,10 @@ jobs:
               printf '%s\n' \"    env: {\" >> ecosystem.config.js
               printf '%s\n' \"      HTTP_PORT: '${HTTP_PORT}',\" >> ecosystem.config.js
               printf '%s\n' \"      NODE_ENV: '${ENV_NAME}',\" >> ecosystem.config.js
-              printf '%s\n' \"      ENVIRONMENT: '${ENV_NAME}'\" >> ecosystem.config.js
+              printf '%s\n' \"      ENVIRONMENT: '${ENV_NAME}',\" >> ecosystem.config.js
+              printf '%s\n' \"      LIVEKIT_URL: '${LIVEKIT_URL}',\" >> ecosystem.config.js
+              printf '%s\n' \"      LIVEKIT_API_KEY: '${LIVEKIT_API_KEY}',\" >> ecosystem.config.js
+              printf '%s\n' \"      LIVEKIT_API_SECRET: '${LIVEKIT_API_SECRET}'\" >> ecosystem.config.js
               printf '%s\n' \"    },\" >> ecosystem.config.js
               printf '%s\n' \"    autorestart: true\" >> ecosystem.config.js
               printf '%s\n' \"  }]\" >> ecosystem.config.js
