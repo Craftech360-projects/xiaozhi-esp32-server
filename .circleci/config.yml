@@ -1092,18 +1092,27 @@ jobs:
               # Create logs directory
               mkdir -p logs
 
+              # Determine Spring profile name (dev for development, prod for production)
+              if [ \"${ENV_NAME}\" = \"development\" ]; then
+                SPRING_PROFILE=\"dev\"
+              elif [ \"${ENV_NAME}\" = \"production\" ]; then
+                SPRING_PROFILE=\"prod\"
+              else
+                SPRING_PROFILE=\"${ENV_NAME}\"
+              fi
+
               # Create PM2 ecosystem file with proper environment variables and error logging
               printf '%s\\n' \"module.exports = {\" > ecosystem.config.js
               printf '%s\\n' \"  apps: [{\" >> ecosystem.config.js
               printf '%s\\n' \"    name: '${SVC}',\" >> ecosystem.config.js
               printf '%s\\n' \"    script: 'mvn',\" >> ecosystem.config.js
-              printf '%s\\n' \"    args: 'spring-boot:run -Dspring-boot.run.profiles=${ENV_NAME}',\" >> ecosystem.config.js
+              printf '%s\\n' \"    args: 'spring-boot:run -Dspring-boot.run.profiles=\${SPRING_PROFILE}',\" >> ecosystem.config.js
               printf '%s\\n' \"    interpreter: 'none',\" >> ecosystem.config.js
               printf '%s\\n' \"    cwd: '${AZURE_DEPLOY_PATH}/main/${SVC}',\" >> ecosystem.config.js
               printf '%s\\n' \"    env: {\" >> ecosystem.config.js
               printf '%s\\n' \"      JAVA_HOME: '/usr/lib/jvm/java-17-openjdk-amd64',\" >> ecosystem.config.js
               printf '%s\\n' \"      PATH: '/usr/lib/jvm/java-17-openjdk-amd64/bin:/usr/bin:/bin',\" >> ecosystem.config.js
-              printf '%s\\n' \"      SPRING_PROFILES_ACTIVE: '${ENV_NAME}'\" >> ecosystem.config.js
+              printf '%s\\n' \"      SPRING_PROFILES_ACTIVE: '\${SPRING_PROFILE}'\" >> ecosystem.config.js
               printf '%s\\n' \"    },\" >> ecosystem.config.js
               printf '%s\\n' \"    error_file: '${AZURE_DEPLOY_PATH}/main/${SVC}/logs/pm2-error.log',\" >> ecosystem.config.js
               printf '%s\\n' \"    out_file: '${AZURE_DEPLOY_PATH}/main/${SVC}/logs/pm2-out.log',\" >> ecosystem.config.js
@@ -1187,12 +1196,29 @@ jobs:
                 }
               fi
 
-              # Install serve if not already installed
-              if ! command -v serve >/dev/null 2>&1; then
-                sudo npm install -g serve || {
-                  echo 'Failed to install serve'
-                  exit 1
-                }
+              # Create a stable Express server for serving the Vue app
+              echo '--- Creating Express server for ${SVC} ---'
+              cat > server.js << 'SERVEREOF'
+const express = require('express');
+const path = require('path');
+const app = express();
+const PORT = process.env.HTTP_PORT || 8886;
+
+app.use(express.static(path.join(__dirname, 'dist')));
+
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(\`Manager Web running on http://0.0.0.0:\${PORT}\`);
+});
+SERVEREOF
+
+              # Install express if not present
+              if ! npm list express >/dev/null 2>&1; then
+                echo '--- Installing express ---'
+                npm install express --save
               fi
 
               # Delete ALL instances of this specific service (handles duplicates)
@@ -1201,7 +1227,13 @@ jobs:
               pm2 delete ${SVC} 2>/dev/null || true
               sleep 2
 
-              pm2 start serve --name ${SVC} -- -s dist -l ${HTTP_PORT}
+              # Kill any process using the HTTP port
+              echo '--- Checking for processes using port ${HTTP_PORT} ---'
+              sudo lsof -ti:${HTTP_PORT} | xargs -r sudo kill -9 2>/dev/null || echo 'No processes found on port ${HTTP_PORT}'
+              sleep 1
+
+              # Start with the Express server
+              pm2 start server.js --name ${SVC} --interpreter node
               pm2 save
               echo \"✅ ${SVC} frontend deployed successfully\"
             "
