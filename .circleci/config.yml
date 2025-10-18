@@ -72,19 +72,36 @@ jobs:
               # Install Docker if not present
               if ! command -v docker &> /dev/null; then
                 curl -fsSL https://get.docker.com | sudo sh
-                sudo usermod -aG docker \$USER
               fi
 
-              # Create directories for EMQX persistence
-              sudo mkdir -p ${AZURE_DEPLOY_PATH}/emqx/data
-              sudo mkdir -p ${AZURE_DEPLOY_PATH}/emqx/log
-              sudo chown -R \$USER:${AZURE_USER} ${AZURE_DEPLOY_PATH}/emqx
+              # Ensure user has Docker permissions
+              sudo usermod -aG docker \$USER
+              # Create new session to apply group changes
+              exec sudo su -l \$USER << EOF
+
+              # Verify Docker access
+              docker ps || exit 1
+
+              # Create directories for EMQX persistence with proper permissions
+              sudo mkdir -p ${AZURE_DEPLOY_PATH}/emqx/data ${AZURE_DEPLOY_PATH}/emqx/log
+              sudo chown -R \$USER:docker ${AZURE_DEPLOY_PATH}/emqx
+              sudo chmod -R 775 ${AZURE_DEPLOY_PATH}/emqx
+
+              # Verify permissions
+              ls -la ${AZURE_DEPLOY_PATH}/emqx
 
               # Stop and remove existing container if it exists
               docker stop xiaozhi-emqx 2>/dev/null || true
               docker rm xiaozhi-emqx 2>/dev/null || true
 
-              # Pull and run EMQX container
+              # Pull EMQX image first
+              echo "Pulling EMQX image..."
+              docker pull emqx/emqx:5.8.3 || {
+                echo "Failed to pull EMQX image"
+                exit 1
+              }
+
+              # Run EMQX container with error handling
               docker run -d --name xiaozhi-emqx \\
                 --restart unless-stopped \\
                 -p << parameters.mqtt_port >>:1883 \\
