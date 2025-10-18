@@ -1341,6 +1341,19 @@ workflows:
       # ONLY runs on dev branch (NOT on circleci-validation for safety)
       # ==========================================
 
+      # Deploy EMQX Broker first as it's required by MQTT Gateway
+      - deploy_emqx_docker:
+          name: "[DEV] 🔧 Deploy EMQX Broker"
+          context: "azure-mqtt-gateway"
+          env: "development"
+          mqtt_port: 1883
+          mqtt_ws_port: 8083
+          http_port: 18083
+          requires: ["[DEV] 🔧 Code Quality"]
+          filters:
+            branches:
+              only: dev
+
       - deploy_node_pm2_azure:
           name: "[DEV] 🔧 Deploy MQTT Gateway"
           context: "azure-mqtt-gateway"
