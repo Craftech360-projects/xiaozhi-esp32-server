@@ -1045,7 +1045,7 @@ jobs:
               printf '%s\\n' \"  apps: [{\" >> ecosystem.config.js
               printf '%s\\n' \"    name: '${SVC}',\" >> ecosystem.config.js
               printf '%s\\n' \"    script: 'mvn',\" >> ecosystem.config.js
-              printf '%s\\n' \"    args: 'spring-boot:run -Dspring-boot.run.arguments=--spring.profiles.active=${ENV_NAME}',\" >> ecosystem.config.js
+              printf '%s\\n' \"    args: ['spring-boot:run', '-Dspring-boot.run.arguments=--spring.profiles.active=${ENV_NAME}'],\" >> ecosystem.config.js
               printf '%s\\n' \"    interpreter: 'none',\" >> ecosystem.config.js
               printf '%s\\n' \"    cwd: '${AZURE_DEPLOY_PATH}/main/${SVC}',\" >> ecosystem.config.js
               printf '%s\\n' \"    env: {\" >> ecosystem.config.js
