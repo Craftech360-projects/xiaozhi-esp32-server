@@ -644,43 +644,35 @@ jobs:
                 sudo npm install -g pm2
               fi
 
-              echo \"--- Installing Node.js dependencies ---\"
+              echo "--- Installing Node.js dependencies ---"
               npm install --omit=dev --no-audit --no-fund
-              echo \"--- Dependencies installed successfully ---\"
+              echo "--- Dependencies installed successfully ---"
 
-              - run:
-                  name: Create PM2 ecosystem file
-                  command: |
-                    cat > ecosystem.config.js << 'EOF'
-                    module.exports = {
-                      apps: [{
-                        name: "${SVC}",
-                        script: "node",
-                        args: "app.js",
-                        cwd: "${AZURE_DEPLOY_PATH}/main/${SVC}",
-                        env: {
-                          NODE_ENV: "${ENV_NAME}",
-                          HTTP_PORT: "${HTTP_PORT}",
-                          MQTT_PORT: "${MQTT_PORT}"
-                        }
-                      }]
-                    }
-                    EOF
-
-              # Debug: Show ecosystem file content
-              echo \"Generated ecosystem.config.js content:\"
-              cat ecosystem.config.js
+              # Create PM2 ecosystem file
+              cat > ecosystem.config.js << 'EEOF'
+module.exports = {
+  apps: [{
+    name: "${SVC}",
+    script: "node",
+    args: "app.js",
+    cwd: "${AZURE_DEPLOY_PATH}/main/${SVC}",
+    env: {
+      NODE_ENV: "${ENV_NAME}",
+      HTTP_PORT: "${HTTP_PORT}",
+      MQTT_PORT: "${MQTT_PORT}"
+    }
+  }]
+}
+EEOF
               
               # Start the application with PM2
-              echo \"Starting application with PM2...\"
-              pm2 delete \"${SVC}\" || true
+              echo "Starting application with PM2..."
+              pm2 delete "${SVC}" || true
               pm2 start ecosystem.config.js
+              pm2 save
               
-              # Verify the process is running
-              pm2 show \"${SVC}\"
-              
-              echo \"✅ ${SVC} deployed successfully\"
-            "
+              echo "✅ ${SVC} deployed successfully"
+            '
   # Build Java services
   build_java_service:
     parameters:
@@ -887,35 +879,26 @@ jobs:
 
               cd "${SERVICE_DIR}"
 
-              echo '--- Starting application with PM2 ---'
-              pm2 start app.jar --name "${SVC}"
-ENDSSH
-
-              # Navigate to the service directory
-              cd \"\${SERVICE_DIR}\"
-
-              # Start the application using PM2
-              echo '--- Starting application with PM2 ---'
-              
               # Create PM2 ecosystem file
-              cat > ecosystem.config.js << 'EOL'
+              cat > ecosystem.config.js << 'EEOF'
 module.exports = {
   apps: [{
-    name: "\${SVC}",
+    name: "${SVC}",
     script: "mvn",
-    args: "spring-boot:run -Dspring-boot.run.arguments=--spring.profiles.active=\${ENV_NAME}",
+    args: "spring-boot:run -Dspring-boot.run.arguments=--spring.profiles.active=${ENV_NAME}",
     interpreter: "none",
-    cwd: "\${SERVICE_DIR}"
+    cwd: "${SERVICE_DIR}"
   }]
-};
-EOL
-              
-              pm2 delete \${SVC} || true
+}
+EEOF
+
+              # Start the application using PM2
+              pm2 delete ${SVC} || true
               pm2 start ecosystem.config.js
-              
               pm2 save
-              echo "✅ \${SVC} deployed successfully from source"
-            "
+              
+              echo "✅ ${SVC} deployed successfully from source"
+            '
   # Deploy Vue.js frontend with PM2
   deploy_vue_pm2_azure:
     parameters:
@@ -1034,31 +1017,29 @@ EOL
               fi
 
               # Create PM2 ecosystem file
-              cat > ecosystem.config.js << 'EOL'
+              cat > ecosystem.config.js << 'EEOF'
 module.exports = {
   apps: [{
-    name: "\${SVC}",
-    script: "\${AZURE_DEPLOY_PATH}/main/\${SVC}/venv/bin/python",
-    args: ["\${ENTRY}", "\${ENV_NAME}"],
-    cwd: "\${AZURE_DEPLOY_PATH}/main/\${SVC}",
+    name: "${SVC}",
+    script: "${AZURE_DEPLOY_PATH}/main/${SVC}/venv/bin/python",
+    args: ["${ENTRY}", "${ENV_NAME}"],
+    cwd: "${AZURE_DEPLOY_PATH}/main/${SVC}",
     env: {
-      HTTP_PORT: "\${HTTP_PORT}",
-      NODE_ENV: "\${ENV_NAME}"
+      HTTP_PORT: "${HTTP_PORT}",
+      NODE_ENV: "${ENV_NAME}"
     },
     autorestart: true
   }]
-};
-EOL
+}
+EEOF
               
-              # Verify the file content
-              echo "Generated ecosystem.config.js content:"
-              cat ecosystem.config.js
-
+              # Start the application using PM2
               pm2 delete ${SVC} || true
               pm2 start ecosystem.config.js
               pm2 save
-              echo \"✅ ${SVC} deployed successfully\"
-            "
+              
+              echo "✅ ${SVC} deployed successfully"
+            '
 
   # ==========================================
   # PRODUCTION CONFIG DEPLOYMENT
