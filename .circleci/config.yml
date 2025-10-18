@@ -639,20 +639,21 @@ jobs:
                             echo '--- Dependencies installed successfully ---'
 
                             # Create PM2 ecosystem file
-                            echo 'module.exports = {
+                            CONFIG_CONTENT="module.exports = {
                               apps: [{
-                                name: \"${SVC}\",
-                                script: \"node\",
-                                args: \"app.js\",
-                                cwd: \"${AZURE_DEPLOY_PATH}/main/${SVC}\",
+                                name: \\\"${SVC}\\\",
+                                script: \\\"node\\\",
+                                args: \\\"app.js\\\",
+                                cwd: \\\"${AZURE_DEPLOY_PATH}/main/${SVC}\\\",
                                 env: { 
-                                  NODE_ENV: \"${ENV_NAME}\",
-                                  HTTP_PORT: \"${HTTP_PORT}\",
-                                  MQTT_PORT: \"${MQTT_PORT}\"
+                                  NODE_ENV: \\\"${ENV_NAME}\\\",
+                                  HTTP_PORT: \\\"${HTTP_PORT}\\\",
+                                  MQTT_PORT: \\\"${MQTT_PORT}\\\"
                                 }
                               }]
-                            };' > ecosystem.config.js
-
+                            };"
+                            printf "%s" "$CONFIG_CONTENT" > ecosystem.config.js
+                            
                             pm2 delete ${SVC} || true
                             pm2 start ecosystem.config.js
                             pm2 save
@@ -868,19 +869,18 @@ jobs:
               # Start the application using PM2
               echo '--- Starting application with PM2 ---'
               
-              # Create PM2 ecosystem file line-by-line to avoid YAML parsing issues
-              ( 
-                echo "module.exports = {"
-                echo "  apps: [{"
-                echo "    name: \"${SVC}\","
-                echo "    script: \"mvn\","
-                echo "    args: \"spring-boot:run \\\"-Dspring-boot.run.arguments=--spring.profiles.active=${ENV_NAME}\\\"\","
-                echo "    interpreter: \"none\","
-                echo "    cwd: \"${SERVICE_DIR}\""
-                echo "  }]"
-                echo "};"
-              ) > ecosystem.config.js
-
+              # Create PM2 ecosystem file
+              CONFIG_CONTENT="module.exports = {
+                apps: [{
+                  name: \\\"${SVC}\\\",
+                  script: \\\"mvn\\\",
+                  args: \\\"spring-boot:run \\\\\\\"-Dspring-boot.run.arguments=--spring.profiles.active=${ENV_NAME}\\\\\\\"\\\",
+                  interpreter: \\\"none\\\",
+                  cwd: \\\"${SERVICE_DIR}\\\"
+                }]
+              };"
+              printf "%s" "$CONFIG_CONTENT" > ecosystem.config.js
+              
               pm2 delete ${SVC} || true
               pm2 start ecosystem.config.js
               
@@ -992,26 +992,27 @@ jobs:
               source venv/bin/activate
               pip install .
 
-              # Create PM2 ecosystem file - write content in multiple steps to ensure proper formatting
-              echo "module.exports = {" > ecosystem.config.js
-              echo "  apps: [{" >> ecosystem.config.js
-              echo "    name: '${SVC}'," >> ecosystem.config.js
-              echo "    script: '${AZURE_DEPLOY_PATH}/main/${SVC}/venv/bin/python'," >> ecosystem.config.js
-              echo "    args: ['${ENTRY}', '${ENV_NAME}']," >> ecosystem.config.js
-              echo "    cwd: '${AZURE_DEPLOY_PATH}/main/${SVC}'," >> ecosystem.config.js
-              echo "    env: {" >> ecosystem.config.js
-              echo "      HTTP_PORT: '${HTTP_PORT}'," >> ecosystem.config.js
-              echo "      NODE_ENV: '${ENV_NAME}'" >> ecosystem.config.js
-              echo "    }," >> ecosystem.config.js
-              echo "    autorestart: true" >> ecosystem.config.js
-              echo "  }]" >> ecosystem.config.js
-              echo "};" >> ecosystem.config.js
+              # Create PM2 ecosystem file
+              CONFIG_CONTENT="module.exports = {
+                apps: [{
+                  name: \\\"${SVC}\\\",
+                  script: \\\"${AZURE_DEPLOY_PATH}/main/${SVC}/venv/bin/python\\\",
+                  args: [\\\"${ENTRY}\\\", \\\"${ENV_NAME}\\\"],
+                  cwd: \\\"${AZURE_DEPLOY_PATH}/main/${SVC}\\\",
+                  env: {
+                    HTTP_PORT: \\\"${HTTP_PORT}\\\",
+                    NODE_ENV: \\\"${ENV_NAME}\\\"
+                  },
+                  autorestart: true
+                }]
+              };"
+              
+              # Write the content to file using printf to handle escaping
+              printf "%s" "$CONFIG_CONTENT" > ecosystem.config.js
               
               # Verify the file content
               echo "Generated ecosystem.config.js content:"
               cat ecosystem.config.js
-              # Apply variable substitution
-              envsubst < ecosystem.config.js > ecosystem.config.js.tmp && mv ecosystem.config.js.tmp ecosystem.config.js
 
               pm2 delete ${SVC} || true
               pm2 start ecosystem.config.js
