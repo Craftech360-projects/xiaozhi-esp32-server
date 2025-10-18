@@ -159,6 +159,26 @@ jobs:
                 exit 1
               }
 
+              # FINAL CHECK: Remove any containers that appeared during image pull
+              echo '=== FINAL PRE-CREATE CHECK ==='
+              FINAL_CHECK=\$(docker ps -aq --filter name=xiaozhi-emqx)
+              if [ -n \"\$FINAL_CHECK\" ]; then
+                echo \"WARNING: Found containers created during pull: \$FINAL_CHECK\"
+                echo \"Removing them now...\"
+                echo \"\$FINAL_CHECK\" | xargs -r docker update --restart=no 2>/dev/null || true
+                echo \"\$FINAL_CHECK\" | xargs -r docker rm -f 2>/dev/null || true
+                sleep 2
+
+                # Verify they're really gone
+                STILL_HERE=\$(docker ps -aq --filter name=xiaozhi-emqx)
+                if [ -n \"\$STILL_HERE\" ]; then
+                  echo \"CRITICAL: Cannot remove containers: \$STILL_HERE\"
+                  docker ps -a --filter name=xiaozhi-emqx
+                  exit 1
+                fi
+              fi
+              echo '=== Pre-create check passed, no xiaozhi-emqx containers exist ==='
+
               # Run EMQX container with error handling
               docker run -d --name xiaozhi-emqx \\
                 --restart unless-stopped \\
