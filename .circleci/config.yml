@@ -771,6 +771,11 @@ jobs:
                 printf '%s\n' \"EMQX_PORT=\${MQTT_PORT}\" >> .env
                 printf '%s\n' 'EMQX_PROTOCOL=mqtt' >> .env
                 echo '.env file created with UDP_PORT=8884'
+
+                # Kill any process using port 8884 before starting
+                echo '--- Checking for processes using port ${HTTP_PORT} ---'
+                sudo lsof -ti:${HTTP_PORT} | xargs -r sudo kill -9 2>/dev/null || echo 'No processes found on port ${HTTP_PORT}'
+                sleep 2
               fi
 
               # Create PM2 ecosystem file
@@ -788,7 +793,15 @@ jobs:
               };\"
               printf \"%s\" \"\$CONFIG_CONTENT\" > ecosystem.config.js
 
-              pm2 delete ${SVC} || true
+              # Delete ALL instances of this specific service (handles duplicates)
+              echo '--- Removing all existing ${SVC} instances ---'
+              # Find all PM2 IDs for this service name and delete them
+              pm2 jlist | jq -r \".[] | select(.name==\\\"${SVC}\\\") | .pm_id\" | xargs -r -I {} pm2 delete {} 2>/dev/null || true
+              # Fallback: try deleting by name
+              pm2 delete ${SVC} 2>/dev/null || true
+              sleep 2
+
+              # Start the service
               pm2 start ecosystem.config.js
               pm2 save
               echo \"✅ ${SVC} deployed successfully\"
@@ -1084,12 +1097,13 @@ jobs:
               printf '%s\\n' \"  apps: [{\" >> ecosystem.config.js
               printf '%s\\n' \"    name: '${SVC}',\" >> ecosystem.config.js
               printf '%s\\n' \"    script: 'mvn',\" >> ecosystem.config.js
-              printf '%s\\n' \"    args: ['spring-boot:run', '-Dspring-boot.run.arguments=--spring.profiles.active=${ENV_NAME}'],\" >> ecosystem.config.js
+              printf '%s\\n' \"    args: 'spring-boot:run -Dspring-boot.run.profiles=${ENV_NAME}',\" >> ecosystem.config.js
               printf '%s\\n' \"    interpreter: 'none',\" >> ecosystem.config.js
               printf '%s\\n' \"    cwd: '${AZURE_DEPLOY_PATH}/main/${SVC}',\" >> ecosystem.config.js
               printf '%s\\n' \"    env: {\" >> ecosystem.config.js
               printf '%s\\n' \"      JAVA_HOME: '/usr/lib/jvm/java-17-openjdk-amd64',\" >> ecosystem.config.js
-              printf '%s\\n' \"      PATH: '/usr/lib/jvm/java-17-openjdk-amd64/bin:/usr/bin:/bin'\" >> ecosystem.config.js
+              printf '%s\\n' \"      PATH: '/usr/lib/jvm/java-17-openjdk-amd64/bin:/usr/bin:/bin',\" >> ecosystem.config.js
+              printf '%s\\n' \"      SPRING_PROFILES_ACTIVE: '${ENV_NAME}'\" >> ecosystem.config.js
               printf '%s\\n' \"    },\" >> ecosystem.config.js
               printf '%s\\n' \"    error_file: '${AZURE_DEPLOY_PATH}/main/${SVC}/logs/pm2-error.log',\" >> ecosystem.config.js
               printf '%s\\n' \"    out_file: '${AZURE_DEPLOY_PATH}/main/${SVC}/logs/pm2-out.log',\" >> ecosystem.config.js
@@ -1106,8 +1120,11 @@ jobs:
               echo '--- PM2 Ecosystem Config ---'
               cat ecosystem.config.js
 
-              # Delete existing PM2 process
-              pm2 delete ${SVC} || true
+              # Delete ALL instances of this specific service (handles duplicates)
+              echo '--- Removing all existing ${SVC} instances ---'
+              pm2 jlist | jq -r \".[] | select(.name==\\\"${SVC}\\\") | .pm_id\" | xargs -r -I {} pm2 delete {} 2>/dev/null || true
+              pm2 delete ${SVC} 2>/dev/null || true
+              sleep 2
 
               # Start with PM2
               pm2 start ecosystem.config.js
@@ -1178,7 +1195,12 @@ jobs:
                 }
               fi
 
-              pm2 delete ${SVC} || true
+              # Delete ALL instances of this specific service (handles duplicates)
+              echo '--- Removing all existing ${SVC} instances ---'
+              pm2 jlist | jq -r \".[] | select(.name==\\\"${SVC}\\\") | .pm_id\" | xargs -r -I {} pm2 delete {} 2>/dev/null || true
+              pm2 delete ${SVC} 2>/dev/null || true
+              sleep 2
+
               pm2 start serve --name ${SVC} -- -s dist -l ${HTTP_PORT}
               pm2 save
               echo \"✅ ${SVC} frontend deployed successfully\"
@@ -1329,7 +1351,12 @@ jobs:
               echo \"Generated ecosystem.config.js content:\"
               cat ecosystem.config.js
 
-              pm2 delete ${SVC} || true
+              # Delete ALL instances of this specific service (handles duplicates)
+              echo '--- Removing all existing ${SVC} instances ---'
+              pm2 jlist | jq -r \".[] | select(.name==\\\"${SVC}\\\") | .pm_id\" | xargs -r -I {} pm2 delete {} 2>/dev/null || true
+              pm2 delete ${SVC} 2>/dev/null || true
+              sleep 2
+
               pm2 start ecosystem.config.js
               pm2 save
               echo \"✅ ${SVC} deployed successfully\"
