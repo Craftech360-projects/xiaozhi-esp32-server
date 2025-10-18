@@ -826,7 +826,8 @@ jobs:
             # Verify tarball was created successfully
             if [ -f "/tmp/workspace/${SVC}.tar.gz" ]; then
               echo "Tarball size: $(ls -lh /tmp/workspace/${SVC}.tar.gz | awk '{print $5}')"
-              tar -tzf "/tmp/workspace/${SVC}.tar.gz" | head -10
+              echo "Sample contents:"
+              tar -tzf "/tmp/workspace/${SVC}.tar.gz" 2>/dev/null | head -10 || true
               echo "✅ ${SVC} frontend built successfully"
             else
               echo "❌ Failed to create tarball"
@@ -1183,15 +1184,21 @@ jobs:
                 source venv/bin/activate
                 pip install --upgrade pip setuptools wheel
 
-                # Install the project dependencies from pyproject.toml
+                # Install the project dependencies from both pyproject.toml and requirements.txt
                 echo '--- Installing dependencies from pyproject.toml ---'
                 pip install -v . || {
-                  echo '❌ pip install failed, trying alternative approach...'
+                  echo '❌ pip install from pyproject.toml failed, trying alternative approach...'
                   pip install aiohttp sentence-transformers qdrant-client
                   pip install 'livekit-agents[openai,turn-detector,silero,cartesia,deepgram]~=1.2'
                   pip install livekit-plugins-noise-cancellation livekit-plugins-groq livekit.plugins.deepgram
                   pip install livekit-plugins-elevenlabs python-dotenv paho-mqtt pydub edge-tts gtts pyttsx3 mem0ai jinja2 pytz
                 }
+
+                # Also install from requirements.txt if it exists
+                if [ -f \"requirements.txt\" ]; then
+                  echo '--- Installing additional dependencies from requirements.txt ---'
+                  pip install -r requirements.txt || echo 'Some requirements.txt dependencies failed but continuing...'
+                fi
 
                 # Verify critical dependencies are installed
                 echo '--- Verifying dependencies ---'
