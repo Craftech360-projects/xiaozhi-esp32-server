@@ -90,6 +90,14 @@ jobs:
               # Aggressively clean up ALL EMQX containers (by name and ID)
               echo 'Cleaning up all EMQX containers...'
 
+              # First, disable restart policies on all xiaozhi-emqx containers to prevent auto-restart
+              echo 'Disabling restart policies...'
+              EXISTING_CONTAINERS=\$(docker ps -aq --filter name=xiaozhi-emqx)
+              if [ -n \"\$EXISTING_CONTAINERS\" ]; then
+                echo \"Found containers to disable restart: \$EXISTING_CONTAINERS\"
+                echo \"\$EXISTING_CONTAINERS\" | xargs -r docker update --restart=no 2>/dev/null || true
+              fi
+
               # Loop through all removal attempts to handle race conditions
               for attempt in 1 2 3; do
                 echo \"Cleanup attempt \$attempt of 3...\"
@@ -104,18 +112,22 @@ jobs:
                 CONTAINER_IDS=\$(docker ps -aq --filter name=xiaozhi-emqx)
                 if [ -n \"\$CONTAINER_IDS\" ]; then
                   echo \"Found containers by filter: \$CONTAINER_IDS\"
+                  # Disable restart policy first
+                  echo \"\$CONTAINER_IDS\" | xargs -r docker update --restart=no 2>/dev/null || true
+                  # Then remove
                   echo \"\$CONTAINER_IDS\" | xargs -r docker rm -f 2>/dev/null || true
 
                   # Try with sudo if regular removal failed
                   STILL_THERE=\$(docker ps -aq --filter name=xiaozhi-emqx)
                   if [ -n \"\$STILL_THERE\" ]; then
                     echo \"Using sudo to remove: \$STILL_THERE\"
+                    echo \"\$STILL_THERE\" | xargs -r sudo docker update --restart=no 2>/dev/null || true
                     echo \"\$STILL_THERE\" | xargs -r sudo docker rm -f 2>/dev/null || true
                   fi
                 fi
 
-                # Wait a moment for Docker to release resources
-                sleep 2
+                # Wait longer for Docker to release resources and prevent restart
+                sleep 3
 
                 # Check if any containers remain
                 REMAINING=\$(docker ps -aq --filter name=xiaozhi-emqx)
@@ -132,9 +144,9 @@ jobs:
                 fi
               done
 
-              # Final wait to ensure Docker fully releases the name
-              echo 'Waiting for Docker to release container name...'
-              sleep 3
+              # Final wait to ensure Docker fully releases the name and prevents any restart attempts
+              echo 'Waiting for Docker to fully release container name...'
+              sleep 5
 
               # Optional: Remove old EMQX images to free space
               echo 'Cleaning up old EMQX images...'
