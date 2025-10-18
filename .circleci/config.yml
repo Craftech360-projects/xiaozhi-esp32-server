@@ -76,11 +76,11 @@ jobs:
 
               # Ensure user has Docker permissions
               sudo usermod -aG docker \$USER
-              # Create new session to apply group changes
-              exec sudo su -l \$USER << EOF
-
-              # Verify Docker access
-              docker ps || exit 1
+              
+              # Create new session to apply group changes and run commands
+              sudo -E -u \$USER bash -c '
+                # Verify Docker access
+                docker ps || exit 1'
 
               # Create directories for EMQX persistence with proper permissions
               sudo mkdir -p ${AZURE_DEPLOY_PATH}/emqx/data ${AZURE_DEPLOY_PATH}/emqx/log
