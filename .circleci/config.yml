@@ -179,24 +179,63 @@ jobs:
               fi
               echo '=== Pre-create check passed, no xiaozhi-emqx containers exist ==='
 
-              # Run EMQX container with error handling
-              docker run -d --name xiaozhi-emqx \\
-                --restart unless-stopped \\
-                -p << parameters.mqtt_port >>:1883 \\
-                -p 8883:8883 \\
-                -p << parameters.mqtt_ws_port >>:8083 \\
-                -p 8084:8084 \\
-                -p << parameters.http_port >>:18083 \\
-                -v ${AZURE_DEPLOY_PATH}/emqx/data:/opt/emqx/data \\
-                -v ${AZURE_DEPLOY_PATH}/emqx/log:/opt/emqx/log \\
-                -e EMQX_NAME=emqx \\
-                -e EMQX_HOST=127.0.0.1 \\
-                -e EMQX_CLUSTER__DISCOVERY_STRATEGY=manual \\
-                -e EMQX_ALLOW_ANONYMOUS=true \\
-                -e EMQX_DASHBOARD__DEFAULT_USERNAME=admin \\
-                -e EMQX_DASHBOARD__DEFAULT_PASSWORD=public \\
-                --hostname xiaozhi-emqx \\
-                emqx/emqx:5.8.3
+              # ATOMIC OPERATION: Remove any lingering container and create new one in single command block
+              # This prevents race conditions between check and create
+              echo '=== Starting atomic container creation ==='
+              (
+                # Final aggressive cleanup right before creation
+                docker rm -f xiaozhi-emqx 2>/dev/null || true
+                docker ps -aq --filter name=xiaozhi-emqx | xargs -r docker rm -f 2>/dev/null || true
+
+                # Immediately create the new container
+                docker run -d --name xiaozhi-emqx \\
+                  --restart unless-stopped \\
+                  -p << parameters.mqtt_port >>:1883 \\
+                  -p 8883:8883 \\
+                  -p << parameters.mqtt_ws_port >>:8083 \\
+                  -p 8084:8084 \\
+                  -p << parameters.http_port >>:18083 \\
+                  -v ${AZURE_DEPLOY_PATH}/emqx/data:/opt/emqx/data \\
+                  -v ${AZURE_DEPLOY_PATH}/emqx/log:/opt/emqx/log \\
+                  -e EMQX_NAME=emqx \\
+                  -e EMQX_HOST=127.0.0.1 \\
+                  -e EMQX_CLUSTER__DISCOVERY_STRATEGY=manual \\
+                  -e EMQX_ALLOW_ANONYMOUS=true \\
+                  -e EMQX_DASHBOARD__DEFAULT_USERNAME=admin \\
+                  -e EMQX_DASHBOARD__DEFAULT_PASSWORD=public \\
+                  --hostname xiaozhi-emqx \\
+                  emqx/emqx:5.8.3
+              ) || {
+                echo \"❌ Failed to create container, checking for conflicts...\"
+                docker ps -a | grep xiaozhi-emqx || true
+
+                # One last attempt: force remove and retry
+                echo \"Attempting force removal and retry...\"
+                docker rm -f \$(docker ps -aq --filter name=xiaozhi-emqx) 2>/dev/null || true
+                sleep 2
+
+                docker run -d --name xiaozhi-emqx \\
+                  --restart unless-stopped \\
+                  -p << parameters.mqtt_port >>:1883 \\
+                  -p 8883:8883 \\
+                  -p << parameters.mqtt_ws_port >>:8083 \\
+                  -p 8084:8084 \\
+                  -p << parameters.http_port >>:18083 \\
+                  -v ${AZURE_DEPLOY_PATH}/emqx/data:/opt/emqx/data \\
+                  -v ${AZURE_DEPLOY_PATH}/emqx/log:/opt/emqx/log \\
+                  -e EMQX_NAME=emqx \\
+                  -e EMQX_HOST=127.0.0.1 \\
+                  -e EMQX_CLUSTER__DISCOVERY_STRATEGY=manual \\
+                  -e EMQX_ALLOW_ANONYMOUS=true \\
+                  -e EMQX_DASHBOARD__DEFAULT_USERNAME=admin \\
+                  -e EMQX_DASHBOARD__DEFAULT_PASSWORD=public \\
+                  --hostname xiaozhi-emqx \\
+                  emqx/emqx:5.8.3 || {
+                    echo \"❌ Final attempt failed\"
+                    docker ps -a | grep xiaozhi-emqx || true
+                    exit 1
+                  }
+              }
 
               # Wait for EMQX to be ready
               echo 'Waiting for EMQX to be ready...'
