@@ -648,22 +648,24 @@ jobs:
               npm install --omit=dev --no-audit --no-fund
               echo \"--- Dependencies installed successfully ---\"
 
-              # Create PM2 ecosystem file
-              cat > ecosystem.config.js << 'EOL'
-module.exports = {
-  apps: [{
-    name: "\${SVC}",
-    script: "node",
-    args: "app.js",
-    cwd: "\${AZURE_DEPLOY_PATH}/main/\${SVC}",
-    env: {
-      NODE_ENV: "\${ENV_NAME}",
-      HTTP_PORT: "\${HTTP_PORT}",
-      MQTT_PORT: "\${MQTT_PORT}"
-    }
-  }]
-};
-EOL
+              - run:
+                  name: Create PM2 ecosystem file
+                  command: |
+                    cat > ecosystem.config.js << 'EOF'
+                    module.exports = {
+                      apps: [{
+                        name: "${SVC}",
+                        script: "node",
+                        args: "app.js",
+                        cwd: "${AZURE_DEPLOY_PATH}/main/${SVC}",
+                        env: {
+                          NODE_ENV: "${ENV_NAME}",
+                          HTTP_PORT: "${HTTP_PORT}",
+                          MQTT_PORT: "${MQTT_PORT}"
+                        }
+                      }]
+                    }
+                    EOF
 
               # Debug: Show ecosystem file content
               echo \"Generated ecosystem.config.js content:\"
