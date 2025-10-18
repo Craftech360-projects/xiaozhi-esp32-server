@@ -46,6 +46,72 @@ executors:
 # =========================
 jobs:
   # ==========================================
+  # EMQX DEPLOYMENT JOB
+  # ==========================================
+  deploy_emqx_docker:
+    executor: base-executor
+    parameters:
+      env: { type: string, default: "staging" }
+    steps:
+      - add_ssh_keys:
+          fingerprints:
+            - "SHA256:yOFaQhaMF3+XYAcEjYL/BwibjpbAPUubeCj7b/ezBXU"
+      - run:
+          name: Deploy EMQX in Docker
+          command: |
+            : "${AZURE_HOST:?Set AZURE_HOST in CircleCI context}"
+            : "${AZURE_USER:?Set AZURE_USER in CircleCI context}"
+            : "${AZURE_DEPLOY_PATH:?Set AZURE_DEPLOY_PATH in CircleCI context}"
+
+            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
+              set -e
+              
+              # Install Docker if not present
+              if ! command -v docker &> /dev/null; then
+                curl -fsSL https://get.docker.com | sudo sh
+                sudo usermod -aG docker \$USER
+              fi
+
+              # Create directories for EMQX persistence
+              sudo mkdir -p ${AZURE_DEPLOY_PATH}/emqx/data
+              sudo mkdir -p ${AZURE_DEPLOY_PATH}/emqx/log
+              sudo chown -R \$USER:${AZURE_USER} ${AZURE_DEPLOY_PATH}/emqx
+
+              # Stop and remove existing container if it exists
+              docker stop xiaozhi-emqx 2>/dev/null || true
+              docker rm xiaozhi-emqx 2>/dev/null || true
+
+              # Pull and run EMQX container
+              docker run -d --name xiaozhi-emqx \\
+                --restart unless-stopped \\
+                -p 1883:1883 \\
+                -p 8883:8883 \\
+                -p 8083:8083 \\
+                -p 8084:8084 \\
+                -p 18083:18083 \\
+                -v ${AZURE_DEPLOY_PATH}/emqx/data:/opt/emqx/data \\
+                -v ${AZURE_DEPLOY_PATH}/emqx/log:/opt/emqx/log \\
+                -e EMQX_NAME=emqx \\
+                -e EMQX_HOST=127.0.0.1 \\
+                -e EMQX_DASHBOARD__DEFAULT_USERNAME=admin \\
+                -e EMQX_DASHBOARD__DEFAULT_PASSWORD=public \\
+                emqx/emqx:5.8.3
+
+              # Wait for EMQX to be ready
+              echo 'Waiting for EMQX to be ready...'
+              for i in \$(seq 1 30); do
+                if docker exec xiaozhi-emqx emqx ctl status | grep -q 'is running'; then
+                  echo 'EMQX is ready!'
+                  exit 0
+                fi
+                sleep 2
+              done
+              
+              echo 'EMQX failed to start properly'
+              exit 1
+            "
+
+  # ==========================================
   # TESTING PIPELINE JOBS
   # ==========================================
 
@@ -548,6 +614,25 @@ jobs:
                             npm install --omit=dev --no-audit --no-fund
                             echo '--- Dependencies installed successfully ---'
 
+                            # Create PM2 ecosystem file
+                            echo 'module.exports = {
+                              apps: [{
+                                name: \"${SVC}\",
+                                script: \"node\",
+                                args: \"app.js\",
+                                cwd: \"${AZURE_DEPLOY_PATH}/main/${SVC}\",
+                                env: { 
+                                  NODE_ENV: \"${ENV_NAME}\",
+                                  HTTP_PORT: \"${HTTP_PORT}\",
+                                  MQTT_PORT: \"${MQTT_PORT}\"
+                                }
+                              }]
+                            };' > ecosystem.config.js
+
+                            pm2 delete ${SVC} || true
+                            pm2 start ecosystem.config.js
+                            pm2 save
+
                             pm2 delete ${SVC} || true
                             pm2 start << parameters.entry_file >> --name ${SVC} --env ${ENV_NAME}
                             pm2 save
@@ -715,6 +800,8 @@ jobs:
           name: Deploy Java service from source with Maven
           command: |
             SVC="<< parameters.service_name >>"
+            ENV="<< parameters.env >>"
+            SPRING_PROFILE=$([ "$ENV" = "development" ] && echo "dev" || echo "prod")
             ENV_NAME="<< parameters.env >>"
             # Using CircleCI's built-in variable for the repo URL
             REPO_URL="$CIRCLE_REPOSITORY_URL"
@@ -763,7 +850,7 @@ jobs:
                 echo "  apps: [{"
                 echo "    name: \"${SVC}\","
                 echo "    script: \"mvn\","
-                echo "    args: \"spring-boot:run -Dspring-boot.run.arguments=--spring.profiles.active=${ENV_NAME}\","
+                echo "    args: \"spring-boot:run \\\"-Dspring-boot.run.arguments=--spring.profiles.active=${ENV_NAME}\\\"\","
                 echo "    interpreter: \"none\","
                 echo "    cwd: \"${SERVICE_DIR}\""
                 echo "  }]"
@@ -886,7 +973,7 @@ jobs:
                 apps: [{ \\
                   name: \"${SVC}\", \\
                   script: \"${AZURE_DEPLOY_PATH}/main/${SVC}/venv/bin/python\", \\
-                  args: [\"${ENTRY}\"], \\
+                  args: [\"${ENTRY}\", \"${ENV_NAME}\"], \\
                   cwd: \"${AZURE_DEPLOY_PATH}/main/${SVC}\", \\
                   env: { HTTP_PORT: \"${HTTP_PORT}\", NODE_ENV: \"${ENV_NAME}\" }, \\
                   autorestart: true \\
@@ -1178,6 +1265,18 @@ workflows:
                 - circleci-validation
 
       # ==========================================
+      # DEPLOY EMQX: Deploy EMQX container first
+      # ==========================================
+      - deploy_emqx_docker:
+          name: "[DEV] 🔧 Deploy EMQX"
+          context: "azure-mqtt-gateway"
+          env: "development"
+          requires: ["[DEV] 🔧 Code Quality"]
+          filters:
+            branches:
+              only: dev
+
+      # ==========================================
       # BUILD PHASE: All 4 services build in parallel (after tests pass)
       # Runs on dev branch AND circleci-validation branch
       # ==========================================
@@ -1226,9 +1325,21 @@ workflows:
                 - circleci-validation
 
       # ==========================================
-      # DEPLOY PHASE: All 4 services deploy in parallel to dev environment
+      # DEPLOY PHASE: Deploy EMQX first, then all 4 services in parallel
       # ONLY runs on dev branch (NOT on circleci-validation for safety)
       # ==========================================
+
+      # Deploy EMQX Broker first as it's required by MQTT Gateway
+      - deploy_emqx_service:
+          name: "[DEV] 🔧 Deploy EMQX Broker"
+          context: "azure-mqtt-gateway"
+          env: "development"
+          mqtt_port: 1883
+          mqtt_ws_port: 8083
+          http_port: 18083
+          filters:
+            branches:
+              only: dev
       - deploy_node_pm2_azure:
           name: "[DEV] 🔧 Deploy MQTT Gateway"
           context: "azure-mqtt-gateway"
@@ -1237,7 +1348,8 @@ workflows:
           env: "development"
           http_port: 8884
           mqtt_port: 1883
-          requires: ["[DEV] 🔧 Build MQTT Gateway"]
+          requires:
+            ["[DEV] 🔧 Build MQTT Gateway", "[DEV] 🔧 Deploy EMQX Broker"]
           filters:
             branches:
               only: dev
@@ -1361,6 +1473,16 @@ workflows:
           requires:
             - "[PROD] 🚀 Test LiveKit Server"
 
+      # Deploy EMQX first
+      - deploy_emqx_service:
+          name: "[PROD] 🚀 Deploy EMQX Broker"
+          context: "azure-mqtt-gateway"
+          env: "production"
+          mqtt_port: 1883
+          mqtt_ws_port: 8083
+          http_port: 18083
+          requires: ["[PROD] 🚀 Code Quality"]
+
       # Deploy other services to Digital Ocean (in parallel)
       - deploy_node_pm2_azure:
           name: "[PROD] 🚀 Deploy MQTT Gateway"
@@ -1370,7 +1492,8 @@ workflows:
           env: "production"
           http_port: 8884
           mqtt_port: 1883
-          requires: ["[PROD] 🚀 Build MQTT Gateway"]
+          requires:
+            ["[PROD] 🚀 Build MQTT Gateway", "[PROD] 🚀 Deploy EMQX Broker"]
 
       - deploy_java_pm2_azure:
           name: "[PROD] 🚀 Deploy Manager API"

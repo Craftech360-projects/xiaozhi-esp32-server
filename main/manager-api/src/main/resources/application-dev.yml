@@ -29,9 +29,9 @@ spring:
     druid:
       # Local Azure database (same as Azure VM configuration)
       driver-class-name: com.mysql.cj.jdbc.Driver
-      url: jdbc:mysql://localhost:3307/manager_api?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&nullCatalogMeansCurrent=true&useSSL=false&allowPublicKeyRetrieval=true
-      username: manager
-      password: managerpassword
+      url: jdbc:mysql://centerbeam.proxy.rlwy.net:11592/railway
+      username: root
+      password: livbAddcEsRSaqNSPgvBJpbzBQHOxest
 
       initial-size: 5
       max-active: 20
@@ -58,9 +58,10 @@ spring:
   data:
     redis:
       # Local Azure Redis (same as Azure VM configuration)
-      host: localhost
-      port: 6380
-      password: redispassword
+      host: maglev.proxy.rlwy.net
+      port: 36680
+      password: HUWlOebkEFahegpfkksWJSTuOBuSfEaT
+      username: default
       database: 0
       timeout: 10000ms
       lettuce:
