@@ -102,21 +102,21 @@ jobs:
               }
 
               # Run EMQX container with error handling
-              docker run -d --name xiaozhi-emqx \\
-                --restart unless-stopped \\
-                -p << parameters.mqtt_port >>:1883 \\
-                -p 8883:8883 \\
-                -p << parameters.mqtt_ws_port >>:8083 \\
-                -p 8084:8084 \\
-                -p << parameters.http_port >>:18083 \\
-                -v ${AZURE_DEPLOY_PATH}/emqx/data:/opt/emqx/data \\
-                -v ${AZURE_DEPLOY_PATH}/emqx/log:/opt/emqx/log \\
-                -e EMQX_NAME=emqx \\
-                -e EMQX_HOST=127.0.0.1 \\
-                -e EMQX_CLUSTER__DISCOVERY_STRATEGY=manual \\
-                -e EMQX_ALLOW_ANONYMOUS=true \\
-                -e EMQX_DASHBOARD__DEFAULT_USERNAME=admin \\
-                -e EMQX_DASHBOARD__DEFAULT_PASSWORD=public \\
+              docker run -d --name xiaozhi-emqx \
+                --restart unless-stopped \
+                -p << parameters.mqtt_port >>:1883 \
+                -p 8883:8883 \
+                -p << parameters.mqtt_ws_port >>:8083 \
+                -p 8084:8084 \
+                -p << parameters.http_port >>:18083 \
+                -v ${AZURE_DEPLOY_PATH}/emqx/data:/opt/emqx/data \
+                -v ${AZURE_DEPLOY_PATH}/emqx/log:/opt/emqx/log \
+                -e "EMQX_NAME=emqx" \
+                -e "EMQX_HOST=127.0.0.1" \
+                -e "EMQX_CLUSTER__DISCOVERY_STRATEGY=manual" \
+                -e "EMQX_ALLOW_ANONYMOUS=true" \
+                -e "EMQX_DASHBOARD__DEFAULT_USERNAME=admin" \
+                -e "EMQX_DASHBOARD__DEFAULT_PASSWORD=public" \
                 --hostname xiaozhi-emqx \
                 emqx/emqx:5.8.3
 
