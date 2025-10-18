@@ -90,34 +90,51 @@ jobs:
               # Aggressively clean up ALL EMQX containers (by name and ID)
               echo 'Cleaning up all EMQX containers...'
 
-              # Stop all running containers with xiaozhi-emqx name
-              docker stop xiaozhi-emqx 2>/dev/null || true
+              # Loop through all removal attempts to handle race conditions
+              for attempt in 1 2 3; do
+                echo \"Cleanup attempt \$attempt of 3...\"
 
-              # Remove all containers by name (running or stopped)
-              docker rm -f xiaozhi-emqx 2>/dev/null || true
+                # Stop all running containers with xiaozhi-emqx name
+                docker stop xiaozhi-emqx 2>/dev/null || true
 
-              # Find and remove any containers with 'xiaozhi-emqx' in the name using filter
-              CONTAINER_IDS=\$(docker ps -aq --filter name=xiaozhi-emqx)
-              if [ -n \"\$CONTAINER_IDS\" ]; then
-                echo \"Found containers by name filter: \$CONTAINER_IDS\"
-                echo \"\$CONTAINER_IDS\" | xargs -r docker rm -f || true
-              fi
+                # Remove all containers by name (running or stopped)
+                docker rm -f xiaozhi-emqx 2>/dev/null || true
 
-              # Final verification - if any containers still exist, force remove with sudo
-              REMAINING=\$(docker ps -aq --filter name=xiaozhi-emqx)
-              if [ -n \"\$REMAINING\" ]; then
-                echo \"Containers still exist, forcing removal with sudo: \$REMAINING\"
-                echo \"\$REMAINING\" | xargs -r sudo docker rm -f || true
-              fi
+                # Find and remove any containers with 'xiaozhi-emqx' in the name using filter
+                CONTAINER_IDS=\$(docker ps -aq --filter name=xiaozhi-emqx)
+                if [ -n \"\$CONTAINER_IDS\" ]; then
+                  echo \"Found containers by filter: \$CONTAINER_IDS\"
+                  echo \"\$CONTAINER_IDS\" | xargs -r docker rm -f 2>/dev/null || true
 
-              # Verify cleanup
-              if docker ps -a --format '{{.Names}}' | grep -q 'xiaozhi-emqx'; then
-                echo '❌ Failed to remove all EMQX containers'
-                docker ps -a | grep xiaozhi-emqx || true
-                exit 1
-              else
-                echo '✅ All EMQX containers removed successfully'
-              fi
+                  # Try with sudo if regular removal failed
+                  STILL_THERE=\$(docker ps -aq --filter name=xiaozhi-emqx)
+                  if [ -n \"\$STILL_THERE\" ]; then
+                    echo \"Using sudo to remove: \$STILL_THERE\"
+                    echo \"\$STILL_THERE\" | xargs -r sudo docker rm -f 2>/dev/null || true
+                  fi
+                fi
+
+                # Wait a moment for Docker to release resources
+                sleep 2
+
+                # Check if any containers remain
+                REMAINING=\$(docker ps -aq --filter name=xiaozhi-emqx)
+                if [ -z \"\$REMAINING\" ]; then
+                  echo \"✅ All EMQX containers removed successfully\"
+                  break
+                else
+                  echo \"Containers still present: \$REMAINING\"
+                  if [ \$attempt -eq 3 ]; then
+                    echo \"❌ Failed to remove all EMQX containers after 3 attempts\"
+                    docker ps -a | grep xiaozhi-emqx || true
+                    exit 1
+                  fi
+                fi
+              done
+
+              # Final wait to ensure Docker fully releases the name
+              echo 'Waiting for Docker to release container name...'
+              sleep 3
 
               # Optional: Remove old EMQX images to free space
               echo 'Cleaning up old EMQX images...'
@@ -883,21 +900,43 @@ jobs:
                 sudo npm install -g pm2
               fi
 
-              PROJECT_ROOT_DIR=\"${AZURE_DEPLOY_PATH}/xiaozhi-esp32-server\"
-              SERVICE_DIR=\"\${PROJECT_ROOT_DIR}/main/${SVC}\"
+              SERVICE_DIR=\"${AZURE_DEPLOY_PATH}/main/${SVC}\"
 
-              # Clone or update the source code on the VM using HTTPS
-              echo '--- Cloning or updating source code ---'
-              if [ -d \"\${PROJECT_ROOT_DIR}/.git\" ]; then
-                echo 'Repository exists, checking out ${CIRCLE_BRANCH} branch and pulling latest changes...'
-                cd \"\${PROJECT_ROOT_DIR}\"
+              # Clone or update only the manager-api folder using sparse checkout
+              echo '--- Cloning or updating manager-api folder only ---'
+              if [ -d \"\${SERVICE_DIR}/.git\" ]; then
+                echo 'Repository exists, pulling latest changes for ${CIRCLE_BRANCH} branch...'
+                cd \"\${SERVICE_DIR}\"
                 git fetch origin
                 git checkout ${CIRCLE_BRANCH}
                 git pull origin ${CIRCLE_BRANCH}
               else
-                echo 'Cloning new repository from ${CIRCLE_BRANCH} branch...'
-                # Clone using HTTPS URL (no SSH keys needed) and checkout the specific branch
-                git clone -b ${CIRCLE_BRANCH} \"https://github.com/Craftech360-projects/xiaozhi-esp32-server.git\" \"\${PROJECT_ROOT_DIR}\"
+                echo 'Setting up sparse checkout for main/manager-api from ${CIRCLE_BRANCH} branch...'
+                mkdir -p \"${AZURE_DEPLOY_PATH}/main\"
+                cd \"${AZURE_DEPLOY_PATH}/main\"
+
+                # Initialize git repository with sparse checkout
+                git clone --no-checkout --filter=blob:none -b ${CIRCLE_BRANCH} \\
+                  \"https://github.com/Craftech360-projects/xiaozhi-esp32-server.git\" ${SVC}
+
+                cd ${SVC}
+
+                # Enable sparse checkout and specify the folder
+                git sparse-checkout init --cone
+                git sparse-checkout set main/manager-api
+
+                # Checkout the files
+                git checkout ${CIRCLE_BRANCH}
+
+                # Move contents up to the root level for easier access
+                if [ -d \"main/manager-api\" ]; then
+                  # Create temp directory and move files
+                  mkdir -p /tmp/manager-api-temp
+                  mv main/manager-api/* /tmp/manager-api-temp/
+                  rm -rf main
+                  mv /tmp/manager-api-temp/* .
+                  rmdir /tmp/manager-api-temp
+                fi
               fi
 
               # Navigate to the service directory
