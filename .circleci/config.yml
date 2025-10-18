@@ -796,17 +796,42 @@ jobs:
           command: |
             SVC="<< parameters.service_name >>"
             DIR="<< parameters.service_path >>"
+
+            echo "=== Building ${SVC} ==="
             cd "$DIR"
+
             if [ -f package-lock.json ]; then
               npm ci --no-audit --no-fund
             else
               npm install --no-audit --no-fund
             fi
+
             npm run build
-            cd ..
+
+            # Navigate to project root for proper tarball creation
+            cd /home/circleci/project
+
             mkdir -p /tmp/workspace
-            tar -czf "/tmp/workspace/${SVC}.tar.gz" -C "." "$(basename "$DIR")"
-            echo "✅ ${SVC} frontend built"
+
+            # Verify the directory exists before creating tarball
+            if [ ! -d "$DIR" ]; then
+              echo "❌ Error: Directory $DIR not found"
+              exit 1
+            fi
+
+            # Create tarball with verbose output for debugging
+            echo "Creating tarball from: $DIR"
+            tar -czf "/tmp/workspace/${SVC}.tar.gz" "$DIR"
+
+            # Verify tarball was created successfully
+            if [ -f "/tmp/workspace/${SVC}.tar.gz" ]; then
+              echo "Tarball size: $(ls -lh /tmp/workspace/${SVC}.tar.gz | awk '{print $5}')"
+              tar -tzf "/tmp/workspace/${SVC}.tar.gz" | head -10
+              echo "✅ ${SVC} frontend built successfully"
+            else
+              echo "❌ Failed to create tarball"
+              exit 1
+            fi
       - save_cache:
           paths:
             - << parameters.service_path >>/node_modules
@@ -905,7 +930,17 @@ jobs:
               # Ensure dependencies are installed on the VM
               echo '--- Installing dependencies (git, maven, java, nodejs) ---'
               sudo apt-get update -y
-              sudo apt-get install -y git maven openjdk-17-jre-headless nodejs
+              sudo apt-get install -y git maven openjdk-17-jdk nodejs
+
+              # Set JAVA_HOME globally for the session
+              export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+              export PATH=\$JAVA_HOME/bin:\$PATH
+
+              # Verify Java installation
+              echo '--- Verifying Java and Maven ---'
+              java -version
+              javac -version
+              mvn --version
 
               # Install PM2 if not present
               if ! command -v pm2 >/dev/null 2>&1; then
@@ -957,12 +992,58 @@ jobs:
               # Start the application using PM2
               echo '--- Starting application with PM2 ---'
 
-              # Create PM2 ecosystem file
-              printf '%s\\n' \"module.exports = { apps: [{ name: '${SVC}', script: 'mvn', args: 'spring-boot:run -Dspring-boot.run.arguments=--spring.profiles.active=${ENV_NAME}', interpreter: 'none', cwd: '\${SERVICE_DIR}' }] };\" > ecosystem.config.js
+              # Set JAVA_HOME for Maven
+              export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 
+              # Create PM2 ecosystem file with proper environment variables and error logging
+              cat > ecosystem.config.js <<'EOFPM2'
+module.exports = {
+  apps: [{
+    name: '${SVC}',
+    script: 'mvn',
+    args: 'spring-boot:run -Dspring-boot.run.arguments=--spring.profiles.active=${ENV_NAME}',
+    interpreter: 'none',
+    cwd: '\${SERVICE_DIR}',
+    env: {
+      JAVA_HOME: '/usr/lib/jvm/java-17-openjdk-amd64',
+      PATH: '/usr/lib/jvm/java-17-openjdk-amd64/bin:/usr/bin:/bin:\$PATH'
+    },
+    error_file: '\${SERVICE_DIR}/logs/pm2-error.log',
+    out_file: '\${SERVICE_DIR}/logs/pm2-out.log',
+    log_file: '\${SERVICE_DIR}/logs/pm2-combined.log',
+    time: true,
+    autorestart: true,
+    max_restarts: 10,
+    min_uptime: '10s',
+    restart_delay: 5000
+  }]
+};
+EOFPM2
+
+              # Replace variables in ecosystem.config.js
+              sed -i \"s/\\\${SVC}/${SVC}/g\" ecosystem.config.js
+              sed -i \"s|\\\${SERVICE_DIR}|${AZURE_DEPLOY_PATH}/main/${SVC}|g\" ecosystem.config.js
+              sed -i \"s/\\\${ENV_NAME}/${ENV_NAME}/g\" ecosystem.config.js
+
+              # Create logs directory
+              mkdir -p logs
+
+              # Show the ecosystem config for debugging
+              echo '--- PM2 Ecosystem Config ---'
+              cat ecosystem.config.js
+
+              # Delete existing PM2 process
               pm2 delete ${SVC} || true
+
+              # Start with PM2
               pm2 start ecosystem.config.js
               pm2 save
+
+              # Wait a few seconds and check if it's still running
+              sleep 5
+              pm2 status
+              pm2 logs ${SVC} --lines 20 --nostream || true
+
               echo \"✅ ${SVC} deployed successfully from source\"
             "
   # Deploy Vue.js frontend with PM2
@@ -1079,30 +1160,62 @@ jobs:
                 sudo npm install -g pm2
               fi
 
-              # Create virtual environment with Python 3.10 and install project dependencies
-              echo '--- Creating virtual environment and installing packages ---'
-              python3.10 -m venv venv
+              # Check if virtual environment already exists and has dependencies
+              if [ -d \"venv\" ] && [ -f \"venv/bin/python\" ]; then
+                echo '--- Virtual environment exists, checking if dependencies are installed ---'
+                source venv/bin/activate
 
-              # Activate virtual environment and upgrade pip
-              source venv/bin/activate
-              pip install --upgrade pip setuptools wheel
+                # Check if aiohttp is installed
+                if python -c \"import aiohttp\" 2>/dev/null; then
+                  echo '✅ Dependencies already installed, skipping pip install'
+                  VENV_EXISTS=true
+                else
+                  echo '⚠️  Virtual environment exists but dependencies missing, reinstalling...'
+                  VENV_EXISTS=false
+                fi
 
-              # Install the project dependencies from pyproject.toml
-              pip install -v .
+                deactivate
+              else
+                echo '--- No virtual environment found ---'
+                VENV_EXISTS=false
+              fi
 
-              # Verify critical dependencies are installed
-              echo '--- Verifying dependencies ---'
-              python -c \"import aiohttp; print('✅ aiohttp installed')\" || {
-                echo '❌ aiohttp not found, installing explicitly...'
-                pip install aiohttp
-              }
-              python -c \"import sentence_transformers; print('✅ sentence_transformers installed')\" || {
-                echo '❌ sentence_transformers not found, installing explicitly...'
-                pip install sentence-transformers
-              }
+              # Create or recreate virtual environment if needed
+              if [ \"\$VENV_EXISTS\" = \"false\" ]; then
+                echo '--- Creating virtual environment and installing packages ---'
+                rm -rf venv
+                python3.10 -m venv venv
 
-              echo '--- Listing installed packages ---'
-              pip list | grep -E '(aiohttp|sentence-transformers|livekit)' || echo 'Warning: Some packages may be missing'
+                # Activate virtual environment and upgrade pip
+                source venv/bin/activate
+                pip install --upgrade pip setuptools wheel
+
+                # Install the project dependencies from pyproject.toml
+                echo '--- Installing dependencies from pyproject.toml ---'
+                pip install -v . || {
+                  echo '❌ pip install failed, trying alternative approach...'
+                  pip install aiohttp sentence-transformers qdrant-client
+                  pip install 'livekit-agents[openai,turn-detector,silero,cartesia,deepgram]~=1.2'
+                  pip install livekit-plugins-noise-cancellation livekit-plugins-groq livekit.plugins.deepgram
+                  pip install livekit-plugins-elevenlabs python-dotenv paho-mqtt pydub edge-tts gtts pyttsx3 mem0ai jinja2 pytz
+                }
+
+                # Verify critical dependencies are installed
+                echo '--- Verifying dependencies ---'
+                python -c \"import aiohttp; print('✅ aiohttp installed')\" || {
+                  echo '❌ aiohttp still not found after install'
+                  exit 1
+                }
+                python -c \"import sentence_transformers; print('✅ sentence_transformers installed')\" || {
+                  echo '❌ sentence_transformers still not found after install'
+                  exit 1
+                }
+
+                echo '--- Listing installed packages ---'
+                pip list | grep -E '(aiohttp|sentence-transformers|livekit)' || echo 'Warning: Some packages may be missing'
+
+                deactivate
+              fi
 
               # Create PM2 ecosystem file
               printf '%s\n' \"module.exports = {\" > ecosystem.config.js
