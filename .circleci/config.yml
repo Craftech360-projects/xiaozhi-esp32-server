@@ -1197,22 +1197,22 @@ jobs:
               fi
 
               # Create a stable Express server for serving the Vue app
-              echo '--- Creating Express server for ${SVC} ---'
-              cat > server.js << 'SERVEREOF'
-              const express = require('express');
-              const path = require('path');
-              const app = express();
-              const PORT = process.env.HTTP_PORT || 8886;
+              echo '--- Creating Express server for \${SVC} ---'
+              cat > server.js <<'SERVEREOF'
+const express = require('express');
+const path = require('path');
+const app = express();
+const PORT = process.env.HTTP_PORT || 8886;
 
-              app.use(express.static(path.join(__dirname, 'dist')));
+app.use(express.static(path.join(__dirname, 'dist')));
 
-              app.use((req, res) => {
-                res.sendFile(path.join(__dirname, 'dist', 'index.html'));
-              });
+app.use((req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
 
-              app.listen(PORT, '0.0.0.0', () => {
-                console.log('Manager Web started on port ' + PORT);
-              });
+app.listen(PORT, '0.0.0.0', () => {
+  console.log('Manager Web started on port ' + PORT);
+});
 SERVEREOF
 
               # Install express if not present
