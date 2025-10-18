@@ -995,38 +995,31 @@ jobs:
               # Set JAVA_HOME for Maven
               export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 
-              # Create PM2 ecosystem file with proper environment variables and error logging
-              cat > ecosystem.config.js <<'EOFPM2'
-module.exports = {
-  apps: [{
-    name: '${SVC}',
-    script: 'mvn',
-    args: 'spring-boot:run -Dspring-boot.run.arguments=--spring.profiles.active=${ENV_NAME}',
-    interpreter: 'none',
-    cwd: '\${SERVICE_DIR}',
-    env: {
-      JAVA_HOME: '/usr/lib/jvm/java-17-openjdk-amd64',
-      PATH: '/usr/lib/jvm/java-17-openjdk-amd64/bin:/usr/bin:/bin:\$PATH'
-    },
-    error_file: '\${SERVICE_DIR}/logs/pm2-error.log',
-    out_file: '\${SERVICE_DIR}/logs/pm2-out.log',
-    log_file: '\${SERVICE_DIR}/logs/pm2-combined.log',
-    time: true,
-    autorestart: true,
-    max_restarts: 10,
-    min_uptime: '10s',
-    restart_delay: 5000
-  }]
-};
-EOFPM2
-
-              # Replace variables in ecosystem.config.js
-              sed -i \"s/\\\${SVC}/${SVC}/g\" ecosystem.config.js
-              sed -i \"s|\\\${SERVICE_DIR}|${AZURE_DEPLOY_PATH}/main/${SVC}|g\" ecosystem.config.js
-              sed -i \"s/\\\${ENV_NAME}/${ENV_NAME}/g\" ecosystem.config.js
-
               # Create logs directory
               mkdir -p logs
+
+              # Create PM2 ecosystem file with proper environment variables and error logging
+              printf '%s\\n' \"module.exports = {\" > ecosystem.config.js
+              printf '%s\\n' \"  apps: [{\" >> ecosystem.config.js
+              printf '%s\\n' \"    name: '${SVC}',\" >> ecosystem.config.js
+              printf '%s\\n' \"    script: 'mvn',\" >> ecosystem.config.js
+              printf '%s\\n' \"    args: 'spring-boot:run -Dspring-boot.run.arguments=--spring.profiles.active=${ENV_NAME}',\" >> ecosystem.config.js
+              printf '%s\\n' \"    interpreter: 'none',\" >> ecosystem.config.js
+              printf '%s\\n' \"    cwd: '${AZURE_DEPLOY_PATH}/main/${SVC}',\" >> ecosystem.config.js
+              printf '%s\\n' \"    env: {\" >> ecosystem.config.js
+              printf '%s\\n' \"      JAVA_HOME: '/usr/lib/jvm/java-17-openjdk-amd64',\" >> ecosystem.config.js
+              printf '%s\\n' \"      PATH: '/usr/lib/jvm/java-17-openjdk-amd64/bin:/usr/bin:/bin'\" >> ecosystem.config.js
+              printf '%s\\n' \"    },\" >> ecosystem.config.js
+              printf '%s\\n' \"    error_file: '${AZURE_DEPLOY_PATH}/main/${SVC}/logs/pm2-error.log',\" >> ecosystem.config.js
+              printf '%s\\n' \"    out_file: '${AZURE_DEPLOY_PATH}/main/${SVC}/logs/pm2-out.log',\" >> ecosystem.config.js
+              printf '%s\\n' \"    log_file: '${AZURE_DEPLOY_PATH}/main/${SVC}/logs/pm2-combined.log',\" >> ecosystem.config.js
+              printf '%s\\n' \"    time: true,\" >> ecosystem.config.js
+              printf '%s\\n' \"    autorestart: true,\" >> ecosystem.config.js
+              printf '%s\\n' \"    max_restarts: 10,\" >> ecosystem.config.js
+              printf '%s\\n' \"    min_uptime: '10s',\" >> ecosystem.config.js
+              printf '%s\\n' \"    restart_delay: 5000\" >> ecosystem.config.js
+              printf '%s\\n' \"  }]\" >> ecosystem.config.js
+              printf '%s\\n' \"};\" >> ecosystem.config.js
 
               # Show the ecosystem config for debugging
               echo '--- PM2 Ecosystem Config ---'
