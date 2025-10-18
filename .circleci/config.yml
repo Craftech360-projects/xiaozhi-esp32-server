@@ -458,8 +458,6 @@ jobs:
               # Create an agent.py module that the test expects
               echo "from src.agent.main_agent import Assistant" > agent.py
 
-              # Install additional dependencies for LiveKit tests
-              pip3 install livekit-agents livekit-plugins-openai || echo "Could not install LiveKit dependencies"
 
               # Check if the test file exists and try to run it
               if [ -f tests/test_agent.py ]; then
@@ -631,43 +629,56 @@ jobs:
             # Upload and deploy
             scp -o StrictHostKeyChecking=no "/tmp/workspace/${SVC}.tar.gz" "${AZURE_USER}@${AZURE_HOST}:/tmp/"
 
-                          ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
-                            set -e
+            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" bash -c "'
+              set -e
+              
+              mkdir -p \"${AZURE_DEPLOY_PATH}/main\"
+              cd \"${AZURE_DEPLOY_PATH}/main\"
+              tar -xzf /tmp/${SVC}.tar.gz
+              cd \"${SVC}\"
+
+              # Install PM2 if needed
+              if ! command -v pm2 >/dev/null 2>&1; then
+                curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+                sudo apt-get install -y nodejs
+                sudo npm install -g pm2
+              fi
+
+              echo \"--- Installing Node.js dependencies ---\"
+              npm install --omit=dev --no-audit --no-fund
+              echo \"--- Dependencies installed successfully ---\"
+
+              # Create PM2 ecosystem file
+              cat > ecosystem.config.js << \"EOL\"
+module.exports = {
+  apps: [{
+    name: \"${SVC}\",
+    script: \"node\",
+    args: \"app.js\",
+    cwd: \"${AZURE_DEPLOY_PATH}/main/${SVC}\",
+    env: {
+      NODE_ENV: \"${ENV_NAME}\",
+      HTTP_PORT: \"${HTTP_PORT}\",
+      MQTT_PORT: \"${MQTT_PORT}\"
+    }
+  }]
+};
+EOL
+
+              # Debug: Show ecosystem file content
+              echo \"Generated ecosystem.config.js content:\"
+              cat ecosystem.config.js
                             
-                            mkdir -p ${AZURE_DEPLOY_PATH}/main
-                            cd ${AZURE_DEPLOY_PATH}/main
-                            tar -xzf /tmp/${SVC}.tar.gz
-                            cd ${SVC}
-
-                            # Install PM2 if needed
-                            if ! command -v pm2 >/dev/null 2>&1; then
-                              curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-                              sudo apt-get install -y nodejs
-                              sudo npm install -g pm2
-                            fi
-
-                            echo '--- Installing Node.js dependencies ---'
-                            npm install --omit=dev --no-audit --no-fund
-                            echo '--- Dependencies installed successfully ---'
-
-                            # Create PM2 ecosystem file
-                            CONFIG_CONTENT="module.exports = {
-                              apps: [{
-                                name: \\\"${SVC}\\\",
-                                script: \\\"node\\\",
-                                args: \\\"app.js\\\",
-                                cwd: \\\"${AZURE_DEPLOY_PATH}/main/${SVC}\\\",
-                                env: { 
-                                  NODE_ENV: \\\"${ENV_NAME}\\\",
-                                  HTTP_PORT: \\\"${HTTP_PORT}\\\",
-                                  MQTT_PORT: \\\"${MQTT_PORT}\\\"
-                                }
-                              }]
-                            };"
-                            printf "%s" "$CONFIG_CONTENT" > ecosystem.config.js
-                            
-                            pm2 delete ${SVC} || true
-                            pm2 start ecosystem.config.js
+              # Start the application with PM2
+              echo \"Starting application with PM2...\"
+              pm2 delete \"${SVC}\" || true
+              pm2 start ecosystem.config.js
+              
+              # Verify the process is running
+              pm2 show \"${SVC}\"
+              
+              echo \"✅ ${SVC} deployed successfully\"
+'"
                             pm2 save
 
                             pm2 delete ${SVC} || true
@@ -840,40 +851,28 @@ jobs:
             ENV="<< parameters.env >>"
             SPRING_PROFILE=$([ "$ENV" = "development" ] && echo "dev" || echo "prod")
             ENV_NAME="<< parameters.env >>"
-            # Using CircleCI's built-in variable for the repo URL
             REPO_URL="$CIRCLE_REPOSITORY_URL"
 
             : "${AZURE_HOST:?Set AZURE_HOST in CircleCI context}"
             : "${AZURE_USER:?Set AZURE_USER in CircleCI context}"
             : "${AZURE_DEPLOY_PATH:?Set AZURE_DEPLOY_PATH in CircleCI context}"
 
-            # Get repository URL and ensure it's in SSH format
-            if [ -z "$CIRCLE_REPOSITORY_URL" ]; then
-              echo "Error: CIRCLE_REPOSITORY_URL is not set"
-              exit 1
-            fi
-
             # Convert HTTPS URL to SSH URL if needed
             if [[ $CIRCLE_REPOSITORY_URL == https://github.com/* ]]; then
               REPO_URL="git@github.com:${CIRCLE_REPOSITORY_URL#https://github.com/}"
-            else
-              REPO_URL="$CIRCLE_REPOSITORY_URL"
             fi
 
             echo "🚀 Deploying ${SVC} from source to Azure VM using Maven"
             echo "Repository URL: ${REPO_URL}"
 
-            # Pass the repository URL as an environment variable to the SSH command
             export REPO_URL
-            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "export REPO_URL='${REPO_URL}'; bash -s" << 'ENDSSH'
+            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" bash -s << 'ENDSSH'
               set -e
-              
-              # Ensure dependencies are installed on the VM
+
               echo '--- Installing dependencies (git, maven, java, nodejs) ---'
               sudo apt-get update -y
               sudo apt-get install -y git maven openjdk-17-jre-headless nodejs
 
-              # Install PM2 if not present
               if ! command -v pm2 >/dev/null 2>&1; then
                 sudo npm install -g pm2
               fi
@@ -881,20 +880,20 @@ jobs:
               PROJECT_ROOT_DIR="${AZURE_DEPLOY_PATH}/xiaozhi-esp32-server"
               SERVICE_DIR="${PROJECT_ROOT_DIR}/main/${SVC}"
 
-              # Debug: Show repository URL
               echo "Using repository URL: ${REPO_URL}"
 
-              # Clone or update the source code on the VM
               echo '--- Cloning or updating source code ---'
               if [ -d "${PROJECT_ROOT_DIR}/.git" ]; then
-                echo 'Repository exists, pulling latest changes...'
                 cd "${PROJECT_ROOT_DIR}"
                 git pull
               else
-                echo 'Cloning new repository...'
-                # Clone using the repository URL
                 git clone "${REPO_URL}" "${PROJECT_ROOT_DIR}"
               fi
+
+              cd "${SERVICE_DIR}"
+
+              echo '--- Starting application with PM2 ---'
+              pm2 start app.jar --name "${SVC}"
 ENDSSH
 
               # Navigate to the service directory
@@ -1001,9 +1000,9 @@ ENDSSH
             # Upload and extract
             scp -o StrictHostKeyChecking=no "/tmp/workspace/${SVC}.tar.gz" "${AZURE_USER}@${AZURE_HOST}:/tmp/"
 
-            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
+            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" bash -c "'
               set -e
-              mkdir -p ${AZURE_DEPLOY_PATH}/main
+              mkdir -p \"${AZURE_DEPLOY_PATH}/main\"
               cd ${AZURE_DEPLOY_PATH}/main
               tar -xzf /tmp/${SVC}.tar.gz
               cd ${SVC}
@@ -1023,8 +1022,20 @@ ENDSSH
               # Create virtual environment with Python 3.10 and install project dependencies
               echo '--- Creating virtual environment and installing packages ---'
               python3.10 -m venv venv
-              source venv/bin/activate
-              pip install .
+              . ./venv/bin/activate
+
+              # Upgrade pip to avoid warnings and ensure compatibility
+              python -m pip install --upgrade pip
+
+              # Install project dependencies with error handling
+              if ! python -m pip install .; then
+                echo "Failed to install project dependencies. Retrying with verbose output..."
+                python -m pip install -v .
+                if [ $? -ne 0 ]; then
+                  echo "Package installation failed after retry"
+                  exit 1
+                fi
+              fi
 
               # Create PM2 ecosystem file
               CONFIG_CONTENT="module.exports = {
