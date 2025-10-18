@@ -66,7 +66,7 @@ jobs:
             : "${AZURE_USER:?Set AZURE_USER in CircleCI context}"
             : "${AZURE_DEPLOY_PATH:?Set AZURE_DEPLOY_PATH in CircleCI context}"
 
-            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
+            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" bash << 'EOL'
               set -e
               
               # Install Docker if not present
@@ -75,12 +75,10 @@ jobs:
               fi
 
               # Ensure user has Docker permissions
-              sudo usermod -aG docker \$USER
+              sudo usermod -aG docker $USER
               
               # Create new session to apply group changes and run commands
-              sudo -E -u \$USER bash -c '
-                # Verify Docker access
-                docker ps || exit 1'
+              sudo -E -u $USER bash -c "docker ps || exit 1"
 
               # Create directories for EMQX persistence with proper permissions
               sudo mkdir -p ${AZURE_DEPLOY_PATH}/emqx/data ${AZURE_DEPLOY_PATH}/emqx/log
@@ -101,41 +99,45 @@ jobs:
                 exit 1
               }
 
+              MQTT_PORT='<< parameters.mqtt_port >>'
+              MQTT_WS_PORT='<< parameters.mqtt_ws_port >>'
+              HTTP_PORT='<< parameters.http_port >>'
+              
               # Run EMQX container with error handling
               docker run -d --name xiaozhi-emqx \
                 --restart unless-stopped \
-                -p << parameters.mqtt_port >>:1883 \
+                -p "${MQTT_PORT}":1883 \
                 -p 8883:8883 \
-                -p << parameters.mqtt_ws_port >>:8083 \
+                -p "${MQTT_WS_PORT}":8083 \
                 -p 8084:8084 \
-                -p << parameters.http_port >>:18083 \
-                -v ${AZURE_DEPLOY_PATH}/emqx/data:/opt/emqx/data \
-                -v ${AZURE_DEPLOY_PATH}/emqx/log:/opt/emqx/log \
-                -e "EMQX_NAME=emqx" \
-                -e "EMQX_HOST=127.0.0.1" \
-                -e "EMQX_CLUSTER__DISCOVERY_STRATEGY=manual" \
-                -e "EMQX_ALLOW_ANONYMOUS=true" \
-                -e "EMQX_DASHBOARD__DEFAULT_USERNAME=admin" \
-                -e "EMQX_DASHBOARD__DEFAULT_PASSWORD=public" \
+                -p "${HTTP_PORT}":18083 \
+                -v "${AZURE_DEPLOY_PATH}/emqx/data:/opt/emqx/data" \
+                -v "${AZURE_DEPLOY_PATH}/emqx/log:/opt/emqx/log" \
+                -e EMQX_NAME=emqx \
+                -e EMQX_HOST=127.0.0.1 \
+                -e EMQX_CLUSTER__DISCOVERY_STRATEGY=manual \
+                -e EMQX_ALLOW_ANONYMOUS=true \
+                -e EMQX_DASHBOARD__DEFAULT_USERNAME=admin \
+                -e EMQX_DASHBOARD__DEFAULT_PASSWORD=public \
                 --hostname xiaozhi-emqx \
                 emqx/emqx:5.8.3
 
               # Wait for EMQX to be ready
               echo 'Waiting for EMQX to be ready...'
-              for i in \$(seq 1 30); do
-                if curl -s http://localhost:18083/status > /dev/null; then
+              for i in $(seq 1 30); do
+                if curl -s "http://localhost:${HTTP_PORT}/status" > /dev/null; then
                   echo 'EMQX is ready!'
                   docker ps | grep xiaozhi-emqx
                   exit 0
                 fi
-                echo "Waiting... (\$i/30)"
+                echo "Waiting... ($i/30)"
                 sleep 2
               done
               
               echo 'EMQX failed to start properly'
               docker logs xiaozhi-emqx
               exit 1
-            "
+EOL
 
   # ==========================================
   # TESTING PIPELINE JOBS
