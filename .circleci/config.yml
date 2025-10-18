@@ -955,7 +955,22 @@ jobs:
                 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
                 sudo apt-get install -y nodejs
               fi
-              sudo npm install -g pm2 serve
+
+              # Install PM2 if not already installed
+              if ! command -v pm2 >/dev/null 2>&1; then
+                sudo npm install -g pm2 || {
+                  echo 'Failed to install PM2'
+                  exit 1
+                }
+              fi
+
+              # Install serve if not already installed
+              if ! command -v serve >/dev/null 2>&1; then
+                sudo npm install -g serve || {
+                  echo 'Failed to install serve'
+                  exit 1
+                }
+              fi
 
               pm2 delete ${SVC} || true
               pm2 start serve --name ${SVC} -- -s dist -l ${HTTP_PORT}
@@ -1022,13 +1037,13 @@ jobs:
               # Create PM2 ecosystem file
               printf '%s\n' \"module.exports = {\" > ecosystem.config.js
               printf '%s\n' \"  apps: [{\" >> ecosystem.config.js
-              printf '%s\n' \"    name: '\${SVC}',\" >> ecosystem.config.js
-              printf '%s\n' \"    script: '\${AZURE_DEPLOY_PATH}/main/\${SVC}/venv/bin/python',\" >> ecosystem.config.js
-              printf '%s\n' \"    args: ['\${ENTRY}', '\${ENV_NAME}'],\" >> ecosystem.config.js
-              printf '%s\n' \"    cwd: '\${AZURE_DEPLOY_PATH}/main/\${SVC}',\" >> ecosystem.config.js
+              printf '%s\n' \"    name: '${SVC}',\" >> ecosystem.config.js
+              printf '%s\n' \"    script: '${AZURE_DEPLOY_PATH}/main/${SVC}/venv/bin/python',\" >> ecosystem.config.js
+              printf '%s\n' \"    args: ['${ENTRY}', '${ENV_NAME}'],\" >> ecosystem.config.js
+              printf '%s\n' \"    cwd: '${AZURE_DEPLOY_PATH}/main/${SVC}',\" >> ecosystem.config.js
               printf '%s\n' \"    env: {\" >> ecosystem.config.js
-              printf '%s\n' \"      HTTP_PORT: '\${HTTP_PORT}',\" >> ecosystem.config.js
-              printf '%s\n' \"      NODE_ENV: '\${ENV_NAME}'\" >> ecosystem.config.js
+              printf '%s\n' \"      HTTP_PORT: '${HTTP_PORT}',\" >> ecosystem.config.js
+              printf '%s\n' \"      NODE_ENV: '${ENV_NAME}'\" >> ecosystem.config.js
               printf '%s\n' \"    },\" >> ecosystem.config.js
               printf '%s\n' \"    autorestart: true\" >> ecosystem.config.js
               printf '%s\n' \"  }]\" >> ecosystem.config.js
