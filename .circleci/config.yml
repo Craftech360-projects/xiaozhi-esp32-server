@@ -1070,8 +1070,27 @@ jobs:
               # Create virtual environment with Python 3.10 and install project dependencies
               echo '--- Creating virtual environment and installing packages ---'
               python3.10 -m venv venv
+
+              # Activate virtual environment and upgrade pip
               source venv/bin/activate
-              pip install .
+              pip install --upgrade pip setuptools wheel
+
+              # Install the project dependencies from pyproject.toml
+              pip install -v .
+
+              # Verify critical dependencies are installed
+              echo '--- Verifying dependencies ---'
+              python -c \"import aiohttp; print('✅ aiohttp installed')\" || {
+                echo '❌ aiohttp not found, installing explicitly...'
+                pip install aiohttp
+              }
+              python -c \"import sentence_transformers; print('✅ sentence_transformers installed')\" || {
+                echo '❌ sentence_transformers not found, installing explicitly...'
+                pip install sentence-transformers
+              }
+
+              echo '--- Listing installed packages ---'
+              pip list | grep -E '(aiohttp|sentence-transformers|livekit)' || echo 'Warning: Some packages may be missing'
 
               # Create PM2 ecosystem file
               printf '%s\n' \"module.exports = {\" > ecosystem.config.js
