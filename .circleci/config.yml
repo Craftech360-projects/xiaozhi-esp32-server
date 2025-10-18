@@ -101,39 +101,39 @@ jobs:
                 exit 1
               }
 
-              # Get host IP for node name
-              HOST_IP=$(ip route get 1 | awk '{print $7;exit}')
-              echo "Host IP: ${HOST_IP}"
-
               # Run EMQX container with error handling
               docker run -d --name xiaozhi-emqx \\
                 --restart unless-stopped \\
-                --net=host \\
+                -p << parameters.mqtt_port >>:1883 \\
+                -p 8883:8883 \\
+                -p << parameters.mqtt_ws_port >>:8083 \\
+                -p 8084:8084 \\
+                -p << parameters.http_port >>:18083 \\
                 -v ${AZURE_DEPLOY_PATH}/emqx/data:/opt/emqx/data \\
                 -v ${AZURE_DEPLOY_PATH}/emqx/log:/opt/emqx/log \\
-                -e EMQX_NODE__NAME=emqx@${HOST_IP} \\
-                -e EMQX_NODE__COOKIE=xiaozhi_secret_cookie \\
+                -e EMQX_NAME=emqx \\
+                -e EMQX_HOST=127.0.0.1 \\
                 -e EMQX_CLUSTER__DISCOVERY_STRATEGY=manual \\
                 -e EMQX_ALLOW_ANONYMOUS=true \\
                 -e EMQX_DASHBOARD__DEFAULT_USERNAME=admin \\
                 -e EMQX_DASHBOARD__DEFAULT_PASSWORD=public \\
-                -e EMQX_LISTENER__TCP__EXTERNAL=1883 \\
-                -e EMQX_LISTENER__WS__EXTERNAL=8083 \\
-                -e EMQX_DASHBOARD__LISTENER__HTTP=18083 \
                 --hostname xiaozhi-emqx \
                 emqx/emqx:5.8.3
 
               # Wait for EMQX to be ready
               echo 'Waiting for EMQX to be ready...'
               for i in \$(seq 1 30); do
-                if docker exec xiaozhi-emqx emqx ctl status | grep -q 'is running'; then
+                if curl -s http://localhost:18083/status > /dev/null; then
                   echo 'EMQX is ready!'
+                  docker ps | grep xiaozhi-emqx
                   exit 0
                 fi
+                echo "Waiting... (\$i/30)"
                 sleep 2
               done
               
               echo 'EMQX failed to start properly'
+              docker logs xiaozhi-emqx
               exit 1
             "
 
