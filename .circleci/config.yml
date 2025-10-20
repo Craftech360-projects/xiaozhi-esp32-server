@@ -754,9 +754,32 @@ jobs:
                 sudo npm install -g pm2
               fi
 
+              # Install system dependencies for MQTT Gateway (Opus codec support)
+              if [ \"\${SVC}\" = \"mqtt-gateway\" ]; then
+                echo '--- Installing system dependencies for Opus codec ---'
+                sudo apt-get update -qq
+                sudo apt-get install -y build-essential libopus0 libopus-dev python3 make
+                echo '✅ System dependencies installed'
+              fi
+
               echo '--- Installing Node.js dependencies ---'
               npm install --omit=dev --no-audit --no-fund
               echo '--- Dependencies installed successfully ---'
+
+              # Rebuild native modules for MQTT Gateway (Opus codec)
+              if [ \"\${SVC}\" = \"mqtt-gateway\" ]; then
+                echo '--- Rebuilding @discordjs/opus native module ---'
+                npm rebuild @discordjs/opus --build-from-source || {
+                  echo '❌ Warning: Opus rebuild failed, but continuing deployment...'
+                }
+
+                # Verify opus installation
+                if node -e \"require('@discordjs/opus')\" 2>/dev/null; then
+                  echo '✅ Opus codec installed and verified successfully'
+                else
+                  echo '⚠️  Warning: Opus codec verification failed'
+                fi
+              fi
 
               # Create .env file for MQTT gateway (fixes UDP port binding issue)
               if [ \"\${SVC}\" = \"mqtt-gateway\" ]; then
@@ -1290,6 +1313,18 @@ jobs:
               sudo add-apt-repository -y ppa:deadsnakes/ppa
               sudo apt-get update -y
               sudo apt-get install -y python3.10 python3.10-venv python3.10-dev nodejs
+
+              # Install ffmpeg for audio processing (required by LiveKit server)
+              echo '--- Installing ffmpeg for audio processing ---'
+              sudo apt-get install -y ffmpeg libavcodec-extra
+
+              # Verify ffmpeg installation
+              if command -v ffmpeg >/dev/null 2>&1; then
+                echo '✅ ffmpeg installed successfully'
+                ffmpeg -version | head -1
+              else
+                echo '❌ Warning: ffmpeg installation failed'
+              fi
 
               if ! command -v pm2 >/dev/null 2>&1; then
                 sudo npm install -g pm2
