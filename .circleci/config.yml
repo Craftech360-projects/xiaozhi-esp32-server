@@ -15,7 +15,7 @@ executors:
   node-executor:
     machine:
       image: ubuntu-2204:2024.01.1
-    resource_class: large
+    resource_class: medium
     environment:
       NPM_CONFIG_RETRY: "3"
       NPM_CONFIG_FETCH_RETRY_MINTIMEOUT: "2000"
@@ -24,12 +24,12 @@ executors:
   base-executor:
     machine:
       image: ubuntu-2204:2024.01.1
-    resource_class: large
+    resource_class: medium
 
   maven-executor:
     machine:
       image: ubuntu-2204:2024.01.1
-    resource_class: large
+    resource_class: medium
     environment:
       MAVEN_OPTS: -Xmx1024m
       MAVEN_CLI_OPTS: "--batch-mode --errors --fail-at-end --show-version"
@@ -37,7 +37,7 @@ executors:
   python-executor:
     machine:
       image: ubuntu-2204:2024.01.1
-    resource_class: large
+    resource_class: medium
     environment:
       PYTHONPATH: /home/circleci/project
 
@@ -1474,7 +1474,7 @@ jobs:
     machine:
       image: ubuntu-2204:2024.01.1
       docker_layer_caching: true
-    resource_class: large
+    resource_class: medium
     steps:
       - checkout
       - run:
