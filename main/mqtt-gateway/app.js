@@ -2230,6 +2230,30 @@ class MQTTConnection {
           audio_params: helloReply.audio_params,
         })
       );
+
+      // Auto-start PCM streaming test after hello response
+      console.log(`🧪 [AUTO-PCM] Starting automatic PCM streaming test for device: ${this.macAddress}`);
+      
+      // Send TTS start message
+      this.sendMqttMessage(
+        JSON.stringify({
+          type: "tts",
+          state: "start",
+          text: "Starting PCM streaming test",
+          session_id: this.udp.session_id,
+        })
+      );
+
+      // Start PCM streaming after a short delay
+      setTimeout(async () => {
+        try {
+          const { testPCMStreaming } = require('./test_pcm_streaming');
+          await testPCMStreaming(this);
+          console.log(`✅ [AUTO-PCM] Automatic PCM streaming test completed for device: ${this.macAddress}`);
+        } catch (error) {
+          console.error(`❌ [AUTO-PCM] Error in automatic PCM streaming test: ${error.message}`);
+        }
+      }, 1000); // 1 second delay to ensure hello response is processed
     } catch (error) {
       this.sendMqttMessage(
         JSON.stringify({
@@ -2257,6 +2281,38 @@ class MQTTConnection {
       console.log(`👋 [GOODBYE-MAC] Received goodbye message from device: ${this.macAddress}, session: ${json.session_id}`);
       this.bridge.close();
       this.bridge = null;
+      return;
+    }
+
+    // Handle PCM test command - bypass LiveKit and stream test.pcm
+    if (json.type === "test_pcm") {
+      try {
+        console.log(`🧪 [TEST-PCM] Received PCM test command from device: ${this.macAddress}`);
+        const { testPCMStreaming } = require('./test_pcm_streaming');
+        
+        // Send acknowledgment
+        this.sendMqttMessage(
+          JSON.stringify({
+            type: "test_pcm_ack",
+            message: "Starting PCM streaming test",
+            session_id: json.session_id
+          })
+        );
+        
+        // Start PCM streaming test
+        await testPCMStreaming(this);
+        
+        console.log(`✅ [TEST-PCM] PCM streaming test completed for device: ${this.macAddress}`);
+      } catch (error) {
+        console.error(`❌ [TEST-PCM] Error in PCM streaming test: ${error.message}`);
+        this.sendMqttMessage(
+          JSON.stringify({
+            type: "test_pcm_error",
+            message: error.message,
+            session_id: json.session_id
+          })
+        );
+      }
       return;
     }
 
@@ -2717,6 +2773,30 @@ class VirtualMQTTConnection {
           audio_params: helloReply.audio_params,
         })
       );
+
+      // Auto-start PCM streaming test after hello response
+      console.log(`🧪 [AUTO-PCM] Starting automatic PCM streaming test for virtual device: ${this.deviceId}`);
+      
+      // Send TTS start message
+      this.sendMqttMessage(
+        JSON.stringify({
+          type: "tts",
+          state: "start",
+          text: "Starting PCM streaming test",
+          session_id: this.udp.session_id,
+        })
+      );
+
+      // Start PCM streaming after a short delay
+      setTimeout(async () => {
+        try {
+          const { testPCMStreaming } = require('./test_pcm_streaming');
+          await testPCMStreaming(this);
+          console.log(`✅ [AUTO-PCM] Automatic PCM streaming test completed for virtual device: ${this.deviceId}`);
+        } catch (error) {
+          console.error(`❌ [AUTO-PCM] Error in automatic PCM streaming test: ${error.message}`);
+        }
+      }, 1000); // 1 second delay to ensure hello response is processed
     } catch (error) {
       this.sendMqttMessage(
         JSON.stringify({
@@ -2746,6 +2826,38 @@ class VirtualMQTTConnection {
       this.bridge = null;
       //commet temporarly, dgoodby message is not working well
       
+      return;
+    }
+
+    // Handle PCM test command - bypass LiveKit and stream test.pcm
+    if (json.type === "test_pcm") {
+      try {
+        console.log(`🧪 [TEST-PCM] Received PCM test command from virtual device: ${this.deviceId}`);
+        const { testPCMStreaming } = require('./test_pcm_streaming');
+        
+        // Send acknowledgment
+        this.sendMqttMessage(
+          JSON.stringify({
+            type: "test_pcm_ack",
+            message: "Starting PCM streaming test",
+            session_id: json.session_id
+          })
+        );
+        
+        // Start PCM streaming test
+        await testPCMStreaming(this);
+        
+        console.log(`✅ [TEST-PCM] PCM streaming test completed for virtual device: ${this.deviceId}`);
+      } catch (error) {
+        console.error(`❌ [TEST-PCM] Error in PCM streaming test: ${error.message}`);
+        this.sendMqttMessage(
+          JSON.stringify({
+            type: "test_pcm_error",
+            message: error.message,
+            session_id: json.session_id
+          })
+        );
+      }
       return;
     }
 
