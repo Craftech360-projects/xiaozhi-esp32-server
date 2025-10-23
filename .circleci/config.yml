@@ -1329,15 +1329,15 @@ jobs:
             export LIVEKIT_API_KEY="$LIVEKIT_API_KEY"
             export LIVEKIT_API_SECRET="$LIVEKIT_API_SECRET"
 
-            # Use lk deploy directly - more reliable for CI/CD
-            # This handles both creation and updates automatically
-            echo "🚀 Deploying agent with lk deploy..."
+            # Use lk agent create - since we remove livekit.toml, it's always a fresh creation
+            echo "🚀 Creating agent on LiveKit Cloud..."
 
             # Add UV to PATH for dependency resolution
             export PATH="$HOME/.local/bin:$PATH"
 
-            # Deploy the agent
-            lk deploy || {
+            # Create the agent non-interactively
+            # The --yes flag auto-accepts prompts, --wait waits for build completion
+            lk agent create --yes --wait || {
               echo "❌ Agent deployment failed"
               echo "📋 Checking for common issues..."
 
@@ -1351,6 +1351,9 @@ jobs:
               else
                 echo "❌ pyproject.toml not found - required for deployment"
               fi
+
+              # Debug: Show lk CLI version
+              lk --version
 
               exit 1
             }
