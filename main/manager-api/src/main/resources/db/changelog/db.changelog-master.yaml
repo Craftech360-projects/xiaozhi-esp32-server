@@ -432,6 +432,7 @@ databaseChangeLog:
   - changeSet:
       id: 202510031530
       author: claude
+      validCheckSum: ANY
       changes:
         - sqlFile:
             encoding: utf8
@@ -511,4 +512,11 @@ databaseChangeLog:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202510162000_update_edgetts_to_english.sql
+  - changeSet:
+      id: 202510232000
+      author: local_dev
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202510232000_update_local_ip_config.sql
 

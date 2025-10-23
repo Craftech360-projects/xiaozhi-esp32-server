@@ -19,9 +19,9 @@ import opuslib
 
 # --- Configuration ---
 
-SERVER_IP = "192.168.1.99"
+SERVER_IP = "192.168.1.235"
 OTA_PORT = 8002
-MQTT_BROKER_HOST = "192.168.1.99"
+MQTT_BROKER_HOST = "192.168.1.235"
 
 
 MQTT_BROKER_PORT = 1883
@@ -507,6 +507,9 @@ class TestClient:
             "type": "hello",
             "version": 3,
             "transport": "mqtt",
+            "clientId": self.mqtt_credentials["client_id"],
+            "username": self.mqtt_credentials["username"],
+            "password": self.mqtt_credentials["password"],
             "audio_params": {
                 "sample_rate": 16000,
                 "channels": 1,
@@ -515,7 +518,10 @@ class TestClient:
             },
             "features": ["tts", "asr", "vad"]
         }
-        self.mqtt_client.publish("device-server", json.dumps(hello_message))
+        # Publish to the correct topic that the gateway is subscribed to
+        hello_topic = f"devices/{self.device_mac_formatted}/hello"
+        logger.info(f"📤 Publishing hello to topic: {hello_topic}")
+        self.mqtt_client.publish(hello_topic, json.dumps(hello_message))
         try:
             response = mqtt_message_queue.get(timeout=10)
             if response.get("type") == "hello" and "udp" in response:
