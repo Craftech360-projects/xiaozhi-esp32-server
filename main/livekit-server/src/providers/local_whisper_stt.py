@@ -15,7 +15,8 @@ try:
     FASTER_WHISPER_AVAILABLE = True
 except ImportError:
     FASTER_WHISPER_AVAILABLE = False
-    logger.warning("faster-whisper not installed. Install with: pip install faster-whisper")
+    # Silently handle missing optional dependency - not needed for cloud deployment
+    pass
 
 
 class LocalWhisperSTT(stt.STT):

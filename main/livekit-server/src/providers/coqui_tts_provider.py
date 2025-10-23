@@ -17,7 +17,8 @@ try:
     COQUI_TTS_AVAILABLE = True
 except ImportError:
     COQUI_TTS_AVAILABLE = False
-    logger.warning("Coqui TTS not installed. Install with: pip install TTS")
+    # Silently handle missing optional dependency - not needed for cloud deployment
+    pass
 
 
 class CoquiTTS(tts.TTS):

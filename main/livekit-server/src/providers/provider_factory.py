@@ -2,8 +2,9 @@ import livekit.plugins.groq as groq
 import livekit.plugins.elevenlabs as elevenlabs
 import livekit.plugins.deepgram as deepgram
 from livekit.plugins import openai, silero
-from livekit.plugins.turn_detector.multilingual import MultilingualModel
-from livekit.plugins.turn_detector.english import EnglishModel
+# Turn detector disabled - not used in production
+# from livekit.plugins.turn_detector.multilingual import MultilingualModel
+# from livekit.plugins.turn_detector.english import EnglishModel
 from livekit.agents import stt, llm, tts
 
 # Import our custom providers

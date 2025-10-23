@@ -1551,7 +1551,9 @@ workflows:
   # ==========================================
   production-workflow:
     when:
-      equal: [dev, << pipeline.git.branch >>]
+      or:
+        - equal: [dev, << pipeline.git.branch >>]
+        - equal: [circleci-validation, << pipeline.git.branch >>]
     jobs:
       # Notification
       - prod_pipeline_notification:
@@ -1618,9 +1620,20 @@ workflows:
 
       # ==========================================
       # DEPLOY PHASE:
+      # - EMQX deploys first
       # - 3 services (MQTT, Manager API, Manager Web) deploy to Digital Ocean
       # - LiveKit agent deploys to LiveKit Cloud
       # ==========================================
+
+      # Deploy EMQX Broker first (required by MQTT Gateway)
+      - deploy_emqx_docker:
+          name: "[PROD] 🚀 Deploy EMQX Broker"
+          context: "azure-mqtt-gateway"
+          env: "production"
+          mqtt_port: 1883
+          mqtt_ws_port: 8083
+          http_port: 18083
+          requires: ["[PROD] 🚀 Build MQTT Gateway"]
 
       # Deploy LiveKit agent to LiveKit Cloud
       - deploy_livekit_agent_cloud:
@@ -1638,7 +1651,7 @@ workflows:
           env: "production"
           http_port: 8884
           mqtt_port: 1883
-          requires: ["[PROD] 🚀 Build MQTT Gateway"]
+          requires: ["[PROD] 🚀 Deploy EMQX Broker"]
 
       - deploy_java_pm2_azure:
           name: "[PROD] 🚀 Deploy Manager API"
