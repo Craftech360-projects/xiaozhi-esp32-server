@@ -719,28 +719,19 @@ jobs:
             if [ ! -d "<< parameters.service_path >>" ]; then
               circleci step halt
             fi
-      - restore_cache:
-          keys:
-            - npm-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/package-lock.json" }}
       - run:
           name: Build and package service
           command: |
             SVC="<< parameters.service_name >>"
             DIR="<< parameters.service_path >>"
             cd "$DIR"
-            if [ -f package-lock.json ]; then
-              npm ci --omit=dev --no-audit --no-fund
-            else
-              npm install --omit=dev --no-audit --no-fund
-            fi
+            # Don't install dependencies during build - we'll do it on the server
+            # This prevents node_modules from causing tar corruption
             cd ..
             mkdir -p /tmp/workspace
-            tar -czf "/tmp/workspace/${SVC}.tar.gz" -C "." "$(basename "$DIR")"
+            # Exclude node_modules from tarball (installed on server anyway)
+            tar -czf "/tmp/workspace/${SVC}.tar.gz" -C "." --exclude="node_modules" --exclude=".git" "$(basename "$DIR")"
             echo "✅ ${SVC} packaged"
-      - save_cache:
-          paths:
-            - << parameters.service_path >>/node_modules
-          key: npm-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/package-lock.json" }}
       - persist_to_workspace:
           root: /tmp/workspace
           paths:
