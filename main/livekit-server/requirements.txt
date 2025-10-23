@@ -3,9 +3,9 @@ python-dotenv
 pydub
 aiohttp
 
-# Local AI Models (for offline operation) - DISABLED to reduce deployment issues
-# faster-whisper  # Local STT using Whisper - OFFLINE MODE ONLY
-# TTS  # Coqui TTS for local text-to-speech - OFFLINE MODE ONLY, not needed for production/CI (requires Python < 3.12)
+# # Local AI Models (for offline operation)
+# faster-whisper  # Local STT using Whisper
+# TTS  # Coqui TTS for local text-to-speech
 
 # Optional dependencies for enhanced semantic search
 qdrant-client
@@ -19,6 +19,8 @@ livekit-api
 PyJWT
 
 # Memory provider (optional - comment out if using local memory)
-mem0ai  # Correct package name on PyPI (was: mem0)
+mem0ai
 
 jinja2
+gtts
+pyttsx3

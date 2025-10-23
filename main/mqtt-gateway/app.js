@@ -240,7 +240,9 @@ class LiveKitBridge extends Emitter {
   }
 
   async connect(audio_params, features) {
+    const connectStartTime = Date.now();
     console.log(`🔍 [DEBUG] LiveKitBridge.connect() called - UUID: ${this.uuid}, MAC: ${this.macAddress}`);
+    console.log(`⏱️ [TIMING-START] Connection initiated at ${connectStartTime}`);
     const { url, api_key, api_secret } = this.livekitConfig;
     // Include MAC address in room name for agent to extract device-specific prompt
     const macForRoom = this.macAddress.replace(/:/g, ''); // Remove colons: 00:16:3e:ac:b5:38 → 00163eacb538
@@ -407,7 +409,9 @@ class LiveKitBridge extends Emitter {
           autoSubscribe: true,
           dynacast: true,
         });
+        const roomConnectedTime = Date.now();
         console.log(`✅ [ROOM] Connected to LiveKit room: ${roomName}`);
+        console.log(`⏱️ [TIMING-ROOM] Room connection took ${roomConnectedTime - connectStartTime}ms`);
         console.log(`🔗 [CONNECTION] State: ${this.room.connectionState}`);
         console.log(`🟢 [STATUS] Is connected: ${this.room.isConnected}`);
 
@@ -526,13 +530,13 @@ class LiveKitBridge extends Emitter {
                     this.processBufferedFrames(timestamp, frameCount, participant.identity);
 
                     // Log every 50 frames or every 5 seconds
-                    const now = Date.now();
-                    if (frameCount % 50 === 0 || now - lastLogTime > 5000) {
-                      console.log(
-                        `🎵 [AUDIO FRAMES] Received ${frameCount} frames, ${totalBytes} total bytes from ${participant.identity}, buffer: ${this.frameBuffer.length}B`
-                      );
-                      lastLogTime = now;
-                    }
+                    // const now = Date.now();
+                    // if (frameCount % 50 === 0 || now - lastLogTime > 5000) {
+                    //   console.log(
+                    //     `🎵 [AUDIO FRAMES] Received ${frameCount} frames, ${totalBytes} total bytes from ${participant.identity}, buffer: ${this.frameBuffer.length}B`
+                    //   );
+                    //   lastLogTime = now;
+                    // }
 
                   }
                 } catch (error) {
@@ -591,9 +595,12 @@ class LiveKitBridge extends Emitter {
             }
 
             // Send initial greeting message to let user know agent is ready
+            const greetingStartTime = Date.now();
             setTimeout(() => {
+              const greetingEndTime = Date.now();
+              console.log(`⏱️ [TIMING-GREETING] Greeting delay took ${greetingEndTime - greetingStartTime}ms`);
               this.sendInitialGreeting();
-            }, 1000); // Small delay to ensure connection is stable
+            }, 300); // Reduced delay for faster response (optimized from 1000ms)
           }
         });
 
@@ -621,13 +628,17 @@ class LiveKitBridge extends Emitter {
           track,
           options
         );
+        const trackPublishedTime = Date.now();
         console.log(
           `🎤 [PUBLISH] Published local audio track: ${publication.trackSid || publication.sid}`
         );
+        console.log(`⏱️ [TIMING-TRACK] Track publish took ${trackPublishedTime - roomConnectedTime}ms`);
 
         // Use roomName as session_id - this is consistent with how LiveKit rooms work
         // The room.sid might not be immediately available, but roomName is our session identifier
         // Include audio_params that the client expects
+        const totalConnectTime = Date.now() - connectStartTime;
+        console.log(`⏱️ [TIMING-TOTAL] Total connection setup took ${totalConnectTime}ms`);
         resolve({
           session_id: roomName,
           audio_params: {
@@ -1387,6 +1398,41 @@ class LiveKitBridge extends Emitter {
     }
   }
 
+  // Forward MCP response to LiveKit agent
+  async forwardMcpResponse(mcpPayload, sessionId, requestId) {
+    console.log(`🔋 [MCP-FORWARD] Forwarding MCP response for device ${this.macAddress}`);
+
+    if (!this.room || !this.room.localParticipant) {
+      console.error(`❌ [MCP-FORWARD] No room available for device ${this.macAddress}`);
+      return false;
+    }
+
+    try {
+      const responseMessage = {
+        type: 'mcp',
+        payload: mcpPayload,
+        session_id: sessionId,
+        request_id: requestId,
+        timestamp: new Date().toISOString()
+      };
+
+      const messageString = JSON.stringify(responseMessage);
+      const messageData = new Uint8Array(Buffer.from(messageString, 'utf8'));
+
+      await this.room.localParticipant.publishData(
+        messageData,
+        { reliable: true }
+      );
+
+      console.log(`✅ [MCP-FORWARD] Successfully forwarded MCP response to LiveKit agent`);
+      console.log(`✅ [MCP-FORWARD] Request ID: ${requestId}`);
+      return true;
+    } catch (error) {
+      console.error(`❌ [MCP-FORWARD] Error forwarding MCP response:`, error);
+      return false;
+    }
+  }
+
   // Send LLM response to device
   sendLlmMessage(text) {
     if (!this.connection || !text) return;
@@ -1477,10 +1523,10 @@ class LiveKitBridge extends Emitter {
 
   /**
    * Wait for agent to join the room with timeout
-   * @param {number} timeoutMs - Timeout in milliseconds (default: 7000)
+   * @param {number} timeoutMs - Timeout in milliseconds (default: 4000)
    * @returns {Promise<boolean>} - true if agent joined, false if timeout
    */
-  async waitForAgentJoin(timeoutMs = 7000) {
+  async waitForAgentJoin(timeoutMs = 4000) {
     // If agent already joined, return immediately
     if (this.agentJoined) {
       console.log(`✅ [AGENT-WAIT] Agent already joined`);
@@ -1532,6 +1578,10 @@ class LiveKitBridge extends Emitter {
       );
 
       console.log(`🛑 [ABORT] Sent abort signal to LiveKit agent via data channel`);
+
+      // CRITICAL: Clear the audio playing flag immediately when abort is sent
+      this.isAudioPlaying = false;
+      console.log(`🎵 [ABORT-CLEAR] Cleared audio playing flag for device: ${this.macAddress}`);
     } catch (error) {
       console.error(`[LiveKitBridge] Failed to send abort signal:`, error);
       throw error;
@@ -2148,7 +2198,10 @@ class MQTTConnection {
 
       // Wait for agent to join before sending hello response
       console.log(`⏳ [HELLO] Waiting for agent to join before sending hello response to ${this.clientId}`);
-      const agentReady = await this.bridge.waitForAgentJoin(7000); // 7 second timeout
+      const agentWaitStartTime = Date.now();
+      const agentReady = await this.bridge.waitForAgentJoin(4000); // Reduced timeout from 7000ms to 4000ms
+      const agentWaitEndTime = Date.now();
+      console.log(`⏱️ [TIMING-AGENT] Agent wait took ${agentWaitEndTime - agentWaitStartTime}ms`);
 
       if (agentReady) {
         console.log(`✅ [HELLO] Agent ready, sending hello response to ${this.clientId}`);
@@ -2435,6 +2488,41 @@ class VirtualMQTTConnection {
     }
   }
 
+  // Forward MCP response to LiveKit agent
+  async forwardMcpResponse(mcpPayload, sessionId, requestId) {
+    console.log(`🔋 [MCP-FORWARD] Forwarding MCP response for device ${this.deviceId}`);
+
+    if (!this.bridge || !this.bridge.room || !this.bridge.room.localParticipant) {
+      console.error(`❌ [MCP-FORWARD] No LiveKit room available for device ${this.deviceId}`);
+      return false;
+    }
+
+    try {
+      const responseMessage = {
+        type: 'mcp',
+        payload: mcpPayload,
+        session_id: sessionId,
+        request_id: requestId,
+        timestamp: new Date().toISOString()
+      };
+
+      const messageString = JSON.stringify(responseMessage);
+      const messageData = new Uint8Array(Buffer.from(messageString, 'utf8'));
+
+      await this.bridge.room.localParticipant.publishData(
+        messageData,
+        { reliable: true }
+      );
+
+      console.log(`✅ [MCP-FORWARD] Successfully forwarded MCP response to LiveKit agent`);
+      console.log(`✅ [MCP-FORWARD] Request ID: ${requestId}`);
+      return true;
+    } catch (error) {
+      console.error(`❌ [MCP-FORWARD] Error forwarding MCP response:`, error);
+      return false;
+    }
+  }
+
   sendUdpMessage(payload, timestamp) {
     // Check if this is a mobile-initiated connection that needs routing to a physical toy
     if (!this.udp.remoteAddress && this.isMobileConnection && this.macAddress) {
@@ -2597,7 +2685,10 @@ class VirtualMQTTConnection {
 
       // Wait for agent to join before sending hello response
       console.log(`⏳ [HELLO] Waiting for agent to join before sending hello response to ${this.deviceId}`);
-      const agentReady = await this.bridge.waitForAgentJoin(7000); // 7 second timeout
+      const agentWaitStartTime = Date.now();
+      const agentReady = await this.bridge.waitForAgentJoin(4000); // Reduced timeout from 7000ms to 4000ms
+      const agentWaitEndTime = Date.now();
+      console.log(`⏱️ [TIMING-AGENT] Agent wait took ${agentWaitEndTime - agentWaitStartTime}ms`);
 
       if (agentReady) {
         console.log(`✅ [HELLO] Agent ready, sending hello response to ${this.deviceId}`);
@@ -3073,7 +3164,7 @@ class MQTTGateway {
     });
   }
 
-  handleMqttMessage(topic, message) {
+  async handleMqttMessage(topic, message) {
     // Add detailed logging for all incoming MQTT messages
     console.log(`📨 [MQTT IN] Received message on topic: ${topic}`);
     console.log(`📨 [MQTT IN] Message length: ${message.length} bytes`);
@@ -3118,12 +3209,58 @@ class MQTTGateway {
           password: 'extracted_from_emqx'
         };
 
+        // Handle MCP responses - forward to LiveKit agent
+        if (originalPayload.type === 'mcp' && originalPayload.payload && originalPayload.payload.result) {
+          console.log(`🔋 [MCP-RESPONSE] Processing MCP response from device ${deviceId}`);
+
+          // Find the device connection
+          const deviceInfo = this.deviceConnections.get(deviceId);
+          if (deviceInfo && deviceInfo.connection) {
+            const requestId = `req_${originalPayload.payload.id}`;
+
+            // Use the connection's method to forward the response
+            await deviceInfo.connection.forwardMcpResponse(
+              originalPayload.payload,
+              originalPayload.session_id,
+              requestId
+            );
+          } else {
+            console.warn(`⚠️ [MCP-RESPONSE] No connection found for device ${deviceId}, cannot forward response`);
+          }
+        }
+
         if (originalPayload.type === 'hello') {
           console.log(`👋 [HELLO] Processing hello message from internal/server-ingest: ${deviceId}`);
           this.handleDeviceHello(deviceId, enhancedPayload);
         } else if (originalPayload.type === 'mode-change') {
           console.log(`🔘 [MODE-CHANGE] Processing mode change from internal/server-ingest: ${deviceId}`);
           this.handleDeviceModeChange(deviceId, enhancedPayload);
+        } else if (originalPayload.type === 'abort') {
+          // Special handling for abort messages - send to BOTH real and virtual devices
+          console.log(`🛑 [ABORT] Processing abort message from internal/server-ingest: ${deviceId}`);
+
+          let abortSent = false;
+
+          // Send abort to real ESP32 connection if exists
+          const realConnection = this.findRealDeviceConnection(deviceId);
+          if (realConnection) {
+            console.log(`🛑 [ABORT] Routing abort to real ESP32 device: ${deviceId}`);
+            realConnection.handlePublish({ payload: JSON.stringify(originalPayload) });
+            abortSent = true;
+          }
+
+          // ALSO send abort to virtual device connection if exists
+          const deviceInfo = this.deviceConnections.get(deviceId);
+          if (deviceInfo && deviceInfo.connection) {
+            console.log(`🛑 [ABORT] Routing abort to virtual device (LiveKit): ${deviceId}`);
+            // Forward abort to the virtual device's handlePublish
+            deviceInfo.connection.handlePublish({ payload: JSON.stringify(originalPayload) });
+            abortSent = true;
+          }
+
+          if (!abortSent) {
+            console.log(`⚠️ [ABORT] No connections found for device: ${deviceId}, abort cannot be processed`);
+          }
         } else {
           // ALWAYS check for real ESP32 connection FIRST (prioritize over virtual)
           const realConnection = this.findRealDeviceConnection(deviceId);

@@ -41,7 +41,7 @@ class EdgeTTS(tts.TTS if LIVEKIT_AVAILABLE else object):
 
     def __init__(
         self,
-        voice: str = "en-US-AvaNeural",
+        voice: str = "en-US-AnaNeural",
         rate: str = "+0%",
         volume: str = "+0%",
         pitch: str = "+0Hz",

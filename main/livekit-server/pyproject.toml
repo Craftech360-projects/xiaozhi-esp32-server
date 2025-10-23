@@ -19,6 +19,8 @@ dependencies = [
     "aiohttp",
     "pydub",
     "edge-tts",
+    "gtts",
+    "pyttsx3",
     "mem0ai",
     "jinja2",
     "pytz",

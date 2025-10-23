@@ -157,6 +157,9 @@ async def entrypoint(ctx: JobContext):
     ctx.log_context_fields = {"room": ctx.room.name}
     print(f"Starting agent in room: {ctx.room.name}")
 
+    # PERFORMANCE: Track total initialization time
+    init_start_time = asyncio.get_event_loop().time()
+
     # Load configuration (environment variables already loaded at module level)
     groq_config = ConfigLoader.get_groq_config()
     agent_config = ConfigLoader.get_agent_config()
@@ -178,86 +181,147 @@ async def entrypoint(ctx: JobContext):
                 device_mac = ':'.join(mac_part[i:i+2] for i in range(0, 12, 2))
                 logger.info(f"📱 Extracted MAC from room name: {device_mac}")
 
-    # Initialize chat history service if MAC is available
+    # Helper function for Mem0 query to run in parallel
+    async def query_mem0_memories(mac: str) -> tuple:
+        """Query Mem0 for existing memories - runs in parallel with API calls"""
+        try:
+            mem0_api_key = os.getenv("MEM0_API_KEY")
+            mem0_enabled = os.getenv("MEM0_ENABLED", "false").lower() == "true"
+
+            if not mem0_enabled or not mac:
+                return None, None
+
+            if not mem0_api_key or mem0_api_key == "your_mem0_api_key_here":
+                logger.warning("💭⚠️ MEM0_API_KEY not configured properly")
+                return None, None
+
+            logger.info(f"💭 Initializing Mem0MemoryProvider for MAC: {mac}")
+            provider = Mem0MemoryProvider(api_key=mem0_api_key, role_id=mac)
+
+            logger.info("💭 Querying mem0 for existing memories...")
+            memories = await provider.query_memory("conversation history and user preferences")
+
+            if memories:
+                logger.info(f"💭✅ Loaded memories from mem0 ({len(memories)} chars)")
+            else:
+                logger.info("💭 No existing memories found in mem0")
+
+            return provider, memories
+        except Exception as e:
+            logger.error(f"💭❌ Failed to query mem0: {e}")
+            import traceback
+            logger.error(f"💭❌ Traceback: {traceback.format_exc()}")
+            return None, None
+
+    # OPTIMIZATION PHASE 1 + 1.5: Parallel API Calls + Mem0 Query
+    # Fetch all API data and Mem0 memories in parallel to maximize concurrency
     chat_history_service = None
+    tts_config_from_api = None
+    child_profile = None
+    agent_prompt = None
+    db_helper = None
+    agent_id = None
+    mem0_provider = None
+    memories = None
+
     if device_mac:
         try:
+            logger.info("⚡ Starting parallel API calls + Mem0 query...")
+            start_time = asyncio.get_event_loop().time()
+
             # Get Manager API configuration
-            manager_api_url = os.getenv(
-                "MANAGER_API_URL")
-            manager_api_secret = os.getenv(
-                "MANAGER_API_SECRET")
+            manager_api_url = os.getenv("MANAGER_API_URL")
+            manager_api_secret = os.getenv("MANAGER_API_SECRET")
 
-            # Create database helper and get agent_id
+            # Create database helper
             db_helper = DatabaseHelper(manager_api_url, manager_api_secret)
-            agent_id = await db_helper.get_agent_id(device_mac)
 
-            # Create chat history service
-            chat_history_service = ChatHistoryService(
-                manager_api_url=manager_api_url,
-                secret=manager_api_secret,
-                device_mac=device_mac,
-                session_id=room_name,
-                agent_id=agent_id
+            # Execute all API calls + Mem0 query in parallel
+            results = await asyncio.gather(
+                db_helper.get_agent_id(device_mac),                          # ~200ms
+                prompt_service.get_prompt_and_config(room_name, device_mac), # ~500ms
+                db_helper.get_child_profile_by_mac(device_mac),             # ~500ms
+                query_mem0_memories(device_mac),                             # ~1700ms (PARALLEL!)
+                return_exceptions=True  # Don't fail all if one fails
             )
 
-            # Start periodic sending
-            chat_history_service.start_periodic_sending()
-            logger.info(
-                f"📝✅ Chat history service initialized for MAC: {device_mac}, Agent ID: {agent_id}")
-            logger.info(
-                f"📝📊 Service config: batch_size={chat_history_service.batch_size}, interval={chat_history_service.send_interval}s")
+            elapsed_time = (asyncio.get_event_loop().time() - start_time) * 1000
+            logger.info(f"⚡✅ Parallel API calls + Mem0 completed in {elapsed_time:.0f}ms")
 
-        except Exception as e:
-            logger.error(f"📝❌ Failed to initialize chat history service: {e}")
-            chat_history_service = None
+            # Unpack results with error handling
+            agent_id_result, prompt_config_result, child_profile_result, mem0_result = results
 
-    # Fetch device-specific prompt AND TTS config BEFORE creating assistant
-    tts_config_from_api = None
-    if device_mac:
-        try:
-            agent_prompt, tts_config_from_api = await prompt_service.get_prompt_and_config(room_name, device_mac)
-            logger.info(
-                f"🎯 Using device-specific prompt for MAC: {device_mac} (length: {len(agent_prompt)} chars)")
-            # Log first few lines of the fetched prompt for verification
-            prompt_lines = agent_prompt.split('\n')[:5]  # First 5 lines
-            logger.info(
-                f"📝 Fetched prompt preview: {' | '.join(line.strip()[:50] for line in prompt_lines if line.strip())}")
-
-            if tts_config_from_api:
-                logger.info(f"🎤 TTS Config from API: Provider={tts_config_from_api.get('provider')}, Type={tts_config_from_api.get('type')}")
+            # Process agent_id result
+            if isinstance(agent_id_result, Exception):
+                logger.error(f"📝❌ Failed to get agent_id: {agent_id_result}")
+                agent_id = None
             else:
-                logger.warning(f"⚠️ No TTS config from API, will use .env defaults")
+                agent_id = agent_id_result
+                logger.info(f"📝 Agent ID fetched: {agent_id}")
+
+            # Process prompt and config result
+            if isinstance(prompt_config_result, Exception):
+                logger.warning(f"Failed to fetch config from API for MAC {device_mac}: {prompt_config_result}")
+                agent_prompt = ConfigLoader.get_default_prompt()
+                tts_config_from_api = None
+                logger.info(f"📄 Fallback to default prompt (length: {len(agent_prompt)} chars)")
+            else:
+                agent_prompt, tts_config_from_api = prompt_config_result
+                logger.info(f"🎯 Using device-specific prompt for MAC: {device_mac} (length: {len(agent_prompt)} chars)")
+                # Log first few lines of the fetched prompt for verification
+                prompt_lines = agent_prompt.split('\n')[:5]
+                logger.info(f"📝 Fetched prompt preview: {' | '.join(line.strip()[:50] for line in prompt_lines if line.strip())}")
+
+                if tts_config_from_api:
+                    logger.info(f"🎤 TTS Config from API: Provider={tts_config_from_api.get('provider')}, Type={tts_config_from_api.get('type')}")
+                else:
+                    logger.warning(f"⚠️ No TTS config from API, will use .env defaults")
+
+            # Process child profile result
+            if isinstance(child_profile_result, Exception):
+                logger.warning(f"Failed to fetch child profile for MAC {device_mac}: {child_profile_result}")
+                child_profile = None
+            else:
+                child_profile = child_profile_result
+                if child_profile:
+                    logger.info(f"👶 Child profile loaded: {child_profile.get('name')}, age {child_profile.get('age')} ({child_profile.get('ageGroup')})")
+                else:
+                    logger.info(f"👶 No child profile assigned to device {device_mac}")
+
+            # Process Mem0 result
+            if isinstance(mem0_result, Exception):
+                logger.error(f"💭❌ Mem0 query failed: {mem0_result}")
+                mem0_provider = None
+                memories = None
+            else:
+                mem0_provider, memories = mem0_result
+
+            # Create chat history service if we have agent_id
+            if agent_id:
+                chat_history_service = ChatHistoryService(
+                    manager_api_url=manager_api_url,
+                    secret=manager_api_secret,
+                    device_mac=device_mac,
+                    session_id=room_name,
+                    agent_id=agent_id
+                )
+                chat_history_service.start_periodic_sending()
+                logger.info(f"📝✅ Chat history service initialized for MAC: {device_mac}, Agent ID: {agent_id}")
+                logger.info(f"📝📊 Service config: batch_size={chat_history_service.batch_size}, interval={chat_history_service.send_interval}s")
 
         except Exception as e:
-            logger.warning(
-                f"Failed to fetch config from API for MAC {device_mac}, using defaults: {e}")
+            logger.error(f"❌ Error in parallel API calls: {e}")
             agent_prompt = ConfigLoader.get_default_prompt()
             tts_config_from_api = None
-            logger.info(
-                f"📄 Fallback to default prompt (length: {len(agent_prompt)} chars)")
+            child_profile = None
+            chat_history_service = None
     else:
+        # No device MAC - use defaults
         agent_prompt = ConfigLoader.get_default_prompt()
         tts_config_from_api = None
-        logger.info(
-            f"📄 Using default prompt - no MAC in room name '{room_name}' (length: {len(agent_prompt)} chars)")
+        logger.info(f"📄 Using default prompt - no MAC in room name '{room_name}' (length: {len(agent_prompt)} chars)")
 
-    # Fetch child profile if device MAC is available
-    child_profile = None
-    if device_mac:
-        try:
-            child_profile = await db_helper.get_child_profile_by_mac(device_mac)
-            if child_profile:
-                logger.info(
-                    f"👶 Child profile loaded: {child_profile.get('name')}, age {child_profile.get('age')} ({child_profile.get('ageGroup')})")
-            else:
-                logger.info(f"👶 No child profile assigned to device {device_mac}")
-        except Exception as e:
-            logger.warning(f"Failed to fetch child profile for MAC {device_mac}: {e}")
-            child_profile = None
-
-    # Initialize mem0 memory provider and conversation buffer
-    mem0_provider = None
+    # Initialize conversation buffer for mem0
     conversation_messages = []  # Buffer to store conversation messages
     EMOJI_List = ["😶", "🙂", "😆", "😂", "😔", "😠", "😭", "😍", "😳",
                   "😲", "😱", "🤔", "😉", "😎", "😌", "🤤", "😘", "😏", "😴", "😜", "🙄"]
@@ -280,49 +344,12 @@ async def entrypoint(ctx: JobContext):
         if child_profile:
             logger.info(f"👶 Personalized for: {template_vars['child_name']}, {template_vars['child_age']} years old")
 
-    logger.info(f"📋 Full Agent Prompt:\n{agent_prompt}")
+    # Inject Mem0 memories into prompt (already fetched in parallel)
+    if memories:
+        agent_prompt = agent_prompt.replace("<memory>", f"<memory>\n{memories}")
+        logger.info(f"💭 Injected memories into prompt ({len(memories)} chars)")
 
-    mem0_enabled = os.getenv("MEM0_ENABLED", "false").lower() == "true"
-    logger.info(
-        f"💭 Mem0 config - Enabled: {mem0_enabled}, Device MAC: {device_mac}")
-
-    if device_mac and mem0_enabled:
-        try:
-            mem0_api_key = os.getenv("MEM0_API_KEY")
-            logger.info(
-                f"💭 MEM0_API_KEY present: {bool(mem0_api_key and mem0_api_key != 'your_mem0_api_key_here')}")
-
-            if mem0_api_key and mem0_api_key != "your_mem0_api_key_here":
-                logger.info(
-                    f"💭 Initializing Mem0MemoryProvider for MAC: {device_mac}")
-                mem0_provider = Mem0MemoryProvider(
-                    api_key=mem0_api_key,
-                    role_id=device_mac
-                )
-
-                # Fetch existing memories and inject into prompt
-                # Note: Child profile is already in the agent prompt fetched from database,
-                # so we don't store it separately in mem0 to avoid redundancy
-                logger.info("💭 Querying mem0 for existing memories...")
-                memories = await mem0_provider.query_memory("conversation history and user preferences")
-
-                if memories:
-                    agent_prompt = agent_prompt.replace(
-                        "<memory>", f"<memory>\n{memories}")
-                    logger.info(
-                        f"💭✅ Loaded memories from mem0 ({len(memories)} chars)")
-                else:
-                    logger.info("💭 No existing memories found in mem0")
-            else:
-                logger.warning("💭⚠️ MEM0_API_KEY not configured properly")
-        except Exception as e:
-            logger.error(f"💭❌ Failed to initialize mem0: {e}")
-            import traceback
-            logger.error(f"💭❌ Traceback: {traceback.format_exc()}")
-            mem0_provider = None
-    else:
-        logger.info(
-            f"💭 Mem0 disabled - MEM0_ENABLED: {mem0_enabled}, Device MAC present: {bool(device_mac)}")
+    # logger.info(f"📋 Full Agent Prompt:\n{agent_prompt}")
 
     # Get VAD first as it's needed for STT
     vad = ctx.proc.userdata["vad"]
@@ -358,6 +385,18 @@ async def entrypoint(ctx: JobContext):
         min_endpointing_delay=0.8,      # Reduced from 1.2s for faster response with children
         min_interruption_duration=0.6,   # Reduced from 1.0s to allow children to interrupt
     )
+
+    # Add comprehensive error handling using our error handler module
+    from src.agent.error_handler import setup_error_handling
+    
+    # Set up comprehensive error handling with retry logic
+    error_manager = setup_error_handling(
+        session=session,
+        max_retries=3,
+        custom_audio_path=None  # Will use default path
+    )
+    
+    logger.info("🛡️ Comprehensive error handling enabled with retry logic")
 
     # Get preloaded models from prewarm
     preloaded_embedding_model = ctx.proc.userdata.get("embedding_model")
@@ -446,46 +485,103 @@ async def entrypoint(ctx: JobContext):
 
     ctx.add_shutdown_callback(log_usage)
 
-    # Initialize services only if not from cache
+    # OPTIMIZATION PHASE 2: Initialize services in parallel (cold start only)
     if not services_from_cache:
-        logger.info("[INIT] Initializing music and story services...")
+        logger.info("[INIT] Initializing music and story services in parallel...")
+        init_services_start = asyncio.get_event_loop().time()
+
         try:
-            music_initialized = await music_service.initialize()
-            story_initialized = await story_service.initialize()
+            # Run both service initializations in parallel
+            init_results = await asyncio.gather(
+                music_service.initialize(),
+                story_service.initialize(),
+                return_exceptions=True
+            )
 
-            if music_initialized:
-                # Cache the initialized service
-                model_cache.cache_service("music_service", music_service)
-                languages = await music_service.get_all_languages()
-                logger.info(
-                    f"[INIT] Music service initialized with {len(languages)} languages")
-            else:
-                logger.warning("[INIT] Music service initialization failed")
+            init_elapsed = (asyncio.get_event_loop().time() - init_services_start) * 1000
+            logger.info(f"[INIT] Parallel service initialization completed in {init_elapsed:.0f}ms")
 
-            if story_initialized:
-                # Cache the initialized service
-                model_cache.cache_service("story_service", story_service)
-                categories = await story_service.get_all_categories()
-                logger.info(
-                    f"[INIT] Story service initialized with {len(categories)} categories")
+            # Process results
+            music_init_result, story_init_result = init_results
+
+            # Handle music service initialization
+            if isinstance(music_init_result, Exception):
+                logger.error(f"[INIT] Music service initialization failed: {music_init_result}")
+                music_initialized = False
             else:
-                logger.warning("[INIT] Story service initialization failed")
+                music_initialized = music_init_result
+
+            # Handle story service initialization
+            if isinstance(story_init_result, Exception):
+                logger.error(f"[INIT] Story service initialization failed: {story_init_result}")
+                story_initialized = False
+            else:
+                story_initialized = story_init_result
+
+            # Now fetch metadata in parallel for successfully initialized services
+            if music_initialized or story_initialized:
+                logger.info("[INIT] Fetching service metadata in parallel...")
+                metadata_start = asyncio.get_event_loop().time()
+
+                metadata_results = await asyncio.gather(
+                    music_service.get_all_languages() if music_initialized else None,
+                    story_service.get_all_categories() if story_initialized else None,
+                    return_exceptions=True
+                )
+
+                metadata_elapsed = (asyncio.get_event_loop().time() - metadata_start) * 1000
+                logger.info(f"[INIT] Parallel metadata fetch completed in {metadata_elapsed:.0f}ms")
+
+                # Process metadata results
+                languages_result, categories_result = metadata_results
+
+                if music_initialized:
+                    # Cache the initialized service
+                    model_cache.cache_service("music_service", music_service)
+                    if languages_result and not isinstance(languages_result, Exception):
+                        logger.info(f"[INIT] Music service initialized with {len(languages_result)} languages")
+                    else:
+                        logger.warning("[INIT] Failed to fetch music languages")
+                else:
+                    logger.warning("[INIT] Music service initialization failed")
+
+                if story_initialized:
+                    # Cache the initialized service
+                    model_cache.cache_service("story_service", story_service)
+                    if categories_result and not isinstance(categories_result, Exception):
+                        logger.info(f"[INIT] Story service initialized with {len(categories_result)} categories")
+                    else:
+                        logger.warning("[INIT] Failed to fetch story categories")
+                else:
+                    logger.warning("[INIT] Story service initialization failed")
 
         except Exception as e:
-            logger.error(
-                f"[INIT] Failed to initialize music/story services: {e}")
+            logger.error(f"[INIT] Failed to initialize music/story services: {e}")
     else:
-        # Services are from cache, just log their status
+        # OPTIMIZATION: Services are from cache, check status in parallel
         try:
-            if music_service and music_service.is_initialized:
-                languages = await music_service.get_all_languages()
-                logger.info(
-                    f"[FAST] Music service ready with {len(languages)} languages")
+            logger.info("[FAST] Checking cached services status in parallel...")
+            check_start = asyncio.get_event_loop().time()
 
-            if story_service and story_service.is_initialized:
-                categories = await story_service.get_all_categories()
-                logger.info(
-                    f"[FAST] Story service ready with {len(categories)} categories")
+            # Run service status checks in parallel
+            status_results = await asyncio.gather(
+                music_service.get_all_languages() if (music_service and music_service.is_initialized) else None,
+                story_service.get_all_categories() if (story_service and story_service.is_initialized) else None,
+                return_exceptions=True
+            )
+
+            check_elapsed = (asyncio.get_event_loop().time() - check_start) * 1000
+            logger.info(f"[FAST] Service status checks completed in {check_elapsed:.0f}ms")
+
+            # Process results
+            languages_result, categories_result = status_results
+
+            if languages_result and not isinstance(languages_result, Exception):
+                logger.info(f"[FAST] Music service ready with {len(languages_result)} languages")
+
+            if categories_result and not isinstance(categories_result, Exception):
+                logger.info(f"[FAST] Story service ready with {len(categories_result)} categories")
+
         except Exception as e:
             logger.warning(f"[FAST] Error checking cached services: {e}")
 
@@ -560,7 +656,22 @@ async def entrypoint(ctx: JobContext):
                 import traceback
                 logger.debug(f"💭❌ Traceback: {traceback.format_exc()}")
 
-            # 2. Cleanup chat history service
+            # 2. Log error statistics from our error handler
+            try:
+                error_stats = error_manager.get_error_stats()
+                if error_stats:
+                    logger.info(f"📊 Session error statistics: {error_stats}")
+                    total_errors = sum(error_stats.values())
+                    if total_errors > 0:
+                        logger.warning(f"⚠️ Total errors encountered: {total_errors}")
+                    else:
+                        logger.info("✅ No errors encountered during session")
+                else:
+                    logger.info("📊 No error statistics available")
+            except Exception as e:
+                logger.warning(f"📊 Could not retrieve error statistics: {e}")
+
+            # 3. Cleanup chat history service
             try:
                 if chat_history_service:
                     logger.info("📝 Cleaning up chat history service")
@@ -568,7 +679,7 @@ async def entrypoint(ctx: JobContext):
             except Exception as e:
                 logger.warning(f"📝❌ Chat history cleanup error: {e}")
 
-            # 3. End the agent session (use aclose() method)
+            # 4. End the agent session (use aclose() method)
             try:
                 if session and hasattr(session, 'aclose'):
                     logger.info("Ending agent session")
@@ -577,7 +688,7 @@ async def entrypoint(ctx: JobContext):
                 logger.warning(
                     f"Session close error (expected during shutdown): {e}")
 
-            # 4. Stop audio services and clear audio state
+            # 5. Stop audio services and clear audio state
             try:
                 if audio_player:
                     await audio_player.stop()
@@ -591,7 +702,7 @@ async def entrypoint(ctx: JobContext):
             except Exception as e:
                 logger.warning(f"Audio service stop error: {e}")
 
-            # 5. Clean up music and story services (if cleanup methods exist)
+            # 6. Clean up music and story services (if cleanup methods exist)
             try:
                 if music_service and hasattr(music_service, 'cleanup'):
                     await music_service.cleanup()
@@ -600,7 +711,7 @@ async def entrypoint(ctx: JobContext):
             except Exception as e:
                 logger.warning(f"Service cleanup error: {e}")
 
-            # 6. Disconnect from room (gracefully handle already disconnected)
+            # 7. Disconnect from room (gracefully handle already disconnected)
             try:
                 if ctx.room and hasattr(ctx.room, 'disconnect'):
                     logger.info("Disconnecting from LiveKit room")
@@ -609,7 +720,7 @@ async def entrypoint(ctx: JobContext):
                 logger.warning(
                     f"Room disconnect error (may already be disconnected): {e}")
 
-            # 7. Request room deletion via API (requires admin token)
+            # 8. Request room deletion via API (requires admin token)
             try:
                 room_name = ctx.room.name if ctx.room else "unknown"
                 await delete_livekit_room(room_name)
@@ -656,6 +767,10 @@ async def entrypoint(ctx: JobContext):
         room=ctx.room,
         room_input_options=room_options,
     )
+
+    # PERFORMANCE: Log total initialization time
+    init_elapsed_time = (asyncio.get_event_loop().time() - init_start_time) * 1000
+    logger.info(f"⚡ Total room initialization completed in {init_elapsed_time:.0f}ms")
 
     # Pass session reference to assistant for dynamic updates
     assistant.set_agent_session(session)

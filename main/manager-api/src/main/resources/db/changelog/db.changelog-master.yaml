@@ -504,4 +504,11 @@ databaseChangeLog:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202510111800_add_arabic_template.sql
+  - changeSet:
+      id: 202510162000
+      author: claude
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202510162000_update_edgetts_to_english.sql
 

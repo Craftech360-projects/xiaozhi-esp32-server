@@ -1,6 +1,7 @@
 """LiveKit MCP tool executor"""
 
 import logging
+import json
 from typing import Dict, Any, Optional
 from .mcp_client import LiveKitMCPClient
 from .mcp_handler import (
@@ -23,6 +24,7 @@ class LiveKitMCPExecutor:
     def __init__(self):
         self.mcp_client = LiveKitMCPClient()
         self._volume_cache: Optional[int] = None
+        self._battery_cache: Optional[Dict[str, Any]] = None
 
     def set_context(self, context, audio_player=None, unified_audio_player=None):
         """Set the agent context for MCP communication"""
@@ -225,18 +227,60 @@ class LiveKitMCPExecutor:
 
     # Battery Status Method
     async def get_battery_status(self) -> str:
-        """Get battery percentage only"""
+        """Get battery percentage with status details"""
         try:
-            response = await handle_battery_status_get(self.mcp_client)
+            # Send request and wait for response
+            logger.info("Sending battery status request and waiting for response...")
+            response = await handle_battery_status_get(self.mcp_client, wait_for_response=True)
 
-            # The ESP32 should return battery data including percentage
-            # For now, return a placeholder message - the actual percentage
-            # will be received via data channel response from ESP32
-            return "Checking battery percentage..."
+            # Check for error in response
+            if response.get("error"):
+                logger.error(f"Error in battery response: {response.get('error')}")
+                return "Sorry, I couldn't check the battery right now."
+
+            # Parse the response
+            # The response structure is: {"result": {"content": [{"type": "text", "text": "{json_string}"}]}}
+            result = response.get("result", {})
+            content = result.get("content", [])
+
+            if content and len(content) > 0:
+                text_content = content[0].get("text", "{}")
+                try:
+                    # Parse the JSON string
+                    battery_data = json.loads(text_content)
+                    logger.info(f"Parsed battery data: {battery_data}")
+
+                    percentage = battery_data.get("percentage", "unknown")
+                    voltage = battery_data.get("voltage_mv", 0)
+                    charging = battery_data.get("charging", False)
+                    state = battery_data.get("state", "unknown")
+
+                    # Build response message - keep it simple and concise
+                    if charging:
+                        message = f"Battery is at {percentage}% and charging"
+                    elif state == "critical":
+                        message = f"Battery is at {percentage}%, critically low"
+                    elif state == "low":
+                        message = f"Battery is at {percentage}%, running low"
+                    else:
+                        message = f"Battery is at {percentage}%"
+
+                    logger.info(f"Returning battery status: {message}")
+                    return message
+
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse battery response JSON: {e}")
+                    logger.error(f"Raw text content: {text_content}")
+                    return "Received battery data but couldn't parse it."
+            else:
+                logger.warning("Battery response has no content")
+                return "Received empty battery response from device."
 
         except Exception as e:
             logger.error(f"Error getting battery status: {e}")
-            return "Sorry, I couldn't check the battery percentage right now."
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return "Sorry, I couldn't check the battery right now."
 
 
     async def set_light_mode(self, mode: str) -> str:
