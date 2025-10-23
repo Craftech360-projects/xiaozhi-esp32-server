@@ -918,20 +918,13 @@ jobs:
 
             npm run build
 
-            # Navigate to project root for proper tarball creation
-            cd /home/circleci/project
-
+            # Navigate to parent directory for proper tarball creation (matches build_node_service)
+            cd ..
             mkdir -p /tmp/workspace
 
-            # Verify the directory exists before creating tarball
-            if [ ! -d "$DIR" ]; then
-              echo "❌ Error: Directory $DIR not found"
-              exit 1
-            fi
-
-            # Create tarball with verbose output for debugging
-            echo "Creating tarball from: $DIR"
-            tar -czf "/tmp/workspace/${SVC}.tar.gz" "$DIR"
+            # Create tarball with correct structure - should contain manager-web/... not main/manager-web/...
+            echo "Creating tarball from: $(basename "$DIR")"
+            tar -czf "/tmp/workspace/${SVC}.tar.gz" -C "." "$(basename "$DIR")"
 
             # Verify tarball was created successfully
             if [ -f "/tmp/workspace/${SVC}.tar.gz" ]; then
