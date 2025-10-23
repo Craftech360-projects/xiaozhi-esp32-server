@@ -184,9 +184,29 @@ jobs:
               # This prevents race conditions between check and create
               echo '=== Starting atomic container creation ==='
               (
-                # Final aggressive cleanup right before creation
+                # ULTRA AGGRESSIVE: Stop and remove ALL containers with this name or image
+                # Kill by name
+                docker stop xiaozhi-emqx 2>/dev/null || true
                 docker rm -f xiaozhi-emqx 2>/dev/null || true
+
+                # Kill by filter (name)
+                docker ps -aq --filter name=xiaozhi-emqx | xargs -r docker stop 2>/dev/null || true
                 docker ps -aq --filter name=xiaozhi-emqx | xargs -r docker rm -f 2>/dev/null || true
+
+                # Kill by image (in case it was created with different name)
+                docker ps -aq --filter ancestor=emqx/emqx:5.8.3 | xargs -r docker stop 2>/dev/null || true
+                docker ps -aq --filter ancestor=emqx/emqx:5.8.3 | xargs -r docker rm -f 2>/dev/null || true
+
+                # Final wait for Docker daemon to release everything
+                sleep 3
+
+                # Last check - show what's still there (should be nothing)
+                REMAINING=\$(docker ps -aq --filter name=xiaozhi-emqx)
+                if [ -n "\$REMAINING" ]; then
+                  echo "EMERGENCY: Containers still exist after aggressive cleanup: \$REMAINING"
+                  docker ps -a
+                  exit 1
+                fi
 
                 # Immediately create the new container
                 docker run -d --name xiaozhi-emqx \\
@@ -210,11 +230,28 @@ jobs:
                 echo \"❌ Failed to create container, checking for conflicts...\"
                 docker ps -a | grep xiaozhi-emqx || true
 
-                # One last attempt: force remove and retry
-                echo \"Attempting force removal and retry...\"
-                docker rm -f \$(docker ps -aq --filter name=xiaozhi-emqx) 2>/dev/null || true
-                sleep 2
+                # NUCLEAR OPTION: Kill everything related to EMQX
+                echo \"Attempting ULTRA aggressive removal and retry...\"
 
+                # Stop everything
+                docker stop \$(docker ps -aq --filter name=xiaozhi-emqx) 2>/dev/null || true
+                docker stop \$(docker ps -aq --filter ancestor=emqx/emqx:5.8.3) 2>/dev/null || true
+
+                # Remove everything by name and image
+                docker rm -f \$(docker ps -aq --filter name=xiaozhi-emqx) 2>/dev/null || true
+                docker rm -f \$(docker ps -aq --filter ancestor=emqx/emqx:5.8.3) 2>/dev/null || true
+
+                # Extra wait for daemon to process
+                sleep 5
+
+                # Verify clean state
+                if docker ps -aq --filter name=xiaozhi-emqx | grep -q .; then
+                  echo \"CRITICAL: Cannot remove EMQX containers, manual intervention required\"
+                  docker ps -a
+                  exit 1
+                fi
+
+                echo \"Clean state achieved, creating container...\"
                 docker run -d --name xiaozhi-emqx \\
                   --restart unless-stopped \\
                   -p << parameters.mqtt_port >>:1883 \\
@@ -1208,8 +1245,11 @@ jobs:
             echo "📦 Installing UV..."
             curl -LsSf https://astral.sh/uv/install.sh | sh
 
-            # Add UV to PATH for current session
-            export PATH="$HOME/.cargo/bin:$PATH"
+            # Add UV to PATH for current session (UV installs to ~/.local/bin)
+            export PATH="$HOME/.local/bin:$PATH"
+
+            # Also persist to BASH_ENV for subsequent steps
+            echo 'export PATH="$HOME/.local/bin:$PATH"' >> $BASH_ENV
 
             # Verify UV installation
             uv --version
@@ -1257,8 +1297,8 @@ jobs:
           command: |
             cd main/livekit-server
 
-            # Add UV to PATH
-            export PATH="$HOME/.cargo/bin:$PATH"
+            # Add UV to PATH (UV installs to ~/.local/bin)
+            export PATH="$HOME/.local/bin:$PATH"
 
             echo "🔒 Locking dependencies with uv..."
 
