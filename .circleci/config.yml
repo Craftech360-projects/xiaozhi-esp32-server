@@ -1213,7 +1213,7 @@ workflows:
 
       # ==========================================
       # DEPLOY PHASE: All 4 services deploy in parallel to dev environment
-      # ONLY runs on dev branch (NOT on circleci-validation for safety)
+      # Runs on dev AND circleci-validation branches for testing
       # ==========================================
       - deploy_node_pm2_azure:
           name: "[DEV] 🔧 Deploy MQTT Gateway"
@@ -1226,7 +1226,9 @@ workflows:
           requires: ["[DEV] 🔧 Build MQTT Gateway"]
           filters:
             branches:
-              only: dev
+              only:
+                - dev
+                - circleci-validation
 
       - deploy_java_pm2_azure:
           name: "[DEV] 🔧 Deploy Manager API"
@@ -1237,7 +1239,9 @@ workflows:
           requires: ["[DEV] 🔧 Build Manager API"]
           filters:
             branches:
-              only: dev
+              only:
+                - dev
+                - circleci-validation
 
       - deploy_vue_pm2_azure:
           name: "[DEV] 🔧 Deploy Manager Web"
@@ -1248,7 +1252,9 @@ workflows:
           requires: ["[DEV] 🔧 Build Manager Web"]
           filters:
             branches:
-              only: dev
+              only:
+                - dev
+                - circleci-validation
 
       - deploy_python_pm2_azure:
           name: "[DEV] 🔧 Deploy LiveKit Server"
@@ -1260,7 +1266,9 @@ workflows:
           requires: ["[DEV] 🔧 Build LiveKit Server"]
           filters:
             branches:
-              only: dev
+              only:
+                - dev
+                - circleci-validation
 
   # ==========================================
   # 🚀 PRODUCTION WORKFLOW
