@@ -1021,7 +1021,7 @@ jobs:
               printf '%s\\n' '#!/bin/bash' > start.sh
               printf '%s\\n' 'export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64' >> start.sh
               printf '%s\\n' 'export PATH=\$JAVA_HOME/bin:\$PATH' >> start.sh
-              printf '%s\\n' \"cd ${AZURE_DEPLOY_PATH}/main/${SVC}\" >> start.sh
+              printf '%s\\n' \"cd ${AZURE_DEPLOY_PATH}/xiaozhi-esp32-server/main/${SVC}\" >> start.sh
               printf '%s\\n' \"mvn spring-boot:run -Dspring-boot.run.profiles=\${SPRING_PROFILE}\" >> start.sh
 
               # Make it executable
