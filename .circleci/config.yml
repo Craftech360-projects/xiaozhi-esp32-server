@@ -795,8 +795,19 @@ jobs:
                             echo '--- Installing Node.js dependencies ---'
                             npm install --omit=dev --no-audit --no-fund
                             echo '--- Dependencies installed successfully ---'
-            
-                            pm2 delete ${SVC} || true
+
+                            # Delete ALL instances of this specific service (handles duplicates)
+                            echo '--- Removing all existing ${SVC} instances ---'
+                            # Method 1: Try with jq if available (delete by PM2 ID)
+                            if command -v jq >/dev/null 2>&1; then
+                              pm2 jlist 2>/dev/null | jq -r \".[] | select(.name==\\\"${SVC}\\\") | .pm_id\" | xargs -r -I {} pm2 delete {} 2>/dev/null || true
+                            fi
+                            # Method 2: Fallback - delete by name multiple times to handle duplicates
+                            for i in 1 2 3; do
+                              pm2 delete ${SVC} 2>/dev/null || break
+                            done
+                            sleep 2
+
                             pm2 start << parameters.entry_file >> --name ${SVC} --env ${ENV_NAME}
                             pm2 save
                             echo \"✅ ${SVC} deployed successfully\"
