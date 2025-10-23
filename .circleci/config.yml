@@ -8,6 +8,9 @@ version: 2.1
 # - main branch → prod-config.yml
 # ==========================================
 
+# CRITICAL: Mark this as a setup workflow
+setup: true
+
 # Setup workflows require the continuation orb
 orbs:
   continuation: circleci/continuation@1.0.0
@@ -28,7 +31,7 @@ jobs:
             BRANCH="${CIRCLE_BRANCH}"
             echo "Current branch: ${BRANCH}"
 
-            # Determine which config to use and create generated_config.yml
+            # Determine which config to use and copy to generated_config.yml
             if [[ "${BRANCH}" == "main" ]]; then
               echo "🚀 Using PRODUCTION pipeline configuration"
               cp .circleci/prod-config.yml .circleci/generated_config.yml
@@ -41,13 +44,13 @@ jobs:
               exit 0
             fi
 
-            # Verify config file exists
+            # Verify config file was created
             if [ ! -f ".circleci/generated_config.yml" ]; then
-              echo "❌ ERROR: Failed to create generated config"
+              echo "❌ ERROR: Failed to generate config"
               exit 1
             fi
 
-            echo "✅ Generated configuration ready"
+            echo "✅ Configuration ready"
 
       - continuation/continue:
           configuration_path: .circleci/generated_config.yml
