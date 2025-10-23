@@ -756,12 +756,35 @@ jobs:
 
               # Start the application using PM2
               echo '--- Starting application with PM2 ---'
+
+              # Set JAVA_HOME for the start script
+              export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+
+              # Determine Spring profile (dev or prod)
+              if [ \"${ENV_NAME}\" = \"development\" ]; then
+                SPRING_PROFILE=\"dev\"
+              elif [ \"${ENV_NAME}\" = \"production\" ]; then
+                SPRING_PROFILE=\"prod\"
+              else
+                SPRING_PROFILE=\"${ENV_NAME}\"
+              fi
+
+              # Create a start script wrapper for Maven (PM2 can't execute mvn directly)
+              printf '%s\\n' '#!/bin/bash' > start.sh
+              printf '%s\\n' 'export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64' >> start.sh
+              printf '%s\\n' 'export PATH=\$JAVA_HOME/bin:\$PATH' >> start.sh
+              printf '%s\\n' \"cd ${AZURE_DEPLOY_PATH}/main/${SVC}\" >> start.sh
+              printf '%s\\n' \"mvn spring-boot:run -Dspring-boot.run.profiles=\${SPRING_PROFILE}\" >> start.sh
+
+              # Make it executable
+              chmod +x start.sh
+
+              # Delete existing PM2 process
               pm2 delete ${SVC} || true
-              
-              # Use PM2 to run the mvn spring-boot:run command
-              # The '--' separates pm2 arguments from script arguments
-              pm2 start mvn --name \"${SVC}\" -- spring-boot:run -Dspring-boot.run.arguments=--spring.profiles.active=${ENV_NAME}
-              
+
+              # Start with PM2 using bash interpreter
+              pm2 start start.sh --name \"${SVC}\" --interpreter bash
+
               pm2 save
               echo \"✅ ${SVC} deployed successfully from source\"
             "
