@@ -180,8 +180,8 @@ class ModelCache:
         if "vad_model" in self._models:
             return self._models["vad_model"]
 
-        # VAD model must be loaded on main thread, not in background
-        # This is a limitation of the Silero VAD plugin
+        # VAD model must be loaded on main thread
+        # This is a requirement for both Silero and TEN VAD
         try:
             import threading
             if threading.current_thread() != threading.main_thread():
@@ -189,17 +189,19 @@ class ModelCache:
                     "[CACHE] VAD model must be loaded on main thread, deferring...")
                 return None
 
-            # Load VAD directly to avoid circular dependency with ProviderFactory
-            from livekit.plugins import silero
-            logger.info(
-                "[CACHE] Loading VAD model on main thread with child-friendly settings...")
-            vad = silero.VAD.load()
+            # Use ProviderFactory to create VAD (supports both Silero and TEN)
+            from ..providers.provider_factory import ProviderFactory
+            logger.info("[CACHE] Loading VAD model on main thread...")
+
+            vad = ProviderFactory.create_vad()
             self._models["vad_model"] = vad
-            logger.info(
-                "[CACHE] VAD model loaded and cached with child-friendly settings")
+            logger.info("[CACHE] VAD model loaded and cached")
             return vad
+
         except Exception as e:
             logger.error(f"[CACHE] Failed to load VAD model: {e}")
+            import traceback
+            logger.debug(f"[CACHE] Traceback: {traceback.format_exc()}")
             return None
 
     def get_embedding_model(self, model_name: Optional[str] = None):
