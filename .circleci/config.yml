@@ -1033,8 +1033,44 @@ jobs:
 
               # Ensure dependencies are installed on the VM
               echo '--- Installing dependencies (git, maven, java, nodejs, redis) ---'
-              sudo apt-get update -y
-              sudo apt-get install -y git maven openjdk-17-jdk nodejs redis-server
+
+              # Wait for apt lock to be released (handles unattended upgrades)
+              echo 'Waiting for apt lock to be released...'
+              for i in \$(seq 1 30); do
+                if sudo fuser /var/lib/apt/lists/lock >/dev/null 2>&1 || \
+                   sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; then
+                  echo \"Attempt \$i/30: apt is locked, waiting 10 seconds...\"
+                  sleep 10
+                else
+                  echo 'apt lock released'
+                  break
+                fi
+                if [ \$i -eq 30 ]; then
+                  echo 'Timeout waiting for apt lock, forcing release...'
+                  sudo killall apt-get apt 2>/dev/null || true
+                  sudo rm -f /var/lib/apt/lists/lock /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock 2>/dev/null || true
+                  sudo dpkg --configure -a
+                  sleep 5
+                fi
+              done
+
+              # Install dependencies with retry logic
+              for attempt in 1 2 3; do
+                echo \"Installation attempt \$attempt/3...\"
+                if sudo apt-get update -y && \
+                   sudo apt-get install -y git maven openjdk-17-jdk nodejs redis-server; then
+                  echo '✅ Dependencies installed successfully'
+                  break
+                else
+                  if [ \$attempt -lt 3 ]; then
+                    echo \"Installation failed, retrying in 10 seconds...\"
+                    sleep 10
+                  else
+                    echo '❌ Failed to install dependencies after 3 attempts'
+                    exit 1
+                  fi
+                fi
+              done
 
               # Start and enable Redis service
               echo '--- Starting Redis server ---'
