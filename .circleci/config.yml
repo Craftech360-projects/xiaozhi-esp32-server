@@ -1286,6 +1286,10 @@ jobs:
               else
                 echo "📋 No agent ID found in livekit.toml"
               fi
+
+              # Remove livekit.toml to prevent project mismatch errors
+              echo "🧹 Removing old livekit.toml to allow fresh agent creation..."
+              rm -f livekit.toml
             else
               echo "📋 livekit.toml not found, skipping delete"
             fi
@@ -1308,7 +1312,7 @@ jobs:
             echo "✅ Dependencies locked successfully"
 
       - run:
-          name: Create New Agent on LiveKit Cloud
+          name: Deploy Agent to LiveKit Cloud
           command: |
             : "${LIVEKIT_URL:?Set LIVEKIT_URL in CircleCI context}"
             : "${LIVEKIT_API_KEY:?Set LIVEKIT_API_KEY in CircleCI context}"
@@ -1316,51 +1320,40 @@ jobs:
 
             cd main/livekit-server
 
-            echo "☁️ Creating new agent on LiveKit Cloud..."
+            echo "☁️ Deploying agent to LiveKit Cloud..."
 
             # Set LiveKit credentials as environment variables
             export LIVEKIT_URL="$LIVEKIT_URL"
             export LIVEKIT_API_KEY="$LIVEKIT_API_KEY"
             export LIVEKIT_API_SECRET="$LIVEKIT_API_SECRET"
 
-            # Create the agent with auto-confirmation
-            # Use expect or provide automatic yes responses for prompts
-            echo "📝 Creating agent (auto-accepting prompts)..."
+            # Use lk deploy directly - more reliable for CI/CD
+            # This handles both creation and updates automatically
+            echo "🚀 Deploying agent with lk deploy..."
 
-            # Method 1: Try lk agent create with timeout
-            timeout 300 bash -c '
-              # Automatically answer yes to all prompts
-              yes | lk agent create || {
-                EXIT_CODE=$?
-                if [ $EXIT_CODE -eq 124 ]; then
-                  echo "⏱️ Agent creation timed out after 5 minutes"
-                  echo "🔄 Will try lk deploy as fallback..."
-                  exit 124
-                else
-                  echo "❌ Agent creation failed with code $EXIT_CODE"
-                  exit $EXIT_CODE
-                fi
-              }
-            ' || {
-              EXIT_CODE=$?
-              if [ $EXIT_CODE -eq 124 ]; then
-                echo "⏱️ lk agent create took too long, switching to lk deploy..."
+            # Add UV to PATH for dependency resolution
+            export PATH="$HOME/.local/bin:$PATH"
 
-                # Fallback: Use lk deploy command
-                echo "🚀 Deploying with lk deploy..."
-                lk deploy || {
-                  echo "❌ Both lk agent create and lk deploy failed"
-                  exit 1
-                }
+            # Deploy the agent
+            lk deploy || {
+              echo "❌ Agent deployment failed"
+              echo "📋 Checking for common issues..."
 
-                echo "✅ Agent deployed successfully using lk deploy"
+              # Debug: Show current directory and files
+              echo "Current directory: $(pwd)"
+              ls -la
+
+              # Debug: Check if pyproject.toml exists
+              if [ -f "pyproject.toml" ]; then
+                echo "✅ pyproject.toml found"
               else
-                echo "❌ Agent creation failed"
-                exit $EXIT_CODE
+                echo "❌ pyproject.toml not found - required for deployment"
               fi
+
+              exit 1
             }
 
-            echo "✅ Agent created/deployed on LiveKit Cloud successfully"
+            echo "✅ Agent deployed to LiveKit Cloud successfully"
 
       - run:
           name: Verify Agent Deployment
