@@ -890,12 +890,12 @@ jobs:
               source venv/bin/activate
               pip install .
 
-              # Create PM2 ecosystem
+              # Create PM2 ecosystem - livekit needs 'dev' command
               echo 'module.exports = {
                 apps: [{
                   name: \"${SVC}\",
                   script: \"${AZURE_DEPLOY_PATH}/main/${SVC}/venv/bin/python\",
-                  args: [\"${ENTRY}\"],
+                  args: [\"${ENTRY}\", \"dev\"],
                   cwd: \"${AZURE_DEPLOY_PATH}/main/${SVC}\",
                   env: { HTTP_PORT: \"${HTTP_PORT}\", NODE_ENV: \"${ENV_NAME}\" },
                   autorestart: true
