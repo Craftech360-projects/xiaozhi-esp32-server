@@ -46,6 +46,217 @@ executors:
 # =========================
 jobs:
   # ==========================================
+  # EMQX MQTT BROKER DEPLOYMENT
+  # ==========================================
+
+  deploy_emqx_docker:
+    executor: base-executor
+    parameters:
+      env: { type: string, default: "staging" }
+      mqtt_port: { type: integer, default: 1883 }
+      mqtt_ws_port: { type: integer, default: 8083 }
+      http_port: { type: integer, default: 18083 }
+    steps:
+      - add_ssh_keys:
+          fingerprints:
+            - "SHA256:yOFaQhaMF3+XYAcEjYL/BwibjpbAPUubeCj7b/ezBXU"
+      - run:
+          name: Deploy EMQX in Docker
+          command: |
+            : "${AZURE_HOST:?Set AZURE_HOST in CircleCI context}"
+            : "${AZURE_USER:?Set AZURE_USER in CircleCI context}"
+            : "${AZURE_DEPLOY_PATH:?Set AZURE_DEPLOY_PATH in CircleCI context}"
+
+            DEPLOY_SCRIPT="set -e
+
+              # Install Docker if not present
+              if ! command -v docker &> /dev/null; then
+                curl -fsSL https://get.docker.com | sudo sh
+              fi
+
+              # Ensure user has Docker permissions
+              sudo usermod -aG docker \$USER
+
+              # Create new session to apply group changes and run commands
+              sudo -E -u \$USER bash -c 'docker ps || exit 1'
+
+              # Create directories for EMQX persistence with proper permissions
+              sudo mkdir -p ${AZURE_DEPLOY_PATH}/emqx/data ${AZURE_DEPLOY_PATH}/emqx/log
+              sudo chown -R \$USER:docker ${AZURE_DEPLOY_PATH}/emqx
+              sudo chmod -R 775 ${AZURE_DEPLOY_PATH}/emqx
+
+              # Verify permissions
+              ls -la ${AZURE_DEPLOY_PATH}/emqx
+
+              # Aggressively clean up ALL EMQX containers (by name and ID)
+              echo 'Cleaning up all EMQX containers...'
+
+              # First, disable restart policies on all xiaozhi-emqx containers to prevent auto-restart
+              echo 'Disabling restart policies...'
+              EXISTING_CONTAINERS=\$(docker ps -aq --filter name=xiaozhi-emqx)
+              if [ -n \"\$EXISTING_CONTAINERS\" ]; then
+                echo \"Found containers to disable restart: \$EXISTING_CONTAINERS\"
+                echo \"\$EXISTING_CONTAINERS\" | xargs -r docker update --restart=no 2>/dev/null || true
+              fi
+
+              # Loop through all removal attempts to handle race conditions
+              for attempt in 1 2 3; do
+                echo \"Cleanup attempt \$attempt of 3...\"
+
+                # Stop all running containers with xiaozhi-emqx name
+                docker stop xiaozhi-emqx 2>/dev/null || true
+
+                # Remove all containers by name (running or stopped)
+                docker rm -f xiaozhi-emqx 2>/dev/null || true
+
+                # Find and remove any containers with 'xiaozhi-emqx' in the name using filter
+                CONTAINER_IDS=\$(docker ps -aq --filter name=xiaozhi-emqx)
+                if [ -n \"\$CONTAINER_IDS\" ]; then
+                  echo \"Found containers by filter: \$CONTAINER_IDS\"
+                  # Disable restart policy first
+                  echo \"\$CONTAINER_IDS\" | xargs -r docker update --restart=no 2>/dev/null || true
+                  # Then remove
+                  echo \"\$CONTAINER_IDS\" | xargs -r docker rm -f 2>/dev/null || true
+
+                  # Try with sudo if regular removal failed
+                  STILL_THERE=\$(docker ps -aq --filter name=xiaozhi-emqx)
+                  if [ -n \"\$STILL_THERE\" ]; then
+                    echo \"Using sudo to remove: \$STILL_THERE\"
+                    echo \"\$STILL_THERE\" | xargs -r sudo docker update --restart=no 2>/dev/null || true
+                    echo \"\$STILL_THERE\" | xargs -r sudo docker rm -f 2>/dev/null || true
+                  fi
+                fi
+
+                # Wait longer for Docker to release resources and prevent restart
+                sleep 3
+
+                # Check if any containers remain
+                REMAINING=\$(docker ps -aq --filter name=xiaozhi-emqx)
+                if [ -z \"\$REMAINING\" ]; then
+                  echo \"✅ All EMQX containers removed successfully\"
+                  break
+                else
+                  echo \"Containers still present: \$REMAINING\"
+                  if [ \$attempt -eq 3 ]; then
+                    echo \"❌ Failed to remove all EMQX containers after 3 attempts\"
+                    docker ps -a | grep xiaozhi-emqx || true
+                    exit 1
+                  fi
+                fi
+              done
+
+              # Final wait to ensure Docker fully releases the name and prevents any restart attempts
+              echo 'Waiting for Docker to fully release container name...'
+              sleep 5
+
+              # Optional: Remove old EMQX images to free space
+              echo 'Cleaning up old EMQX images...'
+              docker images | grep 'emqx/emqx' | grep -v '5.8.3' | awk '{print \$3}' | xargs -r docker rmi -f 2>/dev/null || echo 'No old images to remove'
+
+              # Pull EMQX image first
+              echo 'Pulling EMQX image...'
+              docker pull emqx/emqx:5.8.3 || {
+                echo 'Failed to pull EMQX image'
+                exit 1
+              }
+
+              # FINAL CHECK: Remove any containers that appeared during image pull
+              echo '=== FINAL PRE-CREATE CHECK ==='
+              FINAL_CHECK=\$(docker ps -aq --filter name=xiaozhi-emqx)
+              if [ -n \"\$FINAL_CHECK\" ]; then
+                echo \"WARNING: Found containers created during pull: \$FINAL_CHECK\"
+                echo \"Removing them now...\"
+                echo \"\$FINAL_CHECK\" | xargs -r docker update --restart=no 2>/dev/null || true
+                echo \"\$FINAL_CHECK\" | xargs -r docker rm -f 2>/dev/null || true
+                sleep 2
+
+                # Verify they're really gone
+                STILL_HERE=\$(docker ps -aq --filter name=xiaozhi-emqx)
+                if [ -n \"\$STILL_HERE\" ]; then
+                  echo \"CRITICAL: Cannot remove containers: \$STILL_HERE\"
+                  docker ps -a --filter name=xiaozhi-emqx
+                  exit 1
+                fi
+              fi
+              echo '=== Pre-create check passed, no xiaozhi-emqx containers exist ==='
+
+              # ATOMIC OPERATION: Remove any lingering container and create new one in single command block
+              # This prevents race conditions between check and create
+              echo '=== Starting atomic container creation ==='
+              (
+                # Final aggressive cleanup right before creation
+                docker rm -f xiaozhi-emqx 2>/dev/null || true
+                docker ps -aq --filter name=xiaozhi-emqx | xargs -r docker rm -f 2>/dev/null || true
+
+                # Immediately create the new container
+                docker run -d --name xiaozhi-emqx \\
+                  --restart unless-stopped \\
+                  -p << parameters.mqtt_port >>:1883 \\
+                  -p 8883:8883 \\
+                  -p << parameters.mqtt_ws_port >>:8083 \\
+                  -p 8084:8084 \\
+                  -p << parameters.http_port >>:18083 \\
+                  -v ${AZURE_DEPLOY_PATH}/emqx/data:/opt/emqx/data \\
+                  -v ${AZURE_DEPLOY_PATH}/emqx/log:/opt/emqx/log \\
+                  -e EMQX_NAME=emqx \\
+                  -e EMQX_HOST=127.0.0.1 \\
+                  -e EMQX_CLUSTER__DISCOVERY_STRATEGY=manual \\
+                  -e EMQX_ALLOW_ANONYMOUS=true \\
+                  -e EMQX_DASHBOARD__DEFAULT_USERNAME=admin \\
+                  -e EMQX_DASHBOARD__DEFAULT_PASSWORD=public \\
+                  --hostname xiaozhi-emqx \\
+                  emqx/emqx:5.8.3
+              ) || {
+                echo \"❌ Failed to create container, checking for conflicts...\"
+                docker ps -a | grep xiaozhi-emqx || true
+
+                # One last attempt: force remove and retry
+                echo \"Attempting force removal and retry...\"
+                docker rm -f \$(docker ps -aq --filter name=xiaozhi-emqx) 2>/dev/null || true
+                sleep 2
+
+                docker run -d --name xiaozhi-emqx \\
+                  --restart unless-stopped \\
+                  -p << parameters.mqtt_port >>:1883 \\
+                  -p 8883:8883 \\
+                  -p << parameters.mqtt_ws_port >>:8083 \\
+                  -p 8084:8084 \\
+                  -p << parameters.http_port >>:18083 \\
+                  -v ${AZURE_DEPLOY_PATH}/emqx/data:/opt/emqx/data \\
+                  -v ${AZURE_DEPLOY_PATH}/emqx/log:/opt/emqx/log \\
+                  -e EMQX_NAME=emqx \\
+                  -e EMQX_HOST=127.0.0.1 \\
+                  -e EMQX_CLUSTER__DISCOVERY_STRATEGY=manual \\
+                  -e EMQX_ALLOW_ANONYMOUS=true \\
+                  -e EMQX_DASHBOARD__DEFAULT_USERNAME=admin \\
+                  -e EMQX_DASHBOARD__DEFAULT_PASSWORD=public \\
+                  --hostname xiaozhi-emqx \\
+                  emqx/emqx:5.8.3 || {
+                    echo \"❌ Final attempt failed\"
+                    docker ps -a | grep xiaozhi-emqx || true
+                    exit 1
+                  }
+              }
+
+              # Wait for EMQX to be ready
+              echo 'Waiting for EMQX to be ready...'
+              for i in \$(seq 1 30); do
+                if curl -s http://localhost:<< parameters.http_port >>/status > /dev/null; then
+                  echo 'EMQX is ready!'
+                  docker ps | grep xiaozhi-emqx
+                  exit 0
+                fi
+                echo \"Waiting... (\$i/30)\"
+                sleep 2
+              done
+
+              echo 'EMQX failed to start properly'
+              docker logs xiaozhi-emqx
+              exit 1"
+
+            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "$DEPLOY_SCRIPT"
+
+  # ==========================================
   # TESTING PIPELINE JOBS
   # ==========================================
 
@@ -890,13 +1101,26 @@ jobs:
               source venv/bin/activate
               pip install .
 
-              # Create PM2 ecosystem - livekit needs 'dev' command
+              # Create a wrapper script that loads .env and runs Python
+              printf '%s\\n' '#!/bin/bash' > start_with_env.sh
+              printf '%s\\n' 'cd ${AZURE_DEPLOY_PATH}/main/${SVC}' >> start_with_env.sh
+              printf '%s\\n' '# Load environment variables from .env file' >> start_with_env.sh
+              printf '%s\\n' 'if [ -f .env ]; then' >> start_with_env.sh
+              printf '%s\\n' '  set -a' >> start_with_env.sh
+              printf '%s\\n' '  source .env' >> start_with_env.sh
+              printf '%s\\n' '  set +a' >> start_with_env.sh
+              printf '%s\\n' 'fi' >> start_with_env.sh
+              printf '%s\\n' 'exec venv/bin/python ${ENTRY} dev' >> start_with_env.sh
+
+              chmod +x start_with_env.sh
+
+              # Create PM2 ecosystem - uses wrapper script to load .env
               echo 'module.exports = {
                 apps: [{
                   name: \"${SVC}\",
-                  script: \"${AZURE_DEPLOY_PATH}/main/${SVC}/venv/bin/python\",
-                  args: [\"${ENTRY}\", \"dev\"],
+                  script: \"${AZURE_DEPLOY_PATH}/main/${SVC}/start_with_env.sh\",
                   cwd: \"${AZURE_DEPLOY_PATH}/main/${SVC}\",
+                  interpreter: \"bash\",
                   env: { HTTP_PORT: \"${HTTP_PORT}\", NODE_ENV: \"${ENV_NAME}\" },
                   autorestart: true
                 }]
@@ -1247,9 +1471,24 @@ workflows:
                 - circleci-validation
 
       # ==========================================
-      # DEPLOY PHASE: All 4 services deploy in parallel to dev environment
+      # DEPLOY PHASE: All services deploy to dev environment
       # Runs on dev AND circleci-validation branches for testing
+      # EMQX deploys first, then other 4 services in parallel
       # ==========================================
+      - deploy_emqx_docker:
+          name: "[DEV] 🔧 Deploy EMQX Broker"
+          context: "azure-mqtt-gateway"
+          env: "development"
+          mqtt_port: 1883
+          mqtt_ws_port: 8083
+          http_port: 18083
+          requires: ["[DEV] 🔧 Build MQTT Gateway"]
+          filters:
+            branches:
+              only:
+                - dev
+                - circleci-validation
+
       - deploy_node_pm2_azure:
           name: "[DEV] 🔧 Deploy MQTT Gateway"
           context: "azure-mqtt-gateway"
@@ -1258,7 +1497,7 @@ workflows:
           env: "development"
           http_port: 8884
           mqtt_port: 1883
-          requires: ["[DEV] 🔧 Build MQTT Gateway"]
+          requires: ["[DEV] 🔧 Deploy EMQX Broker"]
           filters:
             branches:
               only:

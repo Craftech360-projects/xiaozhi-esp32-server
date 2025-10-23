@@ -3,8 +3,8 @@ python-dotenv
 pydub
 aiohttp
 
-# Local AI Models (for offline operation)
-faster-whisper  # Local STT using Whisper
+# Local AI Models (for offline operation) - DISABLED to reduce deployment issues
+# faster-whisper  # Local STT using Whisper - OFFLINE MODE ONLY
 # TTS  # Coqui TTS for local text-to-speech - OFFLINE MODE ONLY, not needed for production/CI (requires Python < 3.12)
 
 # Optional dependencies for enhanced semantic search
