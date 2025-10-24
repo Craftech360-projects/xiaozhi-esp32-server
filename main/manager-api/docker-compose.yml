@@ -1,10 +1,9 @@
-version: '3.8'
-
 services:
   # MySQL Database
   manager-api-db:
     image: mysql:8.0
     container_name: manager-api-db
+    platform: linux/arm64
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: rootpassword
@@ -30,6 +29,7 @@ services:
   manager-api-redis:
     image: redis:7-alpine
     container_name: manager-api-redis
+    platform: linux/arm64
     restart: always
     environment:
       TZ: Asia/Shanghai
@@ -51,6 +51,7 @@ services:
   redis-commander:
     image: rediscommander/redis-commander:latest
     container_name: manager-api-redis-commander
+    platform: linux/amd64
     restart: unless-stopped
     environment:
       REDIS_HOSTS: local:manager-api-redis:6379:0:redispassword
@@ -65,6 +66,7 @@ services:
   phpmyadmin:
     image: phpmyadmin/phpmyadmin
     container_name: manager-api-phpmyadmin
+    platform: linux/amd64
     restart: unless-stopped
     environment:
       PMA_HOST: manager-api-db

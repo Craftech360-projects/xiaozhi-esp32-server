@@ -150,16 +150,18 @@ class ChatEventHandler:
             if function_name == "play_music":
                 song_name = arguments.get('song_name')
                 language = arguments.get('language')
+                loop_enabled = arguments.get('loop_enabled', False)
                 logger.info(
-                    f"🎵 [MOBILE] Calling play_music(song_name='{song_name}', language='{language}')")
-                await assistant.play_music(ctx, song_name=song_name, language=language)
+                    f"🎵 [MOBILE] Calling play_music(song_name='{song_name}', language='{language}', loop_enabled={loop_enabled})")
+                await assistant.play_music(ctx, song_name=song_name, language=language, loop_enabled=loop_enabled)
 
             elif function_name == "play_story":
                 story_name = arguments.get('story_name')
                 category = arguments.get('category')
+                loop_enabled = arguments.get('loop_enabled', False)
                 logger.info(
-                    f"📖 [MOBILE] Calling play_story(story_name='{story_name}', category='{category}')")
-                await assistant.play_story(ctx, story_name=story_name, category=category)
+                    f"📖 [MOBILE] Calling play_story(story_name='{story_name}', category='{category}', loop_enabled={loop_enabled})")
+                await assistant.play_story(ctx, story_name=story_name, category=category, loop_enabled=loop_enabled)
 
             else:
                 logger.warning(

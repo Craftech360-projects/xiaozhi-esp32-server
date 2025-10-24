@@ -93,6 +93,10 @@ class Assistant(FilteredAgent):
         # Session reference for dynamic updates
         self._agent_session = None
 
+        # Loop mode state (for continuous playback of random content)
+        self.loop_enabled = False
+        self.loop_content_type = None  # 'music' or 'story'
+
         # Log registered function tools (for debugging)
         logger.info("🔧 Assistant initialized, checking function tools...")
         try:
@@ -255,13 +259,15 @@ class Assistant(FilteredAgent):
         self,
         context: RunContext,
         song_name: Optional[str] = None,
-        language: Optional[str] = None
+        language: Optional[str] = None,
+        loop_enabled: bool = False
     ):
         """Play music - either a specific song or random music
 
         Args:
             song_name: Optional specific song to search for
             language: Optional language preference (English, Hindi, Telugu, etc.)
+            loop_enabled: Enable continuous playback of different songs from same language
         """
         try:
             logger.info(f"Music request - song: '{song_name}', language: '{language}'")
@@ -289,6 +295,16 @@ class Assistant(FilteredAgent):
 
             if not song:
                 return "Sorry, I couldn't find any music to play right now."
+
+            # Store loop state if loop mode is enabled
+            if loop_enabled:
+                self.loop_enabled = True
+                self.loop_content_type = 'music'
+                logger.info(f"🔁 Loop mode enabled for music (will play ANY random songs)")
+            else:
+                # Clear loop state if not looping
+                self.loop_enabled = False
+                self.loop_content_type = None
 
             # Send music start signal to device via data channel FIRST
             try:
@@ -318,7 +334,15 @@ class Assistant(FilteredAgent):
                 logger.warning(f"Failed to send music start signal: {e}")
 
             # Start playing the song through TTS channel - this will queue it
-            await player.play_from_url(song['url'], song['title'])
+            # Register completion callback if loop mode is enabled
+            if loop_enabled:
+                await player.play_from_url(
+                    song['url'],
+                    song['title'],
+                    on_completion_callback=self._continue_loop_playback
+                )
+            else:
+                await player.play_from_url(song['url'], song['title'])
 
             # Return special instruction to suppress immediate response
             # The agent should stay silent while music plays
@@ -333,13 +357,15 @@ class Assistant(FilteredAgent):
         self,
         context: RunContext,
         story_name: Optional[str] = None,
-        category: Optional[str] = None
+        category: Optional[str] = None,
+        loop_enabled: bool = False
     ):
         """Play a story - either a specific story or random story
 
         Args:
             story_name: Optional specific story to search for
             category: Optional category preference (Adventure, Bedtime, Educational, etc.)
+            loop_enabled: Enable continuous playback of different stories from same category
         """
         try:
             logger.info(f"Story request - story: '{story_name}', category: '{category}'")
@@ -368,8 +394,26 @@ class Assistant(FilteredAgent):
             if not story:
                 return "Sorry, I couldn't find any stories to play right now."
 
+            # Store loop state if loop mode is enabled
+            if loop_enabled:
+                self.loop_enabled = True
+                self.loop_content_type = 'story'
+                logger.info(f"🔁 Loop mode enabled for stories (will play ANY random stories)")
+            else:
+                # Clear loop state if not looping
+                self.loop_enabled = False
+                self.loop_content_type = None
+
             # Start playing the story through TTS channel
-            await player.play_from_url(story['url'], story['title'])
+            # Register completion callback if loop mode is enabled
+            if loop_enabled:
+                await player.play_from_url(
+                    story['url'],
+                    story['title'],
+                    on_completion_callback=self._continue_loop_playback
+                )
+            else:
+                await player.play_from_url(story['url'], story['title'])
 
             # Return special instruction to suppress immediate response
             # The agent should stay silent while story plays
@@ -385,6 +429,13 @@ class Assistant(FilteredAgent):
         try:
             from ..utils.audio_state_manager import audio_state_manager
             import json
+
+            # Clear loop state to stop continuous playback
+            was_looping = self.loop_enabled
+            self.loop_enabled = False
+            self.loop_content_type = None
+            if was_looping:
+                logger.info("🔁 Loop mode disabled via stop_audio")
 
             # Send music stop signal to device via data channel
             try:
@@ -470,6 +521,55 @@ class Assistant(FilteredAgent):
         except Exception as e:
             logger.error(f"Error stopping audio: {e}")
             return "Sorry, I encountered an error while trying to stop audio."
+
+    async def _continue_loop_playback(self):
+        """Continue loop playback by playing next random song/story from same category"""
+        try:
+            # Check if loop is still enabled
+            if not self.loop_enabled:
+                logger.info("🔁 Loop mode disabled, stopping continuation")
+                return
+
+            logger.info(f"🔁 Continuing loop playback - Type: {self.loop_content_type} (ANY random content)")
+
+            # Get context for the next playback
+            # We need a RunContext, but we can access it through the player
+            context = None
+            if self.unified_audio_player and self.unified_audio_player.context:
+                context = self.unified_audio_player.context
+            elif self.audio_player and self.audio_player.context:
+                context = self.audio_player.context
+
+            if not context:
+                logger.error("🔁 No context available for loop continuation")
+                self.loop_enabled = False
+                return
+
+            # Play next item based on content type (ANY random, no language/category filter)
+            if self.loop_content_type == 'music':
+                await self.play_music(
+                    context=context,
+                    song_name=None,  # Random selection
+                    language=None,    # ANY language - no filter
+                    loop_enabled=True  # Continue looping
+                )
+            elif self.loop_content_type == 'story':
+                await self.play_story(
+                    context=context,
+                    story_name=None,  # Random selection
+                    category=None,    # ANY category - no filter
+                    loop_enabled=True  # Continue looping
+                )
+            else:
+                logger.warning(f"🔁 Unknown content type for loop: {self.loop_content_type}")
+                self.loop_enabled = False
+
+        except Exception as e:
+            logger.error(f"🔁 Error continuing loop playback: {e}")
+            import traceback
+            logger.error(f"🔁 Traceback: {traceback.format_exc()}")
+            # Disable loop on error to prevent infinite error loop
+            self.loop_enabled = False
 
     @function_tool
     async def set_device_volume(self, context: RunContext, volume: int):

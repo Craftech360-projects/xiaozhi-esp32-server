@@ -132,6 +132,46 @@ configManager.on("configChanged", (config) => {
 });
 setDebugEnabled(configManager.get("debug"));
 
+// Loop State Manager for continuous playback (plays ANY random content)
+class LoopStateManager {
+  constructor() {
+    this.loopStates = new Map(); // macAddress -> { loopEnabled, contentType }
+  }
+
+  setLoopState(macAddress, loopEnabled, contentType) {
+    if (loopEnabled) {
+      this.loopStates.set(macAddress, {
+        loopEnabled: true,
+        contentType,
+        timestamp: Date.now(),
+      });
+      console.log(
+        `🔁 [LOOP] Loop state enabled for ${macAddress} - Type: ${contentType} (ANY random content)`
+      );
+    } else {
+      this.loopStates.delete(macAddress);
+      console.log(`🔁 [LOOP] Loop state cleared for ${macAddress}`);
+    }
+  }
+
+  getLoopState(macAddress) {
+    return this.loopStates.get(macAddress) || null;
+  }
+
+  clearLoopState(macAddress) {
+    this.loopStates.delete(macAddress);
+    console.log(`🔁 [LOOP] Loop state cleared for ${macAddress}`);
+  }
+
+  isLoopEnabled(macAddress) {
+    const state = this.loopStates.get(macAddress);
+    return state?.loopEnabled || false;
+  }
+}
+
+// Global loop state manager instance
+const loopStateManager = new LoopStateManager();
+
 class LiveKitBridge extends Emitter {
   constructor(connection, protocolVersion, macAddress, uuid, userData) {
     super();
@@ -332,6 +372,8 @@ class LiveKitBridge extends Emitter {
       console.log(
         `🎵 [CLEANUP] Cleared audio flag on room disconnect for device: ${this.macAddress}`
       );
+      // Clear loop state on disconnect
+      loopStateManager.clearLoopState(this.macAddress);
     });
 
     this.room.on(
@@ -455,6 +497,17 @@ class LiveKitBridge extends Emitter {
               this.isAudioPlaying = false;
               // Send TTS stop message to ensure device returns to listening state
               this.sendTtsStopMessage();
+              break;
+            case "mobile_stop_loop":
+            case "stop_loop":
+              // Handle stop loop request from mobile app
+              console.log(
+                `🔁 [LOOP-STOP] Stop loop request received for device: ${this.macAddress}`
+              );
+              // Clear loop state
+              loopStateManager.clearLoopState(this.macAddress);
+              // Forward stop_audio function call to LiveKit agent
+              this.handleStopLoopRequest();
               break;
             case "llm":
               // Handle emotion from LLM response
@@ -1350,6 +1403,9 @@ class LiveKitBridge extends Emitter {
       const functionName =
         requestData.content_type === "story" ? "play_story" : "play_music";
 
+      // Extract loop_enabled parameter (default to false)
+      const loopEnabled = requestData.loop_enabled === true;
+
       // Prepare function arguments
       const functionArguments = {};
 
@@ -1361,6 +1417,15 @@ class LiveKitBridge extends Emitter {
         if (requestData.language) {
           functionArguments.language = requestData.language;
         }
+        // Add loop_enabled parameter
+        functionArguments.loop_enabled = loopEnabled;
+
+        // Update loop state manager (will play ANY random music)
+        loopStateManager.setLoopState(
+          this.macAddress,
+          loopEnabled,
+          "music"
+        );
       } else if (requestData.content_type === "story") {
         // For stories: story_name and category
         if (requestData.song_name) {
@@ -1369,6 +1434,15 @@ class LiveKitBridge extends Emitter {
         if (requestData.language) {
           functionArguments.category = requestData.language;
         }
+        // Add loop_enabled parameter
+        functionArguments.loop_enabled = loopEnabled;
+
+        // Update loop state manager (will play ANY random stories)
+        loopStateManager.setLoopState(
+          this.macAddress,
+          loopEnabled,
+          "story"
+        );
       }
 
       // Create function call message for LiveKit agent
@@ -1394,9 +1468,53 @@ class LiveKitBridge extends Emitter {
       console.log(`✅ [MOBILE] Music request forwarded to LiveKit agent`);
       console.log(`   🎯 Function: ${functionName}`);
       console.log(`   📝 Arguments: ${JSON.stringify(functionArguments)}`);
+      if (loopEnabled) {
+        console.log(`   🔁 Loop mode: ENABLED`);
+      }
     } catch (error) {
       console.error(
         `❌ [MOBILE] Failed to forward music request: ${error.message}`
+      );
+      console.error(`   Stack: ${error.stack}`);
+    }
+  }
+
+  // Handle stop loop request from mobile app
+  async handleStopLoopRequest() {
+    try {
+      console.log(`🔁 [LOOP-STOP] Processing stop loop request...`);
+
+      if (!this.room || !this.room.localParticipant) {
+        console.error(
+          `❌ [LOOP-STOP] Room not connected, cannot forward request`
+        );
+        return;
+      }
+
+      // Create function call message to call stop_audio on LiveKit agent
+      const functionCallMessage = {
+        type: "function_call",
+        function_call: {
+          name: "stop_audio",
+          arguments: {},
+        },
+        source: "mobile_app",
+        timestamp: Date.now(),
+        request_id: `stop_loop_${Date.now()}`,
+      };
+
+      // Forward to LiveKit agent via data channel
+      const messageString = JSON.stringify(functionCallMessage);
+      const messageData = new Uint8Array(Buffer.from(messageString, "utf8"));
+
+      await this.room.localParticipant.publishData(messageData, {
+        reliable: true,
+      });
+
+      console.log(`✅ [LOOP-STOP] Stop request forwarded to LiveKit agent`);
+    } catch (error) {
+      console.error(
+        `❌ [LOOP-STOP] Failed to forward stop request: ${error.message}`
       );
       console.error(`   Stack: ${error.stack}`);
     }
@@ -1832,6 +1950,9 @@ class LiveKitBridge extends Emitter {
       console.log(
         `🎵 [CLEANUP] Cleared audio flag on bridge close for device: ${this.macAddress}`
       );
+
+      // Clear loop state on close
+      loopStateManager.clearLoopState(this.macAddress);
 
       // First disconnect from the room
       await this.room.disconnect();
@@ -3649,7 +3770,7 @@ class MQTTGateway {
 
         // Extract client ID and original payload from EMQX republish rule
         const clientId = payload.sender_client_id;
-        const originalPayload = payload.original_payload;
+        const originalPayload = payload.orginal_payload;
 
         if (!clientId || !originalPayload) {
           console.error(
