@@ -876,7 +876,7 @@ jobs:
             - npm-<< parameters.service_name >>-v1-{{ checksum "<< parameters.service_path >>/package.json" }}
             - npm-<< parameters.service_name >>-v1-
       - run:
-          name: Build Vue.js app
+          name: Build Vue.js app and package dist only
           command: |
             SVC="<< parameters.service_name >>"
             DIR="<< parameters.service_path >>"
@@ -887,10 +887,13 @@ jobs:
               npm install --no-audit --no-fund
             fi
             npm run build
+
+            # Package ONLY dist/ folder (production-ready static files)
             cd ..
             mkdir -p /tmp/workspace
-            tar -czf "/tmp/workspace/${SVC}.tar.gz" -C "." "$(basename "$DIR")"
-            echo "✅ ${SVC} frontend built"
+            tar -czf "/tmp/workspace/${SVC}-dist.tar.gz" -C "$DIR" "dist"
+
+            echo "✅ ${SVC} dist folder packaged (size: $(du -h /tmp/workspace/${SVC}-dist.tar.gz | cut -f1))"
       - save_cache:
           paths:
             - << parameters.service_path >>/node_modules
@@ -898,7 +901,7 @@ jobs:
       - persist_to_workspace:
           root: /tmp/workspace
           paths:
-            - << parameters.service_name >>.tar.gz
+            - << parameters.service_name >>-dist.tar.gz
 
   # Build Python services
   build_python_service:
@@ -1139,7 +1142,96 @@ jobs:
               pm2 info ${SVC}
             "
 
-  # Deploy Vue.js frontend with PM2
+  # Deploy Vue.js frontend dist folder with PM2 (PRODUCTION ONLY - dist only)
+  deploy_vue_dist_pm2_azure:
+    parameters:
+      service_name: { type: string }
+      env: { type: string, default: "production" }
+      http_port: { type: integer, default: 8886 }
+    executor: node-executor
+    steps:
+      - attach_workspace:
+          at: /tmp/workspace
+      - add_ssh_keys:
+          fingerprints:
+            - "SHA256:yOFaQhaMF3+XYAcEjYL/BwibjpbAPUubeCj7b/ezBXU"
+      - run:
+          name: Deploy Vue.js dist folder with serve
+          command: |
+            SVC="<< parameters.service_name >>"
+            ENV_NAME="<< parameters.env >>"
+            HTTP_PORT="<< parameters.http_port >>"
+
+            : "${AZURE_HOST:?Set AZURE_HOST in CircleCI context}"
+            : "${AZURE_USER:?Set AZURE_USER in CircleCI context}"
+            : "${AZURE_DEPLOY_PATH:?Set AZURE_DEPLOY_PATH in CircleCI context}"
+
+            echo "🚀 Deploying ${SVC} dist folder to Azure VM"
+
+            # Upload dist tarball
+            scp -o StrictHostKeyChecking=no "/tmp/workspace/${SVC}-dist.tar.gz" "${AZURE_USER}@${AZURE_HOST}:/tmp/"
+
+            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
+              set -e
+
+              # Create deployment directory
+              mkdir -p ${AZURE_DEPLOY_PATH}/main/${SVC}
+              cd ${AZURE_DEPLOY_PATH}/main/${SVC}
+
+              # Extract dist folder
+              tar -xzf /tmp/${SVC}-dist.tar.gz
+
+              # Install Node.js and PM2 if needed
+              if ! command -v pm2 >/dev/null 2>&1; then
+                echo '--- Installing Node.js and PM2 ---'
+                curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+                sudo apt-get install -y nodejs
+                sudo npm install -g pm2
+              fi
+
+              # Install serve globally if not present
+              if ! command -v serve >/dev/null 2>&1; then
+                echo '--- Installing serve ---'
+                sudo npm install -g serve
+              fi
+
+              echo \"--- Starting ${SVC} with serve on port ${HTTP_PORT} ---\"
+
+              # Create PM2 ecosystem config
+              echo 'module.exports = {' > ecosystem.config.js
+              echo '  apps: [{' >> ecosystem.config.js
+              echo \"    name: '${SVC}',\" >> ecosystem.config.js
+              echo \"    script: 'serve',\" >> ecosystem.config.js
+              echo \"    args: ['-s', 'dist', '-l', '${HTTP_PORT}', '-n'],\" >> ecosystem.config.js
+              echo \"    cwd: '${AZURE_DEPLOY_PATH}/main/${SVC}',\" >> ecosystem.config.js
+              echo \"    interpreter: 'none',\" >> ecosystem.config.js
+              echo \"    autorestart: true,\" >> ecosystem.config.js
+              echo \"    watch: false,\" >> ecosystem.config.js
+              echo \"    env: { NODE_ENV: 'production' }\" >> ecosystem.config.js
+              echo '  }]' >> ecosystem.config.js
+              echo '};' >> ecosystem.config.js
+
+              # Delete ALL instances of this specific service (handles duplicates)
+              echo '--- Removing all existing ${SVC} instances ---'
+              # Method 1: Try with jq if available (delete by PM2 ID)
+              if command -v jq >/dev/null 2>&1; then
+                pm2 jlist 2>/dev/null | jq -r \".[] | select(.name==\\\"${SVC}\\\") | .pm_id\" | xargs -r -I {} pm2 delete {} 2>/dev/null || true
+              fi
+              # Method 2: Fallback - delete by name multiple times to handle duplicates
+              for i in 1 2 3; do
+                pm2 delete ${SVC} 2>/dev/null || break
+              done
+              sleep 2
+
+              # Start the service with PM2
+              pm2 start ecosystem.config.js
+              pm2 save
+
+              echo \"✅ ${SVC} dist deployed successfully\"
+              pm2 info ${SVC}
+            "
+
+  # Deploy Vue.js frontend with PM2 (OLD METHOD - full package)
   deploy_vue_pm2_azure:
     parameters:
       service_name: { type: string }
@@ -1573,7 +1665,7 @@ workflows:
       # Deploy EMQX Broker first (required by MQTT Gateway)
       - deploy_emqx_docker:
           name: "[PROD] 🚀 Deploy EMQX Broker"
-          context: "azure-mqtt-gateway"
+          context: "cheeko-production"
           env: "production"
           mqtt_port: 1883
           mqtt_ws_port: 8083
@@ -1583,14 +1675,14 @@ workflows:
       # Deploy LiveKit agent to LiveKit Cloud
       - deploy_livekit_agent_cloud:
           name: "[PROD] 🚀 Deploy Agent to LiveKit Cloud"
-          context: "azure-mqtt-gateway"
+          context: "cheeko-production"
           requires:
             - "[PROD] 🚀 Test LiveKit Server"
 
       # Deploy other services to Digital Ocean (in parallel)
       - deploy_node_pm2_azure:
           name: "[PROD] 🚀 Deploy MQTT Gateway"
-          context: "azure-mqtt-gateway"
+          context: "cheeko-production"
           service_name: "mqtt-gateway"
           entry_file: "app.js"
           env: "production"
@@ -1600,15 +1692,15 @@ workflows:
 
       - deploy_java_jar_pm2_azure:
           name: "[PROD] 🚀 Deploy Manager API (JAR)"
-          context: "azure-mqtt-gateway"
+          context: "cheeko-production"
           service_name: "manager-api"
           env: "production"
           http_port: 8002
           requires: ["[PROD] 🚀 Build Manager API"]
 
-      - deploy_vue_pm2_azure:
-          name: "[PROD] 🚀 Deploy Manager Web"
-          context: "azure-mqtt-gateway"
+      - deploy_vue_dist_pm2_azure:
+          name: "[PROD] 🚀 Deploy Manager Web (Dist)"
+          context: "cheeko-production"
           service_name: "manager-web"
           env: "production"
           http_port: 8886
