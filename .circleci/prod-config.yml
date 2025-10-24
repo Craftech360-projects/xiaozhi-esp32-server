@@ -1105,29 +1105,19 @@ jobs:
               echo \"--- Starting ${SVC} with Spring profile: \${SPRING_PROFILE} ---\"
 
               # Create PM2 ecosystem config
-              cat > ecosystem.config.js << 'EOFCONFIG'
-module.exports = {
-  apps: [{
-    name: '${SVC}',
-    script: 'java',
-    args: [
-      '-jar',
-      '${AZURE_DEPLOY_PATH}/main/${SVC}/${SVC}.jar',
-      '--spring.profiles.active='\${SPRING_PROFILE},
-      '--server.port=${HTTP_PORT}'
-    ],
-    cwd: '${AZURE_DEPLOY_PATH}/main/${SVC}',
-    interpreter: 'none',
-    autorestart: true,
-    watch: false,
-    max_memory_restart: '1G',
-    env: {
-      JAVA_HOME: '/usr/lib/jvm/java-17-openjdk-amd64',
-      SPRING_PROFILES_ACTIVE: '\${SPRING_PROFILE}'
-    }
-  }]
-};
-EOFCONFIG
+              echo 'module.exports = {' > ecosystem.config.js
+              echo '  apps: [{' >> ecosystem.config.js
+              echo \"    name: '${SVC}',\" >> ecosystem.config.js
+              echo \"    script: 'java',\" >> ecosystem.config.js
+              echo \"    args: ['-jar', '${AZURE_DEPLOY_PATH}/main/${SVC}/${SVC}.jar', '--spring.profiles.active=\${SPRING_PROFILE}', '--server.port=${HTTP_PORT}'],\" >> ecosystem.config.js
+              echo \"    cwd: '${AZURE_DEPLOY_PATH}/main/${SVC}',\" >> ecosystem.config.js
+              echo \"    interpreter: 'none',\" >> ecosystem.config.js
+              echo \"    autorestart: true,\" >> ecosystem.config.js
+              echo \"    watch: false,\" >> ecosystem.config.js
+              echo \"    max_memory_restart: '1G',\" >> ecosystem.config.js
+              echo \"    env: { JAVA_HOME: '/usr/lib/jvm/java-17-openjdk-amd64', SPRING_PROFILES_ACTIVE: '\${SPRING_PROFILE}' }\" >> ecosystem.config.js
+              echo '  }]' >> ecosystem.config.js
+              echo '};' >> ecosystem.config.js
 
               # Delete ALL instances of this specific service (handles duplicates)
               echo '--- Removing all existing ${SVC} instances ---'
