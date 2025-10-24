@@ -784,11 +784,16 @@ jobs:
                             fi
 
                             # Install build tools for native modules (like @discordjs/opus)
+                            echo '--- Installing build tools for native Node.js modules ---'
+                            sudo apt-get update -qq
+                            sudo apt-get install -y build-essential python3 libopus-dev
+
+                            # Verify make is available
                             if ! command -v make >/dev/null 2>&1; then
-                              echo '--- Installing build tools for native Node.js modules ---'
-                              sudo apt-get update -qq
-                              sudo apt-get install -y build-essential python3 libopus-dev
+                              echo '❌ ERROR: make command not found after installation'
+                              exit 1
                             fi
+                            echo '✅ Build tools installed successfully'
 
                             echo '--- Installing Node.js dependencies ---'
                             npm install --omit=dev --no-audit --no-fund
