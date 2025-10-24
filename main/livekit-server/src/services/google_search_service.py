@@ -5,6 +5,8 @@ MCP-style structured service for real-time information retrieval
 import os
 import logging
 import aiohttp
+import re
+from datetime import datetime
 from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger("google_search")
@@ -180,13 +182,20 @@ class GoogleSearchService:
         """
         # Extract search results
         results = []
-        for item in data.get("items", []):
-            results.append({
+        for idx, item in enumerate(data.get("items", []), 1):
+            result = {
                 "title": item.get("title", ""),
                 "snippet": item.get("snippet", ""),
                 "link": item.get("link", ""),
                 "displayLink": item.get("displayLink", "")
-            })
+            }
+            results.append(result)
+
+            # Log each individual result for debugging
+            logger.info(f"📄 Result #{idx}:")
+            logger.info(f"   Title: {result['title']}")
+            logger.info(f"   Snippet: {result['snippet'][:100]}..." if len(result['snippet']) > 100 else f"   Snippet: {result['snippet']}")
+            logger.info(f"   Link: {result['link']}")
 
         # Extract search metadata
         search_info = data.get("searchInformation", {})
@@ -204,6 +213,87 @@ class GoogleSearchService:
             "source": "Wikipedia"
         }
 
+    def _detect_query_timeframe(self, query: str) -> Dict[str, Any]:
+        """
+        Detect if query is about future, current, or past timeframe
+
+        IMPORTANT: LLM knowledge cutoff is January 2025, so ANY 2025 query
+        needs context since the information may be incomplete or projected.
+
+        Args:
+            query: Search query string
+
+        Returns:
+            Dict with temporal context information
+        """
+        current_date = datetime.now()
+        current_year = current_date.year
+        current_month = current_date.month
+
+        # LLM knowledge cutoff
+        KNOWLEDGE_CUTOFF_YEAR = 2025
+        KNOWLEDGE_CUTOFF_MONTH = 1  # January 2025
+
+        # Extract year and month from query
+        year_match = re.search(r'\b(20\d{2})\b', query)
+        month_match = re.search(r'\b(January|February|March|April|May|June|July|August|September|October|November|December)\b', query, re.IGNORECASE)
+
+        timeframe = {
+            "is_future": False,
+            "is_beyond_cutoff": False,
+            "is_current_year": False,
+            "detected_year": None,
+            "detected_month": None,
+            "context_message": None
+        }
+
+        if year_match:
+            detected_year = int(year_match.group(1))
+            timeframe["detected_year"] = detected_year
+
+            if detected_year > current_year:
+                # Future year
+                timeframe["is_future"] = True
+                timeframe["is_beyond_cutoff"] = True
+                timeframe["context_message"] = f"Note: {detected_year} is in the future. These are scheduled or projected events from Wikipedia."
+                logger.info(f"📅 Detected future year: {detected_year} (current: {current_year})")
+
+            elif detected_year == KNOWLEDGE_CUTOFF_YEAR:
+                # 2025 queries - beyond LLM knowledge cutoff
+                timeframe["is_current_year"] = True
+                timeframe["is_beyond_cutoff"] = True
+
+                if month_match:
+                    month_name = month_match.group(1)
+                    month_num = datetime.strptime(month_name, "%B").month
+                    timeframe["detected_month"] = month_name
+
+                    # Check if beyond knowledge cutoff (after January 2025)
+                    if month_num > KNOWLEDGE_CUTOFF_MONTH:
+                        # This is beyond LLM's training data
+                        if detected_year == current_year and month_num > current_month:
+                            # Future month in current year
+                            timeframe["is_future"] = True
+                            timeframe["context_message"] = f"Note: {month_name} {detected_year} hasn't occurred yet. These are scheduled or upcoming events from Wikipedia."
+                            logger.info(f"📅 Future month beyond cutoff: {month_name} {detected_year}")
+                        else:
+                            # Past/current month but beyond training cutoff
+                            timeframe["context_message"] = f"Note: Information about {month_name} {detected_year} is from Wikipedia. Events may be incomplete or projected."
+                            logger.info(f"📅 Past month beyond cutoff: {month_name} {detected_year}")
+                    else:
+                        # January 2025 or earlier - within training
+                        logger.info(f"📅 Month within knowledge cutoff: {month_name} {detected_year}")
+                else:
+                    # Just "2025" without specific month
+                    timeframe["context_message"] = f"Note: Information about 2025 is from Wikipedia. Some events may be incomplete or projected."
+                    logger.info(f"📅 Year 2025 detected (beyond training cutoff)")
+
+            elif detected_year < KNOWLEDGE_CUTOFF_YEAR:
+                # Historical queries (pre-2025) - LLM should know these
+                logger.info(f"📅 Historical query: {detected_year} (within LLM knowledge)")
+
+        return timeframe
+
     def format_results_for_voice(
         self,
         search_result: Dict[str, Any],
@@ -211,6 +301,7 @@ class GoogleSearchService:
     ) -> str:
         """
         Format search results for voice output (TTS-friendly)
+        Includes temporal context for future/past events
 
         Args:
             search_result: Result from search_wikipedia() method
@@ -219,18 +310,33 @@ class GoogleSearchService:
         Returns:
             Formatted string suitable for text-to-speech
         """
+        logger.info(f"🎤 Formatting results for voice (max_items: {max_items})")
+
         if not search_result.get("success"):
             error_msg = search_result.get("error", "I couldn't search Wikipedia right now.")
+            logger.warning(f"⚠️ Formatting failed result: {error_msg}")
             return error_msg
 
         results = search_result.get("results", [])
         query = search_result.get("query", "that")
 
         if not results:
-            return f"I searched Wikipedia for '{query}', but I couldn't find any relevant articles."
+            no_results_msg = f"I searched Wikipedia for '{query}', but I couldn't find any relevant articles."
+            logger.info(f"📭 No results found, returning: {no_results_msg}")
+            return no_results_msg
+
+        logger.info(f"📊 Total results available: {len(results)}, using top {min(len(results), max_items)}")
+
+        # Detect temporal context
+        timeframe = self._detect_query_timeframe(query)
 
         # Build voice-friendly response
         response_parts = []
+
+        # Add temporal context if query is about future events OR beyond knowledge cutoff
+        if timeframe.get("context_message"):
+            response_parts.append(timeframe["context_message"])
+            logger.info(f"⏰ Added temporal context: {timeframe['context_message']}")
 
         # Introduction
         if len(results) == 1:
@@ -249,13 +355,22 @@ class GoogleSearchService:
             # Remove "Wikipedia" from title if present
             title = title.replace(" - Wikipedia", "").strip()
 
+            logger.info(f"🗣️ Using result #{i} for voice:")
+            logger.info(f"   Title (cleaned): {title}")
+            logger.info(f"   Snippet (cleaned): {snippet[:150]}..." if len(snippet) > 150 else f"   Snippet (cleaned): {snippet}")
+
             # Build result entry
             if snippet:
                 response_parts.append(f"{snippet}")
             else:
                 response_parts.append(f"According to Wikipedia, {title}.")
 
-        return " ".join(response_parts)
+        final_response = " ".join(response_parts)
+
+        logger.info(f"✅ Final voice response ({len(final_response)} chars):")
+        logger.info(f"   {final_response[:200]}..." if len(final_response) > 200 else f"   {final_response}")
+
+        return final_response
 
     def _clean_snippet_for_voice(self, snippet: str) -> str:
         """

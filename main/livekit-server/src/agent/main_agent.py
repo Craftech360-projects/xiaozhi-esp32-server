@@ -259,16 +259,50 @@ class Assistant(FilteredAgent):
         context: RunContext,
         query: str
     ) -> str:
-        """Search Wikipedia for information about a topic
+        """Search Wikipedia for current affairs and information you don't have
 
-        Use this when the user asks to search Wikipedia or needs factual information
-        about a specific topic, person, place, or concept.
+        CRITICAL: ALWAYS use this tool for these cases (don't try to guess):
+
+        1. User EXPLICITLY asks to search Wikipedia:
+           - "Search Wikipedia for..."
+           - "Look up on Wikipedia..."
+           - "What does Wikipedia say about..."
+
+        2. ANY questions about events/dates in 2025 or later:
+           - "What happened in [month/date] 2025?"
+           - "What happened in 2025 in [place]?"
+           - "Events in [topic] in 2025"
+           - "Latest/recent/current [topic]"
+           - Any question mentioning specific months/dates in 2025+
+           EXAMPLES THAT MUST USE THIS TOOL:
+           - "What happened in October 2025 in England?"
+           - "Latest developments in AI"
+           - "Recent news about SpaceX"
+           - "What's happening in technology now?"
+           - "Current population of Tokyo"
+
+        3. Questions about "current", "latest", "recent" information:
+           - "Current [statistic/data/price]"
+           - "Latest [news/updates/developments]"
+           - "Recent [events/discoveries/changes]"
+
+        4. You are genuinely uncertain and would otherwise say "I don't know":
+           - Information outside your training data
+           - Cannot confidently answer from your knowledge
+
+        DO NOT use this tool ONLY if:
+        - Historical facts (pre-2025) you know well (e.g., "When was Einstein born?")
+        - General explanations you can teach (e.g., "What is AI?", "How does X work?")
+        - Conversational or creative queries
+        - Well-established facts you were trained on
+
+        Remember: Your knowledge cutoff is January 2025. ANYTHING after that date needs Wikipedia!
 
         Args:
-            query: The topic to search for on Wikipedia (e.g., "artificial intelligence", "Python programming", "Albert Einstein")
+            query: Topic to search (e.g., "October 2025 events England", "latest AI developments", "current SpaceX news")
 
         Returns:
-            Information from Wikipedia articles formatted for voice response
+            Current verified information from Wikipedia
         """
         try:
             logger.info(f"📚 Wikipedia search request: '{query}'")
