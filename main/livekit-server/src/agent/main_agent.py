@@ -268,26 +268,33 @@ class Assistant(FilteredAgent):
         ═══════════════════════════════════════════════════════════════════
 
         1. KEYWORD TRIGGERS (If query contains ANY of these words):
-           ✅ "latest" → ALWAYS use Wikipedia
-           ✅ "recent" → ALWAYS use Wikipedia
-           ✅ "current" → ALWAYS use Wikipedia
-           ✅ "now" → ALWAYS use Wikipedia
-           ✅ "today" → ALWAYS use Wikipedia
-           ✅ "yesterday" → ALWAYS use Wikipedia
-           ✅ "this week/month/year" → ALWAYS use Wikipedia
-           ✅ "last week/month" → ALWAYS use Wikipedia
-           ✅ "news" → ALWAYS use Wikipedia
-           ✅ "updates" → ALWAYS use Wikipedia
-           ✅ "developments" → ALWAYS use Wikipedia
-           ✅ "happening" → ALWAYS use Wikipedia
+           ✅ "latest" → ALWAYS use Wikipedia (NO EXCEPTIONS)
+           ✅ "recent" → ALWAYS use Wikipedia (NO EXCEPTIONS)
+           ✅ "current" → ALWAYS use Wikipedia (NO EXCEPTIONS)
+           ✅ "now" → ALWAYS use Wikipedia (NO EXCEPTIONS)
+           ✅ "today" → ALWAYS use Wikipedia (NO EXCEPTIONS)
+           ✅ "yesterday" → ALWAYS use Wikipedia (NO EXCEPTIONS)
+           ✅ "this week/month/year" → ALWAYS use Wikipedia (NO EXCEPTIONS)
+           ✅ "last week/month" → ALWAYS use Wikipedia (NO EXCEPTIONS)
+           ✅ "news" → ALWAYS use Wikipedia (NO EXCEPTIONS)
+           ✅ "updates" → ALWAYS use Wikipedia (NO EXCEPTIONS)
+           ✅ "developments" → ALWAYS use Wikipedia (NO EXCEPTIONS)
+           ✅ "happening" → ALWAYS use Wikipedia (NO EXCEPTIONS)
 
-           EXAMPLES THAT MUST TRIGGER:
-           - "What's the latest news in AI?" → USE WIKIPEDIA
-           - "Give me recent updates" → USE WIKIPEDIA
-           - "What's happening now?" → USE WIKIPEDIA
-           - "Tell me current affairs" → USE WIKIPEDIA
-           - "What happened today?" → USE WIKIPEDIA
-           - "Give me some news" → USE WIKIPEDIA
+           ⚠️ CRITICAL EXAMPLES THAT MUST TRIGGER WIKIPEDIA:
+           - "Who is the current president of America?" → USE WIKIPEDIA (current = could have changed!)
+           - "What's the current population of India?" → USE WIKIPEDIA (current = needs latest data!)
+           - "Who is the latest CEO of Tesla?" → USE WIKIPEDIA (latest = might have changed!)
+           - "What's the recent news about SpaceX?" → USE WIKIPEDIA (recent = after your cutoff!)
+           - "What's happening now in politics?" → USE WIKIPEDIA (now = beyond your knowledge!)
+           - "What's the latest GDP of USA?" → USE WIKIPEDIA (latest = new data!)
+           - "Who won the recent elections?" → USE WIKIPEDIA (recent = you don't know!)
+           - "What's the current stock price?" → USE WIKIPEDIA (current = live data!)
+           - "Tell me today's weather" → USE WIKIPEDIA (today = you don't know!)
+           - "Give me yesterday's news" → USE WIKIPEDIA (yesterday = Oct 23, 2025!)
+
+           🚨 IMPORTANT: Even if you THINK you know the answer, these keywords mean
+           the information could have CHANGED after January 2025. ALWAYS use Wikipedia!
 
         2. ANY 2025 DATES (explicit or implicit):
            ✅ "What happened in June 2025?" → USE WIKIPEDIA
