@@ -259,50 +259,89 @@ class Assistant(FilteredAgent):
         context: RunContext,
         query: str
     ) -> str:
-        """Search Wikipedia for current affairs and information you don't have
+        """Search Wikipedia for current information and events after January 2025
 
-        CRITICAL: ALWAYS use this tool for these cases (don't try to guess):
+        ⚠️ CRITICAL DECISION RULES - Read carefully and follow exactly:
 
-        1. User EXPLICITLY asks to search Wikipedia:
-           - "Search Wikipedia for..."
-           - "Look up on Wikipedia..."
-           - "What does Wikipedia say about..."
+        ═══════════════════════════════════════════════════════════════════
+        🔴 MANDATORY WIKIPEDIA SEARCH (You MUST use this tool):
+        ═══════════════════════════════════════════════════════════════════
 
-        2. ANY questions about events/dates in 2025 or later:
-           - "What happened in [month/date] 2025?"
-           - "What happened in 2025 in [place]?"
-           - "Events in [topic] in 2025"
-           - "Latest/recent/current [topic]"
-           - Any question mentioning specific months/dates in 2025+
-           EXAMPLES THAT MUST USE THIS TOOL:
-           - "What happened in October 2025 in England?"
-           - "Latest developments in AI"
-           - "Recent news about SpaceX"
-           - "What's happening in technology now?"
-           - "Current population of Tokyo"
+        1. KEYWORD TRIGGERS (If query contains ANY of these words):
+           ✅ "latest" → ALWAYS use Wikipedia
+           ✅ "recent" → ALWAYS use Wikipedia
+           ✅ "current" → ALWAYS use Wikipedia
+           ✅ "now" → ALWAYS use Wikipedia
+           ✅ "today" → ALWAYS use Wikipedia
+           ✅ "yesterday" → ALWAYS use Wikipedia
+           ✅ "this week/month/year" → ALWAYS use Wikipedia
+           ✅ "last week/month" → ALWAYS use Wikipedia
+           ✅ "news" → ALWAYS use Wikipedia
+           ✅ "updates" → ALWAYS use Wikipedia
+           ✅ "developments" → ALWAYS use Wikipedia
+           ✅ "happening" → ALWAYS use Wikipedia
 
-        3. Questions about "current", "latest", "recent" information:
-           - "Current [statistic/data/price]"
-           - "Latest [news/updates/developments]"
-           - "Recent [events/discoveries/changes]"
+           EXAMPLES THAT MUST TRIGGER:
+           - "What's the latest news in AI?" → USE WIKIPEDIA
+           - "Give me recent updates" → USE WIKIPEDIA
+           - "What's happening now?" → USE WIKIPEDIA
+           - "Tell me current affairs" → USE WIKIPEDIA
+           - "What happened today?" → USE WIKIPEDIA
+           - "Give me some news" → USE WIKIPEDIA
 
-        4. You are genuinely uncertain and would otherwise say "I don't know":
-           - Information outside your training data
-           - Cannot confidently answer from your knowledge
+        2. ANY 2025 DATES (explicit or implicit):
+           ✅ "What happened in June 2025?" → USE WIKIPEDIA
+           ✅ "Tell me about 2025" → USE WIKIPEDIA
+           ✅ "Events this year" (it's Oct 2025) → USE WIKIPEDIA
+           ✅ "What happened last month?" (Sept 2025) → USE WIKIPEDIA
+           ✅ "Yesterday's news" (Oct 23, 2025) → USE WIKIPEDIA
 
-        DO NOT use this tool ONLY if:
-        - Historical facts (pre-2025) you know well (e.g., "When was Einstein born?")
-        - General explanations you can teach (e.g., "What is AI?", "How does X work?")
-        - Conversational or creative queries
-        - Well-established facts you were trained on
+        3. EXPLICIT WIKIPEDIA REQUESTS:
+           ✅ "Search Wikipedia for..." → USE WIKIPEDIA
+           ✅ "Look up on Wikipedia..." → USE WIKIPEDIA
+           ✅ "Check Wikipedia about..." → USE WIKIPEDIA
 
-        Remember: Your knowledge cutoff is January 2025. ANYTHING after that date needs Wikipedia!
+        4. STATISTICS/DATA QUERIES:
+           ✅ "What's the current population of..." → USE WIKIPEDIA
+           ✅ "Latest GDP of..." → USE WIKIPEDIA
+           ✅ "Recent stock prices..." → USE WIKIPEDIA
+
+        ═══════════════════════════════════════════════════════════════════
+        🟢 DO NOT USE WIKIPEDIA (Only for these specific cases):
+        ═══════════════════════════════════════════════════════════════════
+
+        ❌ Historical facts you know well:
+           - "Who was Einstein?" → Don't use Wikipedia
+           - "When did WW2 end?" → Don't use Wikipedia
+           - "What is the capital of France?" → Don't use Wikipedia
+
+        ❌ Conceptual explanations:
+           - "What is artificial intelligence?" → Don't use Wikipedia
+           - "How does a computer work?" → Don't use Wikipedia
+           - "Explain quantum physics" → Don't use Wikipedia
+
+        ❌ Conversational/Creative:
+           - "Tell me a joke" → Don't use Wikipedia
+           - "How are you?" → Don't use Wikipedia
+           - "I'm sad" → Don't use Wikipedia
+
+        ═══════════════════════════════════════════════════════════════════
+        ⚡ IMPORTANT CONTEXT:
+        ═══════════════════════════════════════════════════════════════════
+
+        - Your knowledge cutoff: January 2025
+        - Current date: October 2025 (implied by system)
+        - ANYTHING after January 2025 = USE WIKIPEDIA
+        - ANY query with temporal keywords = USE WIKIPEDIA
+        - When in doubt about timing = USE WIKIPEDIA
+
+        ═══════════════════════════════════════════════════════════════════
 
         Args:
-            query: Topic to search (e.g., "October 2025 events England", "latest AI developments", "current SpaceX news")
+            query: Topic to search (e.g., "latest AI news", "current affairs", "what happened today")
 
         Returns:
-            Current verified information from Wikipedia
+            Current verified information from Wikipedia with temporal context warnings
         """
         try:
             logger.info(f"📚 Wikipedia search request: '{query}'")

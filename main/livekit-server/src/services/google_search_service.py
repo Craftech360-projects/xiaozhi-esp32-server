@@ -216,6 +216,7 @@ class GoogleSearchService:
     def _detect_query_timeframe(self, query: str) -> Dict[str, Any]:
         """
         Detect if query is about future, current, or past timeframe
+        Also detects temporal keywords like "latest", "recent", "current", etc.
 
         IMPORTANT: LLM knowledge cutoff is January 2025, so ANY 2025 query
         needs context since the information may be incomplete or projected.
@@ -229,10 +230,18 @@ class GoogleSearchService:
         current_date = datetime.now()
         current_year = current_date.year
         current_month = current_date.month
+        query_lower = query.lower()
 
         # LLM knowledge cutoff
         KNOWLEDGE_CUTOFF_YEAR = 2025
         KNOWLEDGE_CUTOFF_MONTH = 1  # January 2025
+
+        # Temporal keywords that imply "current" information
+        CURRENT_KEYWORDS = [
+            'latest', 'recent', 'current', 'now', 'today', 'yesterday',
+            'this week', 'this month', 'this year', 'last week', 'last month',
+            'news', 'updates', 'developments', 'happening'
+        ]
 
         # Extract year and month from query
         year_match = re.search(r'\b(20\d{2})\b', query)
@@ -244,8 +253,23 @@ class GoogleSearchService:
             "is_current_year": False,
             "detected_year": None,
             "detected_month": None,
-            "context_message": None
+            "context_message": None,
+            "has_temporal_keyword": False
         }
+
+        # Check for temporal keywords
+        for keyword in CURRENT_KEYWORDS:
+            if keyword in query_lower:
+                timeframe["has_temporal_keyword"] = True
+                logger.info(f"📅 Detected temporal keyword: '{keyword}' in query")
+
+                # Since current date is October 2025 (beyond January 2025 cutoff)
+                # ANY query with these keywords needs Wikipedia context
+                if not year_match:  # Only if no explicit year mentioned
+                    timeframe["is_beyond_cutoff"] = True
+                    timeframe["context_message"] = f"Note: Information is from Wikipedia based on '{keyword}' in your query. Data current as of {current_date.strftime('%B %Y')}."
+                    logger.info(f"⏰ Keyword '{keyword}' triggered temporal context (no explicit year)")
+                break
 
         if year_match:
             detected_year = int(year_match.group(1))
