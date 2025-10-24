@@ -889,9 +889,8 @@ jobs:
             npm run build
 
             # Package ONLY dist/ folder (production-ready static files)
-            cd ..
             mkdir -p /tmp/workspace
-            tar -czf "/tmp/workspace/${SVC}-dist.tar.gz" -C "$DIR" "dist"
+            tar -czf "/tmp/workspace/${SVC}-dist.tar.gz" "dist"
 
             echo "✅ ${SVC} dist folder packaged (size: $(du -h /tmp/workspace/${SVC}-dist.tar.gz | cut -f1))"
       - save_cache:
