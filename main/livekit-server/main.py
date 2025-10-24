@@ -7,6 +7,7 @@ from src.services.unified_audio_player import UnifiedAudioPlayer
 from src.services.foreground_audio_player import ForegroundAudioPlayer
 from src.services.story_service import StoryService
 from src.services.music_service import MusicService
+from src.services.google_search_service import GoogleSearchService
 from src.mcp.device_control_service import DeviceControlService
 from src.mcp.mcp_executor import LiveKitMCPExecutor
 from src.utils.helpers import UsageManager
@@ -428,10 +429,18 @@ async def entrypoint(ctx: JobContext):
     mcp_executor = LiveKitMCPExecutor()
     logger.info("🎛️ Device control service and MCP executor created")
 
+    # Initialize Google Search service (Wikipedia-only)
+    google_search_service = GoogleSearchService()
+    if google_search_service.is_available():
+        logger.info("📚 Wikipedia search service initialized and ready")
+    else:
+        logger.info("📚 Wikipedia search service disabled (check .env: GOOGLE_SEARCH_ENABLED, GOOGLE_API_KEY, GOOGLE_SEARCH_ENGINE_ID)")
+
     # Create agent with dynamic prompt and inject services
     assistant = Assistant(instructions=agent_prompt, tts_provider=tts)
     assistant.set_services(music_service, story_service,
-                           audio_player, unified_audio_player, device_control_service, mcp_executor)
+                           audio_player, unified_audio_player, device_control_service, mcp_executor,
+                           google_search_service)
     # Pass room name and device MAC to assistant
     assistant.set_room_info(room_name=room_name, device_mac=device_mac)
 

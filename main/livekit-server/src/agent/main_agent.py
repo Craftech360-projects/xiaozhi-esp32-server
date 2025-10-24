@@ -15,6 +15,7 @@ from livekit.agents import (
 )
 from .filtered_agent import FilteredAgent
 from src.utils.database_helper import DatabaseHelper
+from src.services.google_search_service import GoogleSearchService
 logger = logging.getLogger("agent")
 
 # Mode name aliases for handling transcript variations
@@ -85,6 +86,7 @@ class Assistant(FilteredAgent):
         self.unified_audio_player = None
         self.device_control_service = None
         self.mcp_executor = None
+        self.google_search_service = None
 
         # Room and device information
         self.room_name = None
@@ -128,14 +130,15 @@ class Assistant(FilteredAgent):
 
 
 
-    def set_services(self, music_service, story_service, audio_player, unified_audio_player=None, device_control_service=None, mcp_executor=None):
-        """Set the music, story, device control services, and MCP executor"""
+    def set_services(self, music_service, story_service, audio_player, unified_audio_player=None, device_control_service=None, mcp_executor=None, google_search_service=None):
+        """Set the music, story, device control services, MCP executor, and Google Search service"""
         self.music_service = music_service
         self.story_service = story_service
         self.audio_player = audio_player
         self.unified_audio_player = unified_audio_player
         self.device_control_service = device_control_service
         self.mcp_executor = mcp_executor
+        self.google_search_service = google_search_service
 
     def set_room_info(self, room_name: str = None, device_mac: str = None):
         """Set room name and device MAC address"""
@@ -249,6 +252,54 @@ class Assistant(FilteredAgent):
         """Look up weather information for a specific location"""
         logger.info(f"Looking up weather for {location}")
         return "sunny with a temperature of 70 degrees."
+
+    @function_tool
+    async def search_wikipedia(
+        self,
+        context: RunContext,
+        query: str
+    ) -> str:
+        """Search Wikipedia for information about a topic
+
+        Use this when the user asks to search Wikipedia or needs factual information
+        about a specific topic, person, place, or concept.
+
+        Args:
+            query: The topic to search for on Wikipedia (e.g., "artificial intelligence", "Python programming", "Albert Einstein")
+
+        Returns:
+            Information from Wikipedia articles formatted for voice response
+        """
+        try:
+            logger.info(f"📚 Wikipedia search request: '{query}'")
+
+            # Check if search service is available
+            if not self.google_search_service:
+                logger.warning("⚠️ Wikipedia search requested but service not initialized")
+                return "Sorry, Wikipedia search is not available right now."
+
+            if not self.google_search_service.is_available():
+                logger.warning("⚠️ Wikipedia search requested but service not configured")
+                return "Sorry, Wikipedia search is not configured. Please ask the administrator to enable it."
+
+            # Perform Wikipedia search
+            search_result = await self.google_search_service.search_wikipedia(query)
+
+            # Format results for voice output
+            voice_response = self.google_search_service.format_results_for_voice(
+                search_result,
+                max_items=2  # Limit to top 2 results for voice clarity
+            )
+
+            logger.info(f"✅ Wikipedia search completed for '{query}': {len(search_result.get('results', []))} results found")
+
+            return voice_response
+
+        except Exception as e:
+            logger.error(f"❌ Error during Wikipedia search: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return "Sorry, I encountered an error while searching Wikipedia. Please try again later."
 
     @function_tool
     async def play_music(
