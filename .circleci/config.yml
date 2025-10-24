@@ -32,12 +32,11 @@ jobs:
             echo "Current branch: ${BRANCH}"
 
             # Determine which config to use and copy to generated_config.yml
-            if [[ "${BRANCH}" == "main" ]]; then
+            # TEMPORARY: Using prod-config for dev/circleci-validation for testing
+            # TODO: Switch to main branch only after validation is complete
+            if [[ "${BRANCH}" == "main" || "${BRANCH}" == "dev" || "${BRANCH}" == "circleci-validation" ]]; then
               echo "🚀 Using PRODUCTION pipeline configuration"
               cp .circleci/prod-config.yml .circleci/generated_config.yml
-            elif [[ "${BRANCH}" == "dev" || "${BRANCH}" == "circleci-validation" ]]; then
-              echo "🔧 Using DEVELOPMENT pipeline configuration"
-              cp .circleci/dev-config.yml .circleci/generated_config.yml
             else
               echo "⚠️  Branch '${BRANCH}' not configured for CI/CD"
               echo "Only main, dev, and circleci-validation branches trigger pipelines"

@@ -1038,6 +1038,117 @@ jobs:
               pm2 save
               echo \"✅ ${SVC} deployed successfully from source\"
             "
+
+  # Deploy Java service with JAR (PRODUCTION ONLY)
+  deploy_java_jar_pm2_azure:
+    parameters:
+      service_name: { type: string }
+      env: { type: string, default: "production" }
+      http_port: { type: integer, default: 8002 }
+    executor: node-executor
+    steps:
+      - attach_workspace:
+          at: /tmp/workspace
+      - add_ssh_keys:
+          fingerprints:
+            - "SHA256:yOFaQhaMF3+XYAcEjYL/BwibjpbAPUubeCj7b/ezBXU"
+      - run:
+          name: Deploy Java service with JAR file
+          command: |
+            SVC="<< parameters.service_name >>"
+            ENV_NAME="<< parameters.env >>"
+            HTTP_PORT="<< parameters.http_port >>"
+
+            : "${AZURE_HOST:?Set AZURE_HOST in CircleCI context}"
+            : "${AZURE_USER:?Set AZURE_USER in CircleCI context}"
+            : "${AZURE_DEPLOY_PATH:?Set AZURE_DEPLOY_PATH in CircleCI context}"
+
+            echo "🚀 Deploying ${SVC} JAR to Azure VM"
+
+            # Upload JAR file
+            scp -o StrictHostKeyChecking=no "/tmp/workspace/${SVC}.jar" "${AZURE_USER}@${AZURE_HOST}:/tmp/"
+
+            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
+              set -e
+
+              # Create deployment directory
+              mkdir -p ${AZURE_DEPLOY_PATH}/main/${SVC}
+              cd ${AZURE_DEPLOY_PATH}/main/${SVC}
+
+              # Move JAR to deployment directory
+              mv /tmp/${SVC}.jar ./${SVC}.jar
+
+              # Install Java JRE (not full JDK, lighter)
+              if ! java -version 2>&1 | grep -q '17\.'; then
+                echo '--- Installing Java 17 JRE ---'
+                sudo apt-get update -y
+                sudo apt-get install -y openjdk-17-jre-headless
+              fi
+
+              # Install Node.js and PM2 if needed
+              if ! command -v pm2 >/dev/null 2>&1; then
+                echo '--- Installing Node.js and PM2 ---'
+                curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+                sudo apt-get install -y nodejs
+                sudo npm install -g pm2
+              fi
+
+              # Determine Spring profile
+              if [ '${ENV_NAME}' = 'development' ]; then
+                SPRING_PROFILE='dev'
+              elif [ '${ENV_NAME}' = 'production' ]; then
+                SPRING_PROFILE='prod'
+              else
+                SPRING_PROFILE='${ENV_NAME}'
+              fi
+
+              echo \"--- Starting ${SVC} with Spring profile: \${SPRING_PROFILE} ---\"
+
+              # Create PM2 ecosystem config
+              cat > ecosystem.config.js << 'EOFCONFIG'
+module.exports = {
+  apps: [{
+    name: '${SVC}',
+    script: 'java',
+    args: [
+      '-jar',
+      '${AZURE_DEPLOY_PATH}/main/${SVC}/${SVC}.jar',
+      '--spring.profiles.active='\${SPRING_PROFILE},
+      '--server.port=${HTTP_PORT}'
+    ],
+    cwd: '${AZURE_DEPLOY_PATH}/main/${SVC}',
+    interpreter: 'none',
+    autorestart: true,
+    watch: false,
+    max_memory_restart: '1G',
+    env: {
+      JAVA_HOME: '/usr/lib/jvm/java-17-openjdk-amd64',
+      SPRING_PROFILES_ACTIVE: '\${SPRING_PROFILE}'
+    }
+  }]
+};
+EOFCONFIG
+
+              # Delete ALL instances of this specific service (handles duplicates)
+              echo '--- Removing all existing ${SVC} instances ---'
+              # Method 1: Try with jq if available (delete by PM2 ID)
+              if command -v jq >/dev/null 2>&1; then
+                pm2 jlist 2>/dev/null | jq -r \".[] | select(.name==\\\"${SVC}\\\") | .pm_id\" | xargs -r -I {} pm2 delete {} 2>/dev/null || true
+              fi
+              # Method 2: Fallback - delete by name multiple times to handle duplicates
+              for i in 1 2 3; do
+                pm2 delete ${SVC} 2>/dev/null || break
+              done
+              sleep 2
+
+              # Start the service with PM2
+              pm2 start ecosystem.config.js
+              pm2 save
+
+              echo \"✅ ${SVC} JAR deployed successfully\"
+              pm2 info ${SVC}
+            "
+
   # Deploy Vue.js frontend with PM2
   deploy_vue_pm2_azure:
     parameters:
@@ -1389,12 +1500,13 @@ workflows:
 
   # ==========================================
   # 🚀 PRODUCTION WORKFLOW
-  # Runs on dev branch (temporarily) - Uses LiveKit Cloud
-  # Later will be changed to run on production branch only
+  # Currently runs on: main, dev, circleci-validation (for testing)
+  # Later: Remove dev/circleci-validation to run on main only
   # ==========================================
   production-workflow:
     when:
       or:
+        - equal: [main, << pipeline.git.branch >>]
         - equal: [dev, << pipeline.git.branch >>]
         - equal: [circleci-validation, << pipeline.git.branch >>]
     jobs:
@@ -1496,8 +1608,8 @@ workflows:
           mqtt_port: 1883
           requires: ["[PROD] 🚀 Deploy EMQX Broker"]
 
-      - deploy_java_pm2_azure:
-          name: "[PROD] 🚀 Deploy Manager API"
+      - deploy_java_jar_pm2_azure:
+          name: "[PROD] 🚀 Deploy Manager API (JAR)"
           context: "azure-mqtt-gateway"
           service_name: "manager-api"
           env: "production"
