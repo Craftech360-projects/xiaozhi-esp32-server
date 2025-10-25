@@ -313,6 +313,35 @@ class Assistant(FilteredAgent):
            ✅ "Latest GDP of..." → USE WIKIPEDIA
            ✅ "Recent stock prices..." → USE WIKIPEDIA
 
+        5. BIOGRAPHICAL QUERIES - PATTERN MATCHING (CRITICAL):
+           🚨 ANY query matching these patterns → ALWAYS use Wikipedia FIRST:
+
+           Pattern: "Who is [PERSON_NAME]?"
+           Pattern: "Tell me about [PERSON_NAME]"
+           Pattern: "What do you know about [PERSON_NAME]?"
+           Pattern: "Give me information about [PERSON_NAME]"
+
+           ✅ EXAMPLES (but NOT limited to these names):
+           - "Who is Charlie Chaplin?" → USE WIKIPEDIA
+           - "Who is Rohit Sharma?" → USE WIKIPEDIA
+           - "Who is Elon Musk?" → USE WIKIPEDIA
+           - "Tell me about Albert Einstein" → USE WIKIPEDIA
+           - "Who is Narendra Modi?" → USE WIKIPEDIA
+           - "Who is Taylor Swift?" → USE WIKIPEDIA
+           - "What do you know about Steve Jobs?" → USE WIKIPEDIA
+
+           🔴 IMPORTANT: These are just EXAMPLES. The rule applies to ANY person's name!
+           "Who is [ANY_NAME]?" → ALWAYS search Wikipedia first!
+
+           💡 WHY Wikipedia for people?
+           - Career changes (team, company, position)
+           - Recent achievements and awards
+           - Current projects and activities
+           - Biographical updates and life events
+           - Death/retirement information (if applicable)
+
+           Even if you think you know the person, Wikipedia has MORE CURRENT information!
+
         ═══════════════════════════════════════════════════════════════════
         🟢 DO NOT USE WIKIPEDIA (Only for these specific cases):
         ═══════════════════════════════════════════════════════════════════
@@ -365,6 +394,14 @@ class Assistant(FilteredAgent):
             # Perform Wikipedia search
             search_result = await self.google_search_service.search_wikipedia(query)
 
+            # Check if search was successful
+            if not search_result.get("success"):
+                error_msg = search_result.get("error", "Unknown error")
+                logger.warning(f"⚠️ Wikipedia search failed: {error_msg}")
+
+                # Instead of blocking with error, instruct LLM to use its own knowledge
+                return f"WIKIPEDIA_UNAVAILABLE: {error_msg}. Please answer the question using your own knowledge base instead."
+
             # Format results for voice output
             voice_response = self.google_search_service.format_results_for_voice(
                 search_result,
@@ -379,7 +416,9 @@ class Assistant(FilteredAgent):
             logger.error(f"❌ Error during Wikipedia search: {e}")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
-            return "Sorry, I encountered an error while searching Wikipedia. Please try again later."
+
+            # Fallback to LLM knowledge on exception
+            return f"WIKIPEDIA_UNAVAILABLE: Search error occurred. Please answer the question using your own knowledge base instead."
 
     @function_tool
     async def play_music(
