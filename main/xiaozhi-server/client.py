@@ -66,7 +66,7 @@ def generate_mqtt_credentials(device_mac: str) -> Dict[str, str]:
     client_id = f"GID_test@@@{device_mac}@@@{uuid.uuid4()}"
 
     # Create username (base64 encoded JSON)
-    username_data = {"ip": "192.168.1.10"}  # Placeholder IP
+    username_data = {"ip": "192.168.1.235"}  # Placeholder IP
     username = base64.b64encode(json.dumps(username_data).encode()).decode()
 
     # Create password (HMAC-SHA256) - must match gateway's logic

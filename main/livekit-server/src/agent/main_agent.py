@@ -275,6 +275,20 @@ class Assistant(FilteredAgent):
             if not self.music_service:
                 return "Sorry, music service is not available right now."
 
+            # Check if music service is initialized, if not initialize it now
+            if not hasattr(self.music_service, 'is_initialized') or not self.music_service.is_initialized:
+                logger.warning("Music service not initialized yet, initializing now...")
+                try:
+                    init_result = await self.music_service.initialize()
+                    if init_result:
+                        logger.info("✅ Music service initialized successfully")
+                    else:
+                        logger.error("❌ Music service initialization returned False (Qdrant not available)")
+                        return "Sorry, the music library is not available right now. Please make sure Qdrant is configured and running."
+                except Exception as init_error:
+                    logger.error(f"❌ Failed to initialize music service: {init_error}")
+                    return "Sorry, I'm having trouble accessing the music library right now. Please try again in a moment."
+
             # Use unified audio player which injects music into TTS queue
             player = self.unified_audio_player if self.unified_audio_player else self.audio_player
             if not player:
@@ -372,6 +386,20 @@ class Assistant(FilteredAgent):
 
             if not self.story_service:
                 return "Sorry, story service is not available right now."
+
+            # Check if story service is initialized, if not initialize it now
+            if not hasattr(self.story_service, 'is_initialized') or not self.story_service.is_initialized:
+                logger.warning("Story service not initialized yet, initializing now...")
+                try:
+                    init_result = await self.story_service.initialize()
+                    if init_result:
+                        logger.info("✅ Story service initialized successfully")
+                    else:
+                        logger.error("❌ Story service initialization returned False (Qdrant not available)")
+                        return "Sorry, the story library is not available right now. Please make sure Qdrant is configured and running."
+                except Exception as init_error:
+                    logger.error(f"❌ Failed to initialize story service: {init_error}")
+                    return "Sorry, I'm having trouble accessing the story library right now. Please try again in a moment."
 
             # Use unified audio player which injects music into TTS queue
             player = self.unified_audio_player if self.unified_audio_player else self.audio_player

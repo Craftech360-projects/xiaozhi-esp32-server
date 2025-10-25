@@ -790,7 +790,7 @@ jobs:
                 printf '%s\n' 'MQTT_SIGNATURE_KEY=test-signature-key-12345' >> .env
                 printf '%s\n' '' >> .env
                 printf '%s\n' '# EMQX Broker Configuration' >> .env
-                printf '%s\n' 'EMQX_HOST=192.168.1.166' >> .env
+                printf '%s\n' 'EMQX_HOST=192.168.1.235' >> .env
                 printf '%s\n' \"EMQX_PORT=\${MQTT_PORT}\" >> .env
                 printf '%s\n' 'EMQX_PROTOCOL=mqtt' >> .env
                 echo '.env file created with UDP_PORT=8884'

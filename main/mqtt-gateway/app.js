@@ -1284,23 +1284,19 @@ class LiveKitBridge extends Emitter {
       type: "playback_status",
       status: status,
       title: title,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     };
 
     // Access the MQTT client from the server instance
     const mqttClient = this.connection.server.mqttClient;
     if (mqttClient && mqttClient.connected) {
-      mqttClient.publish(
-        appTopic,
-        JSON.stringify(statusMessage),
-        (err) => {
-          if (err) {
-            console.error(`❌ [MOBILE] Failed to send playback status: ${err}`);
-          } else {
-            console.log(`📱 [MOBILE] Sent playback ${status} to ${appTopic}`);
-          }
+      mqttClient.publish(appTopic, JSON.stringify(statusMessage), (err) => {
+        if (err) {
+          console.error(`❌ [MOBILE] Failed to send playback status: ${err}`);
+        } else {
+          console.log(`📱 [MOBILE] Sent playback ${status} to ${appTopic}`);
         }
-      );
+      });
     }
   }
 
@@ -1460,11 +1456,7 @@ class LiveKitBridge extends Emitter {
         functionArguments.loop_enabled = loopEnabled;
 
         // Update loop state manager (will play ANY random music)
-        loopStateManager.setLoopState(
-          this.macAddress,
-          loopEnabled,
-          "music"
-        );
+        loopStateManager.setLoopState(this.macAddress, loopEnabled, "music");
       } else if (requestData.content_type === "story") {
         // For stories: story_name and category
         if (requestData.song_name) {
@@ -1477,11 +1469,7 @@ class LiveKitBridge extends Emitter {
         functionArguments.loop_enabled = loopEnabled;
 
         // Update loop state manager (will play ANY random stories)
-        loopStateManager.setLoopState(
-          this.macAddress,
-          loopEnabled,
-          "story"
-        );
+        loopStateManager.setLoopState(this.macAddress, loopEnabled, "story");
       }
 
       // Create function call message for LiveKit agent
@@ -2727,6 +2715,12 @@ class MQTTConnection {
         );
         await this.bridge.sendAbortSignal(json.session_id);
         debug("Successfully forwarded abort signal to LiveKit agent");
+
+        // IMPORTANT: Also notify mobile app that playback was stopped by toy
+        this.bridge.forwardPlaybackStatusToMobile("stopped", "");
+        console.log(
+          `📱 [ABORT] Notified mobile app that playback was stopped by toy`
+        );
       } catch (error) {
         debug("Failed to forward abort signal to LiveKit:", error);
       }
@@ -3296,6 +3290,12 @@ class VirtualMQTTConnection {
         );
         await this.bridge.sendAbortSignal(json.session_id);
         debug("Successfully forwarded abort signal to LiveKit agent");
+
+        // IMPORTANT: Also notify mobile app that playback was stopped by toy
+        this.bridge.forwardPlaybackStatusToMobile("stopped", "");
+        console.log(
+          `📱 [ABORT] Notified mobile app that playback was stopped by toy`
+        );
       } catch (error) {
         debug("Failed to forward abort signal to LiveKit:", error);
       }
