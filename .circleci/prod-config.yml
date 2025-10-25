@@ -1578,8 +1578,8 @@ jobs:
             export PATH="$HOME/.local/bin:$PATH"
 
             # Create the agent non-interactively
-            # The --yes flag auto-accepts prompts, --wait waits for build completion
-            lk agent create --yes --wait || {
+            # Use --wait to wait for build completion (no --yes flag in lk v2.12.2)
+            lk agent create --wait || {
               echo "❌ Agent deployment failed"
               echo "📋 Checking for common issues..."
 
