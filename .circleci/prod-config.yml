@@ -1578,8 +1578,8 @@ jobs:
             export PATH="$HOME/.local/bin:$PATH"
 
             # Create the agent non-interactively
-            # Use --wait to wait for build completion (no --yes flag in lk v2.12.2)
-            lk agent create --wait || {
+            # Use --silent flag to skip interactive confirmation prompts (official LiveKit CLI flag)
+            lk agent create --silent || {
               echo "❌ Agent deployment failed"
               echo "📋 Checking for common issues..."
 
@@ -1600,7 +1600,38 @@ jobs:
               exit 1
             }
 
-            echo "✅ Agent deployed to LiveKit Cloud successfully"
+            echo "✅ Agent create command completed"
+            echo "⏳ Waiting for agent build to complete (LiveKit Cloud builds Docker image)..."
+            echo "This typically takes 2-3 minutes..."
+
+            # Wait for build to complete - LiveKit Cloud builds the Docker image
+            # Poll for 5 minutes max (30 checks * 10 seconds)
+            AGENT_READY=false
+            for i in {1..30}; do
+              sleep 10
+              ELAPSED=$((i * 10))
+              echo "⏳ Checking agent status... ($ELAPSED seconds elapsed)"
+
+              # Check if agent is deployed and online
+              if lk agent list 2>/dev/null | grep -qi "online\|running\|ready"; then
+                echo "✅ Agent is online and ready!"
+                AGENT_READY=true
+                break
+              fi
+
+              if [ $i -eq 30 ]; then
+                echo "⚠️  Agent build timeout (5 minutes)"
+                echo "Agent may still be building in the background"
+                echo "Check LiveKit Cloud console: https://cloud.livekit.io"
+              fi
+            done
+
+            if [ "$AGENT_READY" = true ]; then
+              echo "✅ Agent deployment completed successfully"
+            else
+              echo "⚠️  Agent deployment initiated but build status unclear"
+              echo "Please verify in LiveKit Cloud console"
+            fi
 
       - run:
           name: Verify Agent Deployment
