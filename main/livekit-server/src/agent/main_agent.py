@@ -264,6 +264,45 @@ class Assistant(FilteredAgent):
         ⚠️ CRITICAL DECISION RULES - Read carefully and follow exactly:
 
         ═══════════════════════════════════════════════════════════════════
+        🟡 FIRST CHECK: CONFIDENCE & ACCURACY
+        ═══════════════════════════════════════════════════════════════════
+
+        🚨 CRITICAL RULE: If you are NOT 100% CONFIDENT about factual information,
+        USE WIKIPEDIA to verify! It's BETTER to search than give WRONG information!
+
+        ⚠️ ALWAYS USE WIKIPEDIA if:
+        1. You're uncertain about specific facts (scores, winners, dates, names)
+        2. The query asks for precise data (scorecards, statistics, results)
+        3. You're not confident in your answer
+        4. The information could have multiple versions or interpretations
+
+        Examples where you SHOULD use Wikipedia even for old events:
+        ✅ "Who won 2021 IPL?" → If unsure, USE WIKIPEDIA (verify the winner!)
+        ✅ "2008 cricket scorecard" → If unsure about exact scores, USE WIKIPEDIA
+        ✅ "2019 election results" → If unsure about exact numbers, USE WIKIPEDIA
+        ✅ "List of IPL winners" → USE WIKIPEDIA (precise list needed!)
+
+        💡 RULE OF THUMB:
+        - Factual queries requiring 100% accuracy → USE WIKIPEDIA to verify
+        - Uncertain or could be wrong → USE WIKIPEDIA to verify
+        - Confident and simple fact → Answer directly
+
+        ═══════════════════════════════════════════════════════════════════
+        🟡 SECOND CHECK: HISTORICAL vs CURRENT QUERY
+        ═══════════════════════════════════════════════════════════════════
+
+        ❌ ONLY skip Wikipedia if you are COMPLETELY CONFIDENT about historical data:
+           - Simple, well-known facts you're 100% sure about
+           - General knowledge questions with clear answers
+           - NOT specific statistics, scorecards, or detailed results
+
+        ✅ USE WIKIPEDIA for 2024, 2025, or temporal keywords:
+           - "2024 elections" → USE Wikipedia (recent!)
+           - "2025 IPL winner" → USE Wikipedia (beyond cutoff!)
+           - "Current president" → USE Wikipedia (could have changed!)
+           - "Latest news" → USE Wikipedia (after your training!)
+
+        ═══════════════════════════════════════════════════════════════════
         🔴 MANDATORY WIKIPEDIA SEARCH (You MUST use this tool):
         ═══════════════════════════════════════════════════════════════════
 
@@ -343,13 +382,20 @@ class Assistant(FilteredAgent):
            Even if you think you know the person, Wikipedia has MORE CURRENT information!
 
         ═══════════════════════════════════════════════════════════════════
-        🟢 DO NOT USE WIKIPEDIA (Only for these specific cases):
+        🟢 DO NOT USE WIKIPEDIA (Only if you are 100% CONFIDENT):
         ═══════════════════════════════════════════════════════════════════
 
-        ❌ Historical facts you know well:
-           - "Who was Einstein?" → Don't use Wikipedia
-           - "When did WW2 end?" → Don't use Wikipedia
-           - "What is the capital of France?" → Don't use Wikipedia
+        ⚠️ IMPORTANT: Only skip Wikipedia if you are ABSOLUTELY CERTAIN!
+
+        ❌ Simple, well-known general knowledge (if 100% confident):
+           - "What is the capital of France?" → Paris (you know this!)
+           - "Who invented the telephone?" → Alexander Graham Bell (you know this!)
+           - "When did WW2 end?" → 1945 (you know this!)
+
+        🟡 Historical sports/events (ONLY if 100% confident, otherwise USE WIKIPEDIA):
+           - "Who won 2010 World Cup?" → Spain (if 100% sure!)
+           - BUT if asking for scorecards, detailed results, statistics → USE WIKIPEDIA!
+           - Better safe than sorry - when in doubt, USE WIKIPEDIA!
 
         ❌ Conceptual explanations:
            - "What is artificial intelligence?" → Don't use Wikipedia
@@ -362,14 +408,27 @@ class Assistant(FilteredAgent):
            - "I'm sad" → Don't use Wikipedia
 
         ═══════════════════════════════════════════════════════════════════
-        ⚡ IMPORTANT CONTEXT:
+        ⚡ DECISION FRAMEWORK:
         ═══════════════════════════════════════════════════════════════════
 
-        - Your knowledge cutoff: January 2025
-        - Current date: October 2025 (implied by system)
-        - ANYTHING after January 2025 = USE WIKIPEDIA
-        - ANY query with temporal keywords = USE WIKIPEDIA
-        - When in doubt about timing = USE WIKIPEDIA
+        Your knowledge cutoff: January 2025
+        Current date: October 2025
+
+        📊 USE WIKIPEDIA if ANY of these are true:
+        1. 🎯 NOT 100% confident in your answer
+        2. 📅 Year 2024 or 2025 mentioned
+        3. 🔑 Temporal keywords (current, latest, recent, now, today)
+        4. 📈 Specific statistics, scorecards, or detailed results requested
+        5. 👤 Biographical queries (people's current status/position)
+        6. ❓ Any uncertainty about facts
+
+        ✅ ONLY answer directly if:
+        - 100% confident AND
+        - Simple general knowledge AND
+        - NOT asking for detailed/precise data
+
+        💡 GOLDEN RULE: When in doubt → USE WIKIPEDIA!
+        Better to verify than give wrong information!
 
         ═══════════════════════════════════════════════════════════════════
 
