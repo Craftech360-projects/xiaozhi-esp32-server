@@ -1500,62 +1500,7 @@ jobs:
             echo "✅ LiveKit CLI and UV installed successfully"
 
       - run:
-          name: Delete Old Agent from LiveKit Cloud
-          command: |
-            : "${LIVEKIT_URL:?Set LIVEKIT_URL in CircleCI context}"
-            : "${LIVEKIT_API_KEY:?Set LIVEKIT_API_KEY in CircleCI context}"
-            : "${LIVEKIT_API_SECRET:?Set LIVEKIT_API_SECRET in CircleCI context}"
-
-            cd main/livekit-server
-
-            echo "🗑️ Deleting old agent from LiveKit Cloud..."
-
-            # Set LiveKit credentials as environment variables
-            export LIVEKIT_URL="$LIVEKIT_URL"
-            export LIVEKIT_API_KEY="$LIVEKIT_API_KEY"
-            export LIVEKIT_API_SECRET="$LIVEKIT_API_SECRET"
-
-            # Check if agent exists and delete it
-            # Read agent ID from livekit.toml if it exists
-            if [ -f "livekit.toml" ]; then
-              AGENT_ID=$(grep -oP 'id\s*=\s*"\K[^"]+' livekit.toml || echo "")
-
-              if [ -n "$AGENT_ID" ]; then
-                echo "📋 Found agent ID: $AGENT_ID"
-                echo "🗑️ Attempting to delete agent..."
-
-                # Delete the agent (ignore errors if agent doesn't exist)
-                lk agent delete "$AGENT_ID" || echo "⚠️ Agent not found or already deleted (this is okay)"
-              else
-                echo "📋 No agent ID found in livekit.toml"
-              fi
-
-              # Remove livekit.toml to prevent project mismatch errors
-              echo "🧹 Removing old livekit.toml to allow fresh agent creation..."
-              rm -f livekit.toml
-            else
-              echo "📋 livekit.toml not found, skipping delete"
-            fi
-
-            echo "✅ Old agent cleanup completed"
-
-      - run:
-          name: Lock Dependencies with UV
-          command: |
-            cd main/livekit-server
-
-            # Add UV to PATH (UV installs to ~/.local/bin)
-            export PATH="$HOME/.local/bin:$PATH"
-
-            echo "🔒 Locking dependencies with uv..."
-
-            # Run uv lock to update uv.lock file
-            uv lock
-
-            echo "✅ Dependencies locked successfully"
-
-      - run:
-          name: Deploy Agent to LiveKit Cloud
+          name: Deploy Agent to LiveKit Cloud (Rolling Deployment)
           no_output_timeout: 20m
           command: |
             : "${LIVEKIT_URL:?Set LIVEKIT_URL in CircleCI context}"
@@ -1571,60 +1516,50 @@ jobs:
             export LIVEKIT_API_KEY="$LIVEKIT_API_KEY"
             export LIVEKIT_API_SECRET="$LIVEKIT_API_SECRET"
 
-            # Use lk agent create - since we remove livekit.toml, it's always a fresh creation
-            echo "🚀 Creating agent on LiveKit Cloud..."
+            # Check if agent already exists
+            if [ -f "livekit.toml" ]; then
+              AGENT_ID=$(grep -oP 'id\s*=\s*"\K[^"]+' livekit.toml || echo "")
 
-            # Add UV to PATH for dependency resolution
-            export PATH="$HOME/.local/bin:$PATH"
+              if [ -n "$AGENT_ID" ]; then
+                echo "📋 Found existing agent ID: $AGENT_ID"
+                echo "🔄 Using rolling deployment (lk agent deploy)..."
 
-            # Create the agent non-interactively
-            # Use yes command to automatically answer all prompts with 'y'
-            # Run in background and monitor output to prevent timeout
-            echo "🚀 Starting agent creation..."
+                # Use rolling deployment for existing agent
+                lk agent deploy || {
+                  echo "❌ Agent deployment failed"
+                  echo "📋 Agent status:"
+                  lk agent status
+                  exit 1
+                }
 
-            # Use 'yes' to auto-answer prompts, with timeout wrapper
-            timeout 15m bash -c "yes | lk agent create" || {
-              EXIT_CODE=$?
-
-              if [ $EXIT_CODE -eq 124 ]; then
-                echo "⚠️  Agent creation timeout after 15 minutes"
-                echo "Build may still be in progress on LiveKit Cloud"
+                echo "✅ Rolling deployment completed successfully!"
               else
-                echo "❌ Agent deployment failed with exit code: $EXIT_CODE"
-                echo "📋 Checking for common issues..."
-
-                # Debug: Show current directory and files
-                echo "Current directory: $(pwd)"
-                ls -la
-
-                # Debug: Check if pyproject.toml exists
-                if [ -f "pyproject.toml" ]; then
-                  echo "✅ pyproject.toml found"
-                else
-                  echo "❌ pyproject.toml not found - required for deployment"
-                fi
-
-                # Debug: Show lk CLI version
-                lk --version
-
-                exit 1
+                echo "⚠️  livekit.toml exists but no agent ID found"
+                echo "🚀 Creating new agent..."
+                lk agent create || {
+                  echo "❌ Agent creation failed"
+                  exit 1
+                }
               fi
-            }
+            else
+              echo "📋 No livekit.toml found"
+              echo "🚀 Creating new agent (first deployment)..."
 
-            echo "✅ Agent create command completed"
-            echo "⏳ Verifying agent deployment..."
+              # First deployment - create new agent
+              lk agent create || {
+                echo "❌ Agent creation failed"
+                exit 1
+              }
 
-            # Wait a bit for agent to be registered
+              echo "✅ Agent created successfully!"
+            fi
+
+            echo "⏳ Waiting for deployment to stabilize..."
             sleep 10
 
-            # Check if agent is deployed
+            # Check deployment status
             echo "📋 Checking agent status..."
-            if lk agent list 2>/dev/null | grep -qi "online\|running\|ready\|building"; then
-              echo "✅ Agent deployment successful!"
-            else
-              echo "⚠️  Agent status unclear - please verify in LiveKit Cloud console"
-              echo "🔗 https://cloud.livekit.io"
-            fi
+            lk agent status || echo "⚠️  Could not retrieve agent status"
 
       - run:
           name: Verify Agent Deployment
