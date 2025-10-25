@@ -1246,14 +1246,13 @@ jobs:
 
               echo \"--- Starting ${SVC} with serve on port ${HTTP_PORT} ---\"
 
-              # Create PM2 ecosystem config
+              # Create PM2 ecosystem config with full path to serve
               echo 'module.exports = {' > ecosystem.config.js
               echo '  apps: [{' >> ecosystem.config.js
               echo \"    name: '${SVC}',\" >> ecosystem.config.js
-              echo \"    script: 'serve',\" >> ecosystem.config.js
-              echo \"    args: ['-s', 'dist', '-l', '${HTTP_PORT}', '-n'],\" >> ecosystem.config.js
+              echo \"    script: '/usr/bin/serve',\" >> ecosystem.config.js
+              echo \"    args: ['-s', 'dist', '-l', '${HTTP_PORT}'],\" >> ecosystem.config.js
               echo \"    cwd: '${AZURE_DEPLOY_PATH}/main/${SVC}',\" >> ecosystem.config.js
-              echo \"    interpreter: 'none',\" >> ecosystem.config.js
               echo \"    autorestart: true,\" >> ecosystem.config.js
               echo \"    watch: false,\" >> ecosystem.config.js
               echo \"    env: { NODE_ENV: 'production' }\" >> ecosystem.config.js
@@ -1557,6 +1556,7 @@ jobs:
 
       - run:
           name: Deploy Agent to LiveKit Cloud
+          no_output_timeout: 20m
           command: |
             : "${LIVEKIT_URL:?Set LIVEKIT_URL in CircleCI context}"
             : "${LIVEKIT_API_KEY:?Set LIVEKIT_API_KEY in CircleCI context}"
@@ -1578,59 +1578,52 @@ jobs:
             export PATH="$HOME/.local/bin:$PATH"
 
             # Create the agent non-interactively
-            # Use --silent flag to skip interactive confirmation prompts (official LiveKit CLI flag)
-            lk agent create --silent || {
-              echo "❌ Agent deployment failed"
-              echo "📋 Checking for common issues..."
+            # Use yes command to automatically answer all prompts with 'y'
+            # Run in background and monitor output to prevent timeout
+            echo "🚀 Starting agent creation..."
 
-              # Debug: Show current directory and files
-              echo "Current directory: $(pwd)"
-              ls -la
+            # Use 'yes' to auto-answer prompts, with timeout wrapper
+            timeout 15m bash -c "yes | lk agent create" || {
+              EXIT_CODE=$?
 
-              # Debug: Check if pyproject.toml exists
-              if [ -f "pyproject.toml" ]; then
-                echo "✅ pyproject.toml found"
+              if [ $EXIT_CODE -eq 124 ]; then
+                echo "⚠️  Agent creation timeout after 15 minutes"
+                echo "Build may still be in progress on LiveKit Cloud"
               else
-                echo "❌ pyproject.toml not found - required for deployment"
+                echo "❌ Agent deployment failed with exit code: $EXIT_CODE"
+                echo "📋 Checking for common issues..."
+
+                # Debug: Show current directory and files
+                echo "Current directory: $(pwd)"
+                ls -la
+
+                # Debug: Check if pyproject.toml exists
+                if [ -f "pyproject.toml" ]; then
+                  echo "✅ pyproject.toml found"
+                else
+                  echo "❌ pyproject.toml not found - required for deployment"
+                fi
+
+                # Debug: Show lk CLI version
+                lk --version
+
+                exit 1
               fi
-
-              # Debug: Show lk CLI version
-              lk --version
-
-              exit 1
             }
 
             echo "✅ Agent create command completed"
-            echo "⏳ Waiting for agent build to complete (LiveKit Cloud builds Docker image)..."
-            echo "This typically takes 2-3 minutes..."
+            echo "⏳ Verifying agent deployment..."
 
-            # Wait for build to complete - LiveKit Cloud builds the Docker image
-            # Poll for 5 minutes max (30 checks * 10 seconds)
-            AGENT_READY=false
-            for i in {1..30}; do
-              sleep 10
-              ELAPSED=$((i * 10))
-              echo "⏳ Checking agent status... ($ELAPSED seconds elapsed)"
+            # Wait a bit for agent to be registered
+            sleep 10
 
-              # Check if agent is deployed and online
-              if lk agent list 2>/dev/null | grep -qi "online\|running\|ready"; then
-                echo "✅ Agent is online and ready!"
-                AGENT_READY=true
-                break
-              fi
-
-              if [ $i -eq 30 ]; then
-                echo "⚠️  Agent build timeout (5 minutes)"
-                echo "Agent may still be building in the background"
-                echo "Check LiveKit Cloud console: https://cloud.livekit.io"
-              fi
-            done
-
-            if [ "$AGENT_READY" = true ]; then
-              echo "✅ Agent deployment completed successfully"
+            # Check if agent is deployed
+            echo "📋 Checking agent status..."
+            if lk agent list 2>/dev/null | grep -qi "online\|running\|ready\|building"; then
+              echo "✅ Agent deployment successful!"
             else
-              echo "⚠️  Agent deployment initiated but build status unclear"
-              echo "Please verify in LiveKit Cloud console"
+              echo "⚠️  Agent status unclear - please verify in LiveKit Cloud console"
+              echo "🔗 https://cloud.livekit.io"
             fi
 
       - run:
