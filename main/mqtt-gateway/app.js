@@ -80,7 +80,7 @@ class LiveKitBridge extends Emitter {
     // Simplified audio processing - no resampling or encoding needed
     this.frameBuffer = Buffer.alloc(0);
     this.targetFrameSize = FRAME_SIZE_SAMPLES; // 960 samples = 20ms at 48kHz
-    this.targetFrameBytes = FRAME_SIZE_BYTES; // 1920 bytes for 16-bit PCM
+    this.targetFrameBytes = FRAME_SIZE_BYTES; // 1920 bytes for 16-bit PCM (after conversion from float32)
 
     console.log(`✅ [AUDIO] Simplified audio processing initialized for ${this.macAddress} - direct 48kHz PCM`);
 
@@ -406,9 +406,55 @@ class LiveKitBridge extends Emitter {
                       value.data.byteLength
                     );
 
+                    // Debug: Check the audio format for first few frames
+                    if (frameCount <= 3) {
+                      console.log(`🔍 [AUDIO DEBUG] Frame ${frameCount}: samples=${value.samplesPerChannel}, sampleRate=${value.sampleRate}, channels=${value.numberOfChannels}`);
+                      console.log(`🔍 [AUDIO DEBUG] Buffer: ${audioBuffer.length}B, first 8 bytes: ${audioBuffer.slice(0, 8).toString('hex')}`);
+                      
+                      // Check if data is float32 (LiveKit's typical format)
+                      if (audioBuffer.length >= 8) {
+                        const floatSamples = [
+                          audioBuffer.readFloatLE(0),
+                          audioBuffer.readFloatLE(4)
+                        ];
+                        console.log(`🔍 [AUDIO DEBUG] First samples as float32: ${floatSamples}`);
+                        
+                        const int16Samples = [
+                          audioBuffer.readInt16LE(0),
+                          audioBuffer.readInt16LE(2)
+                        ];
+                        console.log(`🔍 [AUDIO DEBUG] First samples as int16: ${int16Samples}`);
+                      }
+                    }
+
+                    // Convert from float32 to int16 PCM if needed
+                    let processedBuffer = audioBuffer;
+                    
+                    // Check if this looks like float32 data (4 bytes per sample)
+                    const expectedFloat32Size = value.samplesPerChannel * value.numberOfChannels * 4;
+                    const expectedInt16Size = value.samplesPerChannel * value.numberOfChannels * 2;
+                    
+                    if (audioBuffer.length === expectedFloat32Size) {
+                      // Convert float32 to int16 PCM
+                      const float32Array = new Float32Array(audioBuffer.buffer, audioBuffer.byteOffset, audioBuffer.length / 4);
+                      const int16Array = new Int16Array(float32Array.length);
+                      
+                      for (let i = 0; i < float32Array.length; i++) {
+                        // Clamp float32 (-1.0 to 1.0) to int16 (-32768 to 32767)
+                        const sample = Math.max(-1, Math.min(1, float32Array[i]));
+                        int16Array[i] = Math.round(sample * 32767);
+                      }
+                      
+                      processedBuffer = Buffer.from(int16Array.buffer);
+                      
+                      if (frameCount <= 3) {
+                        console.log(`🔄 [CONVERT] Converted float32 (${audioBuffer.length}B) to int16 (${processedBuffer.length}B)`);
+                      }
+                    }
+
                     // Append to frame buffer
-                    this.frameBuffer = Buffer.concat([this.frameBuffer, audioBuffer]);
-                    totalBytes += audioBuffer.length;
+                    this.frameBuffer = Buffer.concat([this.frameBuffer, processedBuffer]);
+                    totalBytes += processedBuffer.length;
 
                     const timestamp = (Date.now() - this.connection.udp.startTime) & 0xffffffff;
 
@@ -1725,32 +1771,9 @@ class MQTTConnection {
       timestamp,
       this.udp.localSequence
     );
-    // console.log(
-    //   `📡 [UDP SEND] To ${this.udp.remoteAddress.address}:${this.udp.remoteAddress.port} - payload=${payload.length}B, ts=${timestamp}, seq=${this.udp.localSequence}`
-    // );
-    // console.log(
-    //   `🔐 Encrypting: payload=${payload.length}B, timestamp=${timestamp}, seq=${this.udp.localSequence}`
-    // );
-    // console.log(`🔐 Header: ${header.toString("hex")}`);
-    // console.log(`🔐 Key: ${this.udp.key.toString("hex")}`);
-    // console.log(
-    //   `🔐 Payload first 8 bytes: ${payload.subarray(0, 8).toString("hex")}`
-    // );
-    const cipher = crypto.createCipheriv(
-      this.udp.encryption,
-      this.udp.key,
-      header
-    );
-    const encryptedPayload = Buffer.concat([
-      cipher.update(payload),
-      cipher.final(),
-    ]);
-    // console.log(
-    //   `🔐 Encrypted first 8 bytes: ${encryptedPayload
-    //     .subarray(0, 8)
-    //     .toString("hex")}`
-    // );
-    const message = Buffer.concat([header, encryptedPayload]);
+    
+    // Send PCM directly without encryption
+    const message = Buffer.concat([header, payload]);
     this.server.sendUdpMessage(message, this.udp.remoteAddress);
   }
 
@@ -1949,18 +1972,9 @@ class MQTTConnection {
     //   `📡 [UDP RECV] From ${rinfo.address}:${rinfo.port} - payload=${payloadLength}B, ts=${timestamp}, seq=${sequence}`
     // );
 
-    // Process encrypted data
+    // Process direct PCM data (no decryption needed)
     const header = message.slice(0, 16);
-    const encryptedPayload = message.slice(16, 16 + payloadLength);
-    const cipher = crypto.createDecipheriv(
-      this.udp.encryption,
-      this.udp.key,
-      header
-    );
-    const payload = Buffer.concat([
-      cipher.update(encryptedPayload),
-      cipher.final(),
-    ]);
+    const payload = message.slice(16, 16 + payloadLength);
 
     // Check if this is a ping message
     const payloadStr = payload.toString();
@@ -2198,16 +2212,8 @@ class VirtualMQTTConnection {
       this.udp.localSequence
     );
 
-    const cipher = crypto.createCipheriv(
-      this.udp.encryption,
-      this.udp.key,
-      header
-    );
-    const encryptedPayload = Buffer.concat([
-      cipher.update(payload),
-      cipher.final(),
-    ]);
-    const message = Buffer.concat([header, encryptedPayload]);
+    // Send PCM directly without encryption
+    const message = Buffer.concat([header, payload]);
     this.gateway.sendUdpMessage(message, this.udp.remoteAddress);
   }
 
@@ -2538,16 +2544,7 @@ class VirtualMQTTConnection {
     }
 
     const header = message.slice(0, 16);
-    const encryptedPayload = message.slice(16, 16 + payloadLength);
-    const cipher = crypto.createDecipheriv(
-      this.udp.encryption,
-      this.udp.key,
-      header
-    );
-    const payload = Buffer.concat([
-      cipher.update(encryptedPayload),
-      cipher.final(),
-    ]);
+    const payload = message.slice(16, 16 + payloadLength);
 
     const payloadStr = payload.toString();
     if (payloadStr.startsWith("ping:")) {

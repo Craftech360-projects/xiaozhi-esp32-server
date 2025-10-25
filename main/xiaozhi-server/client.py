@@ -25,10 +25,10 @@ MQTT_BROKER_HOST = "10.171.215.210"
 
 MQTT_BROKER_PORT = 1883
 # DEVICE_MAC is now dynamically generated for uniqueness
-# Minimum frames to have in buffer to continue playback
-PLAYBACK_BUFFER_MIN_FRAMES = 3
-# Number of frames to buffer before starting playback
-PLAYBACK_BUFFER_START_FRAMES = 16
+# Minimum frames to have in buffer to continue playback (reduced for 48kHz PCM)
+PLAYBACK_BUFFER_MIN_FRAMES = 0  # Allow playback even with empty buffer
+# Number of frames to buffer before starting playback (reduced for larger PCM frames)
+PLAYBACK_BUFFER_START_FRAMES = 1  # Start immediately when we have any frame
 
 # --- NEW: Sequence tracking configuration ---
 # Set to False to disable sequence logging
@@ -552,52 +552,48 @@ class TestClient:
         """Thread to play back incoming audio from the server with a robust jitter buffer."""
         p = pyaudio.PyAudio()
         audio_params = udp_session_details["audio_params"]
-        stream = p.open(format=p.get_format_from_width(2),
-                        channels=audio_params["channels"],
-                        rate=audio_params["sample_rate"],
-                        output=True)
+        
+        # Try to open the audio stream with the specified parameters
+        try:
+            stream = p.open(format=p.get_format_from_width(2),
+                            channels=audio_params["channels"],
+                            rate=audio_params["sample_rate"],
+                            output=True)
+            logger.info(f"[PLAY] Audio stream opened successfully at {audio_params['sample_rate']}Hz")
+        except Exception as e:
+            logger.error(f"[PLAY] Failed to open audio stream at {audio_params['sample_rate']}Hz: {e}")
+            # Try fallback to 44.1kHz
+            try:
+                stream = p.open(format=p.get_format_from_width(2),
+                                channels=audio_params["channels"],
+                                rate=44100,
+                                output=True)
+                logger.info("[PLAY] Fallback: Audio stream opened at 44.1kHz")
+                audio_params["sample_rate"] = 44100  # Update for frame size calculations
+            except Exception as e2:
+                logger.error(f"[PLAY] Failed to open audio stream at 44.1kHz: {e2}")
+                p.terminate()
+                return
 
-        logger.info("[PLAY] Playback thread started.")
-        is_playing = False
-        buffer_timeout_start = time.time()
+        logger.info(f"[PLAY] Playback thread started - Rate: {audio_params['sample_rate']}Hz, Channels: {audio_params['channels']}, Format: {audio_params['format']}")
+        logger.info("[PLAY] Using simplified buffering for immediate playback.")
 
         while not stop_threads.is_set() and self.session_active:
             try:
-                # --- JITTER BUFFER LOGIC ---
-                if not is_playing:
-                    # Wait until we have enough frames to start playback smoothly
-                    if self.audio_playback_queue.qsize() < PLAYBACK_BUFFER_START_FRAMES:
-                        # Check for timeout
-                        if time.time() - buffer_timeout_start > BUFFER_TIMEOUT_SECONDS:
-                            logger.warning(
-                                f"[TIME] Buffer timeout after {BUFFER_TIMEOUT_SECONDS}s. Queue size: {self.audio_playback_queue.qsize()}")
-                            if self.tts_active:
-                                logger.warning(
-                                    "[PLAY] TTS is active but no audio received. Possible server issue.")
-                            buffer_timeout_start = time.time()  # Reset timeout
-
-                        logger.info(
-                            f"[AUDIO] Buffering audio... {self.audio_playback_queue.qsize()}/{PLAYBACK_BUFFER_START_FRAMES}")
-                        time.sleep(0.05)
-                        continue
-                    else:
-                        logger.info("[OK] Buffer ready. Starting playback.")
-                        is_playing = True
-
-                # --- If buffer runs low, stop playing and re-buffer ---
-                if self.audio_playback_queue.qsize() < PLAYBACK_BUFFER_MIN_FRAMES:
-                    is_playing = False
-                    buffer_timeout_start = time.time()  # Reset timeout when buffering starts
-                    logger.warning(
-                        f"[ALERT] Playback buffer low ({self.audio_playback_queue.qsize()}). Re-buffering...")
-                    continue
-
-                # Get audio chunk from the queue and play it
-                stream.write(self.audio_playback_queue.get(timeout=1))
+                # Simple approach: just play audio as it comes in
+                # Get audio chunk from the queue and play it immediately
+                audio_chunk = self.audio_playback_queue.get(timeout=0.1)
+                
+                # Validate audio chunk size
+                expected_frame_size = int(audio_params["sample_rate"] * audio_params["frame_duration"] / 1000) * 2
+                if len(audio_chunk) != expected_frame_size:
+                    logger.warning(f"[AUDIO] Unexpected frame size: {len(audio_chunk)}B, expected: {expected_frame_size}B")
+                
+                # Play the audio directly (should now be proper int16 PCM from gateway)
+                stream.write(audio_chunk)
 
             except Empty:
-                is_playing = False
-                buffer_timeout_start = time.time()  # Reset timeout
+                # No audio available, just continue waiting
                 continue
             except Exception as e:
                 logger.error(f"Playback error: {e}")
@@ -636,6 +632,19 @@ class TestClient:
                                     f"[PKT] Packet details: seq={sequence}, payload={payload_len}B, ts={timestamp}, from={addr}")
 
                     # Direct PCM - no decryption or decoding needed
+                    # Validate PCM data format
+                    if self.total_packets_received <= 5:
+                        logger.info(f"[AUDIO] Received PCM frame: {len(pcm_payload)}B, queue size: {self.audio_playback_queue.qsize()}")
+                        # Check if the data looks like valid PCM
+                        if len(pcm_payload) >= 4:
+                            # Try both endianness to see which looks more reasonable
+                            samples_le = struct.unpack('<hh', pcm_payload[:4])  # Little-endian signed 16-bit
+                            samples_be = struct.unpack('>hh', pcm_payload[:4])  # Big-endian signed 16-bit
+                            logger.info(f"[AUDIO] First samples LE: {samples_le}, BE: {samples_be}")
+                            # Check raw bytes
+                            raw_bytes = pcm_payload[:8].hex()
+                            logger.info(f"[AUDIO] Raw bytes: {raw_bytes}")
+                    
                     # Put the PCM payload directly in the playback queue
                     self.audio_playback_queue.put(pcm_payload)
 
