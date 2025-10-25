@@ -163,6 +163,10 @@ class ChatEventHandler:
                     f"📖 [MOBILE] Calling play_story(story_name='{story_name}', category='{category}', loop_enabled={loop_enabled})")
                 await assistant.play_story(ctx, story_name=story_name, category=category, loop_enabled=loop_enabled)
 
+            elif function_name == "stop_audio":
+                logger.info("🛑 [MOBILE] Calling stop_audio()")
+                await assistant.stop_audio(ctx)
+
             else:
                 logger.warning(
                     f"⚠️ [MOBILE] Unknown function call: {function_name}")

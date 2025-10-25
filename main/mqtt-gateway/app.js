@@ -489,6 +489,14 @@ class LiveKitBridge extends Emitter {
               );
               this.handleMobileMusicRequest(data);
               break;
+            case "music_playback_started":
+              // Handle music playback started
+              console.log(
+                `🎵 [MUSIC-START] Music playback started for device: ${this.macAddress}`
+              );
+              // Forward to mobile app
+              this.forwardPlaybackStatusToMobile("playing", data.title || "");
+              break;
             case "music_playback_stopped":
               // Handle music playback stopped - force clear audio playing flag
               console.log(
@@ -497,6 +505,8 @@ class LiveKitBridge extends Emitter {
               this.isAudioPlaying = false;
               // Send TTS stop message to ensure device returns to listening state
               this.sendTtsStopMessage();
+              // Forward to mobile app
+              this.forwardPlaybackStatusToMobile("stopped");
               break;
             case "mobile_stop_loop":
             case "stop_loop":
@@ -1263,6 +1273,35 @@ class LiveKitBridge extends Emitter {
       `📤 [MQTT OUT] Sending emotion to device: ${this.macAddress} - ${emotion} (${emoji})`
     );
     this.connection.sendMqttMessage(JSON.stringify(message));
+  }
+
+  // Forward playback status to mobile app via MQTT
+  forwardPlaybackStatusToMobile(status, title = "") {
+    if (!this.connection || !this.connection.server) return;
+
+    const appTopic = `app/p2p/${this.macAddress}`;
+    const statusMessage = {
+      type: "playback_status",
+      status: status,
+      title: title,
+      timestamp: Date.now()
+    };
+
+    // Access the MQTT client from the server instance
+    const mqttClient = this.connection.server.mqttClient;
+    if (mqttClient && mqttClient.connected) {
+      mqttClient.publish(
+        appTopic,
+        JSON.stringify(statusMessage),
+        (err) => {
+          if (err) {
+            console.error(`❌ [MOBILE] Failed to send playback status: ${err}`);
+          } else {
+            console.log(`📱 [MOBILE] Sent playback ${status} to ${appTopic}`);
+          }
+        }
+      );
+    }
   }
 
   // Convert device_control commands to MCP function calls
