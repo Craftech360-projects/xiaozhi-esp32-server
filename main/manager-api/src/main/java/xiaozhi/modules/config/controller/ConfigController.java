@@ -2,6 +2,8 @@ package xiaozhi.modules.config.controller;
 
 import java.util.Map;
 
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -66,5 +68,52 @@ public class ConfigController {
 
         xiaozhi.modules.config.dto.ChildProfileDTO childProfile = configService.getChildProfileByMac(macAddress);
         return new Result<xiaozhi.modules.config.dto.ChildProfileDTO>().ok(childProfile);
+    }
+
+    @PostMapping("agent-template-id")
+    @Operation(summary = "获取智能体模板ID")
+    public Result<String> getAgentTemplateId(@Valid @RequestBody Map<String, String> request) {
+        String macAddress = request.get("macAddress");
+        if (macAddress == null || macAddress.trim().isEmpty()) {
+            return new Result<String>().error("MAC address is required");
+        }
+
+        String templateId = configService.getAgentTemplateId(macAddress);
+        return new Result<String>().ok(templateId);
+    }
+
+    @GetMapping("template/{templateId}")
+    @Operation(summary = "获取模板内容（personality）")
+    public Result<String> getTemplateContent(@PathVariable("templateId") String templateId) {
+        if (templateId == null || templateId.trim().isEmpty()) {
+            return new Result<String>().error("Template ID is required");
+        }
+
+        String content = configService.getTemplateContent(templateId);
+        return new Result<String>().ok(content);
+    }
+
+    @PostMapping("device-location")
+    @Operation(summary = "获取设备位置信息")
+    public Result<String> getDeviceLocation(@Valid @RequestBody Map<String, String> request) {
+        String macAddress = request.get("macAddress");
+        if (macAddress == null || macAddress.trim().isEmpty()) {
+            return new Result<String>().error("MAC address is required");
+        }
+
+        String location = configService.getDeviceLocation(macAddress);
+        return new Result<String>().ok(location);
+    }
+
+    @PostMapping("weather")
+    @Operation(summary = "获取天气预报")
+    public Result<String> getWeatherForecast(@Valid @RequestBody Map<String, String> request) {
+        String location = request.get("location");
+        if (location == null || location.trim().isEmpty()) {
+            return new Result<String>().error("Location is required");
+        }
+
+        String weather = configService.getWeatherForecast(location);
+        return new Result<String>().ok(weather);
     }
 }

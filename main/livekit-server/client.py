@@ -12,10 +12,9 @@ from typing import Dict, Optional, Tuple
 import requests
 import paho.mqtt.client as mqtt_client
 from paho.mqtt.enums import CallbackAPIVersion
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.backends import default_backend
+# Removed cryptography - no encryption needed for simplified streaming
 from queue import Queue, Empty
-import opuslib
+# Removed opuslib - using direct PCM streaming
 
 # --- Configuration ---
 
@@ -26,19 +25,19 @@ MQTT_BROKER_HOST = "10.171.215.210"
 
 MQTT_BROKER_PORT = 1883
 # DEVICE_MAC is now dynamically generated for uniqueness
-# Minimum frames to have in buffer to continue playback
-PLAYBACK_BUFFER_MIN_FRAMES = 3
-# Number of frames to buffer before starting playback
-PLAYBACK_BUFFER_START_FRAMES = 16
+# Minimum frames to have in buffer to continue playback (reduced for 48kHz PCM)
+PLAYBACK_BUFFER_MIN_FRAMES = 0  # Allow playback even with empty buffer
+# Number of frames to buffer before starting playback (reduced for larger PCM frames)
+PLAYBACK_BUFFER_START_FRAMES = 1  # Start immediately when we have any frame
 
 # --- NEW: Sequence tracking configuration ---
-# Set to False to disable sequence loggingdocker-compose logs -f appserver
+# Set to False to disable sequence logging
 ENABLE_SEQUENCE_LOGGING = True
-LOG_SEQUENCE_EVERY_N_PACKETS = 16  # Log every N packets instead of every packet
+LOG_SEQUENCE_EVERY_N_PACKETS = 32  # Reduced logging frequency for multi-client scenarios
 
 # --- NEW: Timeout configurations ---
 TTS_TIMEOUT_SECONDS = 30  # Maximum time to wait for TTS audio
-BUFFER_TIMEOUT_SECONDS = 10  # Maximum time to wait for initial buffering
+BUFFER_TIMEOUT_SECONDS = 5  # Reduced timeout for faster recovery
 KEEP_ALIVE_INTERVAL = 5  # Send keep-alive every N seconds
 
 # --- Logging ---
@@ -137,10 +136,10 @@ class TestClient:
         """Callback for MQTT connection."""
         if rc == 0:
             logger.info(
-                f"✅ MQTT Connected! Subscribing to P2P topic: {self.p2p_topic}")
+                f"[OK] MQTT Connected! Subscribing to P2P topic: {self.p2p_topic}")
             client.subscribe(self.p2p_topic)
         else:
-            logger.error(f"❌ MQTT Connection failed with code {rc}")
+            logger.error(f"[ERROR] MQTT Connection failed with code {rc}")
 
     def on_mqtt_message(self, client, userdata, msg):
         """Callback for MQTT message reception."""
@@ -148,18 +147,29 @@ class TestClient:
             payload_str = msg.payload.decode()
             payload = json.loads(payload_str)
             logger.info(
-                f"📨 MQTT Message received on topic '{msg.topic}':\n{json.dumps(payload, indent=2)}")
+                f"[EMOJI] MQTT Message received on topic '{msg.topic}':\n{json.dumps(payload, indent=2)}")
 
             # Handle TTS start signal (reset sequence tracking)
             if payload.get("type") == "tts" and payload.get("state") == "start":
-                logger.info("🎵 TTS started. Resetting sequence tracking.")
+                logger.info("[TTS] TTS started. Resetting sequence tracking.")
                 self.tts_active = True
                 self.reset_sequence_tracking()
+                # Send immediate UDP keepalive to ensure connection is ready
+                if self.udp_socket and udp_session_details:
+                    try:
+                        keepalive_payload = f"keepalive:{udp_session_details['session_id']}".encode()
+                        keepalive_packet = self.create_packet(keepalive_payload)
+                        if keepalive_packet:
+                            server_udp_addr = (udp_session_details['udp']['server'], udp_session_details['udp']['port'])
+                            self.udp_socket.sendto(keepalive_packet, server_udp_addr)
+                            logger.info("[UDP] Sent UDP keepalive to ensure connection readiness")
+                    except Exception as e:
+                        logger.warning(f"[WARN] Failed to send UDP keepalive: {e}")
 
             # Handle TTS stop signal (start recording for next user input)
             elif payload.get("type") == "tts" and payload.get("state") == "stop":
                 logger.info(
-                    "🎤 TTS finished. Received 'stop' signal. Preparing for microphone capture...")
+                    "[MIC] TTS finished. Received 'stop' signal. Preparing for microphone capture...")
                 self.tts_active = False
                 self.print_sequence_summary()  # Print summary when TTS ends
 
@@ -170,22 +180,22 @@ class TestClient:
                     # Set the start event to signal the recording thread to begin (if it was waiting)
                     start_recording_event.set()
                     logger.info(
-                        "🎤 Cleared stop_recording_event and set start_recording_event for next recording.")
+                        "[MIC] Cleared stop_recording_event and set start_recording_event for next recording.")
                 else:
                     logger.warning(
-                        "⚠️ No audio packets received during TTS. Server may have an issue.")
+                        "[WARN] No audio packets received during TTS. Server may have an issue.")
                     # Try to trigger another conversation after a short delay
                     threading.Timer(2.0, self.retry_conversation).start()
 
             # Handle STT message (server processed our speech)
             elif payload.get("type") == "stt":
                 transcription = payload.get("text", "")
-                logger.info(f"🗣️ Server transcribed: '{transcription}'")
+                logger.info(f"[EMOJI] Server transcribed: '{transcription}'")
 
             # Handle record stop signal (stop recording)
             elif payload.get("type") == "record_stop":
                 logger.info(
-                    "🛑 Received 'record_stop' signal from server. Stopping current audio recording...")
+                    "[STOP] Received 'record_stop' signal from server. Stopping current audio recording...")
                 stop_recording_event.set()  # This will cause the recording thread loop to exit
 
             else:
@@ -198,7 +208,7 @@ class TestClient:
         if self.session_active and not self.tts_active:
             self.conversation_count += 1
             logger.info(
-                f"🔄 Retry attempt #{self.conversation_count}: Sending listen message again...")
+                f"[RETRY] Retry attempt #{self.conversation_count}: Sending listen message again...")
 
             if self.conversation_count < 3:  # Limit retries
                 listen_payload = {
@@ -212,7 +222,7 @@ class TestClient:
                         "device-server", json.dumps(listen_payload))
             else:
                 logger.error(
-                    "❌ Too many retry attempts. There may be a server issue.")
+                    "[ERROR] Too many retry attempts. There may be a server issue.")
                 self.session_active = False
 
     def reset_sequence_tracking(self):
@@ -226,7 +236,7 @@ class TestClient:
         self.sequence_gaps = []
         self.last_audio_received = time.time()
         if ENABLE_SEQUENCE_LOGGING:
-            logger.info("🔄 Reset sequence tracking for new TTS stream")
+            logger.info("[RETRY] Reset sequence tracking for new TTS stream")
 
     def print_sequence_summary(self):
         """Print a summary of sequence statistics."""
@@ -234,28 +244,28 @@ class TestClient:
             return
 
         logger.info("=" * 60)
-        logger.info("📊 SEQUENCE TRACKING SUMMARY")
+        logger.info("[STATS] SEQUENCE TRACKING SUMMARY")
         logger.info("=" * 60)
-        logger.info(f"📦 Total packets received: {self.total_packets_received}")
-        logger.info(f"🔢 Last sequence number: {self.last_received_sequence}")
-        logger.info(f"❌ Missing packets: {self.missing_packets}")
-        logger.info(f"🔄 Out-of-order packets: {self.out_of_order_packets}")
-        logger.info(f"🔁 Duplicate packets: {self.duplicate_packets}")
+        logger.info(f"[PKT] Total packets received: {self.total_packets_received}")
+        logger.info(f"[SEQ] Last sequence number: {self.last_received_sequence}")
+        logger.info(f"[ERROR] Missing packets: {self.missing_packets}")
+        logger.info(f"[RETRY] Out-of-order packets: {self.out_of_order_packets}")
+        logger.info(f"[DUP] Duplicate packets: {self.duplicate_packets}")
 
         if self.sequence_gaps:
             logger.info(
-                f"🕳️  Sequence gaps detected: {len(self.sequence_gaps)}")
+                f"[GAP]  Sequence gaps detected: {len(self.sequence_gaps)}")
             for gap in self.sequence_gaps[-5:]:  # Show last 5 gaps
                 logger.info(
                     f"   Gap: expected {gap['expected']}, got {gap['received']}")
         else:
-            logger.info("✅ No sequence gaps detected")
+            logger.info("[OK] No sequence gaps detected")
 
         # Calculate packet loss percentage
         if self.last_received_sequence > 0:
             expected_total = self.last_received_sequence
             loss_rate = (self.missing_packets / expected_total) * 100
-            logger.info(f"📈 Packet loss rate: {loss_rate:.2f}%")
+            logger.info(f"[LOSS] Packet loss rate: {loss_rate:.2f}%")
 
         logger.info("=" * 60)
 
@@ -280,62 +290,54 @@ class TestClient:
             return {}
 
     def track_sequence(self, sequence: int):
-        """Track and analyze packet sequence numbers."""
+        """Track and analyze packet sequence numbers (optimized for performance)."""
         if not ENABLE_SEQUENCE_LOGGING:
             return
 
         self.total_packets_received += 1
         self.last_audio_received = time.time()
 
-        # Check for out-of-order packets
-        if sequence < self.expected_sequence:
-            if sequence <= self.last_received_sequence:
-                self.duplicate_packets += 1
-                if self.total_packets_received % LOG_SEQUENCE_EVERY_N_PACKETS == 0:
-                    logger.warning(
-                        f"🔁 Duplicate packet: seq={sequence} (expected={self.expected_sequence})")
-            else:
-                self.out_of_order_packets += 1
-                if self.total_packets_received % LOG_SEQUENCE_EVERY_N_PACKETS == 0:
-                    logger.warning(
-                        f"🔄 Out-of-order packet: seq={sequence} (expected={self.expected_sequence})")
-
-        # Check for missing packets (gaps in sequence)
-        elif sequence > self.expected_sequence:
+        # Check for missing packets (gaps in sequence) - most critical
+        if sequence > self.expected_sequence:
             gap_size = sequence - self.expected_sequence
             self.missing_packets += gap_size
-            self.sequence_gaps.append({
-                'expected': self.expected_sequence,
-                'received': sequence,
-                'gap_size': gap_size,
-                'timestamp': time.time()
-            })
-            logger.warning(
-                f"🕳️  Sequence gap detected: expected {self.expected_sequence}, got {sequence} (missing {gap_size} packets)")
+            # Only log significant gaps to reduce overhead
+            if gap_size > 1:  # Only log if more than 1 packet missing
+                self.sequence_gaps.append({
+                    'expected': self.expected_sequence,
+                    'received': sequence,
+                    'gap_size': gap_size
+                })
+                logger.warning(
+                    f"[GAP]  Sequence gap detected: expected {self.expected_sequence}, got {sequence} (missing {gap_size} packets)")
+
+        # Check for out-of-order/duplicate packets (less critical, minimal logging)
+        elif sequence < self.expected_sequence:
+            if sequence <= self.last_received_sequence:
+                self.duplicate_packets += 1
+            else:
+                self.out_of_order_packets += 1
 
         # Update tracking variables
         if sequence > self.last_received_sequence:
             self.last_received_sequence = sequence
             self.expected_sequence = sequence + 1
 
-        # Log sequence info periodically
-        if self.total_packets_received % LOG_SEQUENCE_EVERY_N_PACKETS == 0:
+        # Reduce logging frequency to minimize overhead
+        if self.total_packets_received % (LOG_SEQUENCE_EVERY_N_PACKETS * 4) == 0:
             logger.info(
-                f"🔢 Packet #{self.total_packets_received}: seq={sequence}, expected={self.expected_sequence}")
+                f"[SEQ] Packet #{self.total_packets_received}: seq={sequence}, expected={self.expected_sequence}")
 
-    def encrypt_packet(self, payload: bytes) -> bytes:
-        """Encrypts the audio payload using AES-CTR with header as nonce."""
+    def create_packet(self, payload: bytes) -> bytes:
+        """Creates a simple packet with header for direct PCM streaming."""
         global udp_session_details
         if "udp" not in udp_session_details:
-            logger.error("UDP session details not available for encryption.")
+            logger.error("UDP session details not available.")
             return b''
-
-        aes_key = bytes.fromhex(udp_session_details["udp"]["key"])
 
         # Extract connectionId from the nonce (which is the header template)
         nonce_bytes = bytes.fromhex(udp_session_details["udp"]["nonce"])
-        connection_id = struct.unpack('>I', nonce_bytes[4:8])[
-            0]  # Extract connectionId from nonce
+        connection_id = struct.unpack('>I', nonce_bytes[4:8])[0]
 
         packet_type, flags = 0x01, 0x00
         payload_len, timestamp, sequence = len(payload), int(
@@ -345,17 +347,14 @@ class TestClient:
         header = struct.pack('>BBHIII', packet_type, flags,
                              payload_len, connection_id, timestamp, sequence)
 
-        cipher = Cipher(algorithms.AES(aes_key), modes.CTR(
-            header), backend=default_backend())
-        encryptor = cipher.encryptor()
-        encrypted_payload = encryptor.update(payload) + encryptor.finalize()
+        # No encryption - just header + payload
         self.udp_local_sequence += 1
-        return header + encrypted_payload
+        return header + payload
 
     def get_ota_config(self) -> bool:
         """Requests OTA configuration from the server."""
         logger.info(
-            f"▶️ STEP 1: Requesting OTA config from http://{SERVER_IP}:{OTA_PORT}/toy/ota/")
+            f"[STEP] STEP 1: Requesting OTA config from http://{SERVER_IP}:{OTA_PORT}/toy/ota/")
         try:
             # Generate a client ID for this session
             import uuid
@@ -384,10 +383,10 @@ class TestClient:
             if websocket_info and "url" in websocket_info:
                 self.websocket_url = websocket_info["url"]
                 logger.info(
-                    f"✅ Got websocket URL from OTA: {self.websocket_url}")
+                    f"[OK] Got websocket URL from OTA: {self.websocket_url}")
             else:
                 logger.warning(
-                    "⚠️ No websocket URL in OTA response, using fallback")
+                    "[WARN] No websocket URL in OTA response, using fallback")
                 self.websocket_url = f"ws://{SERVER_IP}:8000/toy/v1/"
 
             # Extract MQTT credentials from OTA response
@@ -399,55 +398,55 @@ class TestClient:
                     "password": mqtt_info.get("password")
                 }
                 logger.info(
-                    f"✅ Got MQTT credentials from OTA: {self.mqtt_credentials['client_id']}")
+                    f"[OK] Got MQTT credentials from OTA: {self.mqtt_credentials['client_id']}")
                 # Set P2P topic to match the full client_id (as gateway publishes to this)
                 self.p2p_topic = f"devices/p2p/{self.mqtt_credentials['client_id']}"
             else:
                 logger.warning(
-                    "⚠️ No MQTT credentials in OTA response, generating locally as fallback")
+                    "[WARN] No MQTT credentials in OTA response, generating locally as fallback")
                 # Generate MQTT credentials locally as fallback
                 self.mqtt_credentials = generate_mqtt_credentials(
                     self.device_mac_formatted)
                 logger.info(
-                    f"✅ Generated MQTT credentials locally: {self.mqtt_credentials['client_id']}")
+                    f"[OK] Generated MQTT credentials locally: {self.mqtt_credentials['client_id']}")
                 # Set P2P topic to match the full client_id
                 self.p2p_topic = f"devices/p2p/{self.mqtt_credentials['client_id']}"
 
-            logger.info("✅ OTA config received successfully.")
+            logger.info("[OK] OTA config received successfully.")
 
             # --- Handle activation logic (optional, may not be needed) ---
             activation = self.ota_config.get("activation")
             if activation:
                 code = activation.get("code")
                 if code:
-                    print(f"🔐 Activation Required. Code: {code}")
+                    print(f"[EMOJI] Activation Required. Code: {code}")
                     activated = False
                     for attempt in range(10):
                         logger.info(
-                            f"🕒 Checking activation status... Attempt {attempt + 1}/10")
+                            f"[EMOJI] Checking activation status... Attempt {attempt + 1}/10")
                         try:
                             status_response = requests.get(
                                 f"http://{SERVER_IP}:{OTA_PORT}/ota/active", params={"mac": self.device_mac_formatted}, timeout=3)
                             print(
                                 f"Activation status response: {status_response.text}")
                             if status_response.ok and status_response.json().get("activated"):
-                                logger.info("✅ Device activated!")
+                                logger.info("[OK] Device activated!")
                                 activated = True
                                 break
                             else:
                                 logger.warning(
-                                    "❌ Device not activated yet. Retrying...")
+                                    "[ERROR] Device not activated yet. Retrying...")
 
                         except Exception as e:
                             logger.warning(f"Activation check failed: {e}")
                         time.sleep(5)
                     if not activated:
                         logger.error(
-                            "❌ Activation failed after 10 attempts. Exiting client.")
+                            "[ERROR] Activation failed after 10 attempts. Exiting client.")
                         return False
             return True
         except requests.exceptions.RequestException as e:
-            logger.error(f"❌ Failed to get OTA config: {e}")
+            logger.error(f"[ERROR] Failed to get OTA config: {e}")
             return False
 
     def connect_mqtt(self) -> bool:
@@ -457,13 +456,13 @@ class TestClient:
         mqtt_broker = mqtt_config.get("broker", MQTT_BROKER_HOST)
         mqtt_port = mqtt_config.get("port", MQTT_BROKER_PORT)
 
-        logger.info(f"📍 MQTT Config from OTA: {mqtt_config}")
-        logger.info(f"📍 Using MQTT Broker: {mqtt_broker}")
-        logger.info(f"📍 Using MQTT Port: {mqtt_port}")
+        logger.info(f"[INFO] MQTT Config from OTA: {mqtt_config}")
+        logger.info(f"[INFO] Using MQTT Broker: {mqtt_broker}")
+        logger.info(f"[INFO] Using MQTT Port: {mqtt_port}")
         logger.info(
-            f"📍 MQTT Credentials: client_id={self.mqtt_credentials.get('client_id', 'NOT SET')}")
+            f"[INFO] MQTT Credentials: client_id={self.mqtt_credentials.get('client_id', 'NOT SET')}")
         logger.info(
-            f"▶️ STEP 2: Connecting to MQTT Gateway at {mqtt_broker}:{mqtt_port}...")
+            f"[STEP] STEP 2: Connecting to MQTT Gateway at {mqtt_broker}:{mqtt_port}...")
 
         self.mqtt_client = mqtt_client.Client(
             callback_api_version=CallbackAPIVersion.VERSION2,
@@ -477,7 +476,7 @@ class TestClient:
         )
 
         try:
-            logger.info(f"🔄 Attempting connection to MQTT broker...")
+            logger.info(f"[RETRY] Attempting connection to MQTT broker...")
             logger.info(f"   Host: {mqtt_broker}")
             logger.info(f"   Port: {mqtt_port}")
             logger.info(f"   Client ID: {self.mqtt_credentials['client_id']}")
@@ -491,31 +490,31 @@ class TestClient:
 
             # Check if connected
             if self.mqtt_client.is_connected():
-                logger.info("✅ MQTT client is connected!")
+                logger.info("[OK] MQTT client is connected!")
             else:
                 logger.warning(
-                    "⚠️ MQTT client connection status unknown, waiting...")
+                    "[WARN] MQTT client connection status unknown, waiting...")
 
             return True
         except Exception as e:
-            logger.error(f"❌ Failed to connect to MQTT Gateway: {e}")
+            logger.error(f"[ERROR] Failed to connect to MQTT Gateway: {e}")
             logger.error(f"   Error type: {type(e).__name__}")
             logger.error(f"   Broker: {mqtt_broker}:{mqtt_port}")
             return False
 
     def send_hello_and_get_session(self) -> bool:
         """Sends 'hello' message and waits for session details."""
-        logger.info("▶️ STEP 3: Sending 'hello' and pinging UDP...")
+        logger.info("[STEP] STEP 3: Sending 'hello' and pinging UDP...")
         # Use the client_id from our generated MQTT credentials
         hello_message = {
             "type": "hello",
             "version": 3,
             "transport": "mqtt",
             "audio_params": {
-                "sample_rate": 16000,
+                "sample_rate": 48000,
                 "channels": 1,
                 "frame_duration": 20,
-                "format": "opus"
+                "format": "pcm"
             },
             "features": ["tts", "asr", "vad"]
         }
@@ -527,76 +526,74 @@ class TestClient:
                 udp_session_details = response
                 self.udp_socket = socket.socket(
                     socket.AF_INET, socket.SOCK_DGRAM)
+                # Increase UDP receive buffer to handle burst traffic
+                self.udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024 * 1024)  # 1MB buffer
                 self.udp_socket.settimeout(1.0)
                 ping_payload = f"ping:{udp_session_details['session_id']}".encode(
                 )
-                encrypted_ping = self.encrypt_packet(ping_payload)
+                ping_packet = self.create_packet(ping_payload)
                 server_udp_addr = (
                     udp_session_details['udp']['server'], udp_session_details['udp']['port'])
-                logger.info(f"🔄 Sending UDP Ping to {server_udp_addr} with session ID {udp_session_details['session_id']}"
+                logger.info(f"[RETRY] Sending UDP Ping to {server_udp_addr} with session ID {udp_session_details['session_id']}"
                             f" and key {udp_session_details['udp']['key']}"
                             f" (local sequence: {self.udp_local_sequence})"
                             )
-                if encrypted_ping:
-                    self.udp_socket.sendto(encrypted_ping, server_udp_addr)
-                    logger.info(f"✅ UDP Ping sent. Session configured.")
+                if ping_packet:
+                    self.udp_socket.sendto(ping_packet, server_udp_addr)
+                    logger.info(f"[OK] UDP Ping sent. Session configured.")
                     return True
-            logger.error(f"❌ Received unexpected message: {response}")
+            logger.error(f"[ERROR] Received unexpected message: {response}")
             return False
         except Empty:
-            logger.error("❌ Timed out waiting for 'hello' response.")
+            logger.error("[ERROR] Timed out waiting for 'hello' response.")
             return False
 
     def _playback_thread(self):
         """Thread to play back incoming audio from the server with a robust jitter buffer."""
         p = pyaudio.PyAudio()
         audio_params = udp_session_details["audio_params"]
-        stream = p.open(format=p.get_format_from_width(2),
-                        channels=audio_params["channels"],
-                        rate=audio_params["sample_rate"],
-                        output=True)
+        
+        # Try to open the audio stream with the specified parameters
+        try:
+            stream = p.open(format=p.get_format_from_width(2),
+                            channels=audio_params["channels"],
+                            rate=audio_params["sample_rate"],
+                            output=True)
+            logger.info(f"[PLAY] Audio stream opened successfully at {audio_params['sample_rate']}Hz")
+        except Exception as e:
+            logger.error(f"[PLAY] Failed to open audio stream at {audio_params['sample_rate']}Hz: {e}")
+            # Try fallback to 44.1kHz
+            try:
+                stream = p.open(format=p.get_format_from_width(2),
+                                channels=audio_params["channels"],
+                                rate=44100,
+                                output=True)
+                logger.info("[PLAY] Fallback: Audio stream opened at 44.1kHz")
+                audio_params["sample_rate"] = 44100  # Update for frame size calculations
+            except Exception as e2:
+                logger.error(f"[PLAY] Failed to open audio stream at 44.1kHz: {e2}")
+                p.terminate()
+                return
 
-        logger.info("🔊 Playback thread started.")
-        is_playing = False
-        buffer_timeout_start = time.time()
+        logger.info(f"[PLAY] Playback thread started - Rate: {audio_params['sample_rate']}Hz, Channels: {audio_params['channels']}, Format: {audio_params['format']}")
+        logger.info("[PLAY] Using simplified buffering for immediate playback.")
 
         while not stop_threads.is_set() and self.session_active:
             try:
-                # --- JITTER BUFFER LOGIC ---
-                if not is_playing:
-                    # Wait until we have enough frames to start playback smoothly
-                    if self.audio_playback_queue.qsize() < PLAYBACK_BUFFER_START_FRAMES:
-                        # Check for timeout
-                        if time.time() - buffer_timeout_start > BUFFER_TIMEOUT_SECONDS:
-                            logger.warning(
-                                f"⏰ Buffer timeout after {BUFFER_TIMEOUT_SECONDS}s. Queue size: {self.audio_playback_queue.qsize()}")
-                            if self.tts_active:
-                                logger.warning(
-                                    "🔊 TTS is active but no audio received. Possible server issue.")
-                            buffer_timeout_start = time.time()  # Reset timeout
-
-                        logger.info(
-                            f"🎧 Buffering audio... {self.audio_playback_queue.qsize()}/{PLAYBACK_BUFFER_START_FRAMES}")
-                        time.sleep(0.05)
-                        continue
-                    else:
-                        logger.info("✅ Buffer ready. Starting playback.")
-                        is_playing = True
-
-                # --- If buffer runs low, stop playing and re-buffer ---
-                if self.audio_playback_queue.qsize() < PLAYBACK_BUFFER_MIN_FRAMES:
-                    is_playing = False
-                    buffer_timeout_start = time.time()  # Reset timeout when buffering starts
-                    logger.warning(
-                        f"‼️ Playback buffer low ({self.audio_playback_queue.qsize()}). Re-buffering...")
-                    continue
-
-                # Get audio chunk from the queue and play it
-                stream.write(self.audio_playback_queue.get(timeout=1))
+                # Simple approach: just play audio as it comes in
+                # Get audio chunk from the queue and play it immediately
+                audio_chunk = self.audio_playback_queue.get(timeout=0.1)
+                
+                # Validate audio chunk size
+                expected_frame_size = int(audio_params["sample_rate"] * audio_params["frame_duration"] / 1000) * 2
+                if len(audio_chunk) != expected_frame_size:
+                    logger.warning(f"[AUDIO] Unexpected frame size: {len(audio_chunk)}B, expected: {expected_frame_size}B")
+                
+                # Play the audio directly (should now be proper int16 PCM from gateway)
+                stream.write(audio_chunk)
 
             except Empty:
-                is_playing = False
-                buffer_timeout_start = time.time()  # Reset timeout
+                # No audio available, just continue waiting
                 continue
             except Exception as e:
                 logger.error(f"Playback error: {e}")
@@ -605,55 +602,50 @@ class TestClient:
         stream.stop_stream()
         stream.close()
         p.terminate()
-        logger.info("🔊 Playback thread finished.")
+        logger.info("[PLAY] Playback thread finished.")
 
     def listen_for_udp_audio(self):
         """Thread to listen for incoming UDP audio from the server with sequence tracking."""
         logger.info(
-            f"🎧 UDP Listener started on local socket {self.udp_socket.getsockname()}")
-        aes_key = bytes.fromhex(udp_session_details["udp"]["key"])
+            f"[AUDIO] UDP Listener started on local socket {self.udp_socket.getsockname()}")
         audio_params = udp_session_details["audio_params"]
-
-        # Initialize the decoder with the sample rate provided by the server
-        decoder = opuslib.Decoder(
-            audio_params["sample_rate"], audio_params["channels"])
-        frame_size_samples = int(
-            audio_params["sample_rate"] * audio_params["frame_duration"] / 1000)
-        # Maximum frame size for Opus (120ms at 48kHz = 5760 samples, but we'll use a larger buffer)
-        # 120ms worth of samples
-        max_frame_size = int(audio_params["sample_rate"] * 0.12)
 
         while not stop_threads.is_set() and self.session_active:
             try:
                 data, addr = self.udp_socket.recvfrom(4096)
                 if data and len(data) > 16:
-                    header, encrypted = data[:16], data[16:]
+                    header, pcm_payload = data[:16], data[16:]
 
-                    # --- Parse header to extract sequence number ---
-                    header_info = self.parse_packet_header(header)
-                    if header_info and ENABLE_SEQUENCE_LOGGING:
-                        sequence = header_info.get('sequence', 0)
-                        timestamp = header_info.get('timestamp', 0)
-                        payload_len = header_info.get('payload_len', 0)
+                    # --- Parse header to extract sequence number (optimized) ---
+                    if ENABLE_SEQUENCE_LOGGING:
+                        header_info = self.parse_packet_header(header)
+                        if header_info:
+                            sequence = header_info.get('sequence', 0)
+                            # Track sequence for analysis (minimal processing)
+                            self.track_sequence(sequence)
+                            
+                            # Only log details for first few packets to reduce overhead
+                            if self.total_packets_received <= 5:
+                                timestamp = header_info.get('timestamp', 0)
+                                payload_len = header_info.get('payload_len', 0)
+                                logger.info(
+                                    f"[PKT] Packet details: seq={sequence}, payload={payload_len}B, ts={timestamp}, from={addr}")
 
-                        # Track sequence for analysis
-                        self.track_sequence(sequence)
-
-                        # Detailed logging for first few packets or periodically
-                        if self.total_packets_received <= 5 or self.total_packets_received % (LOG_SEQUENCE_EVERY_N_PACKETS * 2) == 0:
-                            logger.info(
-                                f"📦 Packet details: seq={sequence}, payload={payload_len}B, ts={timestamp}, from={addr}")
-
-                    # Decrypt and decode as usual
-                    cipher = Cipher(algorithms.AES(aes_key), modes.CTR(
-                        header), backend=default_backend())
-                    decryptor = cipher.decryptor()
-                    opus_payload = decryptor.update(
-                        encrypted) + decryptor.finalize()
-
-                    # Decode the Opus payload to PCM and put it in the playback queue
-                    # Use max_frame_size to provide enough buffer space for variable frame sizes
-                    pcm_payload = decoder.decode(opus_payload, max_frame_size)
+                    # Direct PCM - no decryption or decoding needed
+                    # Validate PCM data format
+                    if self.total_packets_received <= 5:
+                        logger.info(f"[AUDIO] Received PCM frame: {len(pcm_payload)}B, queue size: {self.audio_playback_queue.qsize()}")
+                        # Check if the data looks like valid PCM
+                        if len(pcm_payload) >= 4:
+                            # Try both endianness to see which looks more reasonable
+                            samples_le = struct.unpack('<hh', pcm_payload[:4])  # Little-endian signed 16-bit
+                            samples_be = struct.unpack('>hh', pcm_payload[:4])  # Big-endian signed 16-bit
+                            logger.info(f"[AUDIO] First samples LE: {samples_le}, BE: {samples_be}")
+                            # Check raw bytes
+                            raw_bytes = pcm_payload[:8].hex()
+                            logger.info(f"[AUDIO] Raw bytes: {raw_bytes}")
+                    
+                    # Put the PCM payload directly in the playback queue
                     self.audio_playback_queue.put(pcm_payload)
 
             except socket.timeout:
@@ -661,7 +653,7 @@ class TestClient:
             except Exception as e:
                 logger.error(f"UDP Listen Error: {e}", exc_info=True)
 
-        logger.info("👋 UDP Listener shutting down.")
+        logger.info("[BYE] UDP Listener shutting down.")
 
     def _record_and_send_audio_thread(self):
         """Thread to record microphone audio and send it to the server."""
@@ -675,24 +667,20 @@ class TestClient:
             if stop_threads.is_set():
                 break
 
-            logger.info("🔴 Recording thread activated. Capturing audio.")
+            logger.info("[REC] Recording thread activated. Capturing audio.")
             p = pyaudio.PyAudio()
             audio_params = udp_session_details["audio_params"]
             FORMAT, CHANNELS, RATE, FRAME_DURATION_MS = pyaudio.paInt16, audio_params[
                 "channels"], audio_params["sample_rate"], audio_params["frame_duration"]
             SAMPLES_PER_FRAME = int(RATE * FRAME_DURATION_MS / 1000)
 
-            try:
-                encoder = opuslib.Encoder(
-                    RATE, CHANNELS, opuslib.APPLICATION_VOIP)
-            except Exception as e:
-                logger.error(f"❌ Failed to create Opus encoder: {e}")
-                return  # Exit thread if encoder fails
+            # No encoder needed for direct PCM streaming
+            logger.info("[MIC] Using direct PCM streaming - no encoding needed")
 
             stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE,
                             input=True, frames_per_buffer=SAMPLES_PER_FRAME)
             logger.info(
-                "🎙️ Microphone stream opened. Sending audio to server...")
+                "[MIC] Microphone stream opened. Sending audio to server...")
             server_udp_addr = (
                 udp_session_details['udp']['server'], udp_session_details['udp']['port'])
 
@@ -704,17 +692,17 @@ class TestClient:
                 try:
                     pcm_data = stream.read(
                         SAMPLES_PER_FRAME, exception_on_overflow=False)
-                    opus_data = encoder.encode(pcm_data, SAMPLES_PER_FRAME)
-                    encrypted_packet = self.encrypt_packet(opus_data)
+                    # Send PCM directly without encoding
+                    pcm_packet = self.create_packet(pcm_data)
 
-                    if encrypted_packet:
+                    if pcm_packet:
                         self.udp_socket.sendto(
-                            encrypted_packet, server_udp_addr)
+                            pcm_packet, server_udp_addr)
                         packets_sent += 1
 
                         if time.time() - last_log_time >= 1.0:
                             logger.info(
-                                f"⬆️  Sent {packets_sent} audio packets in the last second.")
+                                f"[UP]  Sent {packets_sent} PCM audio packets in the last second.")
                             packets_sent = 0
                             last_log_time = time.time()
 
@@ -724,7 +712,7 @@ class TestClient:
                     break  # Exit inner loop on error
 
             # Cleanup for the current recording session
-            logger.info("🎙️ Stopping microphone stream for this session.")
+            logger.info("[MIC] Stopping microphone stream for this session.")
             stream.stop_stream()
             stream.close()
             p.terminate()
@@ -734,15 +722,15 @@ class TestClient:
 
             if stop_recording_event.is_set():
                 logger.info(
-                    "🛑 Recording stopped by server signal. Waiting for next turn.")
+                    "[STOP] Recording stopped by server signal. Waiting for next turn.")
 
-        logger.info("🔴 Recording thread finished completely.")
+        logger.info("[REC] Recording thread finished completely.")
 
     def trigger_conversation(self):
         """Starts the audio streaming threads and sends initial listen message."""
         if not self.udp_socket:
             return False
-        logger.info("▶️ STEP 4: Starting all streaming audio threads...")
+        logger.info("[STEP] STEP 4: Starting all streaming audio threads...")
         global stop_threads, start_recording_event, stop_recording_event
         stop_threads.clear()
         # Initially, clear both events. The server's initial TTS will set start_recording_event.
@@ -759,27 +747,27 @@ class TestClient:
         ), self.audio_recording_thread.start()
 
         logger.info(
-            "▶️ STEP 5: Sending 'listen' message to trigger initial TTS from server...")
+            "[STEP] STEP 5: Sending 'listen' message to trigger initial TTS from server...")
         # The server's initial TTS will then trigger the client's recording.
         listen_payload = {
             "type": "listen", "session_id": udp_session_details["session_id"], "state": "detect", "text": "hello baby"}
         self.mqtt_client.publish("device-server", json.dumps(listen_payload))
         logger.info(
-            "⏳ Test running. Press Spacebar to abort TTS or Ctrl+C to stop.")
+            "[WAIT] Test running. Press Spacebar to abort TTS or Ctrl+C to stop.")
 
         # Start a thread to monitor spacebar press
         def monitor_spacebar():
             while not stop_threads.is_set() and self.session_active:
                 if keyboard.is_pressed('space'):
                     logger.info(
-                        "🚫 Spacebar pressed. Sending abort message to server...")
+                        "[EMOJI] Spacebar pressed. Sending abort message to server...")
                     abort_payload = {
                         "type": "abort",
                         "session_id": udp_session_details["session_id"]
                     }
                     self.mqtt_client.publish(
                         "device-server", json.dumps(abort_payload))
-                    logger.info(f"📤 Sent abort message: {abort_payload}")
+                    logger.info(f"[EMOJI] Sent abort message: {abort_payload}")
                     # Wait for the key to be released to avoid multiple sends
                     while keyboard.is_pressed('space') and not stop_threads.is_set():
                         time.sleep(0.01)
@@ -798,15 +786,15 @@ class TestClient:
                 # Check if we've been inactive for too long
                 if self.tts_active and time.time() - self.last_audio_received > TTS_TIMEOUT_SECONDS:
                     logger.warning(
-                        f"⏰ No audio received for {TTS_TIMEOUT_SECONDS}s during TTS. Possible server issue.")
+                        f"[TIME] No audio received for {TTS_TIMEOUT_SECONDS}s during TTS. Possible server issue.")
                     timeout_count += 1
                     if timeout_count >= 3:
-                        logger.error("❌ Too many timeouts. Stopping session.")
+                        logger.error("[ERROR] Too many timeouts. Stopping session.")
                         self.session_active = False
                         break
                     else:
                         logger.info(
-                            "🔄 Attempting to recover by sending new listen message...")
+                            "[RETRY] Attempting to recover by sending new listen message...")
                         self.retry_conversation()
 
         except KeyboardInterrupt:
@@ -817,7 +805,7 @@ class TestClient:
 
     def cleanup(self):
         """Cleans up resources and disconnects."""
-        logger.info("▶️ STEP 6: Cleaning up and disconnecting...")
+        logger.info("[STEP] STEP 6: Cleaning up and disconnecting...")
         global stop_threads, start_recording_event, stop_recording_event
         stop_threads.set()
         self.session_active = False
@@ -826,7 +814,7 @@ class TestClient:
 
         # Print final sequence summary
         if ENABLE_SEQUENCE_LOGGING and self.total_packets_received > 0:
-            logger.info("📊 FINAL SEQUENCE SUMMARY")
+            logger.info("[STATS] FINAL SEQUENCE SUMMARY")
             self.print_sequence_summary()
 
         if self.audio_recording_thread:
@@ -848,22 +836,22 @@ class TestClient:
                                "session_id": udp_session_details.get("session_id")}
             self.mqtt_client.publish(
                 "device-server", json.dumps(goodbye_payload))
-            logger.info("👋 Sent 'goodbye' message.")
+            logger.info("[BYE] Sent 'goodbye' message.")
 
         if self.mqtt_client:
             self.mqtt_client.loop_stop()
             self.mqtt_client.disconnect()
-            logger.info("🔌 MQTT Disconnected.")
-        logger.info("✅ Test finished.")
+            logger.info("[DISC] MQTT Disconnected.")
+        logger.info("[OK] Test finished.")
 
     def run_test(self):
         """Runs the full test sequence."""
         if ENABLE_SEQUENCE_LOGGING:
-            logger.info("🔢 Sequence tracking is ENABLED")
+            logger.info("[SEQ] Sequence tracking is ENABLED")
             logger.info(
-                f"📊 Will log sequence info every {LOG_SEQUENCE_EVERY_N_PACKETS} packets")
+                f"[STATS] Will log sequence info every {LOG_SEQUENCE_EVERY_N_PACKETS} packets")
         else:
-            logger.info("🔢 Sequence tracking is DISABLED")
+            logger.info("[SEQ] Sequence tracking is DISABLED")
 
         if not self.get_ota_config():
             return
@@ -880,8 +868,8 @@ class TestClient:
 if __name__ == "__main__":
     # You can control sequence logging from here
     print(
-        f"🔢 Sequence logging: {'ENABLED' if ENABLE_SEQUENCE_LOGGING else 'DISABLED'}")
-    print(f"📊 Log frequency: Every {LOG_SEQUENCE_EVERY_N_PACKETS} packets")
+        f"[SEQ] Sequence logging: {'ENABLED' if ENABLE_SEQUENCE_LOGGING else 'DISABLED'}")
+    print(f"[STATS] Log frequency: Every {LOG_SEQUENCE_EVERY_N_PACKETS} packets")
 
     client = TestClient()
     try:

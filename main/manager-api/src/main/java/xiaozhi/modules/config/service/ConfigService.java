@@ -35,4 +35,36 @@ public interface ConfigService {
      * @return 孩子资料
      */
     xiaozhi.modules.config.dto.ChildProfileDTO getChildProfileByMac(String macAddress);
+
+    /**
+     * 获取智能体模板ID
+     *
+     * @param macAddress MAC地址
+     * @return 模板ID
+     */
+    String getAgentTemplateId(String macAddress);
+
+    /**
+     * 获取模板内容（personality）
+     *
+     * @param templateId 模板ID
+     * @return 模板内容
+     */
+    String getTemplateContent(String templateId);
+
+    /**
+     * 获取设备位置信息
+     *
+     * @param macAddress MAC地址
+     * @return 位置信息（城市名称）
+     */
+    String getDeviceLocation(String macAddress);
+
+    /**
+     * 获取天气预报
+     *
+     * @param location 位置（城市名称）
+     * @return 天气预报文本
+     */
+    String getWeatherForecast(String location);
 }

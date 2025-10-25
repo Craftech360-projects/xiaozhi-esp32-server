@@ -18,6 +18,9 @@ public class AgentEntity {
     @Schema(description = "智能体唯一标识")
     private String id;
 
+    @Schema(description = "模板ID，关联ai_agent_template表")
+    private String templateId;
+
     @Schema(description = "所属用户ID")
     private Long userId;
 

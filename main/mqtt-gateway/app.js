@@ -732,20 +732,22 @@ class LiveKitBridge extends Emitter {
         return;
       }
 
+      // Check if room is still connected before attempting to send audio
+      if (!this.room || !this.room.isConnected) {
+        console.warn(`⚠️ [AUDIO] Room disconnected or not available, skipping frame`);
+        return;
+      }
+
       // Attempt to capture the frame
      await this.audioSource.captureFrame(frame);
     } catch (error) {
       console.error(`❌ [AUDIO] Failed to capture frame: ${error.message}`);
 
-      // If we get InvalidState error, try to reinitialize the audio source
+      // If we get InvalidState error, it's likely the peer connection is disconnecting
       if (error.message.includes('InvalidState')) {
-        console.log(`🔄 [AUDIO] Attempting to reinitialize AudioSource due to InvalidState`);
-        try {
-          this.audioSource = new AudioSource(16000, 1);
-          console.log(`✅ [AUDIO] AudioSource reinitialized successfully`);
-        } catch (reinitError) {
-          console.error(`❌ [AUDIO] Failed to reinitialize AudioSource: ${reinitError.message}`);
-        }
+        console.warn(`⚠️ [AUDIO] InvalidState error - peer connection may be disconnecting`);
+        console.warn(`💡 [HINT] This is normal during room disconnect, frames will be skipped`);
+        // Don't reinitialize - the room connection check above will prevent future frames
       }
     }
   }
@@ -3805,9 +3807,9 @@ gateway.start();
 // Handle unhandled errors from LiveKit SDK
 process.on("uncaughtException", (error) => {
   if (error.message && error.message.includes("InvalidState - failed to capture frame")) {
-    console.warn(`⚠️ [GLOBAL] Caught InvalidState error, continuing operation...`);
-    console.warn(`⚠️ [HINT] This usually happens when the peer connection disconnects during audio capture`);
-    // Don't exit - the error is non-fatal
+    console.warn(`⚠️ [GLOBAL] Caught InvalidState error (non-fatal), continuing operation...`);
+    console.warn(`💡 [INFO] This occurs when audio frames arrive during room disconnect - now handled gracefully`);
+    // Don't exit - the error is non-fatal and now prevented by room connection checks
   } else {
     console.error(`❌ [FATAL] Uncaught exception:`, error);
     process.exit(1);

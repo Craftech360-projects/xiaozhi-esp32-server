@@ -17,6 +17,12 @@ class PromptService:
         self.cache_timeout = 300  # 5 minutes cache
         self.last_cache_time = 0
 
+        # New: Template-based prompt system
+        self.prompt_manager = None
+        self.db_helper = None
+        self.enhanced_prompt_cache = {}  # Cache for fully rendered prompts
+        self.enhanced_cache_timeout = 300  # 5 minutes cache
+
     def load_config(self):
         """Load configuration from config.yaml"""
         if self.config is None:
@@ -311,6 +317,14 @@ class PromptService:
                         if data.get('code') == 0 and 'data' in data:
                             model_config = data['data']
                             logger.info(f"✅ Successfully fetched model config from API for MAC: {mac_address}")
+                            # DEBUG: Log response structure
+                            logger.info(f"🔍 DEBUG - Response keys: {list(model_config.keys())}")
+                            if 'selected_module' in model_config:
+                                logger.info(f"🔍 DEBUG - selected_module: {model_config['selected_module']}")
+                            if 'TTS' in model_config:
+                                logger.info(f"🔍 DEBUG - TTS keys: {list(model_config['TTS'].keys())}")
+                            else:
+                                logger.warning(f"🔍 DEBUG - TTS key NOT FOUND in response!")
                             return model_config
                         else:
                             logger.warning(f"API returned error: {data}")
@@ -442,3 +456,133 @@ class PromptService:
         }
 
         return prompt, tts_config
+
+    async def initialize_template_system(self):
+        """
+        Initialize template-based prompt system
+        Call this during application startup
+        """
+        try:
+            config = self.load_config()
+            manager_api = config.get('manager_api', {})
+
+            if not manager_api:
+                logger.warning("Manager API not configured, template system disabled")
+                return
+
+            base_url = manager_api.get('url', '')
+            secret = manager_api.get('secret', '')
+
+            if not base_url or not secret:
+                logger.warning("Manager API URL or secret missing, template system disabled")
+                return
+
+            # Initialize DatabaseHelper
+            from src.utils.database_helper import DatabaseHelper
+            self.db_helper = DatabaseHelper(base_url, secret)
+
+            # Initialize PromptManager
+            from src.utils.prompt_manager import PromptManager
+            self.prompt_manager = PromptManager(self.db_helper, config)
+
+            logger.info("✅ Template-based prompt system initialized successfully")
+
+        except Exception as e:
+            logger.error(f"Failed to initialize template system: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
+
+    async def get_enhanced_prompt(
+        self,
+        room_name: str,
+        device_mac: str,
+        child_profile: dict = None,
+        use_template_system: bool = True
+    ) -> str:
+        """
+        Get fully enhanced prompt with template-based system
+
+        Args:
+            room_name: LiveKit room name
+            device_mac: Device MAC address
+            child_profile: Optional child profile data for personalization
+            use_template_system: Whether to use template system (default True)
+
+        Returns:
+            str: Fully rendered prompt
+        """
+        import time
+
+        # If template system not initialized or disabled, fallback to old method
+        if not use_template_system or self.prompt_manager is None:
+            logger.info("Template system disabled, using legacy prompt method")
+            return await self.get_prompt(room_name, device_mac)
+
+        try:
+            # Check cache first
+            cache_key = f"{device_mac}_enhanced"
+            if cache_key in self.enhanced_prompt_cache:
+                cached = self.enhanced_prompt_cache[cache_key]
+                if (time.time() - cached['timestamp']) < self.enhanced_cache_timeout:
+                    logger.debug(f"📦 Using cached enhanced prompt for MAC: {device_mac}")
+                    return cached['prompt']
+
+            # Step 1: Get template_id from database
+            template_id = await self.db_helper.get_agent_template_id(device_mac)
+
+            if not template_id:
+                logger.warning(f"No template_id found for MAC: {device_mac}, falling back to legacy")
+                return await self.get_prompt(room_name, device_mac)
+
+            # Step 2: Build enhanced prompt using PromptManager (with child profile)
+            enhanced_prompt = await self.prompt_manager.build_enhanced_prompt(
+                template_id=template_id,
+                device_mac=device_mac,
+                child_profile=child_profile
+            )
+
+            # Cache the result
+            self.enhanced_prompt_cache[cache_key] = {
+                'prompt': enhanced_prompt,
+                'timestamp': time.time()
+            }
+
+            logger.info(f"✅ Generated enhanced prompt for MAC: {device_mac} (template_id: {template_id})")
+            return enhanced_prompt
+
+        except Exception as e:
+            logger.error(f"Error getting enhanced prompt: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
+
+            # Fallback to legacy method
+            logger.info("Falling back to legacy prompt method due to error")
+            return await self.get_prompt(room_name, device_mac)
+
+    def clear_enhanced_cache(self, device_mac: str = None):
+        """
+        Clear enhanced prompt cache
+
+        Args:
+            device_mac: Optionally clear cache for specific device
+        """
+        if device_mac:
+            cache_key = f"{device_mac}_enhanced"
+            self.enhanced_prompt_cache.pop(cache_key, None)
+            logger.info(f"🗑️ Cleared enhanced prompt cache for MAC: {device_mac}")
+
+            # Also clear PromptManager caches for this device
+            if self.prompt_manager:
+                self.prompt_manager.clear_location_cache(device_mac)
+
+        else:
+            self.enhanced_prompt_cache.clear()
+            logger.info("🗑️ Cleared all enhanced prompt caches")
+
+            # Also clear all PromptManager caches
+            if self.prompt_manager:
+                self.prompt_manager.clear_caches()
+
+    def is_template_system_enabled(self) -> bool:
+        """Check if template system is enabled and initialized"""
+        return self.prompt_manager is not None and self.db_helper is not None
