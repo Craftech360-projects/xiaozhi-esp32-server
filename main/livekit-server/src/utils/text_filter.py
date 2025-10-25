@@ -38,10 +38,97 @@ class TextFilter:
 
         # Pattern for common TTS-unfriendly characters (preserve math symbols and common symbols)
         # Include math symbols: × (U+00D7), ÷ (U+00F7), √ (U+221A), ² (U+00B2), ³ (U+00B3), ± (U+00B1)
-        self.special_chars_pattern = re.compile(r'[^\w\s.,!?;:()\'+\-*/=<>%$^&@°:×÷√²³±]', re.UNICODE)
+        # Note: Unicode quotes/dashes are normalized to ASCII in filter_for_tts() before this pattern is applied
+        # IMPORTANT: Hyphen must be escaped or at end to avoid being interpreted as range
+        self.special_chars_pattern = re.compile(r'[^\w\s.,!?;:()\'"+=<>%$^&@°:×÷√²³±*/\-]', re.UNICODE)
 
         # Keep these punctuation marks for natural speech rhythm and math
         self.speech_punctuation = {'.', ',', '!', '?', ';', ':', '(', ')', '-', "'", '+', '*', '/', '=', '<', '>', '%', '$', '^', '&', '@', '°', '×', '÷', '√', '²', '³', '±'}
+
+    def _contains_markdown_table(self, text: str) -> bool:
+        """
+        Detect if text contains markdown table formatting
+
+        Args:
+            text: Input text to check
+
+        Returns:
+            bool: True if markdown table detected
+        """
+        # Check for table indicators:
+        # 1. Multiple pipe characters (|) on same line
+        # 2. Separator rows (---|---|---)
+        # 3. Multiple lines with pipes
+        lines = text.split('\n')
+
+        pipe_lines = 0
+        has_separator = False
+
+        for line in lines:
+            pipe_count = line.count('|')
+
+            # Line with multiple pipes (table row)
+            if pipe_count >= 2:
+                pipe_lines += 1
+
+            # Separator row: |---|---|---| or | --- | --- |
+            if re.search(r'\|[\s\-]+\|[\s\-]+\|', line):
+                has_separator = True
+
+        # Table detected if: multiple pipe lines OR separator row exists
+        return pipe_lines >= 2 or has_separator
+
+    def _strip_table_formatting(self, text: str) -> str:
+        """
+        Remove markdown table formatting and convert to narrative text
+
+        Args:
+            text: Text containing markdown table
+
+        Returns:
+            str: Text with table formatting removed, better for voice
+        """
+        lines = text.split('\n')
+        cleaned_lines = []
+
+        for line in lines:
+            # Skip separator rows (---|---|---)
+            if re.match(r'^\s*\|?[\s\-|]+\|?\s*$', line):
+                continue
+
+            # If line has pipes, it's a table row
+            if '|' in line:
+                # Remove pipes and clean up
+                cells = [cell.strip() for cell in line.split('|') if cell.strip()]
+
+                # Skip empty rows
+                if not cells:
+                    continue
+
+                # Join cells with "and" or commas for natural speech
+                if len(cells) == 1:
+                    cleaned_lines.append(cells[0])
+                elif len(cells) == 2:
+                    cleaned_lines.append(f"{cells[0]} and {cells[1]}")
+                else:
+                    # For multiplication tables, format nicely
+                    # Check if it's numbers (multiplication table row)
+                    # Allow digits, multiply symbols (×, *, x), and common math symbols (=, -, +)
+                    def is_table_cell(cell):
+                        cleaned = cell.replace(' ', '').replace('-', '').replace('×', '').replace('*', '').replace('=', '').replace('+', '')
+                        return cleaned.isdigit() or cell.strip() in ['×', 'x', '*', '=', '+', '-']
+
+                    if all(is_table_cell(cell) for cell in cells if cell):
+                        # Join with "then" for sequential numbers
+                        cleaned_lines.append(", then ".join(cells))
+                    else:
+                        cleaned_lines.append(", ".join(cells))
+            else:
+                # Regular line, keep as is
+                if line.strip():
+                    cleaned_lines.append(line.strip())
+
+        return '. '.join(cleaned_lines)
 
     def filter_for_tts(self, text: str, preserve_boundaries: bool = False) -> str:
         """
@@ -60,6 +147,40 @@ class TextFilter:
         original_text = text
 
         try:
+            # Step 0: Detect and handle markdown tables (BEFORE normalization)
+            # Tables are terrible for TTS - convert to narrative or warn
+            if self._contains_markdown_table(text):
+                logger.warning("🚫 Markdown table detected in TTS output - tables are not suitable for voice!")
+                text = self._strip_table_formatting(text)
+
+            # Step 1: Normalize Unicode typography characters to ASCII equivalents
+            # This must happen BEFORE other filtering to prevent word merging
+            unicode_replacements = {
+                # Curly quotes to straight quotes
+                '\u2018': "'",  # ' (left single quotation mark)
+                '\u2019': "'",  # ' (right single quotation mark)
+                '\u201A': "'",  # ‚ (single low-9 quotation mark)
+                '\u201B': "'",  # ‛ (single high-reversed-9 quotation mark)
+                '\u201C': '"',  # " (left double quotation mark)
+                '\u201D': '"',  # " (right double quotation mark)
+                '\u201E': '"',  # „ (double low-9 quotation mark)
+                '\u201F': '"',  # ‟ (double high-reversed-9 quotation mark)
+                # Dashes to regular hyphen
+                '\u2010': '-',  # ‐ (hyphen)
+                '\u2011': '-',  # ‑ (non-breaking hyphen)
+                '\u2012': '-',  # ‒ (figure dash)
+                '\u2013': '-',  # – (en dash)
+                '\u2014': '-',  # — (em dash)
+                '\u2015': '-',  # ― (horizontal bar)
+                # Spaces
+                '\u00A0': ' ',  # non-breaking space
+                '\u2007': ' ',  # figure space
+                '\u202F': ' ',  # narrow no-break space
+            }
+
+            for unicode_char, ascii_char in unicode_replacements.items():
+                text = text.replace(unicode_char, ascii_char)
+
             # Check if text contains mathematical expressions (more precise)
             # Look for actual math patterns, not just isolated symbols
             import re as regex_mod
@@ -77,31 +198,33 @@ class TextFilter:
             ]
             has_math_context = any(regex_mod.search(pattern, text.lower()) for pattern in math_patterns)
 
-            # Step 1: Remove emojis
+            # Step 2: Remove emojis
             text = self.emoji_pattern.sub(' ', text)
 
-            # Step 2: Handle markdown formatting (be smart about * in math context)
+            # Step 3: Handle markdown formatting (be smart about * in math context)
+            # IMPORTANT: Replace with space to prevent word merging!
             if has_math_context:
                 # Only remove non-math markdown characters, preserve & and @
-                text = re.sub(r'[_`~\[\]{}#|\\]', '', text)
+                text = re.sub(r'[_`~\[\]{}#|\\]', ' ', text)
             else:
                 # Remove all markdown including * but preserve & and @ for natural expressions
-                text = re.sub(r'[*_`~\[\]{}#|\\]', '', text)
+                text = re.sub(r'[*_`~\[\]{}#|\\]', ' ', text)
 
-            # Step 3: Handle excessive punctuation (keep rhythm but reduce noise)
+            # Step 4: Handle excessive punctuation (keep rhythm but reduce noise)
             text = self.excessive_punct_pattern.sub(r'\1\1\1', text)  # Max 3 consecutive
 
-            # Step 4: Remove problematic special characters but keep speech punctuation and math
-            text = self.special_chars_pattern.sub('', text)
+            # Step 5: Remove problematic special characters but keep speech punctuation and math
+            # IMPORTANT: Replace with space to prevent word merging!
+            text = self.special_chars_pattern.sub(' ', text)
 
-            # Step 5: Clean up whitespace (collapse multiple spaces/newlines to single space)
+            # Step 6: Clean up whitespace (collapse multiple spaces/newlines to single space)
             text = self.whitespace_pattern.sub(' ', text)
 
-            # Step 6: Remove leading/trailing whitespace (only for complete text, not streaming chunks)
+            # Step 7: Remove leading/trailing whitespace (only for complete text, not streaming chunks)
             if not preserve_boundaries:
                 text = text.strip()
 
-                # Step 7: Ensure sentence ending if text is substantial (only for complete text)
+                # Step 8: Ensure sentence ending if text is substantial (only for complete text)
                 if len(text) > 10 and not text.endswith(('.', '!', '?')):
                     text += '.'
 
@@ -114,10 +237,25 @@ class TextFilter:
         except Exception as e:
             logger.error(f"Error filtering text for TTS: {e}")
             # Return a basic cleaned version as fallback
+            # First normalize Unicode to ASCII
+            unicode_replacements = {
+                '\u2018': "'", '\u2019': "'", '\u201A': "'", '\u201B': "'",
+                '\u201C': '"', '\u201D': '"', '\u201E': '"', '\u201F': '"',
+                '\u2010': '-', '\u2011': '-', '\u2012': '-', '\u2013': '-', '\u2014': '-', '\u2015': '-',
+                '\u00A0': ' ', '\u2007': ' ', '\u202F': ' ',
+            }
+            cleaned = original_text
+            for unicode_char, ascii_char in unicode_replacements.items():
+                cleaned = cleaned.replace(unicode_char, ascii_char)
+
+            # IMPORTANT: Replace removed chars with space to prevent word merging
+            # IMPORTANT: Hyphen must be escaped (\-) to avoid range interpretation
+            cleaned = re.sub(r'[^\w\s.,!?;:()\'"+=<>%$×÷√²³±*/\-]', ' ', cleaned)
+            cleaned = re.sub(r'\s+', ' ', cleaned)  # Collapse multiple spaces
             if preserve_boundaries:
-                return re.sub(r'[^\w\s.,!?;:()\'+\-*/=<>%$×÷√²³±]', '', original_text)
+                return cleaned
             else:
-                return re.sub(r'[^\w\s.,!?;:()\'+\-*/=<>%$×÷√²³±]', '', original_text).strip()
+                return cleaned.strip()
 
     def remove_unicode_categories(self, text: str, categories_to_remove: list = None) -> str:
         """
