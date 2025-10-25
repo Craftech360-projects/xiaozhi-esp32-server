@@ -1179,10 +1179,48 @@ jobs:
 
             echo "🚀 Deploying ${SVC} dist folder to Azure VM"
 
-            # Upload dist tarball
-            scp -o StrictHostKeyChecking=no "/tmp/workspace/${SVC}-dist.tar.gz" "${AZURE_USER}@${AZURE_HOST}:/tmp/"
+            # SSH connection options with timeout and retry
+            SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=30 -o ServerAliveInterval=10 -o ServerAliveCountMax=3"
 
-            ssh -o StrictHostKeyChecking=no "${AZURE_USER}@${AZURE_HOST}" "
+            # Test SSH connection first
+            echo "Testing SSH connection to ${AZURE_HOST}..."
+            for i in {1..3}; do
+              if ssh $SSH_OPTS -o BatchMode=yes "${AZURE_USER}@${AZURE_HOST}" "echo 'SSH connection successful'" 2>/dev/null; then
+                echo "✅ SSH connection established"
+                break
+              else
+                echo "⚠️  SSH connection attempt $i failed, retrying..."
+                sleep 5
+              fi
+              if [ $i -eq 3 ]; then
+                echo "❌ Failed to establish SSH connection after 3 attempts"
+                echo "Please check:"
+                echo "1. Azure VM is running"
+                echo "2. Port 22 is open in Azure firewall/NSG"
+                echo "3. SSH key is correctly added to CircleCI"
+                echo "4. AZURE_HOST and AZURE_USER are correct"
+                exit 1
+              fi
+            done
+
+            # Upload dist tarball with retry
+            echo "Uploading ${SVC}-dist.tar.gz..."
+            for i in {1..3}; do
+              if scp $SSH_OPTS "/tmp/workspace/${SVC}-dist.tar.gz" "${AZURE_USER}@${AZURE_HOST}:/tmp/"; then
+                echo "✅ Upload successful"
+                break
+              else
+                echo "⚠️  Upload attempt $i failed, retrying..."
+                sleep 5
+              fi
+              if [ $i -eq 3 ]; then
+                echo "❌ Failed to upload file after 3 attempts"
+                exit 1
+              fi
+            done
+
+            # Deploy with SSH
+            ssh $SSH_OPTS "${AZURE_USER}@${AZURE_HOST}" "
               set -e
 
               # Create deployment directory
