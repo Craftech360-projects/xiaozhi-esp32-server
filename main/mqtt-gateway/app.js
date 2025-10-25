@@ -23,78 +23,17 @@ const {
   TrackPublishOptions,
   TrackSource,
   TrackKind,
-  AudioResampler,
-  AudioResamplerQuality,
 } = require("@livekit/rtc-node");
-// Import Opus Encoder and Decoder with fallback chain
-let OpusEncoder, OpusDecoder, OpusApplication;
-let opusLib = null;
+// Simplified audio processing - no Opus encoding/decoding needed
+console.log("✅ [AUDIO] Simplified audio processing enabled - direct PCM streaming");
+// Simplified audio parameters - direct PCM streaming at 48kHz (LiveKit native)
+const SAMPLE_RATE = 48000;  // Hz - LiveKit native sample rate
+const CHANNELS = 1;         // Mono
+const FRAME_DURATION_MS = 20;  // 20ms frames
+const FRAME_SIZE_SAMPLES = (SAMPLE_RATE * FRAME_DURATION_MS) / 1000; // 48000 * 20 / 1000 = 960
+const FRAME_SIZE_BYTES = FRAME_SIZE_SAMPLES * 2; // 960 samples * 2 bytes/sample = 1920 bytes PCM
 
-// Try @voicehype/audify-plus first
-try {
-  const audifyPlus = require("@voicehype/audify-plus");
-  OpusEncoder = audifyPlus.OpusEncoder;
-  OpusDecoder = audifyPlus.OpusDecoder;
-  OpusApplication = audifyPlus.OpusApplication;
-  opusLib = "audify-plus";
-  console.log("✅ [OPUS] audify-plus package loaded successfully");
-} catch (err) {
-  console.log("⚠️ [OPUS] audify-plus not available:", err.message);
-
-  // Fallback to @discordjs/opus
-  try {
-    const discordOpus = require("@discordjs/opus");
-    // Discord opus has OpusEncoder class
-    OpusEncoder = discordOpus.OpusEncoder;
-    OpusDecoder = discordOpus.OpusEncoder; // Discord opus uses same class for encoding/decoding
-    OpusApplication = { OPUS_APPLICATION_AUDIO: "audio" }; // Discord opus doesn't expose this
-    opusLib = "@discordjs/opus";
-    console.log("✅ [OPUS] @discordjs/opus package loaded successfully");
-  } catch (err2) {
-    console.log("⚠️ [OPUS] @discordjs/opus not available:", err2.message);
-    console.log("⚠️ [OPUS] No Opus library available, operating in PCM mode only");
-    OpusEncoder = null;
-    OpusDecoder = null;
-    OpusApplication = null;
-  }
-}
-
-// Initialize Opus encoder for 24kHz mono (outgoing), decoder for 16kHz mono (incoming)
-let opusEncoder = null;
-let opusDecoder = null;
-// Define constants for audio parameters
-const OUTGOING_SAMPLE_RATE = 24000;  // Hz - for LiveKit → ESP32
-const INCOMING_SAMPLE_RATE = 16000;  // Hz - for ESP32 → LiveKit
-const CHANNELS = 1;            // Mono
-const OUTGOING_FRAME_DURATION_MS = 60;  // 60ms frames for outgoing (LiveKit → ESP32)
-const INCOMING_FRAME_DURATION_MS = 60;  // 20ms frames for incoming (ESP32 → LiveKit)
-const OUTGOING_FRAME_SIZE_SAMPLES = (OUTGOING_SAMPLE_RATE * OUTGOING_FRAME_DURATION_MS) / 1000; // 24000 * 60 / 1000 = 1440
-const INCOMING_FRAME_SIZE_SAMPLES = (INCOMING_SAMPLE_RATE * INCOMING_FRAME_DURATION_MS) / 1000; // 16000 * 20 / 1000 = 320
-const OUTGOING_FRAME_SIZE_BYTES = OUTGOING_FRAME_SIZE_SAMPLES * 2; // 1440 samples * 2 bytes/sample = 2880 bytes PCM
-const INCOMING_FRAME_SIZE_BYTES = INCOMING_FRAME_SIZE_SAMPLES * 2; // 320 samples * 2 bytes/sample = 640 bytes PCM
-
-if (OpusEncoder && OpusDecoder) {
-  try {
-    if (opusLib === "audify-plus") {
-      // audify-plus API: new OpusEncoder(sampleRate, channels, application)
-      opusEncoder = new OpusEncoder(24000, 1, OpusApplication.OPUS_APPLICATION_AUDIO);
-      opusDecoder = new OpusDecoder(16000, 1);
-      console.log("✅ [OPUS] audify-plus encoder/decoder initialized - encoder: 24kHz, decoder: 16kHz mono");
-    } else if (opusLib === "@discordjs/opus") {
-      // @discordjs/opus API: new OpusEncoder(sampleRate, channels)
-      opusEncoder = new OpusEncoder(24000, 1);
-      opusDecoder = new OpusDecoder(16000, 1);
-      console.log("✅ [OPUS] @discordjs/opus encoder/decoder initialized - encoder: 24kHz, decoder: 16kHz mono");
-    }
-  } catch (err) {
-    console.error(`❌ [OPUS] Failed to initialize ${opusLib} encoder/decoder:`, err.message);
-    opusEncoder = null;
-    opusDecoder = null;
-    // Fallback: Disable Opus if init fails (will fall back to PCM)
-  }
-} else {
-  console.log("⚠️ [OPUS] Opus classes not available, operating in PCM mode only");
-}
+console.log("✅ [AUDIO] Simplified audio parameters initialized - 48kHz PCM direct streaming");
 
 const mqtt = require("mqtt");
 const { MQTTProtocol } = require("./mqtt-protocol");
@@ -123,7 +62,7 @@ class LiveKitBridge extends Emitter {
     this.uuid = uuid;
     this.userData = userData;
     this.room = null;
-    this.audioSource = new AudioSource(16000, 1);
+    this.audioSource = new AudioSource(48000, 1);
     this.protocolVersion = protocolVersion;
     this.isAudioPlaying = false; // Track if audio is actively playing
 
@@ -138,32 +77,12 @@ class LiveKitBridge extends Emitter {
       this.agentJoinResolve = resolve;
     });
 
-    // Initialize audio resampler for 48kHz -> 24kHz conversion (outgoing: LiveKit -> ESP32)
-    this.audioResampler = new AudioResampler(48000, 24000, 1, AudioResamplerQuality.QUICK);
-
-    // Frame buffer for accumulating resampled audio into proper frame sizes
+    // Simplified audio processing - no resampling or encoding needed
     this.frameBuffer = Buffer.alloc(0);
-    this.targetFrameSize = 1440; // 1440 samples = 60ms at 24kHz (outgoing)
-    this.targetFrameBytes = this.targetFrameSize * 2; // 2880 bytes for 16-bit PCM
+    this.targetFrameSize = FRAME_SIZE_SAMPLES; // 960 samples = 20ms at 48kHz
+    this.targetFrameBytes = FRAME_SIZE_BYTES; // 1920 bytes for 16-bit PCM
 
-    // Initialize Opus decoder for incoming audio (device -> LiveKit)
-    // this.opusDecoder = null;
-    // Initialize Opus encoder for outgoing audio (LiveKit -> device)
-    // this.opusEncoder = null;
-
-    if (OpusEncoder) {
-      try {
-        // this.opusDecoder = new OpusEncoder(16000, 1); // 16kHz, mono
-        console.log(`✅ [OPUS] Decoder initialized for ${this.macAddress}`);
-
-        // this.opusEncoder = new OpusEncoder(16000, 1); // 16kHz, mono
-        console.log(`✅ [OPUS] Encoder initialized for ${this.macAddress}`);
-      } catch (err) {
-        console.error(
-          `❌ [OPUS] Failed to initialize encoder/decoder: ${err.message}`
-        );
-      }
-    }
+    console.log(`✅ [AUDIO] Simplified audio processing initialized for ${this.macAddress} - direct 48kHz PCM`);
 
     this.initializeLiveKit();
   }
@@ -213,28 +132,12 @@ class LiveKitBridge extends Emitter {
           // Log progress every 100 frames for Opus encoding
         }
 
-        // Encode to Opus and send to ESP32
-        if (opusEncoder) {
-          try {
-            const alignedBuffer = Buffer.allocUnsafe(frameData.length);
-            frameData.copy(alignedBuffer);
-            const opusBuffer = opusEncoder.encode(alignedBuffer, this.targetFrameSize);
-
-            if (frameCount <= 3 || frameCount % 100 === 0) {
-              console.log(`🎵 [OPUS] Frame ${frameCount}: 24kHz 60ms PCM ${frameData.length}B → Opus ${opusBuffer.length}B`);
-            }
-
-            this.connection.sendUdpMessage(opusBuffer, timestamp);
-          } catch (err) {
-            console.error(`❌ [OPUS] Encode error: ${err.message}`);
-            // Fallback to PCM if Opus encoding fails
-            this.connection.sendUdpMessage(frameData, timestamp);
-          }
-        } else {
-          // Fallback: Send PCM directly if Opus encoder not available
-          console.log(`⚠️ [PCM] No Opus encoder, sending PCM directly`);
-          this.connection.sendUdpMessage(frameData, timestamp);
+        // Send PCM directly - no encoding needed
+        if (frameCount <= 3 || frameCount % 100 === 0) {
+          console.log(`🎵 [PCM] Frame ${frameCount}: 48kHz 20ms PCM ${frameData.length}B sent directly`);
         }
+
+        this.connection.sendUdpMessage(frameData, timestamp);
       }
     }
   }
@@ -466,26 +369,14 @@ class LiveKitBridge extends Emitter {
                         `🏁 [AUDIO STREAM] Stream ended for ${participant.identity}. Total frames: ${frameCount}, Total bytes: ${totalBytes}`
                       );
 
-                      // Flush any remaining resampled data
-                      const finalFrames = this.audioResampler.flush();
-                      for (const finalFrame of finalFrames) {
-                        const finalBuffer = Buffer.from(
-                          finalFrame.data.buffer,
-                          finalFrame.data.byteOffset,
-                          finalFrame.data.byteLength
-                        );
-                        // Add final frames to buffer
-                        this.frameBuffer = Buffer.concat([this.frameBuffer, finalBuffer]);
-                      }
-
                       // Process any remaining complete frames in buffer
                       const finalTimestamp = (Date.now() - this.connection.udp.startTime) & 0xffffffff;
                       this.processBufferedFrames(finalTimestamp, frameCount, participant.identity);
 
-                      // SKIP partial frames - they cause Opus encoder to crash
-                      // Opus encoder requires exact frame sizes, partial frames will be dropped
+                      // Send any remaining partial frame as well (no encoding constraints)
                       if (this.frameBuffer.length > 0) {
-                        console.log(`⏭️ [FLUSH] Skipping partial frame (${this.frameBuffer.length}B) - would cause Opus crash`);
+                        console.log(`📤 [FLUSH] Sending final partial frame (${this.frameBuffer.length}B)`);
+                        this.connection.sendUdpMessage(this.frameBuffer, finalTimestamp);
                       }
 
                       // Clear the buffer
@@ -508,21 +399,16 @@ class LiveKitBridge extends Emitter {
                     frameCount++;
 
                     // value is an AudioFrame from LiveKit (48kHz)
-                    // Push the frame to resampler and get resampled frames back (16kHz)
-                    const resampledFrames = this.audioResampler.push(value);
+                    // Use audio directly without resampling
+                    const audioBuffer = Buffer.from(
+                      value.data.buffer,
+                      value.data.byteOffset,
+                      value.data.byteLength
+                    );
 
-                    // Add resampled frames to buffer instead of processing directly
-                    for (const resampledFrame of resampledFrames) {
-                      const resampledBuffer = Buffer.from(
-                        resampledFrame.data.buffer,
-                        resampledFrame.data.byteOffset,
-                        resampledFrame.data.byteLength
-                      );
-
-                      // Append to frame buffer
-                      this.frameBuffer = Buffer.concat([this.frameBuffer, resampledBuffer]);
-                      totalBytes += resampledBuffer.length;
-                    }
+                    // Append to frame buffer
+                    this.frameBuffer = Buffer.concat([this.frameBuffer, audioBuffer]);
+                    totalBytes += audioBuffer.length;
 
                     const timestamp = (Date.now() - this.connection.udp.startTime) & 0xffffffff;
 
@@ -642,10 +528,10 @@ class LiveKitBridge extends Emitter {
         resolve({
           session_id: roomName,
           audio_params: {
-            sample_rate: 24000,
+            sample_rate: 48000,
             channels: 1,
-            frame_duration: 60,
-            format: "opus"
+            frame_duration: 20,
+            format: "pcm"
           }
         });
       } catch (error) {
@@ -665,54 +551,18 @@ class LiveKitBridge extends Emitter {
     }
 
     try {
-      // Check if data is Opus and decode it
-      const isOpus = this.checkOpusFormat(opusData);
+      // Treat all incoming data as PCM (no decoding needed)
+      const samples = new Int16Array(
+        opusData.buffer,
+        opusData.byteOffset,
+        opusData.length / 2
+      );
+      const frame = new AudioFrame(samples, 48000, 1, samples.length);
 
-
-
-     // console.log(`🔍 [AUDIO] Detected format for incoming data: ${isOpus ? "Opus" : "PCM or Unknown"}`);
-      if (isOpus) {
-        if (opusDecoder) {
-          try {
-            // Decode Opus to PCM
-            const pcmBuffer = opusDecoder.decode(opusData, 960);
-
-           // console.log(`✅ [OPUS DECODE] Decoded to ${pcmBuffer.length}B PCM`);
-
-            if (pcmBuffer && pcmBuffer.length > 0) {
-              // Convert Buffer to Int16Array
-              const samples = new Int16Array(
-                pcmBuffer.buffer,
-                pcmBuffer.byteOffset,
-                pcmBuffer.length / 2
-              );
-              const frame = new AudioFrame(samples, 16000, 1, samples.length);
-
-              // Safe capture with error handling
-              this.safeCaptureFrame(frame).catch(err => {
-              console.error(`❌ [AUDIO] Unhandled error in safeCaptureFrame: ${err.message}`);
-              });;
-            }
-          } catch (err) {
-            console.error(`❌ [OPUS] Decode error: ${err.message}`);
-          }
-        } else {
-          console.error(`❌ [ERROR] Opus decoder not available!`);
-        }
-      } else {
-        // Treat as PCM
-        const samples = new Int16Array(
-          opusData.buffer,
-          opusData.byteOffset,
-          opusData.length / 2
-        );
-        const frame = new AudioFrame(samples, 16000, 1, samples.length);
-
-        // Safe capture with error handling
-        this.safeCaptureFrame(frame).catch(err => {
-              console.error(`❌ [AUDIO] Unhandled error in safeCaptureFrame: ${err.message}`);
-              });;
-      }
+      // Safe capture with error handling
+      this.safeCaptureFrame(frame).catch(err => {
+        console.error(`❌ [AUDIO] Unhandled error in safeCaptureFrame: ${err.message}`);
+      });
     } catch (error) {
       console.error(`❌ [AUDIO] Error in sendAudio: ${error.message}`);
     }
@@ -741,7 +591,7 @@ class LiveKitBridge extends Emitter {
       if (error.message.includes('InvalidState')) {
         console.log(`🔄 [AUDIO] Attempting to reinitialize AudioSource due to InvalidState`);
         try {
-          this.audioSource = new AudioSource(16000, 1);
+          this.audioSource = new AudioSource(48000, 1);
           console.log(`✅ [AUDIO] AudioSource reinitialized successfully`);
         } catch (reinitError) {
           console.error(`❌ [AUDIO] Failed to reinitialize AudioSource: ${reinitError.message}`);
@@ -750,214 +600,9 @@ class LiveKitBridge extends Emitter {
     }
   }
 
-  analyzeAudioFormat(audioData, timestamp) {
-    // Check for Opus magic signature
-    const isOpus = this.checkOpusFormat(audioData);
-    const isPCM = this.checkPCMFormat(audioData);
-
-    console.log(`🔍 [AUDIO ANALYSIS] Format Detection:`);
-    console.log(`   📊 Size: ${audioData.length} bytes`);
-    console.log(`   🎵 Timestamp: ${timestamp}`);
-    console.log(
-      `   📋 First 16 bytes: ${audioData.slice(0, Math.min(16, audioData.length)).toString("hex")}`
-    );
-    console.log(
-      `   🎼 Opus signature: ${isOpus ? "✅ DETECTED" : "❌ NOT FOUND"}`
-    );
-    console.log(
-      `   🎤 PCM characteristics: ${isPCM ? "✅ LIKELY PCM" : "❌ UNLIKELY PCM"}`
-    );
-
-    // Additional analysis
-    this.analyzeAudioStatistics(audioData);
-  }
+  // Simplified audio processing - no format analysis needed for direct PCM streaming
 
 
-  checkOpusFormat(data) {
-      if (data.length < 1) return false;
-
-      // ESP32 sends 60ms OPUS frames at 16kHz mono with complexity=0
-      const MIN_OPUS_SIZE = 1;    // Minimum OPUS packet (can be very small for silence)
-      const MAX_OPUS_SIZE = 400;  // Maximum OPUS packet for 60ms@16kHz
-
-      // Validate packet size range
-      if (data.length < MIN_OPUS_SIZE || data.length > MAX_OPUS_SIZE) {
-          console.log(`❌ Invalid OPUS size: ${data.length}B (expected ${MIN_OPUS_SIZE}-${MAX_OPUS_SIZE}B)`);
-          return false;
-      }
-
-
-      // Check OPUS TOC (Table of Contents) byte
-      const firstByte = data[0];
-      const config = (firstByte >> 3) & 0x1f;        // Bits 7-3: config (0-31)
-      const stereo = (firstByte >> 2) & 0x01;        // Bit 2: stereo flag
-      const frameCount = firstByte & 0x03;           // Bits 1-0: frame count
-
-
-     // console.log(`🔍 OPUS TOC: config=${config}, stereo=${stereo}, frames=${frameCount}, size=${data.length}B`);
-
-
-      // Validate OPUS TOC byte
-      const validConfig = config >= 0 && config <= 31;
-      const validStereo = stereo === 0;  // ESP32 sends mono (stereo=0)
-      const validFrameCount = frameCount >= 0 && frameCount <= 3;
-
-      // ✅ FIXED: Accept ALL valid OPUS configs (0-31) for ESP32 with complexity=0
-      // ESP32 with complexity=0 can use various configs depending on audio content
-      const validOpusConfigs = [
-        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  // NB/MB/WB configs
-        16, 17, 18, 19,                                          // SWB configs
-        20, 21, 22, 23,                                          // FB configs
-        24, 25, 26, 27, 28, 29, 30, 31                          // Hybrid configs
-      ];
-      const isValidConfig = validOpusConfigs.includes(config);
-
-      // ✅ FIXED: More lenient validation - just check basic OPUS structure
-      const isValidOpus = validConfig && validStereo && validFrameCount && isValidConfig;
-
-
-     // console.log(`📊 OPUS validation: config=${validConfig}(${config}), mono=${validStereo}, frames=${validFrameCount}, validConfig=${isValidConfig} → ${isValidOpus ? "✅ VALID" : "❌ INVALID"}`);
-
-      // ✅ ADDITIONAL: Log first few bytes for debugging
-      if (!isValidOpus) {
-        const hexDump = data.slice(0, Math.min(8, data.length)).toString('hex');
-      //  console.log(`🔍 OPUS debug - first ${Math.min(8, data.length)} bytes: ${hexDump}`);
-      }
-
-      return isValidOpus;
-  }
-
-
-  checkOpusMarkers(data) {
-    // Look for common Opus packet patterns
-    if (data.length < 4) return false;
-
-    // Check for Opus frame size patterns (common sizes: 120, 240, 480, 960, 1920, 2880 samples)
-    // At 16kHz: 120 samples = 7.5ms, 240 = 15ms, 480 = 30ms, etc.
-    const commonOpusSizes = [20, 40, 60, 80, 120, 160, 240, 320, 480, 640, 960];
-    const isCommonOpusSize = commonOpusSizes.includes(data.length);
-
-    // console.log(
-    //   `   📏 Common Opus size (${data.length}B): ${isCommonOpusSize ? "✅" : "❌"}`
-    // );
-
-    return isCommonOpusSize;
-  }
-
-  checkPCMFormat(data) {
-    if (data.length < 32) return false;
-
-    // PCM characteristics analysis
-    const samples = new Int16Array(
-      data.buffer,
-      data.byteOffset,
-      Math.min(data.length / 2, 16)
-    );
-
-    // Calculate basic statistics
-    let sum = 0;
-    let maxAbs = 0;
-    let zeroCount = 0;
-
-    for (let i = 0; i < samples.length; i++) {
-      const sample = samples[i];
-      sum += Math.abs(sample);
-      maxAbs = Math.max(maxAbs, Math.abs(sample));
-      if (sample === 0) zeroCount++;
-    }
-
-    const avgAmplitude = sum / samples.length;
-    const zeroRatio = zeroCount / samples.length;
-
-    console.log(`   📈 PCM Statistics:`);
-    console.log(`      🔊 Avg amplitude: ${avgAmplitude.toFixed(1)}`);
-    console.log(`      📊 Max amplitude: ${maxAbs}`);
-    console.log(`      🔇 Zero ratio: ${(zeroRatio * 100).toFixed(1)}%`);
-    console.log(`      📐 Sample count: ${samples.length}`);
-
-    // PCM heuristics
-    const hasReasonableAmplitude = avgAmplitude > 10 && avgAmplitude < 10000;
-    const hasVariation = maxAbs > 100;
-    const notTooManyZeros = zeroRatio < 0.8;
-    const reasonableSize = data.length >= 160 && data.length <= 3840; // 10ms to 240ms at 16kHz
-
-    console.log(`   ✅ PCM Checks:`);
-    console.log(
-      `      🔊 Reasonable amplitude: ${hasReasonableAmplitude ? "✅" : "❌"}`
-    );
-    console.log(`      📊 Has variation: ${hasVariation ? "✅" : "❌"}`);
-    console.log(
-      `      🔇 Not too many zeros: ${notTooManyZeros ? "✅" : "❌"}`
-    );
-    console.log(`      📏 Reasonable size: ${reasonableSize ? "✅" : "❌"}`);
-
-    return (
-      hasReasonableAmplitude &&
-      hasVariation &&
-      notTooManyZeros &&
-      reasonableSize
-    );
-  }
-
-  analyzeAudioStatistics(data) {
-    // Frame size analysis for common audio formats
-    const frameSizeAnalysis = this.analyzeFrameSize(data.length);
-    console.log(`   ⏱️  Frame Analysis: ${frameSizeAnalysis}`);
-
-    // Entropy analysis (compressed data has higher entropy)
-    const entropy = this.calculateEntropy(data);
-    console.log(
-      `   🎲 Data entropy: ${entropy.toFixed(3)} (PCM: ~7-11, Opus: ~7.5-8)`
-    );
-  }
-
-  analyzeFrameSize(size) {
-    // Common frame sizes for different formats at 16kHz
-    const formats = {
-      "PCM 10ms": 320, // 160 samples * 2 bytes
-      "PCM 20ms": 640, // 320 samples * 2 bytes
-      "PCM 30ms": 960, // 480 samples * 2 bytes
-      "PCM 60ms": 1920, // 960 samples * 2 bytes
-      "Opus 20ms": 40, // Typical Opus frame
-      "Opus 40ms": 80, // Typical Opus frame
-      "Opus 60ms": 120, // Typical Opus frame
-    };
-
-    for (const [format, expectedSize] of Object.entries(formats)) {
-      if (size === expectedSize) {
-        return `${format} (exact match)`;
-      }
-    }
-
-    // Check for close matches
-    for (const [format, expectedSize] of Object.entries(formats)) {
-      if (Math.abs(size - expectedSize) <= 10) {
-        return `${format} (close match, diff: ${size - expectedSize})`;
-      }
-    }
-
-    return `Unknown format (${size}B)`;
-  }
-
-  calculateEntropy(data) {
-    const freq = new Array(256).fill(0);
-
-    // Count byte frequencies
-    for (let i = 0; i < data.length; i++) {
-      freq[data[i]]++;
-    }
-
-    // Calculate entropy
-    let entropy = 0;
-    for (let i = 0; i < 256; i++) {
-      if (freq[i] > 0) {
-        const p = freq[i] / data.length;
-        entropy -= p * Math.log2(p);
-      }
-    }
-
-    return entropy;
-  }
 
   isAlive() {
     return this.room && this.room.isConnected;
@@ -3541,27 +3186,13 @@ class MQTTGateway {
         // Calculate timestamp for this frame
         const timestamp = (baseTimestamp + (frameCount * 60)) & 0xffffffff;
 
-        // Encode to Opus (same as LiveKit audio streaming)
-        if (opusEncoder) {
-          try {
-            const opusBuffer = opusEncoder.encode(frameTosend, FRAME_SIZE_SAMPLES);
-
-            if (frameCount % 20 === 0) {
-              console.log(`🎵 [MODE-CHANGE] Frame ${frameCount}: PCM ${frameTosend.length}B → Opus ${opusBuffer.length}B`);
-            }
-
-            // Send via UDP (will be encrypted automatically)
-            connection.sendUdpMessage(opusBuffer, timestamp);
-          } catch (err) {
-            console.error(`❌ [MODE-CHANGE] Opus encode error:`, err.message);
-            // Fallback to PCM
-            connection.sendUdpMessage(frameTosend, timestamp);
-          }
-        } else {
-          // No Opus encoder available, send PCM directly
-          console.warn(`⚠️ [MODE-CHANGE] No Opus encoder, sending PCM`);
-          connection.sendUdpMessage(frameTosend, timestamp);
+        // Send PCM directly (no encoding needed)
+        if (frameCount % 20 === 0) {
+          console.log(`🎵 [MODE-CHANGE] Frame ${frameCount}: PCM ${frameTosend.length}B sent directly`);
         }
+
+        // Send via UDP
+        connection.sendUdpMessage(frameTosend, timestamp);
 
         offset += FRAME_SIZE_BYTES;
         frameCount++;
