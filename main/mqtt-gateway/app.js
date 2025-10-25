@@ -26,74 +26,54 @@ const {
   AudioResampler,
   AudioResamplerQuality,
 } = require("@livekit/rtc-node");
-// Import Opus Encoder and Decoder with fallback chain
-let OpusEncoder, OpusDecoder, OpusApplication;
+// ========================================
+// PHASE 1 OPTIMIZATION: Native Opus Only (@discordjs/opus)
+// ========================================
+// Use only @discordjs/opus (native libopus bindings) for maximum performance
+let OpusEncoder, OpusDecoder;
 let opusLib = null;
 
-// Try @voicehype/audify-plus first
 try {
-  const audifyPlus = require("@voicehype/audify-plus");
-  OpusEncoder = audifyPlus.OpusEncoder;
-  OpusDecoder = audifyPlus.OpusDecoder;
-  OpusApplication = audifyPlus.OpusApplication;
-  opusLib = "audify-plus";
-  console.log("✅ [OPUS] audify-plus package loaded successfully");
+  const discordOpus = require("@discordjs/opus");
+  OpusEncoder = discordOpus.OpusEncoder;
+  OpusDecoder = discordOpus.OpusEncoder; // Discord opus uses same class for encoding/decoding
+  opusLib = "@discordjs/opus";
+  console.log("✅ [OPUS PHASE-1] Using native @discordjs/opus only (libopus bindings - OPTIMIZED)");
 } catch (err) {
-  console.log("⚠️ [OPUS] audify-plus not available:", err.message);
-
-  // Fallback to @discordjs/opus
-  try {
-    const discordOpus = require("@discordjs/opus");
-    // Discord opus has OpusEncoder class
-    OpusEncoder = discordOpus.OpusEncoder;
-    OpusDecoder = discordOpus.OpusEncoder; // Discord opus uses same class for encoding/decoding
-    OpusApplication = { OPUS_APPLICATION_AUDIO: "audio" }; // Discord opus doesn't expose this
-    opusLib = "@discordjs/opus";
-    console.log("✅ [OPUS] @discordjs/opus package loaded successfully");
-  } catch (err2) {
-    console.log("⚠️ [OPUS] @discordjs/opus not available:", err2.message);
-    console.log("⚠️ [OPUS] No Opus library available, operating in PCM mode only");
-    OpusEncoder = null;
-    OpusDecoder = null;
-    OpusApplication = null;
-  }
+  console.error("❌ [OPUS] @discordjs/opus not available:", err.message);
+  console.error("❌ [OPUS] Cannot proceed without Opus library. Please run: npm install @discordjs/opus");
+  OpusEncoder = null;
+  OpusDecoder = null;
+  process.exit(1); // Exit if Opus not available - it's required
 }
 
 // Initialize Opus encoder for 24kHz mono (outgoing), decoder for 16kHz mono (incoming)
 let opusEncoder = null;
 let opusDecoder = null;
+
 // Define constants for audio parameters
 const OUTGOING_SAMPLE_RATE = 24000;  // Hz - for LiveKit → ESP32
 const INCOMING_SAMPLE_RATE = 16000;  // Hz - for ESP32 → LiveKit
 const CHANNELS = 1;            // Mono
 const OUTGOING_FRAME_DURATION_MS = 60;  // 60ms frames for outgoing (LiveKit → ESP32)
-const INCOMING_FRAME_DURATION_MS = 60;  // 20ms frames for incoming (ESP32 → LiveKit)
+const INCOMING_FRAME_DURATION_MS = 60;  // 60ms frames for incoming (ESP32 → LiveKit)
 const OUTGOING_FRAME_SIZE_SAMPLES = (OUTGOING_SAMPLE_RATE * OUTGOING_FRAME_DURATION_MS) / 1000; // 24000 * 60 / 1000 = 1440
-const INCOMING_FRAME_SIZE_SAMPLES = (INCOMING_SAMPLE_RATE * INCOMING_FRAME_DURATION_MS) / 1000; // 16000 * 20 / 1000 = 320
+const INCOMING_FRAME_SIZE_SAMPLES = (INCOMING_SAMPLE_RATE * INCOMING_FRAME_DURATION_MS) / 1000; // 16000 * 60 / 1000 = 960
 const OUTGOING_FRAME_SIZE_BYTES = OUTGOING_FRAME_SIZE_SAMPLES * 2; // 1440 samples * 2 bytes/sample = 2880 bytes PCM
-const INCOMING_FRAME_SIZE_BYTES = INCOMING_FRAME_SIZE_SAMPLES * 2; // 320 samples * 2 bytes/sample = 640 bytes PCM
+const INCOMING_FRAME_SIZE_BYTES = INCOMING_FRAME_SIZE_SAMPLES * 2; // 960 samples * 2 bytes/sample = 1920 bytes PCM
 
-if (OpusEncoder && OpusDecoder) {
+if (OpusEncoder) {
   try {
-    if (opusLib === "audify-plus") {
-      // audify-plus API: new OpusEncoder(sampleRate, channels, application)
-      opusEncoder = new OpusEncoder(24000, 1, OpusApplication.OPUS_APPLICATION_AUDIO);
-      opusDecoder = new OpusDecoder(16000, 1);
-      console.log("✅ [OPUS] audify-plus encoder/decoder initialized - encoder: 24kHz, decoder: 16kHz mono");
-    } else if (opusLib === "@discordjs/opus") {
-      // @discordjs/opus API: new OpusEncoder(sampleRate, channels)
-      opusEncoder = new OpusEncoder(24000, 1);
-      opusDecoder = new OpusDecoder(16000, 1);
-      console.log("✅ [OPUS] @discordjs/opus encoder/decoder initialized - encoder: 24kHz, decoder: 16kHz mono");
-    }
+    // @discordjs/opus API: new OpusEncoder(sampleRate, channels)
+    opusEncoder = new OpusEncoder(OUTGOING_SAMPLE_RATE, CHANNELS);
+    opusDecoder = new OpusEncoder(INCOMING_SAMPLE_RATE, CHANNELS); // Same class for decode
+    console.log(`✅ [OPUS PHASE-1] Native encoder/decoder initialized:`);
+    console.log(`   Encoder: ${OUTGOING_SAMPLE_RATE}Hz ${OUTGOING_FRAME_DURATION_MS}ms mono`);
+    console.log(`   Decoder: ${INCOMING_SAMPLE_RATE}Hz ${INCOMING_FRAME_DURATION_MS}ms mono`);
   } catch (err) {
-    console.error(`❌ [OPUS] Failed to initialize ${opusLib} encoder/decoder:`, err.message);
-    opusEncoder = null;
-    opusDecoder = null;
-    // Fallback: Disable Opus if init fails (will fall back to PCM)
+    console.error(`❌ [OPUS] Failed to initialize encoder/decoder:`, err.message);
+    process.exit(1); // Exit if initialization fails
   }
-} else {
-  console.log("⚠️ [OPUS] Opus classes not available, operating in PCM mode only");
 }
 
 const mqtt = require("mqtt");
@@ -665,19 +645,16 @@ class LiveKitBridge extends Emitter {
     }
 
     try {
-      // Check if data is Opus and decode it
+      // PHASE 1: Improved Opus detection - check if data is likely Opus
       const isOpus = this.checkOpusFormat(opusData);
 
-
-
-     // console.log(`🔍 [AUDIO] Detected format for incoming data: ${isOpus ? "Opus" : "PCM or Unknown"}`);
       if (isOpus) {
         if (opusDecoder) {
           try {
-            // Decode Opus to PCM
-            const pcmBuffer = opusDecoder.decode(opusData, 960);
+            // PHASE 1: @discordjs/opus decode - no frame size parameter needed
+            const pcmBuffer = opusDecoder.decode(opusData);
 
-           // console.log(`✅ [OPUS DECODE] Decoded to ${pcmBuffer.length}B PCM`);
+            // console.log(`✅ [OPUS DECODE] Decoded ${opusData.length}B Opus → ${pcmBuffer.length}B PCM`);
 
             if (pcmBuffer && pcmBuffer.length > 0) {
               // Convert Buffer to Int16Array
@@ -690,17 +667,30 @@ class LiveKitBridge extends Emitter {
 
               // Safe capture with error handling
               this.safeCaptureFrame(frame).catch(err => {
-              console.error(`❌ [AUDIO] Unhandled error in safeCaptureFrame: ${err.message}`);
-              });;
+                console.error(`❌ [AUDIO] Unhandled error in safeCaptureFrame: ${err.message}`);
+              });
             }
           } catch (err) {
             console.error(`❌ [OPUS] Decode error: ${err.message}`);
+            console.error(`    Data size: ${opusData.length}B, First 8 bytes: ${opusData.slice(0, Math.min(8, opusData.length)).toString('hex')}`);
+
+            // PHASE 1: Fallback to PCM if Opus decode fails (likely false positive detection)
+            console.log(`⚠️ [FALLBACK] Treating as PCM instead`);
+            const samples = new Int16Array(
+              opusData.buffer,
+              opusData.byteOffset,
+              opusData.length / 2
+            );
+            const frame = new AudioFrame(samples, 16000, 1, samples.length);
+            this.safeCaptureFrame(frame).catch(err => {
+              console.error(`❌ [AUDIO] PCM fallback failed: ${err.message}`);
+            });
           }
         } else {
           console.error(`❌ [ERROR] Opus decoder not available!`);
         }
       } else {
-        // Treat as PCM
+        // Treat as PCM directly
         const samples = new Int16Array(
           opusData.buffer,
           opusData.byteOffset,
@@ -710,8 +700,8 @@ class LiveKitBridge extends Emitter {
 
         // Safe capture with error handling
         this.safeCaptureFrame(frame).catch(err => {
-              console.error(`❌ [AUDIO] Unhandled error in safeCaptureFrame: ${err.message}`);
-              });;
+          console.error(`❌ [AUDIO] Unhandled error in safeCaptureFrame: ${err.message}`);
+        });
       }
     } catch (error) {
       console.error(`❌ [AUDIO] Error in sendAudio: ${error.message}`);
