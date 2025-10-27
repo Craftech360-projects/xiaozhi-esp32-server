@@ -1539,7 +1539,10 @@ jobs:
             # Create expect script for lk agent deploy using base64 to avoid quote issues
             echo IyEvdXNyL2Jpbi9leHBlY3QgLWYKc2V0IHRpbWVvdXQgNjAwCnNwYXduIGxrIGFnZW50IGRlcGxveQpleHBlY3QgewogICAgInRvZ2dsZSIgeyBzZW5kICJcciI7IGV4cF9jb250aW51ZSB9CiAgICAic3VibWl0IiB7IHNlbmQgIlxyIjsgZXhwX2NvbnRpbnVlIH0KICAgICJZZXMiIHsgc2VuZCAieVxyIjsgZXhwX2NvbnRpbnVlIH0KICAgICJTZWxlY3QgYW5vdGhlciIgeyBzZW5kICJcciI7IGV4cF9jb250aW51ZSB9CiAgICBlb2YgeyBjYXRjaCB3YWl0IHJlc3VsdDsgZXhpdCBbbGluZGV4ICRyZXN1bHQgM10gfQogICAgdGltZW91dCB7IHB1dHMgIkVSUk9SOiBDb21tYW5kIHRpbWVkIG91dCI7IGV4aXQgMSB9Cn0K | base64 -d > /tmp/lk_agent_deploy.exp
 
-            chmod +x /tmp/lk_agent_create.exp /tmp/lk_agent_deploy.exp
+            # Create expect script for lk agent config using base64 to avoid quote issues
+            echo IyEvdXNyL2Jpbi9leHBlY3QgLWYKc2V0IHRpbWVvdXQgNjAwCnNwYXduIGxrIGFnZW50IGNvbmZpZwpleHBlY3QgewogICAgIlNlbGVjdCBhbiBhZ2VudCIgeyBzZW5kICJcciI7IGV4cF9jb250aW51ZSB9CiAgICAidG9nZ2xlIiB7IHNlbmQgIlxyIjsgZXhwX2NvbnRpbnVlIH0KICAgICJzdWJtaXQiIHsgc2VuZCAiXHIiOyBleHBfY29udGludWUgfQogICAgIlllcyIgeyBzZW5kICJ5XHIiOyBleHBfY29udGludWUgfQogICAgIlNlbGVjdCBhbm90aGVyIiB7IHNlbmQgIlxyIjsgZXhwX2NvbnRpbnVlIH0KICAgIGVvZiB7IGNhdGNoIHdhaXQgcmVzdWx0OyBleGl0IFtsaW5kZXggJHJlc3VsdCAzXSB9CiAgICB0aW1lb3V0IHsgcHV0cyAiRVJST1I6IENvbW1hbmQgdGltZWQgb3V0IjsgZXhpdCAxIH0KfQo= | base64 -d > /tmp/lk_agent_config.exp
+
+            chmod +x /tmp/lk_agent_create.exp /tmp/lk_agent_deploy.exp /tmp/lk_agent_config.exp
 
             # Check if livekit.toml exists, if not try to regenerate or create
             if [ ! -f "livekit.toml" ]; then
@@ -1547,7 +1550,7 @@ jobs:
               echo "🔧 Attempting to regenerate config from cloud (if agent exists)..."
 
               # Try to regenerate config first (fast, works if agent exists)
-              if lk agent config 2>&1 | tee /tmp/config_output.log; then
+              if /tmp/lk_agent_config.exp 2>&1 | tee /tmp/config_output.log; then
                 echo "✅ Configuration regenerated from existing cloud agent"
               else
                 CONFIG_EXIT_CODE=$?
