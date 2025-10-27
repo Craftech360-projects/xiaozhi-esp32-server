@@ -420,7 +420,7 @@ class WorkerPoolManager {
     this.workerPendingCount = []; // Track pending requests per worker for load balancing
 
     // DYNAMIC SCALING: Configuration
-    this.minWorkers = 2; // Minimum workers (always keep at least 2)
+    this.minWorkers = 4; // Minimum workers (always keep at least 2)
     this.maxWorkers = 8; // Maximum workers (cap based on typical CPU cores)
     this.scaleUpThreshold = 0.7; // Scale up when workers are 70% loaded
     this.scaleDownThreshold = 0.3; // Scale down when workers are 30% loaded
@@ -432,6 +432,13 @@ class WorkerPoolManager {
     this.scaleDownCooldown = 60000; // Wait 60s after scaling down
 
     this.initializeWorkers();
+
+    // Ensure we start with at least minWorkers
+    if (this.workerCount < this.minWorkers) {
+      console.log(`⚠️  [WORKER-POOL] Starting with ${this.workerCount} workers, scaling to minWorkers (${this.minWorkers})`);
+      this.workerCount = this.minWorkers;
+    }
+
     this.startAutoScaling();
   }
 
@@ -913,7 +920,7 @@ class LiveKitBridge extends Emitter {
     this.targetFrameBytes = this.targetFrameSize * 2; // 2880 bytes for 16-bit PCM
 
     // PHASE 2: Initialize Worker Pool for parallel audio processing
-    this.workerPool = new WorkerPoolManager(2); // 2 workers for load balancing
+    this.workerPool = new WorkerPoolManager(4); // Start with minWorkers (4) for proper scaling
     console.log(`✅ [PHASE-2] Worker pool initialized for ${this.macAddress}`);
 
     // Start periodic metrics logging (every 30 seconds)
