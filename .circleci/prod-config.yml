@@ -1514,7 +1514,7 @@ jobs:
 
       - run:
           name: Deploy Agent to LiveKit Cloud (Rolling Deployment)
-          no_output_timeout: 15m
+          no_output_timeout: 45m
           command: |
             : "${LIVEKIT_URL:?Set LIVEKIT_URL in CircleCI context}"
             : "${LIVEKIT_API_KEY:?Set LIVEKIT_API_KEY in CircleCI context}"

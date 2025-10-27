@@ -40,9 +40,27 @@ coverage/
 # Project docs and misc
 README.md
 LICENSE
+*.md
 
 # Project tests
 test/
 tests/
 eval/
 evals/
+
+# Model cache and build artifacts (downloaded during Docker build)
+model_cache/
+models/
+downloads/
+build/
+transcripts/
+
+# CircleCI and CI/CD files
+.circleci/
+livekit.toml
+
+# Additional Python artifacts
+*.egg
+*.wheel
+.mypy_cache/
+.tox/
