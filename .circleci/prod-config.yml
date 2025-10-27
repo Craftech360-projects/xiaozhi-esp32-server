@@ -1504,6 +1504,19 @@ jobs:
             echo "✅ LiveKit CLI, UV, and expect installed successfully"
 
       - run:
+          name: Update UV Lock File
+          command: |
+            cd main/livekit-server
+
+            # Add UV to PATH
+            export PATH="$HOME/.local/bin:$PATH"
+
+            echo "🔒 Updating uv.lock file..."
+            uv lock
+
+            echo "✅ Dependencies locked successfully"
+
+      - run:
           name: Deploy Agent to LiveKit Cloud (Rolling Deployment)
           no_output_timeout: 10m
           command: |
