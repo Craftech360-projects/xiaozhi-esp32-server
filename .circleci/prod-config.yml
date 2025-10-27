@@ -1518,17 +1518,17 @@ jobs:
 
             # Check if agent already exists
             if [ -f "livekit.toml" ]; then
-              AGENT_ID=$(grep -oP 'id\s*=\s*"\K[^"]+' livekit.toml || echo "")
+              AGENT_ID=$(grep -oP 'id\s*=\s*"\K[^"]+' livekit.toml 2>/dev/null || grep 'id' livekit.toml | cut -d'"' -f2 || echo "")
 
               if [ -n "$AGENT_ID" ]; then
                 echo "📋 Found existing agent ID: $AGENT_ID"
                 echo "🔄 Using rolling deployment (lk agent deploy)..."
 
-                # Use rolling deployment for existing agent
-                lk agent deploy || {
+                # Use rolling deployment for existing agent (non-interactive)
+                yes | lk agent deploy || {
                   echo "❌ Agent deployment failed"
                   echo "📋 Agent status:"
-                  lk agent status
+                  lk agent status || true
                   exit 1
                 }
 
@@ -1536,7 +1536,7 @@ jobs:
               else
                 echo "⚠️  livekit.toml exists but no agent ID found"
                 echo "🚀 Creating new agent..."
-                lk agent create || {
+                yes | lk agent create || {
                   echo "❌ Agent creation failed"
                   exit 1
                 }
@@ -1545,8 +1545,8 @@ jobs:
               echo "📋 No livekit.toml found"
               echo "🚀 Creating new agent (first deployment)..."
 
-              # First deployment - create new agent
-              lk agent create || {
+              # First deployment - create new agent (pipe 'yes' to auto-confirm prompts)
+              yes | lk agent create || {
                 echo "❌ Agent creation failed"
                 exit 1
               }
