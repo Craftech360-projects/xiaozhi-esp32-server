@@ -1541,52 +1541,82 @@ jobs:
 
             chmod +x /tmp/lk_agent_create.exp /tmp/lk_agent_deploy.exp
 
-            # Check if agent already exists
-            if [ -f "livekit.toml" ]; then
-              AGENT_ID=$(grep 'id' livekit.toml | grep -o '"[^"]*"' | head -1 | tr -d '"' || echo "")
+            # Check if livekit.toml exists, if not try to regenerate it
+            if [ ! -f "livekit.toml" ]; then
+              echo "📋 No livekit.toml found locally"
+              echo "🔧 Checking if agent exists on cloud..."
 
-              if [ -n "$AGENT_ID" ]; then
-                echo "📋 Found existing agent ID: $AGENT_ID"
-                echo "🔄 Using rolling deployment (lk agent deploy)..."
+              # Check if agent exists on cloud
+              if lk agent status 2>&1 | tee /tmp/agent_check.log | grep -q "agent"; then
+                echo "⚠️  Agent exists on cloud but livekit.toml is missing locally"
+                echo "🔧 Regenerating livekit.toml configuration..."
 
-                # Use rolling deployment for existing agent with expect
-                /tmp/lk_agent_deploy.exp || {
-                  echo "❌ Agent deployment failed"
-                  echo "📋 Agent status:"
-                  lk agent status || true
-                  exit 1
+                # Regenerate config from cloud
+                lk agent config || {
+                  echo "❌ Failed to regenerate livekit.toml"
+                  echo "💡 Trying to create new agent instead..."
+
+                  # If regeneration fails, try to create new agent
+                  /tmp/lk_agent_create.exp 2>&1 | tee /tmp/create_output.log || {
+                    CREATE_EXIT_CODE=$?
+
+                    # Check if it failed because agent already exists
+                    if grep -q "maximum number of agents reached" /tmp/create_output.log; then
+                      echo "❌ Cannot create: agent limit reached and config regeneration failed"
+                      echo "💡 Manual intervention required:"
+                      echo "   1. Delete existing agent on LiveKit Cloud, OR"
+                      echo "   2. Manually get agent config and commit livekit.toml"
+                      exit 1
+                    else
+                      echo "❌ Agent creation failed"
+                      exit $CREATE_EXIT_CODE
+                    fi
+                  }
+
+                  echo "✅ Agent created successfully!"
                 }
 
-                echo "✅ Rolling deployment completed successfully!"
+                echo "✅ Configuration regenerated from cloud"
               else
-                echo "⚠️  livekit.toml exists but no agent ID found"
-                echo "🚀 Creating new agent..."
-                /tmp/lk_agent_create.exp || {
-                  echo "❌ Agent creation failed"
-                  exit 1
+                echo "📋 No agent found on cloud"
+                echo "🚀 Creating new agent (first deployment)..."
+
+                /tmp/lk_agent_create.exp 2>&1 | tee /tmp/create_output.log || {
+                  CREATE_EXIT_CODE=$?
+
+                  # Check if it failed because agent already exists
+                  if grep -q "maximum number of agents reached" /tmp/create_output.log; then
+                    echo "⚠️  Agent exists but wasn't detected by status check"
+                    echo "🔧 Attempting config regeneration..."
+
+                    lk agent config || {
+                      echo "❌ Config regeneration also failed"
+                      exit 1
+                    }
+
+                    echo "✅ Configuration regenerated"
+                  else
+                    echo "❌ Agent creation failed"
+                    exit $CREATE_EXIT_CODE
+                  fi
                 }
+
+                echo "✅ Agent created successfully!"
               fi
-            else
-              echo "📋 No livekit.toml found"
-              echo "🚀 Creating new agent (first deployment)..."
-
-              # First deployment - create new agent with expect
-              /tmp/lk_agent_create.exp || {
-                EXIT_CODE=$?
-                echo "❌ Agent creation returned exit code $EXIT_CODE"
-
-                # Check if livekit.toml was created despite error
-                if [ -f "livekit.toml" ]; then
-                  echo "✅ livekit.toml was created, considering deployment successful"
-                  exit 0
-                else
-                  echo "❌ Agent creation failed - no livekit.toml found"
-                  exit $EXIT_CODE
-                fi
-              }
-
-              echo "✅ Agent created successfully!"
             fi
+
+            # At this point, livekit.toml should exist, proceed with deployment
+            echo "📋 livekit.toml found, proceeding with deployment..."
+            echo "🔄 Deploying agent to LiveKit Cloud..."
+
+            /tmp/lk_agent_deploy.exp || {
+              echo "❌ Agent deployment failed"
+              echo "📋 Agent status:"
+              lk agent status || true
+              exit 1
+            }
+
+            echo "✅ Deployment completed successfully!"
 
             echo "⏳ Waiting for deployment to stabilize..."
             sleep 10
