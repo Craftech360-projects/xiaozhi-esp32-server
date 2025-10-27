@@ -1541,44 +1541,19 @@ jobs:
 
             chmod +x /tmp/lk_agent_create.exp /tmp/lk_agent_deploy.exp
 
-            # Check if livekit.toml exists, if not try to regenerate it
+            # Check if livekit.toml exists, if not try to regenerate or create
             if [ ! -f "livekit.toml" ]; then
               echo "📋 No livekit.toml found locally"
-              echo "🔧 Checking if agent exists on cloud..."
+              echo "🔧 Attempting to regenerate config from cloud (if agent exists)..."
 
-              # Check if agent exists on cloud
-              if lk agent status 2>&1 | tee /tmp/agent_check.log | grep -q "agent"; then
-                echo "⚠️  Agent exists on cloud but livekit.toml is missing locally"
-                echo "🔧 Regenerating livekit.toml configuration..."
-
-                # Regenerate config from cloud
-                lk agent config || {
-                  echo "❌ Failed to regenerate livekit.toml"
-                  echo "💡 Trying to create new agent instead..."
-
-                  # If regeneration fails, try to create new agent
-                  /tmp/lk_agent_create.exp 2>&1 | tee /tmp/create_output.log || {
-                    CREATE_EXIT_CODE=$?
-
-                    # Check if it failed because agent already exists
-                    if grep -q "maximum number of agents reached" /tmp/create_output.log; then
-                      echo "❌ Cannot create: agent limit reached and config regeneration failed"
-                      echo "💡 Manual intervention required:"
-                      echo "   1. Delete existing agent on LiveKit Cloud, OR"
-                      echo "   2. Manually get agent config and commit livekit.toml"
-                      exit 1
-                    else
-                      echo "❌ Agent creation failed"
-                      exit $CREATE_EXIT_CODE
-                    fi
-                  }
-
-                  echo "✅ Agent created successfully!"
-                }
-
-                echo "✅ Configuration regenerated from cloud"
+              # Try to regenerate config first (fast, works if agent exists)
+              if lk agent config 2>&1 | tee /tmp/config_output.log; then
+                echo "✅ Configuration regenerated from existing cloud agent"
               else
-                echo "📋 No agent found on cloud"
+                CONFIG_EXIT_CODE=$?
+                echo "⚠️  Config regeneration failed (agent may not exist yet)"
+
+                # If config regeneration failed, agent likely doesn't exist - create it
                 echo "🚀 Creating new agent (first deployment)..."
 
                 /tmp/lk_agent_create.exp 2>&1 | tee /tmp/create_output.log || {
@@ -1586,17 +1561,16 @@ jobs:
 
                   # Check if it failed because agent already exists
                   if grep -q "maximum number of agents reached" /tmp/create_output.log; then
-                    echo "⚠️  Agent exists but wasn't detected by status check"
-                    echo "🔧 Attempting config regeneration..."
-
-                    lk agent config || {
-                      echo "❌ Config regeneration also failed"
-                      exit 1
-                    }
-
-                    echo "✅ Configuration regenerated"
+                    echo "⚠️  Agent exists but config regeneration failed"
+                    echo "❌ Manual intervention required:"
+                    echo "   Option 1: Delete existing agent from LiveKit Cloud dashboard"
+                    echo "   Option 2: Manually run 'lk agent config' locally and commit livekit.toml"
+                    echo ""
+                    echo "Check agent status at: https://cloud.livekit.io"
+                    exit 1
                   else
-                    echo "❌ Agent creation failed"
+                    echo "❌ Agent creation failed with exit code $CREATE_EXIT_CODE"
+                    cat /tmp/create_output.log
                     exit $CREATE_EXIT_CODE
                   fi
                 }
