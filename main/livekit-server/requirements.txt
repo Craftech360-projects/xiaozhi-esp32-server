@@ -2,6 +2,7 @@ livekit-plugins-groq
 python-dotenv
 pydub
 aiohttp
+google-api-python-client>=2.100.0
 
 # # Local AI Models (for offline operation)
 # faster-whisper  # Local STT using Whisper
