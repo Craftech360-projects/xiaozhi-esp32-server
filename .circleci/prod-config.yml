@@ -1497,11 +1497,7 @@ jobs:
             # Verify UV installation
             uv --version
 
-            # Install expect for handling interactive prompts
-            echo "📦 Installing expect..."
-            sudo apt-get update -qq && sudo apt-get install -y expect
-
-            echo "✅ LiveKit CLI, UV, and expect installed successfully"
+            echo "✅ LiveKit CLI and UV installed successfully"
 
       - run:
           name: Update UV Lock File
