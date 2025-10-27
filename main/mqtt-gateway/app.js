@@ -419,7 +419,20 @@ class WorkerPoolManager {
     this.performanceMonitor = new PerformanceMonitor();
     this.workerPendingCount = []; // Track pending requests per worker for load balancing
 
+    // DYNAMIC SCALING: Configuration
+    this.minWorkers = 2; // Minimum workers (always keep at least 2)
+    this.maxWorkers = 8; // Maximum workers (cap based on typical CPU cores)
+    this.scaleUpThreshold = 0.7; // Scale up when workers are 70% loaded
+    this.scaleDownThreshold = 0.3; // Scale down when workers are 30% loaded
+    this.scaleUpCpuThreshold = 60; // Scale up when CPU > 60%
+    this.scaleCheckInterval = 10000; // Check every 10 seconds
+    this.scaleCheckTimer = null;
+    this.lastScaleAction = Date.now();
+    this.scaleUpCooldown = 30000; // Wait 30s after scaling up
+    this.scaleDownCooldown = 60000; // Wait 60s after scaling down
+
     this.initializeWorkers();
+    this.startAutoScaling();
   }
 
   initializeWorkers() {
@@ -619,8 +632,14 @@ class WorkerPoolManager {
   startMetricsLogging(intervalSeconds = 30) {
     this.metricsInterval = setInterval(() => {
       const stats = this.getDetailedStats();
+
+      // Calculate current load for auto-scaling display
+      const avgPendingPerWorker = this.workerPendingCount.reduce((a, b) => a + b, 0) / this.workers.length;
+      const loadPercent = Math.min(100, (avgPendingPerWorker / 5 * 100)).toFixed(1);
+
       console.log('\n📊 [WORKER-POOL METRICS] ================');
-      console.log(`   Workers: ${stats.activeWorkers}/${stats.workers} active`);
+      console.log(`   Workers: ${stats.activeWorkers}/${stats.workers} active (min: ${this.minWorkers}, max: ${this.maxWorkers})`);
+      console.log(`   Load: ${loadPercent}% (${avgPendingPerWorker.toFixed(2)} pending/worker)`);
       console.log(`   Pending Requests: ${stats.pendingRequests}`);
       console.log(`   Frames Processed: ${stats.performance.framesProcessed}`);
       console.log(`   Throughput: ${stats.performance.framesPerSecond} fps`);
@@ -643,8 +662,198 @@ class WorkerPoolManager {
     }
   }
 
+  // ========================================
+  // DYNAMIC SCALING METHODS
+  // ========================================
+
+  /**
+   * Start automatic worker scaling based on load
+   */
+  startAutoScaling() {
+    if (this.scaleCheckTimer) {
+      return; // Already running
+    }
+
+    console.log(`🔄 [AUTO-SCALE] Starting dynamic scaling (${this.minWorkers}-${this.maxWorkers} workers)`);
+
+    this.scaleCheckTimer = setInterval(() => {
+      this.checkAndScale();
+    }, this.scaleCheckInterval);
+  }
+
+  /**
+   * Stop automatic worker scaling
+   */
+  stopAutoScaling() {
+    if (this.scaleCheckTimer) {
+      clearInterval(this.scaleCheckTimer);
+      this.scaleCheckTimer = null;
+      console.log('🛑 [AUTO-SCALE] Stopped dynamic scaling');
+    }
+  }
+
+  /**
+   * Check current load and scale workers if needed
+   */
+  checkAndScale() {
+    const currentWorkerCount = this.workers.length;
+    const timeSinceLastScale = Date.now() - this.lastScaleAction;
+
+    // Get current load metrics
+    const avgPendingPerWorker = this.workerPendingCount.reduce((a, b) => a + b, 0) / currentWorkerCount;
+    const maxPendingPerWorker = Math.max(...this.workerPendingCount);
+    const totalPending = this.pendingRequests.size;
+    const avgCpu = this.performanceMonitor.getAverageCpuUsage();
+    const maxLatency = this.performanceMonitor.getMaxProcessingTime();
+
+    // Calculate load ratio (0-1 scale)
+    const loadRatio = avgPendingPerWorker / 5; // Assume 5 pending = full load
+
+    // SCALE UP CONDITIONS
+    const shouldScaleUp =
+      currentWorkerCount < this.maxWorkers &&
+      timeSinceLastScale >= this.scaleUpCooldown &&
+      (
+        loadRatio > this.scaleUpThreshold ||  // Workers are overloaded
+        avgCpu > this.scaleUpCpuThreshold ||   // CPU is high
+        maxLatency > 50 ||                     // Latency is getting bad
+        totalPending > currentWorkerCount * 3  // Queue is building up
+      );
+
+    // SCALE DOWN CONDITIONS
+    const shouldScaleDown =
+      currentWorkerCount > this.minWorkers &&
+      timeSinceLastScale >= this.scaleDownCooldown &&
+      loadRatio < this.scaleDownThreshold &&  // Workers are underutilized
+      avgCpu < 30 &&                          // CPU is low
+      maxLatency < 10 &&                      // Latency is excellent
+      totalPending === 0;                     // No queue buildup
+
+    if (shouldScaleUp) {
+      const newWorkerCount = Math.min(currentWorkerCount + 1, this.maxWorkers);
+      this.scaleUp(newWorkerCount);
+    } else if (shouldScaleDown) {
+      const newWorkerCount = Math.max(currentWorkerCount - 1, this.minWorkers);
+      this.scaleDown(newWorkerCount);
+    }
+  }
+
+  /**
+   * Scale up by adding workers
+   */
+  async scaleUp(targetCount) {
+    const currentCount = this.workers.length;
+    const workersToAdd = targetCount - currentCount;
+
+    console.log(`📈 [AUTO-SCALE] Scaling UP: ${currentCount} → ${targetCount} workers (+${workersToAdd})`);
+
+    const workerPath = path.join(__dirname, 'audio-worker.js');
+
+    for (let i = 0; i < workersToAdd; i++) {
+      const workerId = this.workers.length;
+      const worker = new Worker(workerPath);
+
+      worker.on('message', this.handleWorkerMessage.bind(this));
+      worker.on('error', (error) => {
+        console.error(`❌ [WORKER-${workerId}] Error:`, error);
+        this.restartWorker(workerId);
+      });
+      worker.on('exit', (code) => {
+        if (code !== 0) {
+          console.error(`❌ [WORKER-${workerId}] Exited with code ${code}, restarting...`);
+          this.restartWorker(workerId);
+        }
+      });
+
+      this.workers.push({ worker, id: workerId, active: true });
+      this.workerPendingCount.push(0);
+
+      console.log(`✅ [AUTO-SCALE] Worker ${workerId} added`);
+    }
+
+    this.lastScaleAction = Date.now();
+    this.workerCount = targetCount;
+
+    // Initialize new workers with encoder/decoder
+    await this.initializeNewWorkers(currentCount, targetCount);
+  }
+
+  /**
+   * Scale down by removing workers
+   */
+  async scaleDown(targetCount) {
+    const currentCount = this.workers.length;
+    const workersToRemove = currentCount - targetCount;
+
+    console.log(`📉 [AUTO-SCALE] Scaling DOWN: ${currentCount} → ${targetCount} workers (-${workersToRemove})`);
+
+    // Remove workers from the end (newest first)
+    for (let i = 0; i < workersToRemove; i++) {
+      const workerIndex = this.workers.length - 1;
+      const workerInfo = this.workers[workerIndex];
+
+      // Wait for any pending operations on this worker
+      const maxWaitTime = 5000; // 5 seconds max wait
+      const startWait = Date.now();
+
+      while (this.workerPendingCount[workerIndex] > 0 && (Date.now() - startWait) < maxWaitTime) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      // Terminate worker
+      try {
+        await workerInfo.worker.terminate();
+        console.log(`🗑️ [AUTO-SCALE] Worker ${workerInfo.id} removed`);
+      } catch (error) {
+        console.error(`❌ [AUTO-SCALE] Error terminating worker ${workerInfo.id}:`, error);
+      }
+
+      // Remove from arrays
+      this.workers.pop();
+      this.workerPendingCount.pop();
+    }
+
+    this.lastScaleAction = Date.now();
+    this.workerCount = targetCount;
+  }
+
+  /**
+   * Initialize newly added workers with encoder/decoder
+   */
+  async initializeNewWorkers(startIndex, endIndex) {
+    const workersToInit = this.workers.slice(startIndex, endIndex);
+
+    // Initialize encoder and decoder for new workers
+    try {
+      await Promise.all(workersToInit.map(w =>
+        this.sendMessage(w.worker, {
+          type: 'init_encoder',
+          data: { sampleRate: 24000, channels: 1 }
+        }, 500)
+      ));
+
+      await Promise.all(workersToInit.map(w =>
+        this.sendMessage(w.worker, {
+          type: 'init_decoder',
+          data: { sampleRate: 16000, channels: 1 }
+        }, 500)
+      ));
+
+      console.log(`✅ [AUTO-SCALE] New workers initialized (${startIndex}-${endIndex-1})`);
+    } catch (error) {
+      console.error(`❌ [AUTO-SCALE] Failed to initialize new workers:`, error);
+    }
+  }
+
+  // ========================================
+  // END DYNAMIC SCALING METHODS
+  // ========================================
+
   async terminate() {
     console.log('🛑 [WORKER-POOL] Terminating all workers...');
+
+    // Stop auto-scaling
+    this.stopAutoScaling();
 
     // Stop metrics logging
     this.stopMetricsLogging();
