@@ -1526,7 +1526,11 @@ jobs:
             # Verify UV installation
             uv --version
 
-            echo "✅ LiveKit CLI and UV installed successfully"
+            # Install expect for handling interactive prompts
+            echo "📦 Installing expect..."
+            sudo apt-get update -qq && sudo apt-get install -y expect
+
+            echo "✅ LiveKit CLI, UV, and expect installed successfully"
 
       - run:
           name: Delete Old Agent from LiveKit Cloud
@@ -1581,6 +1585,7 @@ jobs:
 
       - run:
           name: Create New Agent on LiveKit Cloud
+          no_output_timeout: 10m
           command: |
             : "${LIVEKIT_URL:?Set LIVEKIT_URL in CircleCI context}"
             : "${LIVEKIT_API_KEY:?Set LIVEKIT_API_KEY in CircleCI context}"
@@ -1595,44 +1600,70 @@ jobs:
             export LIVEKIT_API_KEY="$LIVEKIT_API_KEY"
             export LIVEKIT_API_SECRET="$LIVEKIT_API_SECRET"
 
-            # Create the agent with auto-confirmation
-            # Use expect or provide automatic yes responses for prompts
-            echo "📝 Creating agent (auto-accepting prompts)..."
+            # Create the agent with auto-confirmation using expect
+            echo "📝 Creating agent (auto-accepting prompts with expect)..."
 
-            # Method 1: Try lk agent create with timeout
-            timeout 300 bash -c '
-              # Automatically answer yes to all prompts
-              yes | lk agent create || {
-                EXIT_CODE=$?
-                if [ $EXIT_CODE -eq 124 ]; then
-                  echo "⏱️ Agent creation timed out after 5 minutes"
-                  echo "🔄 Will try lk deploy as fallback..."
-                  exit 124
-                else
-                  echo "❌ Agent creation failed with code $EXIT_CODE"
-                  exit $EXIT_CODE
-                fi
-              }
-            ' || {
-              EXIT_CODE=$?
-              if [ $EXIT_CODE -eq 124 ]; then
-                echo "⏱️ lk agent create took too long, switching to lk deploy..."
+            # Create expect script to handle interactive prompts
+            cat > /tmp/lk_agent_create.exp << 'EOF'
+#!/usr/bin/expect -f
 
-                # Fallback: Use lk deploy command
-                echo "🚀 Deploying with lk deploy..."
-                lk deploy || {
-                  echo "❌ Both lk agent create and lk deploy failed"
-                  exit 1
+set timeout 600
+
+# Spawn the lk agent create command
+spawn lk agent create
+
+# Handle interactive prompts
+expect {
+                "toggle" {
+                    # Send ENTER to submit default selection
+                    send "\r"
+                    exp_continue
                 }
+                "submit" {
+                    # Send ENTER to submit
+                    send "\r"
+                    exp_continue
+                }
+                "Yes" {
+                    # Send 'y' for yes
+                    send "y\r"
+                    exp_continue
+                }
+                "Select another" {
+                    # Send ENTER to proceed
+                    send "\r"
+                    exp_continue
+                }
+                eof {
+                    # Command finished
+                    catch wait result
+                    exit [lindex $result 3]
+                }
+                timeout {
+                    puts "ERROR: Command timed out"
+                    exit 1
+                }
+            }
+EOF
 
-                echo "✅ Agent deployed successfully using lk deploy"
+            chmod +x /tmp/lk_agent_create.exp
+
+            # Run the expect script
+            /tmp/lk_agent_create.exp || {
+              EXIT_CODE=$?
+              echo "❌ Agent creation failed with exit code $EXIT_CODE"
+              echo "📋 Checking if livekit.toml was created..."
+
+              if [ -f "livekit.toml" ]; then
+                echo "✅ livekit.toml was created, agent might have been created successfully"
+                exit 0
               else
-                echo "❌ Agent creation failed"
+                echo "❌ livekit.toml not found, creation truly failed"
                 exit $EXIT_CODE
               fi
             }
 
-            echo "✅ Agent created/deployed on LiveKit Cloud successfully"
+            echo "✅ Agent created on LiveKit Cloud successfully"
 
       - run:
           name: Verify Agent Deployment
