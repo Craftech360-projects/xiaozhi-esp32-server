@@ -81,6 +81,583 @@ const { MQTTProtocol } = require("./mqtt-protocol");
 const { ConfigManager } = require("./utils/config-manager");
 const { validateMqttCredentials } = require("./utils/mqtt_config_v2");
 
+// ========================================
+// PHASE 1 OPTIMIZATION: Streaming AES Encryption
+// ========================================
+/**
+ * Optimized streaming crypto with cipher caching
+ * Phase 1 optimization from AUDIO_OPTIMIZATION_PLAN.md
+ * Reduces cipher creation overhead by reusing cipher instances
+ */
+class StreamingCrypto {
+  constructor() {
+    this.encryptCipherCache = new Map();
+    this.decryptCipherCache = new Map();
+    this.maxCacheSize = 20; // Limit cache size to prevent memory leak
+  }
+
+  /**
+   * Encrypt data with cached cipher for performance
+   * @param {Buffer} data - Data to encrypt
+   * @param {string} algorithm - Encryption algorithm (e.g., 'aes-128-ctr')
+   * @param {Buffer} key - Encryption key
+   * @param {Buffer} iv - Initialization vector (header)
+   * @returns {Buffer} Encrypted data
+   */
+  encrypt(data, algorithm, key, iv) {
+    const cacheKey = `${algorithm}:${key.toString('hex')}:${iv.toString('hex')}`;
+    let cipher = this.encryptCipherCache.get(cacheKey);
+
+    if (!cipher) {
+      cipher = crypto.createCipheriv(algorithm, key, iv);
+
+      // LRU eviction if cache is full
+      if (this.encryptCipherCache.size >= this.maxCacheSize) {
+        const firstKey = this.encryptCipherCache.keys().next().value;
+        this.encryptCipherCache.delete(firstKey);
+      }
+
+      this.encryptCipherCache.set(cacheKey, cipher);
+    }
+
+    return Buffer.concat([cipher.update(data), cipher.final()]);
+  }
+
+  /**
+   * Decrypt data with cached cipher for performance
+   * @param {Buffer} data - Data to decrypt
+   * @param {string} algorithm - Encryption algorithm (e.g., 'aes-128-ctr')
+   * @param {Buffer} key - Decryption key
+   * @param {Buffer} iv - Initialization vector (header)
+   * @returns {Buffer} Decrypted data
+   */
+  decrypt(data, algorithm, key, iv) {
+    const cacheKey = `${algorithm}:${key.toString('hex')}:${iv.toString('hex')}`;
+    let decipher = this.decryptCipherCache.get(cacheKey);
+
+    if (!decipher) {
+      decipher = crypto.createDecipheriv(algorithm, key, iv);
+
+      // LRU eviction if cache is full
+      if (this.decryptCipherCache.size >= this.maxCacheSize) {
+        const firstKey = this.decryptCipherCache.keys().next().value;
+        this.decryptCipherCache.delete(firstKey);
+      }
+
+      this.decryptCipherCache.set(cacheKey, decipher);
+    }
+
+    return Buffer.concat([decipher.update(data), decipher.final()]);
+  }
+
+  /**
+   * Clear all cached ciphers
+   */
+  clearCache() {
+    this.encryptCipherCache.clear();
+    this.decryptCipherCache.clear();
+  }
+}
+
+// Global streaming crypto instance for reuse across connections
+const streamingCrypto = new StreamingCrypto();
+
+// ========================================
+// PHASE 2: Performance Monitoring with CPU & Memory Metrics
+// ========================================
+/**
+ * Performance monitoring for audio processing
+ * Tracks latency, throughput, CPU, memory, and resource usage
+ */
+class PerformanceMonitor {
+  constructor() {
+    this.metrics = {
+      processingTime: [],
+      queueSize: [],
+      frameCount: 0,
+      errorCount: 0,
+      startTime: Date.now(),
+      cpuUsage: [],
+      memoryUsage: [],
+      heapUsage: []
+    };
+    this.maxSamples = 100; // Keep last 100 measurements
+    this.lastCpuUsage = process.cpuUsage();
+    this.lastCpuTime = Date.now();
+
+    // Start periodic resource monitoring
+    this.startResourceMonitoring();
+  }
+
+  /**
+   * Start periodic CPU and memory monitoring
+   * Samples every 1 second
+   */
+  startResourceMonitoring() {
+    this.resourceMonitorInterval = setInterval(() => {
+      this.recordCpuUsage();
+      this.recordMemoryUsage();
+    }, 1000); // Sample every 1 second
+  }
+
+  /**
+   * Record CPU usage percentage
+   * Based on process.cpuUsage() delta
+   */
+  recordCpuUsage() {
+    const currentCpuUsage = process.cpuUsage(this.lastCpuUsage);
+    const currentTime = Date.now();
+    const timeDelta = currentTime - this.lastCpuTime;
+
+    // Calculate CPU percentage
+    // cpuUsage returns microseconds, convert to percentage
+    const cpuPercent = ((currentCpuUsage.user + currentCpuUsage.system) / 1000) / timeDelta * 100;
+
+    this.metrics.cpuUsage.push(cpuPercent);
+    if (this.metrics.cpuUsage.length > this.maxSamples) {
+      this.metrics.cpuUsage.shift();
+    }
+
+    this.lastCpuUsage = process.cpuUsage();
+    this.lastCpuTime = currentTime;
+
+    return cpuPercent;
+  }
+
+  /**
+   * Record memory usage in MB
+   * Tracks RSS, Heap Total, Heap Used, and External
+   */
+  recordMemoryUsage() {
+    const mem = process.memoryUsage();
+
+    const memoryData = {
+      rss: mem.rss / 1024 / 1024, // MB
+      heapTotal: mem.heapTotal / 1024 / 1024,
+      heapUsed: mem.heapUsed / 1024 / 1024,
+      external: mem.external / 1024 / 1024,
+      timestamp: Date.now()
+    };
+
+    this.metrics.memoryUsage.push(memoryData);
+    this.metrics.heapUsage.push(mem.heapUsed / 1024 / 1024);
+
+    if (this.metrics.memoryUsage.length > this.maxSamples) {
+      this.metrics.memoryUsage.shift();
+    }
+    if (this.metrics.heapUsage.length > this.maxSamples) {
+      this.metrics.heapUsage.shift();
+    }
+
+    return memoryData;
+  }
+
+  recordProcessingTime(startTime) {
+    const duration = Number(process.hrtime.bigint() - startTime) / 1000000; // ms
+    this.metrics.processingTime.push(duration);
+
+    // Keep only last N measurements
+    if (this.metrics.processingTime.length > this.maxSamples) {
+      this.metrics.processingTime.shift();
+    }
+
+    return duration;
+  }
+
+  recordFrame() {
+    this.metrics.frameCount++;
+  }
+
+  recordError() {
+    this.metrics.errorCount++;
+  }
+
+  recordQueueSize(size) {
+    this.metrics.queueSize.push(size);
+    if (this.metrics.queueSize.length > this.maxSamples) {
+      this.metrics.queueSize.shift();
+    }
+  }
+
+  getAverageProcessingTime() {
+    const times = this.metrics.processingTime;
+    return times.length > 0 ? times.reduce((a, b) => a + b) / times.length : 0;
+  }
+
+  getMaxProcessingTime() {
+    return this.metrics.processingTime.length > 0
+      ? Math.max(...this.metrics.processingTime)
+      : 0;
+  }
+
+  getAverageQueueSize() {
+    const sizes = this.metrics.queueSize;
+    return sizes.length > 0 ? sizes.reduce((a, b) => a + b) / sizes.length : 0;
+  }
+
+  getAverageCpuUsage() {
+    const cpu = this.metrics.cpuUsage;
+    return cpu.length > 0 ? cpu.reduce((a, b) => a + b) / cpu.length : 0;
+  }
+
+  getMaxCpuUsage() {
+    return this.metrics.cpuUsage.length > 0 ? Math.max(...this.metrics.cpuUsage) : 0;
+  }
+
+  getAverageMemoryUsage() {
+    const heap = this.metrics.heapUsage;
+    return heap.length > 0 ? heap.reduce((a, b) => a + b) / heap.length : 0;
+  }
+
+  getMaxMemoryUsage() {
+    return this.metrics.heapUsage.length > 0 ? Math.max(...this.metrics.heapUsage) : 0;
+  }
+
+  getCurrentMemoryUsage() {
+    return this.metrics.memoryUsage.length > 0
+      ? this.metrics.memoryUsage[this.metrics.memoryUsage.length - 1]
+      : null;
+  }
+
+  getStats() {
+    const runtime = Date.now() - this.metrics.startTime;
+    const currentMem = this.getCurrentMemoryUsage() || { rss: 0, heapUsed: 0, heapTotal: 0 };
+
+    return {
+      // Performance metrics
+      framesProcessed: this.metrics.frameCount,
+      errors: this.metrics.errorCount,
+      avgLatency: this.getAverageProcessingTime().toFixed(2) + 'ms',
+      maxLatency: this.getMaxProcessingTime().toFixed(2) + 'ms',
+      avgQueueSize: this.getAverageQueueSize().toFixed(1),
+      runtime: (runtime / 1000).toFixed(1) + 's',
+      framesPerSecond: ((this.metrics.frameCount / runtime) * 1000).toFixed(1),
+
+      // CPU metrics
+      avgCpuUsage: this.getAverageCpuUsage().toFixed(2) + '%',
+      maxCpuUsage: this.getMaxCpuUsage().toFixed(2) + '%',
+      currentCpuUsage: this.metrics.cpuUsage.length > 0
+        ? this.metrics.cpuUsage[this.metrics.cpuUsage.length - 1].toFixed(2) + '%'
+        : '0%',
+
+      // Memory metrics
+      avgMemoryUsage: this.getAverageMemoryUsage().toFixed(2) + 'MB',
+      maxMemoryUsage: this.getMaxMemoryUsage().toFixed(2) + 'MB',
+      currentMemory: {
+        rss: currentMem.rss.toFixed(2) + 'MB',
+        heapUsed: currentMem.heapUsed.toFixed(2) + 'MB',
+        heapTotal: currentMem.heapTotal.toFixed(2) + 'MB'
+      }
+    };
+  }
+
+  /**
+   * Get detailed metrics for logging/debugging
+   */
+  getDetailedStats() {
+    const stats = this.getStats();
+    return {
+      ...stats,
+      rawData: {
+        cpuSamples: this.metrics.cpuUsage.length,
+        memorySamples: this.metrics.memoryUsage.length,
+        latencySamples: this.metrics.processingTime.length
+      }
+    };
+  }
+
+  shouldDowngrade() {
+    // Check multiple conditions for degradation
+    const highLatency = this.getAverageProcessingTime() > 10; // 10ms threshold
+    const highCpu = this.getAverageCpuUsage() > 80; // 80% CPU
+    const highMemory = this.getAverageMemoryUsage() > 500; // 500MB heap
+
+    return highLatency || highCpu || highMemory;
+  }
+
+  reset() {
+    this.metrics = {
+      processingTime: [],
+      queueSize: [],
+      frameCount: 0,
+      errorCount: 0,
+      startTime: Date.now(),
+      cpuUsage: [],
+      memoryUsage: [],
+      heapUsage: []
+    };
+  }
+
+  /**
+   * Stop resource monitoring and cleanup
+   */
+  stop() {
+    if (this.resourceMonitorInterval) {
+      clearInterval(this.resourceMonitorInterval);
+      this.resourceMonitorInterval = null;
+    }
+  }
+}
+
+// ========================================
+// PHASE 2: Worker Pool Manager
+// ========================================
+const { Worker } = require('worker_threads');
+const path = require('path');
+
+/**
+ * Worker Pool Manager for parallel audio processing
+ * Distributes audio processing across multiple worker threads
+ */
+class WorkerPoolManager {
+  constructor(workerCount = 2) {
+    this.workers = [];
+    this.workerIndex = 0;
+    this.pendingRequests = new Map();
+    this.requestId = 0;
+    this.workerCount = workerCount;
+    this.performanceMonitor = new PerformanceMonitor();
+    this.workerPendingCount = []; // Track pending requests per worker for load balancing
+
+    this.initializeWorkers();
+  }
+
+  initializeWorkers() {
+    const workerPath = path.join(__dirname, 'audio-worker.js');
+
+    for (let i = 0; i < this.workerCount; i++) {
+      const worker = new Worker(workerPath);
+
+      worker.on('message', this.handleWorkerMessage.bind(this));
+      worker.on('error', (error) => {
+        console.error(`❌ [WORKER-${i}] Error:`, error);
+        this.restartWorker(i);
+      });
+      worker.on('exit', (code) => {
+        if (code !== 0) {
+          console.error(`❌ [WORKER-${i}] Exited with code ${code}, restarting...`);
+          this.restartWorker(i);
+        }
+      });
+
+      this.workers.push({ worker, id: i, active: true });
+      this.workerPendingCount.push(0); // Initialize pending count for this worker
+      console.log(`✅ [WORKER-POOL] Worker ${i} initialized`);
+    }
+
+    console.log(`✅ [WORKER-POOL] Created pool with ${this.workerCount} workers`);
+  }
+
+  restartWorker(index) {
+    const workerPath = path.join(__dirname, 'audio-worker.js');
+
+    if (this.workers[index]) {
+      try {
+        this.workers[index].worker.terminate();
+      } catch (e) {
+        // Ignore termination errors
+      }
+
+      const newWorker = new Worker(workerPath);
+      newWorker.on('message', this.handleWorkerMessage.bind(this));
+      newWorker.on('error', (error) => {
+        console.error(`❌ [WORKER-${index}] Error:`, error);
+      });
+
+      this.workers[index] = { worker: newWorker, id: index, active: true };
+      console.log(`🔄 [WORKER-POOL] Worker ${index} restarted`);
+    }
+  }
+
+  async initializeWorker(type, params) {
+    // Initialize encoder/decoder in all workers
+    // Use longer timeout for initialization (500ms instead of 50ms)
+    const promises = this.workers.map((w) => {
+      return this.sendMessage(w.worker, {
+        type: type,
+        data: params
+      }, 500); // 500ms timeout for init
+    });
+
+    await Promise.all(promises);
+  }
+
+  async encodeOpus(pcmData, frameSize) {
+    const { worker, index } = this.getNextWorker();
+    const startTime = process.hrtime.bigint();
+
+    // Track pending request count
+    this.workerPendingCount[index]++;
+
+    try {
+      const result = await this.sendMessage(worker, {
+        type: 'encode',
+        data: { pcmData, frameSize }
+      }, 150); // 150ms timeout (increased from 50ms to handle load spikes)
+
+      const totalTime = this.performanceMonitor.recordProcessingTime(startTime);
+      this.performanceMonitor.recordFrame();
+      this.performanceMonitor.recordQueueSize(this.pendingRequests.size);
+
+      return result.data;
+    } catch (error) {
+      this.performanceMonitor.recordError();
+      throw error;
+    } finally {
+      // Always decrement pending count when done
+      this.workerPendingCount[index]--;
+    }
+  }
+
+  async decodeOpus(opusData) {
+    const { worker, index } = this.getNextWorker();
+    const startTime = process.hrtime.bigint();
+
+    // Track pending request count
+    this.workerPendingCount[index]++;
+
+    try {
+      const result = await this.sendMessage(worker, {
+        type: 'decode',
+        data: { opusData }
+      }, 150); // 150ms timeout (increased from 50ms to handle load spikes)
+
+      const totalTime = this.performanceMonitor.recordProcessingTime(startTime);
+      this.performanceMonitor.recordFrame();
+      this.performanceMonitor.recordQueueSize(this.pendingRequests.size);
+
+      return result.data;
+    } catch (error) {
+      this.performanceMonitor.recordError();
+      throw error;
+    } finally {
+      // Always decrement pending count when done
+      this.workerPendingCount[index]--;
+    }
+  }
+
+  getNextWorker() {
+    // JITTER FIX: Use least-loaded worker instead of round-robin
+    // Find worker with minimum pending requests
+    let minPending = Infinity;
+    let selectedIndex = 0;
+
+    for (let i = 0; i < this.workers.length; i++) {
+      if (this.workerPendingCount[i] < minPending) {
+        minPending = this.workerPendingCount[i];
+        selectedIndex = i;
+      }
+    }
+
+    return { worker: this.workers[selectedIndex].worker, index: selectedIndex };
+  }
+
+  sendMessage(worker, message, timeoutMs = 50) {
+    const requestId = ++this.requestId;
+    message.id = requestId;
+
+    return new Promise((resolve, reject) => {
+      this.pendingRequests.set(requestId, { resolve, reject });
+
+      // Send message to worker
+      worker.postMessage(message);
+
+      // Timeout handling
+      const timeout = setTimeout(() => {
+        if (this.pendingRequests.has(requestId)) {
+          this.pendingRequests.delete(requestId);
+          reject(new Error(`Worker request ${requestId} timeout after ${timeoutMs}ms`));
+        }
+      }, timeoutMs);
+
+      // Store timeout for cleanup
+      this.pendingRequests.get(requestId).timeout = timeout;
+    });
+  }
+
+  handleWorkerMessage(message) {
+    const { id, success, result, error } = message;
+    const request = this.pendingRequests.get(id);
+
+    if (request) {
+      clearTimeout(request.timeout);
+      this.pendingRequests.delete(id);
+
+      if (success) {
+        request.resolve(result);
+      } else {
+        request.reject(new Error(error));
+      }
+    }
+  }
+
+  getStats() {
+    return {
+      workers: this.workers.length,
+      activeWorkers: this.workers.filter(w => w.active).length,
+      pendingRequests: this.pendingRequests.size,
+      performance: this.performanceMonitor.getStats()
+    };
+  }
+
+  /**
+   * Get detailed stats including CPU and memory
+   */
+  getDetailedStats() {
+    return {
+      workers: this.workers.length,
+      activeWorkers: this.workers.filter(w => w.active).length,
+      pendingRequests: this.pendingRequests.size,
+      performance: this.performanceMonitor.getDetailedStats()
+    };
+  }
+
+  /**
+   * Start periodic metrics logging
+   * Logs stats every N seconds
+   */
+  startMetricsLogging(intervalSeconds = 30) {
+    this.metricsInterval = setInterval(() => {
+      const stats = this.getDetailedStats();
+      console.log('\n📊 [WORKER-POOL METRICS] ================');
+      console.log(`   Workers: ${stats.activeWorkers}/${stats.workers} active`);
+      console.log(`   Pending Requests: ${stats.pendingRequests}`);
+      console.log(`   Frames Processed: ${stats.performance.framesProcessed}`);
+      console.log(`   Throughput: ${stats.performance.framesPerSecond} fps`);
+      console.log(`   Avg Latency: ${stats.performance.avgLatency}`);
+      console.log(`   Max Latency: ${stats.performance.maxLatency}`);
+      console.log(`   CPU Usage: ${stats.performance.avgCpuUsage} (max: ${stats.performance.maxCpuUsage})`);
+      console.log(`   Memory: ${stats.performance.currentMemory.heapUsed} / ${stats.performance.currentMemory.heapTotal}`);
+      console.log(`   Errors: ${stats.performance.errors}`);
+      console.log('==========================================\n');
+    }, intervalSeconds * 1000);
+  }
+
+  /**
+   * Stop metrics logging
+   */
+  stopMetricsLogging() {
+    if (this.metricsInterval) {
+      clearInterval(this.metricsInterval);
+      this.metricsInterval = null;
+    }
+  }
+
+  async terminate() {
+    console.log('🛑 [WORKER-POOL] Terminating all workers...');
+
+    // Stop metrics logging
+    this.stopMetricsLogging();
+
+    // Stop performance monitor
+    this.performanceMonitor.stop();
+
+    // Terminate all workers
+    await Promise.all(this.workers.map(w => w.worker.terminate()));
+    this.workers = [];
+  }
+}
+
 function setDebugEnabled(enabled) {
   if (enabled) {
     debugModule.enable("mqtt-server");
@@ -126,24 +703,31 @@ class LiveKitBridge extends Emitter {
     this.targetFrameSize = 1440; // 1440 samples = 60ms at 24kHz (outgoing)
     this.targetFrameBytes = this.targetFrameSize * 2; // 2880 bytes for 16-bit PCM
 
-    // Initialize Opus decoder for incoming audio (device -> LiveKit)
-    // this.opusDecoder = null;
-    // Initialize Opus encoder for outgoing audio (LiveKit -> device)
-    // this.opusEncoder = null;
+    // PHASE 2: Initialize Worker Pool for parallel audio processing
+    this.workerPool = new WorkerPoolManager(2); // 2 workers for load balancing
+    console.log(`✅ [PHASE-2] Worker pool initialized for ${this.macAddress}`);
 
-    if (OpusEncoder) {
-      try {
-        // this.opusDecoder = new OpusEncoder(16000, 1); // 16kHz, mono
-        console.log(`✅ [OPUS] Decoder initialized for ${this.macAddress}`);
+    // Start periodic metrics logging (every 30 seconds)
+    this.workerPool.startMetricsLogging(30);
 
-        // this.opusEncoder = new OpusEncoder(16000, 1); // 16kHz, mono
-        console.log(`✅ [OPUS] Encoder initialized for ${this.macAddress}`);
-      } catch (err) {
-        console.error(
-          `❌ [OPUS] Failed to initialize encoder/decoder: ${err.message}`
-        );
-      }
-    }
+    // Initialize workers with encoder/decoder settings
+    this.workerPool.initializeWorker('init_encoder', {
+      sampleRate: OUTGOING_SAMPLE_RATE,
+      channels: CHANNELS
+    }).then(() => {
+      console.log(`✅ [PHASE-2] Workers encoder ready (${OUTGOING_SAMPLE_RATE}Hz)`);
+    }).catch(err => {
+      console.error(`❌ [PHASE-2] Worker encoder init failed:`, err.message);
+    });
+
+    this.workerPool.initializeWorker('init_decoder', {
+      sampleRate: INCOMING_SAMPLE_RATE,
+      channels: CHANNELS
+    }).then(() => {
+      console.log(`✅ [PHASE-2] Workers decoder ready (${INCOMING_SAMPLE_RATE}Hz)`);
+    }).catch(err => {
+      console.error(`❌ [PHASE-2] Worker decoder init failed:`, err.message);
+    });
 
     this.initializeLiveKit();
   }
@@ -156,10 +740,8 @@ class LiveKitBridge extends Emitter {
     this.livekitConfig = livekitConfig;
   }
 
-  // Process buffered audio frames and encode to Opus
-  processBufferedFrames(timestamp, frameCount, participantIdentity) {
-    // console.log(`🔍 [PROCESS] processBufferedFrames called: buffer=${this.frameBuffer.length}B, target=${this.targetFrameBytes}B, connection=${this.connection ? 'exists' : 'null'}`);
-
+  // PHASE 2: Process buffered audio frames and encode to Opus using worker threads
+  async processBufferedFrames(timestamp, frameCount) {
     if (!this.connection) {
       console.error(`❌ [PROCESS] No connection available, cannot send audio`);
       return;
@@ -167,8 +749,8 @@ class LiveKitBridge extends Emitter {
 
     while (this.frameBuffer.length >= this.targetFrameBytes) {
       // Extract one complete frame
-      const frameData = this.frameBuffer.slice(0, this.targetFrameBytes);
-      this.frameBuffer = this.frameBuffer.slice(this.targetFrameBytes);
+      const frameData = this.frameBuffer.subarray(0, this.targetFrameBytes);
+      this.frameBuffer = this.frameBuffer.subarray(this.targetFrameBytes);
 
       // Process this complete frame - encode to Opus before sending
       if (frameData.length > 0) {
@@ -177,9 +759,8 @@ class LiveKitBridge extends Emitter {
         const maxAmplitude = Math.max(...samples.map(s => Math.abs(s)));
         const isNearlySilent = maxAmplitude < 10;
 
-        // DEBUG: Log first few samples to see what we're receiving
         if (frameCount <= 5) {
-          console.log(`🔍 [DEBUG] Frame ${frameCount}: samples=${samples.length}, max=${maxAmplitude}, first10=[${Array.from(samples.slice(0, 10)).join(',')}]`);
+          console.log(`🔍 [DEBUG] Frame ${frameCount}: samples=${samples.length}, max=${maxAmplitude}`);
         }
 
         if (isSilent || isNearlySilent) {
@@ -189,30 +770,18 @@ class LiveKitBridge extends Emitter {
           continue;
         }
 
-        if (frameCount <= 3 || frameCount % 100 === 0) {
-          // Log progress every 100 frames for Opus encoding
-        }
+        // PHASE 2: Encode using worker thread (non-blocking)
+        try {
+          const opusBuffer = await this.workerPool.encodeOpus(frameData, this.targetFrameSize);
 
-        // Encode to Opus and send to ESP32
-        if (opusEncoder) {
-          try {
-            const alignedBuffer = Buffer.allocUnsafe(frameData.length);
-            frameData.copy(alignedBuffer);
-            const opusBuffer = opusEncoder.encode(alignedBuffer, this.targetFrameSize);
-
-            if (frameCount <= 3 || frameCount % 100 === 0) {
-              console.log(`🎵 [OPUS] Frame ${frameCount}: 24kHz 60ms PCM ${frameData.length}B → Opus ${opusBuffer.length}B`);
-            }
-
-            this.connection.sendUdpMessage(opusBuffer, timestamp);
-          } catch (err) {
-            console.error(`❌ [OPUS] Encode error: ${err.message}`);
-            // Fallback to PCM if Opus encoding fails
-            this.connection.sendUdpMessage(frameData, timestamp);
+          if (frameCount <= 3 || frameCount % 100 === 0) {
+            console.log(`🎵 [WORKER] Frame ${frameCount}: PCM ${frameData.length}B → Opus ${opusBuffer.length}B`);
           }
-        } else {
-          // Fallback: Send PCM directly if Opus encoder not available
-          console.log(`⚠️ [PCM] No Opus encoder, sending PCM directly`);
+
+          this.connection.sendUdpMessage(opusBuffer, timestamp);
+        } catch (err) {
+          console.error(`❌ [WORKER] Encode error: ${err.message}`);
+          // Fallback to PCM if worker encoding fails
           this.connection.sendUdpMessage(frameData, timestamp);
         }
       }
@@ -637,7 +1206,7 @@ class LiveKitBridge extends Emitter {
     });
   }
 
-  sendAudio(opusData, timestamp) {
+  async sendAudio(opusData, timestamp) {
     // Check if audioSource is available and room is connected
     if (!this.audioSource || !this.room || !this.room.isConnected) {
       console.warn(`⚠️ [AUDIO] Cannot send audio - audioSource or room not ready. Room connected: ${this.room?.isConnected}`);
@@ -649,45 +1218,41 @@ class LiveKitBridge extends Emitter {
       const isOpus = this.checkOpusFormat(opusData);
 
       if (isOpus) {
-        if (opusDecoder) {
-          try {
-            // PHASE 1: @discordjs/opus decode - no frame size parameter needed
-            const pcmBuffer = opusDecoder.decode(opusData);
+        // PHASE 2: Use worker thread for decoding (non-blocking)
+        try {
+          const pcmBuffer = await this.workerPool.decodeOpus(opusData);
 
-            // console.log(`✅ [OPUS DECODE] Decoded ${opusData.length}B Opus → ${pcmBuffer.length}B PCM`);
+          // console.log(`✅ [WORKER DECODE] Decoded ${opusData.length}B Opus → ${pcmBuffer.length}B PCM`);
 
-            if (pcmBuffer && pcmBuffer.length > 0) {
-              // Convert Buffer to Int16Array
-              const samples = new Int16Array(
-                pcmBuffer.buffer,
-                pcmBuffer.byteOffset,
-                pcmBuffer.length / 2
-              );
-              const frame = new AudioFrame(samples, 16000, 1, samples.length);
-
-              // Safe capture with error handling
-              this.safeCaptureFrame(frame).catch(err => {
-                console.error(`❌ [AUDIO] Unhandled error in safeCaptureFrame: ${err.message}`);
-              });
-            }
-          } catch (err) {
-            console.error(`❌ [OPUS] Decode error: ${err.message}`);
-            console.error(`    Data size: ${opusData.length}B, First 8 bytes: ${opusData.slice(0, Math.min(8, opusData.length)).toString('hex')}`);
-
-            // PHASE 1: Fallback to PCM if Opus decode fails (likely false positive detection)
-            console.log(`⚠️ [FALLBACK] Treating as PCM instead`);
+          if (pcmBuffer && pcmBuffer.length > 0) {
+            // Convert Buffer to Int16Array
             const samples = new Int16Array(
-              opusData.buffer,
-              opusData.byteOffset,
-              opusData.length / 2
+              pcmBuffer.buffer,
+              pcmBuffer.byteOffset,
+              pcmBuffer.length / 2
             );
             const frame = new AudioFrame(samples, 16000, 1, samples.length);
+
+            // Safe capture with error handling
             this.safeCaptureFrame(frame).catch(err => {
-              console.error(`❌ [AUDIO] PCM fallback failed: ${err.message}`);
+              console.error(`❌ [AUDIO] Unhandled error in safeCaptureFrame: ${err.message}`);
             });
           }
-        } else {
-          console.error(`❌ [ERROR] Opus decoder not available!`);
+        } catch (err) {
+          console.error(`❌ [WORKER] Decode error: ${err.message}`);
+          console.error(`    Data size: ${opusData.length}B, First 8 bytes: ${opusData.subarray(0, Math.min(8, opusData.length)).toString('hex')}`);
+
+          // PHASE 2: Fallback to PCM if worker decode fails (likely false positive detection)
+          console.log(`⚠️ [FALLBACK] Treating as PCM instead`);
+          const samples = new Int16Array(
+            opusData.buffer,
+            opusData.byteOffset,
+            opusData.length / 2
+          );
+          const frame = new AudioFrame(samples, 16000, 1, samples.length);
+          this.safeCaptureFrame(frame).catch(err => {
+            console.error(`❌ [AUDIO] PCM fallback failed: ${err.message}`);
+          });
         }
       } else {
         // Treat as PCM directly
@@ -766,13 +1331,25 @@ class LiveKitBridge extends Emitter {
   checkOpusFormat(data) {
       if (data.length < 1) return false;
 
+      // PHASE 2: Filter out text messages (keepalive, ping, etc.)
+      // Check if data looks like ASCII text
+      try {
+        const textCheck = data.toString('utf8', 0, Math.min(10, data.length));
+        if (/^(keepalive|ping|pong|hello|goodbye)/.test(textCheck)) {
+          // console.log(`🚫 Filtered out text message: ${textCheck}`);
+          return false; // This is a text message, not Opus
+        }
+      } catch (e) {
+        // Not valid UTF-8, continue with Opus check
+      }
+
       // ESP32 sends 60ms OPUS frames at 16kHz mono with complexity=0
       const MIN_OPUS_SIZE = 1;    // Minimum OPUS packet (can be very small for silence)
       const MAX_OPUS_SIZE = 400;  // Maximum OPUS packet for 60ms@16kHz
 
       // Validate packet size range
       if (data.length < MIN_OPUS_SIZE || data.length > MAX_OPUS_SIZE) {
-          console.log(`❌ Invalid OPUS size: ${data.length}B (expected ${MIN_OPUS_SIZE}-${MAX_OPUS_SIZE}B)`);
+          // console.log(`❌ Invalid OPUS size: ${data.length}B (expected ${MIN_OPUS_SIZE}-${MAX_OPUS_SIZE}B)`);
           return false;
       }
 
@@ -2081,15 +2658,14 @@ class MQTTConnection {
     // console.log(
     //   `🔐 Payload first 8 bytes: ${payload.subarray(0, 8).toString("hex")}`
     // );
-    const cipher = crypto.createCipheriv(
+
+    // PHASE 1 OPTIMIZATION: Use StreamingCrypto for cipher caching
+    const encryptedPayload = streamingCrypto.encrypt(
+      payload,
       this.udp.encryption,
       this.udp.key,
       header
     );
-    const encryptedPayload = Buffer.concat([
-      cipher.update(payload),
-      cipher.final(),
-    ]);
     // console.log(
     //   `🔐 Encrypted first 8 bytes: ${encryptedPayload
     //     .subarray(0, 8)
@@ -2294,18 +2870,15 @@ class MQTTConnection {
     //   `📡 [UDP RECV] From ${rinfo.address}:${rinfo.port} - payload=${payloadLength}B, ts=${timestamp}, seq=${sequence}`
     // );
 
-    // Process encrypted data
+    // Process encrypted data - PHASE 1 OPTIMIZATION: Use StreamingCrypto
     const header = message.slice(0, 16);
     const encryptedPayload = message.slice(16, 16 + payloadLength);
-    const cipher = crypto.createDecipheriv(
+    const payload = streamingCrypto.decrypt(
+      encryptedPayload,
       this.udp.encryption,
       this.udp.key,
       header
     );
-    const payload = Buffer.concat([
-      cipher.update(encryptedPayload),
-      cipher.final(),
-    ]);
 
     // Check if this is a ping message
     const payloadStr = payload.toString();
@@ -2543,15 +3116,13 @@ class VirtualMQTTConnection {
       this.udp.localSequence
     );
 
-    const cipher = crypto.createCipheriv(
+    // PHASE 1 OPTIMIZATION: Use StreamingCrypto for cipher caching
+    const encryptedPayload = streamingCrypto.encrypt(
+      payload,
       this.udp.encryption,
       this.udp.key,
       header
     );
-    const encryptedPayload = Buffer.concat([
-      cipher.update(payload),
-      cipher.final(),
-    ]);
     const message = Buffer.concat([header, encryptedPayload]);
     this.gateway.sendUdpMessage(message, this.udp.remoteAddress);
   }
@@ -2882,17 +3453,15 @@ class VirtualMQTTConnection {
       return;
     }
 
+    // PHASE 1 OPTIMIZATION: Use StreamingCrypto for cipher caching
     const header = message.slice(0, 16);
     const encryptedPayload = message.slice(16, 16 + payloadLength);
-    const cipher = crypto.createDecipheriv(
+    const payload = streamingCrypto.decrypt(
+      encryptedPayload,
       this.udp.encryption,
       this.udp.key,
       header
     );
-    const payload = Buffer.concat([
-      cipher.update(encryptedPayload),
-      cipher.final(),
-    ]);
 
     const payloadStr = payload.toString();
     if (payloadStr.startsWith("ping:")) {
