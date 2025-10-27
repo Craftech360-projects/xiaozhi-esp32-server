@@ -1497,11 +1497,15 @@ jobs:
             # Verify UV installation
             uv --version
 
-            echo "✅ LiveKit CLI and UV installed successfully"
+            # Install expect for handling interactive prompts
+            echo "📦 Installing expect..."
+            sudo apt-get update -qq && sudo apt-get install -y expect
+
+            echo "✅ LiveKit CLI, UV, and expect installed successfully"
 
       - run:
           name: Deploy Agent to LiveKit Cloud (Rolling Deployment)
-          no_output_timeout: 20m
+          no_output_timeout: 10m
           command: |
             : "${LIVEKIT_URL:?Set LIVEKIT_URL in CircleCI context}"
             : "${LIVEKIT_API_KEY:?Set LIVEKIT_API_KEY in CircleCI context}"
@@ -1516,39 +1520,71 @@ jobs:
             export LIVEKIT_API_KEY="$LIVEKIT_API_KEY"
             export LIVEKIT_API_SECRET="$LIVEKIT_API_SECRET"
 
+            # Create expect script for lk agent create
+            cat > /tmp/lk_create.exp << 'EOFCREATE'
+#!/usr/bin/expect -f
+set timeout 600
+spawn lk agent create
+expect {
+    "toggle" { send "\r"; exp_continue }
+    "submit" { send "\r"; exp_continue }
+    "Yes" { send "y\r"; exp_continue }
+    "Select another" { send "\r"; exp_continue }
+    eof { catch wait result; exit [lindex $result 3] }
+    timeout { puts "ERROR: Timeout"; exit 1 }
+}
+EOFCREATE
+
+            # Create expect script for lk agent deploy
+            cat > /tmp/lk_deploy.exp << 'EOFDEPLOY'
+#!/usr/bin/expect -f
+set timeout 600
+spawn lk agent deploy
+expect {
+    "toggle" { send "\r"; exp_continue }
+    "submit" { send "\r"; exp_continue }
+    "Yes" { send "y\r"; exp_continue }
+    "Select another" { send "\r"; exp_continue }
+    eof { catch wait result; exit [lindex $result 3] }
+    timeout { puts "ERROR: Timeout"; exit 1 }
+}
+EOFDEPLOY
+
+            chmod +x /tmp/lk_create.exp /tmp/lk_deploy.exp
+
             # Check if agent already exists
             if [ -f "livekit.toml" ]; then
-              AGENT_ID=$(grep -oP 'id\s*=\s*"\K[^"]+' livekit.toml 2>/dev/null || grep 'id' livekit.toml | cut -d'"' -f2 || echo "")
+              AGENT_ID=$(grep 'id' livekit.toml | cut -d'"' -f2 || echo "")
 
               if [ -n "$AGENT_ID" ]; then
                 echo "📋 Found existing agent ID: $AGENT_ID"
-                echo "🔄 Using rolling deployment (lk agent deploy)..."
+                echo "🔄 Using rolling deployment..."
 
-                # Use rolling deployment for existing agent (non-interactive)
-                yes | lk agent deploy || {
+                /tmp/lk_deploy.exp || {
                   echo "❌ Agent deployment failed"
-                  echo "📋 Agent status:"
                   lk agent status || true
                   exit 1
                 }
 
-                echo "✅ Rolling deployment completed successfully!"
+                echo "✅ Rolling deployment completed!"
               else
                 echo "⚠️  livekit.toml exists but no agent ID found"
                 echo "🚀 Creating new agent..."
-                yes | lk agent create || {
-                  echo "❌ Agent creation failed"
-                  exit 1
-                }
+                /tmp/lk_create.exp || exit 1
               fi
             else
               echo "📋 No livekit.toml found"
               echo "🚀 Creating new agent (first deployment)..."
 
-              # First deployment - create new agent (pipe 'yes' to auto-confirm prompts)
-              yes | lk agent create || {
-                echo "❌ Agent creation failed"
-                exit 1
+              /tmp/lk_create.exp || {
+                EXIT_CODE=$?
+                if [ -f "livekit.toml" ]; then
+                  echo "✅ livekit.toml created, agent deployed"
+                  exit 0
+                else
+                  echo "❌ Agent creation failed"
+                  exit $EXIT_CODE
+                fi
               }
 
               echo "✅ Agent created successfully!"
@@ -1557,7 +1593,6 @@ jobs:
             echo "⏳ Waiting for deployment to stabilize..."
             sleep 10
 
-            # Check deployment status
             echo "📋 Checking agent status..."
             lk agent status || echo "⚠️  Could not retrieve agent status"
 
