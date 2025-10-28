@@ -73,7 +73,8 @@ class DatadogLogHandler(logging.Handler):
                 self.enabled = False
         else:
             if not DATADOG_AVAILABLE:
-                print("⚠️ Datadog API client not installed. Install with: pip install datadog-api-client ddtrace")
+                print(
+                    "⚠️ Datadog API client not installed. Install with: pip install datadog-api-client ddtrace")
             else:
                 print("⚠️ Datadog API key not configured or invalid")
 
@@ -107,8 +108,10 @@ class DatadogLogHandler(logging.Handler):
             # Add exception info if present
             if record.exc_info:
                 log_data["error.kind"] = record.exc_info[0].__name__ if record.exc_info[0] else "Exception"
-                log_data["error.message"] = str(record.exc_info[1]) if record.exc_info[1] else ""
-                log_data["error.stack"] = self.formatter.formatException(record.exc_info) if self.formatter else ""
+                log_data["error.message"] = str(
+                    record.exc_info[1]) if record.exc_info[1] else ""
+                log_data["error.stack"] = self.formatter.formatException(
+                    record.exc_info) if self.formatter else ""
 
             # Add extra context from record
             if hasattr(record, 'room_name'):
@@ -118,12 +121,14 @@ class DatadogLogHandler(logging.Handler):
             if hasattr(record, 'session_id'):
                 log_data["session_id"] = record.session_id
 
-            # Create HTTP log item
+            # Create HTTP log item with ALL log data as JSON message
+            # This ensures ERROR logs include exception details, stack traces, and custom context
             log_item = HTTPLogItem(
                 ddsource="python",
                 ddtags=log_data["ddtags"],
                 hostname=log_data["hostname"],
-                message=log_data["message"],
+                # Send entire log_data as JSON for full context
+                message=json.dumps(log_data),
                 service=self.service_name,
             )
 
@@ -165,7 +170,8 @@ class DatadogConfig:
             "service": os.getenv("DD_SERVICE", "livekit-server"),
             "env": os.getenv("DD_ENV", "local"),
             "version": os.getenv("DD_VERSION", "1.0.0"),
-            "site": os.getenv("DD_SITE", "datadoghq.com"),  # or datadoghq.eu for EU
+            # or datadoghq.eu for US5
+            "site": os.getenv("DD_SITE", "us5.datadoghq.com"),
             "tags": os.getenv("DD_TAGS", "").split(",") if os.getenv("DD_TAGS") else [],
         }
 
@@ -208,7 +214,8 @@ class DatadogConfig:
             target_logger = logger or logging.getLogger()
             target_logger.addHandler(datadog_handler)
 
-            print(f"✅ Datadog logging enabled: service={config['service']}, env={config['env']}, site={config['site']}")
+            print(
+                f"✅ Datadog logging enabled: service={config['service']}, env={config['env']}, site={config['site']}")
             return True
 
         except Exception as e:

@@ -74,6 +74,9 @@
 - User explicitly requests specific action (play music, tell story)
 - Real-time data needed beyond context (live updates, specific queries)
 - Functionality requires external service (web search, device control)
+- IMPORTANT: After calling play_music or play_story functions, DO NOT respond immediately. Let the music/story play first.
+- CRITICAL RULE: If a function returns "[MUSIC_PLAYING - STAY_SILENT]" or "[STORY_PLAYING - STAY_SILENT]", DO NOT generate any response. Stay completely silent.
+- NEVER say things like "Now playing..." or "Here's your song..." immediately after calling functions.
 
 ❌ Avoid tools when:
 - Info already available in `<context>` (time, date)

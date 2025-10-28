@@ -23,3 +23,17 @@ scaling_target = 60
 [cerebrium.runtime.custom]
 port = 8081
 dockerfile_path = "./Dockerfile"
+
+[cerebrium.env]
+# LiveKit Cloud Configuration (REQUIRED for Cerebrium deployment)
+LIVEKIT_URL = "wss://cheeko-ycahauzs.livekit.cloud"
+LIVEKIT_API_KEY = "APIFrjVQFMvUte3"
+LIVEKIT_API_SECRET = "GHGRD7WJmUVlfD9KoXTI3C5ZcD1dK9YGoBUbPSYmX5D"
+
+# Model Configuration (CRITICAL - no comments in values!)
+EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+AUTO_PRELOAD_MODELS = "true"
+
+# Add other required environment variables here
+# Important: Add these via Cerebrium dashboard or CLI for security:
+# GROQ_API_KEY, DATADOG_API_KEY, AWS credentials, etc.
