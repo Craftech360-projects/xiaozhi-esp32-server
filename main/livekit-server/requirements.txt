@@ -25,3 +25,7 @@ mem0ai
 jinja2
 gtts
 pyttsx3
+
+# Datadog monitoring and logging
+datadog-api-client
+ddtrace

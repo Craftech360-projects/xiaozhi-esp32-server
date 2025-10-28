@@ -40,6 +40,9 @@ load_dotenv(".env")
 
 # Import our organized modules
 
+# Initialize Datadog logging (must be done before logger usage)
+from src.config.datadog_config import DatadogConfig
+DatadogConfig.setup_logging()
 
 logger = logging.getLogger("agent")
 
