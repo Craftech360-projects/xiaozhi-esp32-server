@@ -27,6 +27,7 @@ RUN apt-get update && \
     portaudio19-dev \
     libffi-dev \
     libssl-dev \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 USER appuser
