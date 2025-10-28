@@ -15,6 +15,7 @@ from livekit.agents import (
 )
 from .filtered_agent import FilteredAgent
 from src.utils.database_helper import DatabaseHelper
+from src.services.google_search_service import GoogleSearchService
 logger = logging.getLogger("agent")
 
 # Mode name aliases for handling transcript variations
@@ -85,6 +86,7 @@ class Assistant(FilteredAgent):
         self.unified_audio_player = None
         self.device_control_service = None
         self.mcp_executor = None
+        self.google_search_service = None
 
         # Room and device information
         self.room_name = None
@@ -128,14 +130,15 @@ class Assistant(FilteredAgent):
 
 
 
-    def set_services(self, music_service, story_service, audio_player, unified_audio_player=None, device_control_service=None, mcp_executor=None):
-        """Set the music, story, device control services, and MCP executor"""
+    def set_services(self, music_service, story_service, audio_player, unified_audio_player=None, device_control_service=None, mcp_executor=None, google_search_service=None):
+        """Set the music, story, device control services, MCP executor, and Google Search service"""
         self.music_service = music_service
         self.story_service = story_service
         self.audio_player = audio_player
         self.unified_audio_player = unified_audio_player
         self.device_control_service = device_control_service
         self.mcp_executor = mcp_executor
+        self.google_search_service = google_search_service
 
     def set_room_info(self, room_name: str = None, device_mac: str = None):
         """Set room name and device MAC address"""
@@ -302,6 +305,232 @@ class Assistant(FilteredAgent):
         """Look up weather information for a specific location"""
         logger.info(f"Looking up weather for {location}")
         return "sunny with a temperature of 70 degrees."
+
+    @function_tool
+    async def search_wikipedia(
+        self,
+        context: RunContext,
+        query: str
+    ) -> str:
+        """Search Wikipedia for current information and events after January 2025
+
+        ⚠️ CRITICAL DECISION RULES - Read carefully and follow exactly:
+
+        ═══════════════════════════════════════════════════════════════════
+        🟡 FIRST CHECK: CONFIDENCE & ACCURACY
+        ═══════════════════════════════════════════════════════════════════
+
+        🚨 CRITICAL RULE: If you are NOT 100% CONFIDENT about factual information,
+        USE WIKIPEDIA to verify! It's BETTER to search than give WRONG information!
+
+        ⚠️ ALWAYS USE WIKIPEDIA if:
+        1. You're uncertain about specific facts (scores, winners, dates, names)
+        2. The query asks for precise data (scorecards, statistics, results)
+        3. You're not confident in your answer
+        4. The information could have multiple versions or interpretations
+
+        Examples where you SHOULD use Wikipedia even for old events:
+        ✅ "Who won 2021 IPL?" → If unsure, USE WIKIPEDIA (verify the winner!)
+        ✅ "2008 cricket scorecard" → If unsure about exact scores, USE WIKIPEDIA
+        ✅ "2019 election results" → If unsure about exact numbers, USE WIKIPEDIA
+        ✅ "List of IPL winners" → USE WIKIPEDIA (precise list needed!)
+
+        💡 RULE OF THUMB:
+        - Factual queries requiring 100% accuracy → USE WIKIPEDIA to verify
+        - Uncertain or could be wrong → USE WIKIPEDIA to verify
+        - Confident and simple fact → Answer directly
+
+        ═══════════════════════════════════════════════════════════════════
+        🟡 SECOND CHECK: HISTORICAL vs CURRENT QUERY
+        ═══════════════════════════════════════════════════════════════════
+
+        ❌ ONLY skip Wikipedia if you are COMPLETELY CONFIDENT about historical data:
+           - Simple, well-known facts you're 100% sure about
+           - General knowledge questions with clear answers
+           - NOT specific statistics, scorecards, or detailed results
+
+        ✅ USE WIKIPEDIA for 2024, 2025, or temporal keywords:
+           - "2024 elections" → USE Wikipedia (recent!)
+           - "2025 IPL winner" → USE Wikipedia (beyond cutoff!)
+           - "Current president" → USE Wikipedia (could have changed!)
+           - "Latest news" → USE Wikipedia (after your training!)
+
+        ═══════════════════════════════════════════════════════════════════
+        🔴 MANDATORY WIKIPEDIA SEARCH (You MUST use this tool):
+        ═══════════════════════════════════════════════════════════════════
+
+        1. KEYWORD TRIGGERS (If query contains ANY of these words):
+           ✅ "latest" → ALWAYS use Wikipedia (NO EXCEPTIONS)
+           ✅ "recent" → ALWAYS use Wikipedia (NO EXCEPTIONS)
+           ✅ "current" → ALWAYS use Wikipedia (NO EXCEPTIONS)
+           ✅ "now" → ALWAYS use Wikipedia (NO EXCEPTIONS)
+           ✅ "today" → ALWAYS use Wikipedia (NO EXCEPTIONS)
+           ✅ "yesterday" → ALWAYS use Wikipedia (NO EXCEPTIONS)
+           ✅ "this week/month/year" → ALWAYS use Wikipedia (NO EXCEPTIONS)
+           ✅ "last week/month" → ALWAYS use Wikipedia (NO EXCEPTIONS)
+           ✅ "news" → ALWAYS use Wikipedia (NO EXCEPTIONS)
+           ✅ "updates" → ALWAYS use Wikipedia (NO EXCEPTIONS)
+           ✅ "developments" → ALWAYS use Wikipedia (NO EXCEPTIONS)
+           ✅ "happening" → ALWAYS use Wikipedia (NO EXCEPTIONS)
+
+           ⚠️ CRITICAL EXAMPLES THAT MUST TRIGGER WIKIPEDIA:
+           - "Who is the current president of America?" → USE WIKIPEDIA (current = could have changed!)
+           - "What's the current population of India?" → USE WIKIPEDIA (current = needs latest data!)
+           - "Who is the latest CEO of Tesla?" → USE WIKIPEDIA (latest = might have changed!)
+           - "What's the recent news about SpaceX?" → USE WIKIPEDIA (recent = after your cutoff!)
+           - "What's happening now in politics?" → USE WIKIPEDIA (now = beyond your knowledge!)
+           - "What's the latest GDP of USA?" → USE WIKIPEDIA (latest = new data!)
+           - "Who won the recent elections?" → USE WIKIPEDIA (recent = you don't know!)
+           - "What's the current stock price?" → USE WIKIPEDIA (current = live data!)
+           - "Tell me today's weather" → USE WIKIPEDIA (today = you don't know!)
+           - "Give me yesterday's news" → USE WIKIPEDIA (yesterday = Oct 23, 2025!)
+
+           🚨 IMPORTANT: Even if you THINK you know the answer, these keywords mean
+           the information could have CHANGED after January 2025. ALWAYS use Wikipedia!
+
+        2. ANY 2025 DATES (explicit or implicit):
+           ✅ "What happened in June 2025?" → USE WIKIPEDIA
+           ✅ "Tell me about 2025" → USE WIKIPEDIA
+           ✅ "Events this year" (it's Oct 2025) → USE WIKIPEDIA
+           ✅ "What happened last month?" (Sept 2025) → USE WIKIPEDIA
+           ✅ "Yesterday's news" (Oct 23, 2025) → USE WIKIPEDIA
+
+        3. EXPLICIT WIKIPEDIA REQUESTS:
+           ✅ "Search Wikipedia for..." → USE WIKIPEDIA
+           ✅ "Look up on Wikipedia..." → USE WIKIPEDIA
+           ✅ "Check Wikipedia about..." → USE WIKIPEDIA
+
+        4. STATISTICS/DATA QUERIES:
+           ✅ "What's the current population of..." → USE WIKIPEDIA
+           ✅ "Latest GDP of..." → USE WIKIPEDIA
+           ✅ "Recent stock prices..." → USE WIKIPEDIA
+
+        5. BIOGRAPHICAL QUERIES - PATTERN MATCHING (CRITICAL):
+           🚨 ANY query matching these patterns → ALWAYS use Wikipedia FIRST:
+
+           Pattern: "Who is [PERSON_NAME]?"
+           Pattern: "Tell me about [PERSON_NAME]"
+           Pattern: "What do you know about [PERSON_NAME]?"
+           Pattern: "Give me information about [PERSON_NAME]"
+
+           ✅ EXAMPLES (but NOT limited to these names):
+           - "Who is Charlie Chaplin?" → USE WIKIPEDIA
+           - "Who is Rohit Sharma?" → USE WIKIPEDIA
+           - "Who is Elon Musk?" → USE WIKIPEDIA
+           - "Tell me about Albert Einstein" → USE WIKIPEDIA
+           - "Who is Narendra Modi?" → USE WIKIPEDIA
+           - "Who is Taylor Swift?" → USE WIKIPEDIA
+           - "What do you know about Steve Jobs?" → USE WIKIPEDIA
+
+           🔴 IMPORTANT: These are just EXAMPLES. The rule applies to ANY person's name!
+           "Who is [ANY_NAME]?" → ALWAYS search Wikipedia first!
+
+           💡 WHY Wikipedia for people?
+           - Career changes (team, company, position)
+           - Recent achievements and awards
+           - Current projects and activities
+           - Biographical updates and life events
+           - Death/retirement information (if applicable)
+
+           Even if you think you know the person, Wikipedia has MORE CURRENT information!
+
+        ═══════════════════════════════════════════════════════════════════
+        🟢 DO NOT USE WIKIPEDIA (Only if you are 100% CONFIDENT):
+        ═══════════════════════════════════════════════════════════════════
+
+        ⚠️ IMPORTANT: Only skip Wikipedia if you are ABSOLUTELY CERTAIN!
+
+        ❌ Simple, well-known general knowledge (if 100% confident):
+           - "What is the capital of France?" → Paris (you know this!)
+           - "Who invented the telephone?" → Alexander Graham Bell (you know this!)
+           - "When did WW2 end?" → 1945 (you know this!)
+
+        🟡 Historical sports/events (ONLY if 100% confident, otherwise USE WIKIPEDIA):
+           - "Who won 2010 World Cup?" → Spain (if 100% sure!)
+           - BUT if asking for scorecards, detailed results, statistics → USE WIKIPEDIA!
+           - Better safe than sorry - when in doubt, USE WIKIPEDIA!
+
+        ❌ Conceptual explanations:
+           - "What is artificial intelligence?" → Don't use Wikipedia
+           - "How does a computer work?" → Don't use Wikipedia
+           - "Explain quantum physics" → Don't use Wikipedia
+
+        ❌ Conversational/Creative:
+           - "Tell me a joke" → Don't use Wikipedia
+           - "How are you?" → Don't use Wikipedia
+           - "I'm sad" → Don't use Wikipedia
+
+        ═══════════════════════════════════════════════════════════════════
+        ⚡ DECISION FRAMEWORK:
+        ═══════════════════════════════════════════════════════════════════
+
+        Your knowledge cutoff: January 2025
+        Current date: October 2025
+
+        📊 USE WIKIPEDIA if ANY of these are true:
+        1. 🎯 NOT 100% confident in your answer
+        2. 📅 Year 2024 or 2025 mentioned
+        3. 🔑 Temporal keywords (current, latest, recent, now, today)
+        4. 📈 Specific statistics, scorecards, or detailed results requested
+        5. 👤 Biographical queries (people's current status/position)
+        6. ❓ Any uncertainty about facts
+
+        ✅ ONLY answer directly if:
+        - 100% confident AND
+        - Simple general knowledge AND
+        - NOT asking for detailed/precise data
+
+        💡 GOLDEN RULE: When in doubt → USE WIKIPEDIA!
+        Better to verify than give wrong information!
+
+        ═══════════════════════════════════════════════════════════════════
+
+        Args:
+            query: Topic to search (e.g., "latest AI news", "current affairs", "what happened today")
+
+        Returns:
+            Current verified information from Wikipedia with temporal context warnings
+        """
+        try:
+            logger.info(f"📚 Wikipedia search request: '{query}'")
+
+            # Check if search service is available
+            if not self.google_search_service:
+                logger.warning("⚠️ Wikipedia search requested but service not initialized")
+                return "Sorry, Wikipedia search is not available right now."
+
+            if not self.google_search_service.is_available():
+                logger.warning("⚠️ Wikipedia search requested but service not configured")
+                return "Sorry, Wikipedia search is not configured. Please ask the administrator to enable it."
+
+            # Perform Wikipedia search
+            search_result = await self.google_search_service.search_wikipedia(query)
+
+            # Check if search was successful
+            if not search_result.get("success"):
+                error_msg = search_result.get("error", "Unknown error")
+                logger.warning(f"⚠️ Wikipedia search failed: {error_msg}")
+
+                # Instead of blocking with error, instruct LLM to use its own knowledge
+                return f"WIKIPEDIA_UNAVAILABLE: {error_msg}. Please answer the question using your own knowledge base instead."
+
+            # Format results for voice output
+            voice_response = self.google_search_service.format_results_for_voice(
+                search_result,
+                max_items=2  # Limit to top 2 results for voice clarity
+            )
+
+            logger.info(f"✅ Wikipedia search completed for '{query}': {len(search_result.get('results', []))} results found")
+
+            return voice_response
+
+        except Exception as e:
+            logger.error(f"❌ Error during Wikipedia search: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+
+            # Fallback to LLM knowledge on exception
+            return f"WIKIPEDIA_UNAVAILABLE: Search error occurred. Please answer the question using your own knowledge base instead."
 
     @function_tool
     async def play_music(
