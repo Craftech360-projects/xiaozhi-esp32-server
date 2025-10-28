@@ -36,22 +36,18 @@ JOIN `ai_agent_template` t ON t.agent_name = 'Cheeko'
 SET a.template_id = t.id
 WHERE a.template_id IS NULL;
 
--- Verify updates
-SELECT
-    COUNT(*) as total_agents,
-    COUNT(template_id) as agents_with_template,
-    COUNT(*) - COUNT(template_id) as agents_without_template
-FROM `ai_agent`;
-
--- Log the template distribution
-SELECT
-    t.agent_name as template_name,
-    COUNT(a.id) as agent_count,
-    t.id as template_id
-FROM `ai_agent_template` t
-LEFT JOIN `ai_agent` a ON a.template_id = t.id
-GROUP BY t.id, t.agent_name
-ORDER BY agent_count DESC;
+-- Note: Verification queries removed as they can cause Liquibase failures
+-- To verify the migration, run these queries manually after deployment:
+--
+-- SELECT COUNT(*) as total_agents, COUNT(template_id) as agents_with_template,
+--        COUNT(*) - COUNT(template_id) as agents_without_template
+-- FROM `ai_agent`;
+--
+-- SELECT t.agent_name as template_name, COUNT(a.id) as agent_count, t.id as template_id
+-- FROM `ai_agent_template` t
+-- LEFT JOIN `ai_agent` a ON a.template_id = t.id
+-- GROUP BY t.id, t.agent_name
+-- ORDER BY agent_count DESC;
 
 -- ============================================================================
 -- Migration Notes:

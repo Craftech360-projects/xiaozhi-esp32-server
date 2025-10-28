@@ -6,6 +6,7 @@ from livekit.agents import stt, llm, tts
 
 # Import our custom providers
 from .edge_tts_provider import EdgeTTS
+from .funasr_provider import FunASRSTT
 
 
 class ProviderFactory:
@@ -30,8 +31,43 @@ class ProviderFactory:
     @staticmethod
     def create_stt(config, vad=None):
         """Create Speech-to-Text provider with fallback based on configuration"""
+        import logging
+        logger = logging.getLogger("provider_factory")
+
         fallback_enabled = config.get('fallback_enabled', False)
         provider = config.get('stt_provider', 'groq').lower()
+
+        # FunASR Provider (LOCAL ONLY - NO API CALLS)
+        if provider == 'funasr':
+            from ..config.config_loader import ConfigLoader
+            funasr_config = ConfigLoader.get_funasr_config()
+
+            logger.info(f"[STT] Creating FunASR provider (local inference)")
+            logger.info(f"[STT] Model: {funasr_config['model_dir']}")
+            logger.info(f"[STT] Language: {funasr_config['language']}")
+            logger.info(f"[STT] Device: {funasr_config['device']}")
+            logger.info(f"[STT] VAD: max_seg={funasr_config['max_single_segment_time']}ms, "
+                       f"min_silence={funasr_config['min_silence_duration']}ms, "
+                       f"threshold={funasr_config['speech_noise_thres']}")
+
+            primary_stt = FunASRSTT(
+                model_dir=funasr_config['model_dir'],
+                language=funasr_config['language'],
+                use_itn=funasr_config['use_itn'],
+                max_single_segment_time=funasr_config['max_single_segment_time'],
+                min_silence_duration=funasr_config['min_silence_duration'],
+                speech_noise_thres=funasr_config['speech_noise_thres'],
+                device=funasr_config['device']
+            )
+
+            # FunASR has built-in VAD, but we can optionally wrap with Silero
+            if funasr_config.get('use_external_vad', False) and vad:
+                logger.info("[STT] Using FunASR with external Silero VAD")
+                return stt.StreamAdapter(stt=primary_stt, vad=vad)
+            else:
+                logger.info("[STT] Using FunASR with built-in VAD")
+                # Return FunASR directly (uses built-in VAD)
+                return primary_stt
 
         if fallback_enabled:
             # Create primary and fallback STT providers with StreamAdapter

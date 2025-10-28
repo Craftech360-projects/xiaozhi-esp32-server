@@ -139,6 +139,20 @@ def prewarm(proc: JobProcess):
     proc.userdata["embedding_model"] = model_cache.get_embedding_model()
     proc.userdata["qdrant_client"] = model_cache.get_qdrant_client()
 
+    # Load FunASR model if configured
+    groq_config = ConfigLoader.get_groq_config()
+    if groq_config.get('stt_provider') == 'funasr':
+        logger.info("[PREWARM] Loading FunASR model on main thread...")
+        try:
+            from src.config.config_loader import ConfigLoader as CL
+            funasr_config = CL.get_funasr_config()
+            funasr_model = model_cache.get_funasr_model(funasr_config)
+            proc.userdata["funasr_model"] = funasr_model
+            logger.info("[PREWARM] FunASR model loaded and cached")
+        except Exception as e:
+            logger.error(f"[PREWARM] Failed to load FunASR model: {e}")
+            logger.warning("[PREWARM] Continuing without FunASR preload")
+
     # Store service initialization info for later use
     proc.userdata["service_cache_ready"] = True
 

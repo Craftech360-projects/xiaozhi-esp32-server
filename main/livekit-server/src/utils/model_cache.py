@@ -235,6 +235,75 @@ class ModelCache:
 
         return self.get_model("qdrant_client", load_qdrant)
 
+    def get_funasr_model(self, config: dict):
+        """
+        Get cached FunASR model (must run on main thread)
+
+        Args:
+            config: FunASR configuration dict
+
+        Returns:
+            FunASR AutoModel instance
+        """
+        # Check if already cached
+        if "funasr_model" in self._models:
+            logger.info("[CACHE] Using cached FunASR model")
+            return self._models["funasr_model"]
+
+        # FunASR model should be loaded on main thread for optimal performance
+        try:
+            import threading
+            if threading.current_thread() != threading.main_thread():
+                logger.warning(
+                    "[CACHE] FunASR model should be loaded on main thread, deferring...")
+                # Still allow loading on worker threads for flexibility
+                pass
+
+            def load_funasr():
+                from funasr import AutoModel
+
+                model_dir = config['model_dir']
+                device = config['device']
+
+                # Build VAD kwargs with all parameters
+                vad_kwargs = {
+                    "max_single_segment_time": config['max_single_segment_time'],
+                    "min_silence_duration": config.get('min_silence_duration', 800),
+                    "speech_noise_thres": config.get('speech_noise_thres', 0.6),
+                }
+
+                logger.info(f"[CACHE] Loading FunASR model from {model_dir} (device={device})")
+                logger.info(f"[CACHE] VAD settings: max_seg={vad_kwargs['max_single_segment_time']}ms, "
+                           f"min_silence={vad_kwargs['min_silence_duration']}ms, "
+                           f"threshold={vad_kwargs['speech_noise_thres']}")
+
+                if not os.path.exists(model_dir):
+                    raise FileNotFoundError(
+                        f"FunASR model not found at {model_dir}. "
+                        f"Download it first: python scripts/download_funasr_model.py"
+                    )
+
+                model = AutoModel(
+                    model=model_dir,
+                    vad_kwargs=vad_kwargs,
+                    disable_update=True,
+                    hub="hf",
+                    device=device
+                )
+
+                logger.info("[CACHE] FunASR model loaded successfully")
+                return model
+
+            model = load_funasr()
+            self._models["funasr_model"] = model
+            return model
+
+        except Exception as e:
+            logger.error(f"[CACHE] Failed to load FunASR model: {e}")
+            import traceback
+            logger.debug(f"[CACHE] Traceback: {traceback.format_exc()}")
+            raise
+
     def clear_cache(self):
         """Clear all cached models (for testing/debugging)"""
         with self._lock:

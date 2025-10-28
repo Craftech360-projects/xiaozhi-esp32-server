@@ -5,75 +5,27 @@
 --              to store only short personality prompts instead of full prompts
 -- ============================================================================
 
--- Step 1: Add template_id column to ai_agent table (if not exists)
+-- Step 1: Add template_id column to ai_agent table
 -- This links each agent to a template (mode: Cheeko, Tutor, Music, Chat, Story)
-SET @column_exists = (
-    SELECT COUNT(*)
-    FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = DATABASE()
-    AND TABLE_NAME = 'ai_agent'
-    AND COLUMN_NAME = 'template_id'
-);
+-- Note: Will skip if column already exists (using error handling)
+ALTER TABLE `ai_agent`
+ADD COLUMN `template_id` VARCHAR(32) DEFAULT NULL COMMENT 'FK to ai_agent_template.id' AFTER `id`;
 
-SET @sql = IF(@column_exists = 0,
-    'ALTER TABLE `ai_agent` ADD COLUMN `template_id` VARCHAR(32) DEFAULT NULL COMMENT ''FK to ai_agent_template.id'' AFTER `id`',
-    'SELECT ''Column template_id already exists'' AS Info'
-);
-PREPARE stmt FROM @sql;
-EXECUTE stmt;
-DEALLOCATE PREPARE stmt;
+-- Step 1b: Add location column to ai_device table
+-- Note: Will skip if column already exists
+ALTER TABLE `ai_device`
+ADD COLUMN `location` VARCHAR(100) DEFAULT NULL COMMENT 'Device location (city name)' AFTER `kid_id`;
 
--- Step 1b: Add location column to ai_device table (if not exists)
-SET @column_exists = (
-    SELECT COUNT(*)
-    FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = DATABASE()
-    AND TABLE_NAME = 'ai_device'
-    AND COLUMN_NAME = 'location'
-);
+-- Step 2: Add index for performance
+ALTER TABLE `ai_agent`
+ADD KEY `idx_template_id` (`template_id`);
 
-SET @sql = IF(@column_exists = 0,
-    'ALTER TABLE `ai_device` ADD COLUMN `location` VARCHAR(100) DEFAULT NULL COMMENT ''Device location (city name)'' AFTER `kid_id`',
-    'SELECT ''Column location already exists'' AS Info'
-);
-PREPARE stmt FROM @sql;
-EXECUTE stmt;
-DEALLOCATE PREPARE stmt;
-
--- Step 2: Add index for performance (if not exists)
-SET @index_exists = (
-    SELECT COUNT(*)
-    FROM information_schema.STATISTICS
-    WHERE TABLE_SCHEMA = DATABASE()
-    AND TABLE_NAME = 'ai_agent'
-    AND INDEX_NAME = 'idx_template_id'
-);
-
-SET @sql = IF(@index_exists = 0,
-    'ALTER TABLE `ai_agent` ADD KEY `idx_template_id` (`template_id`)',
-    'SELECT ''Index idx_template_id already exists'' AS Info'
-);
-PREPARE stmt FROM @sql;
-EXECUTE stmt;
-DEALLOCATE PREPARE stmt;
-
--- Step 3: Add foreign key constraint (if not exists)
-SET @fk_exists = (
-    SELECT COUNT(*)
-    FROM information_schema.TABLE_CONSTRAINTS
-    WHERE TABLE_SCHEMA = DATABASE()
-    AND TABLE_NAME = 'ai_agent'
-    AND CONSTRAINT_NAME = 'fk_agent_template'
-    AND CONSTRAINT_TYPE = 'FOREIGN KEY'
-);
-
-SET @sql = IF(@fk_exists = 0,
-    'ALTER TABLE `ai_agent` ADD CONSTRAINT `fk_agent_template` FOREIGN KEY (`template_id`) REFERENCES `ai_agent_template` (`id`) ON DELETE SET NULL',
-    'SELECT ''Foreign key fk_agent_template already exists'' AS Info'
-);
-PREPARE stmt FROM @sql;
-EXECUTE stmt;
-DEALLOCATE PREPARE stmt;
+-- Step 3: Add foreign key constraint
+ALTER TABLE `ai_agent`
+ADD CONSTRAINT `fk_agent_template`
+FOREIGN KEY (`template_id`)
+REFERENCES `ai_agent_template` (`id`)
+ON DELETE SET NULL;
 
 -- Step 4: Update ai_agent_template table - Replace full prompts with short personalities
 -- Note: This updates existing templates to contain ONLY the personality/role description
@@ -111,23 +63,18 @@ JOIN `ai_agent_template` t ON t.agent_name = 'Cheeko'
 SET a.template_id = t.id
 WHERE a.template_id IS NULL;
 
--- Step 6: Verify migration
--- Log the number of agents linked to templates
-SELECT
-    COUNT(*) as total_agents,
-    COUNT(template_id) as agents_with_template,
-    COUNT(*) - COUNT(template_id) as agents_without_template
-FROM `ai_agent`;
-
--- Log the template distribution
-SELECT
-    t.agent_name as template_name,
-    COUNT(a.id) as agent_count,
-    t.id as template_id
-FROM `ai_agent_template` t
-LEFT JOIN `ai_agent` a ON a.template_id = t.id
-GROUP BY t.id, t.agent_name
-ORDER BY agent_count DESC;
+-- Note: Verification queries removed as they can cause Liquibase failures
+-- To verify the migration, run these queries manually after deployment:
+--
+-- SELECT COUNT(*) as total_agents, COUNT(template_id) as agents_with_template,
+--        COUNT(*) - COUNT(template_id) as agents_without_template
+-- FROM `ai_agent`;
+--
+-- SELECT t.agent_name as template_name, COUNT(a.id) as agent_count, t.id as template_id
+-- FROM `ai_agent_template` t
+-- LEFT JOIN `ai_agent` a ON a.template_id = t.id
+-- GROUP BY t.id, t.agent_name
+-- ORDER BY agent_count DESC;
 
 -- ============================================================================
 -- Migration Notes:

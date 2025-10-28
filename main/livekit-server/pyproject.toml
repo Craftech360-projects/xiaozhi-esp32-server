@@ -25,7 +25,11 @@ dependencies = [
     "jinja2",
     "pytz",
     "qdrant-client>=1.7.0",
-    "sentence-transformers>=2.2.0"
+    "sentence-transformers>=2.2.0",
+    "funasr==1.2.3",
+    "modelscope",
+    "onnxruntime",
+    "psutil"
 ]
 
 [dependency-groups]

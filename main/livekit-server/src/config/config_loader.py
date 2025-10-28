@@ -129,6 +129,48 @@ class ConfigLoader:
         }
 
     @staticmethod
+    def get_funasr_config() -> dict:
+        """
+        Get FunASR configuration (local inference only)
+
+        Returns:
+            dict: FunASR configuration
+        """
+        return {
+            # Model settings
+            'model_dir': os.getenv(
+                'FUNASR_MODEL_DIR',
+                'model_cache/funasr/SenseVoiceSmall'
+            ),
+
+            # Language: 'auto', 'zh', 'en', 'ja', 'ko'
+            'language': os.getenv('FUNASR_LANGUAGE', 'auto'),
+
+            # Inverse Text Normalization (converts spoken numbers to digits)
+            'use_itn': os.getenv('FUNASR_USE_ITN', 'true').lower() == 'true',
+
+            # FunASR VAD settings
+            'max_single_segment_time': int(
+                os.getenv('FUNASR_MAX_SEGMENT_TIME', '30000')
+            ),
+            'min_silence_duration': int(
+                os.getenv('FUNASR_MIN_SILENCE_DURATION', '800')
+            ),
+            'speech_noise_thres': float(
+                os.getenv('FUNASR_SPEECH_NOISE_THRESHOLD', '0.6')
+            ),
+
+            # Compute device: 'cpu' or 'cuda:0' for GPU
+            'device': os.getenv('FUNASR_DEVICE', 'cpu'),
+
+            # Use external Silero VAD alongside FunASR's built-in VAD
+            'use_external_vad': os.getenv(
+                'FUNASR_USE_EXTERNAL_VAD',
+                'false'
+            ).lower() == 'true',
+        }
+
+    @staticmethod
     def load_yaml_config():
         """Load configuration from config.yaml"""
         config_path = Path(__file__).parent.parent.parent / "config.yaml"

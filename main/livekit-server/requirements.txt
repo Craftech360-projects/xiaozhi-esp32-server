@@ -8,6 +8,12 @@ google-api-python-client>=2.100.0
 # faster-whisper  # Local STT using Whisper
 # TTS  # Coqui TTS for local text-to-speech
 
+# FunASR Speech Recognition (Local Inference)
+funasr==1.2.3
+modelscope
+onnxruntime
+psutil
+
 # Optional dependencies for enhanced semantic search
 qdrant-client
 sentence-transformers
