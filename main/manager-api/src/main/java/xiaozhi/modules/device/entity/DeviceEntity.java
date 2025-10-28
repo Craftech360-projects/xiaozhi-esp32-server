@@ -46,6 +46,9 @@ public class DeviceEntity {
     @Schema(description = "关联的孩子ID")
     private Long kidId;
 
+    @Schema(description = "设备位置（城市名称）")
+    private String location;
+
     @Schema(description = "固件版本号")
     private String appVersion;
 

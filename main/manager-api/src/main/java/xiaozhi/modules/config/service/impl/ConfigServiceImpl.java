@@ -514,4 +514,87 @@ public class ConfigServiceImpl implements ConfigService {
 
         return childProfile;
     }
+
+    @Override
+    public String getAgentTemplateId(String macAddress) {
+        // 根据MAC地址查找设备
+        DeviceEntity device = deviceService.getDeviceByMacAddress(macAddress);
+        if (device == null) {
+            throw new RenException(ErrorCode.OTA_DEVICE_NOT_FOUND, "Device not found for MAC: " + macAddress);
+        }
+
+        // 获取智能体信息
+        AgentEntity agent = agentService.selectById(device.getAgentId());
+        if (agent == null) {
+            throw new RenException("Agent not found for device: " + macAddress);
+        }
+
+        // 返回模板ID
+        String templateId = agent.getTemplateId();
+        if (StringUtils.isBlank(templateId)) {
+            throw new RenException("No template_id configured for agent: " + agent.getAgentName());
+        }
+
+        return templateId;
+    }
+
+    @Override
+    public String getTemplateContent(String templateId) {
+        // 根据模板ID查找模板
+        // Note: AgentTemplateService extends IService (MyBatis-Plus) which uses getById()
+        AgentTemplateEntity template = agentTemplateService.getById(templateId);
+        if (template == null) {
+            throw new RenException("Template not found for ID: " + templateId);
+        }
+
+        // 返回模板内容（personality）
+        String systemPrompt = template.getSystemPrompt();
+        if (StringUtils.isBlank(systemPrompt)) {
+            throw new RenException("No system_prompt configured for template: " + template.getAgentName());
+        }
+
+        return systemPrompt;
+    }
+
+    @Override
+    public String getDeviceLocation(String macAddress) {
+        // 根据MAC地址查找设备
+        DeviceEntity device = deviceService.getDeviceByMacAddress(macAddress);
+        if (device == null) {
+            throw new RenException(ErrorCode.OTA_DEVICE_NOT_FOUND, "Device not found for MAC: " + macAddress);
+        }
+
+        // TODO: 实现位置获取逻辑
+        // 可以从设备表获取，或调用第三方IP定位服务
+        // 目前返回默认值
+        String location = device.getLocation();
+        if (StringUtils.isBlank(location)) {
+            // 默认返回 "Unknown" 或从IP获取
+            return "Mumbai";  // 默认印度孟买
+        }
+
+        return location;
+    }
+
+    @Override
+    public String getWeatherForecast(String location) {
+        // TODO: 集成天气API (如OpenWeatherMap, WeatherAPI.com等)
+        // 目前返回模拟数据
+        if (StringUtils.isBlank(location)) {
+            return "Weather information not available";
+        }
+
+        // 返回模拟的7天天气预报
+        return String.format(
+            "7-Day Weather Forecast for %s:\n" +
+            "Today: Sunny, 28°C\n" +
+            "Tomorrow: Partly Cloudy, 27°C\n" +
+            "Day 3: Light Rain, 25°C\n" +
+            "Day 4: Cloudy, 26°C\n" +
+            "Day 5: Sunny, 29°C\n" +
+            "Day 6: Partly Cloudy, 28°C\n" +
+            "Day 7: Sunny, 30°C",
+            location
+        );
+    }
 }

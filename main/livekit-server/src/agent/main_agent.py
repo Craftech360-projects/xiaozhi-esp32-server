@@ -164,6 +164,7 @@ class Assistant(FilteredAgent):
         try:
             import os
             import aiohttp
+            from src.services.prompt_service import PromptService
 
             # 1. Validate device MAC
             if not self.device_mac:
@@ -190,7 +191,7 @@ class Assistant(FilteredAgent):
 
             logger.info(f"🔄 Updating agent {agent_id} to mode: {normalized_mode}")
 
-            # 4. Call update-mode API
+            # 4. Call update-mode API (updates template_id in database)
             url = f"{manager_api_url}/agent/update-mode"
             headers = {
                 "Authorization": f"Bearer {manager_api_secret}",
@@ -207,32 +208,84 @@ class Assistant(FilteredAgent):
                     if response.status == 200:
                         result = await response.json()
                         logger.info(f"✅ Agent mode updated in database to '{normalized_mode}' for agent: {agent_id}")
-                        data = result.get('data')
-                        logger.info(f"📦 API Response: code={result.get('code')}, has_data={bool(data)}, data_length={len(data) if data else 0}")
 
-                        # 5. Get the new prompt from the API response directly
-                        if result.get('code') == 0 and result.get('data'):
-                            new_prompt = result.get('data')
+                        # 5. Initialize PromptService and use template system
+                        prompt_service = PromptService()
+                        await prompt_service.initialize_template_system()
 
-                            # 6. Update the agent's instructions dynamically
-                            # Note: self.instructions is read-only, so we update the internal attribute
-                            self._instructions = new_prompt
-                            logger.info(f"📝 Instructions updated dynamically (length: {len(new_prompt)} chars)")
-                            logger.info(f"📝 New prompt preview: {new_prompt[:100]}...")
+                        # Check if template system is enabled
+                        if prompt_service.is_template_system_enabled():
+                            logger.info("🎨 Using template-based prompt system for mode switch")
 
-                            # 7. Update session if available (for immediate effect)
-                            if self._agent_session:
-                                try:
-                                    # Update session's agent internal instructions
-                                    self._agent_session._agent._instructions = new_prompt
-                                    logger.info(f"🔄 Session instructions updated in real-time!")
-                                except Exception as e:
-                                    logger.warning(f"⚠️ Could not update session directly: {e}")
+                            # 6. Get enhanced prompt using template system
+                            try:
+                                # Clear cache to force fresh fetch
+                                prompt_service.clear_enhanced_cache(self.device_mac)
 
-                            return f"Successfully updated agent mode to '{normalized_mode}' and reloaded the new prompt! The changes are now active in this conversation."
+                                # Get new enhanced prompt with updated template_id
+                                new_prompt = await prompt_service.get_enhanced_prompt(
+                                    room_name=self.room_name,
+                                    device_mac=self.device_mac
+                                )
+
+                                logger.info(f"🎨✅ Retrieved enhanced prompt for mode '{normalized_mode}' (length: {len(new_prompt)} chars)")
+
+                            except Exception as e:
+                                logger.error(f"Failed to get enhanced prompt: {e}")
+                                # Fallback to legacy method
+                                if result.get('code') == 0 and result.get('data'):
+                                    new_prompt = result.get('data')
+                                    logger.info("📄 Fallback to prompt from API response")
+                                else:
+                                    logger.error("No prompt available, mode switch incomplete")
+                                    return f"Mode updated to '{normalized_mode}' in database. Please reconnect to apply changes."
+
                         else:
-                            logger.warning(f"⚠️ No prompt data in response, but mode updated in database")
-                            return f"Mode updated to '{normalized_mode}' in database. Please reconnect to apply changes."
+                            # Legacy system - get prompt from API response
+                            logger.info("📄 Using legacy prompt system for mode switch")
+                            if result.get('code') == 0 and result.get('data'):
+                                new_prompt = result.get('data')
+                                logger.info(f"📄 Retrieved prompt from API (length: {len(new_prompt)} chars)")
+                            else:
+                                logger.warning(f"⚠️ No prompt data in response")
+                                return f"Mode updated to '{normalized_mode}' in database. Please reconnect to apply changes."
+
+                        # 7. Inject memory into new prompt (if available)
+                        try:
+                            if self._agent_session and hasattr(self._agent_session, '_memory_provider'):
+                                memory_provider = self._agent_session._memory_provider
+                                if memory_provider:
+                                    memories = await memory_provider.query_memory("conversation history")
+                                    if memories:
+                                        new_prompt = new_prompt.replace("<memory>", f"<memory>\n{memories}")
+                                        logger.info(f"💭 Injected memories into new prompt ({len(memories)} chars)")
+                        except Exception as e:
+                            logger.warning(f"Could not inject memories: {e}")
+
+                        # 8. Update the agent's instructions dynamically
+                        self._instructions = new_prompt
+                        logger.info(f"📝 Instructions updated dynamically (length: {len(new_prompt)} chars)")
+
+                        # 9. Update session if available (for immediate effect)
+                        if self._agent_session:
+                            try:
+                                # Update session's agent internal instructions
+                                self._agent_session._agent._instructions = new_prompt
+
+                                # Also update session chat context if possible
+                                if hasattr(self._agent_session, 'history') and hasattr(self._agent_session.history, 'messages'):
+                                    # Update the system message in history
+                                    if len(self._agent_session.history.messages) > 0:
+                                        if hasattr(self._agent_session.history.messages[0], 'content'):
+                                            self._agent_session.history.messages[0].content = new_prompt
+                                            logger.info(f"🔄 Session chat context updated!")
+
+                                logger.info(f"🔄 Session instructions updated in real-time!")
+                            except Exception as e:
+                                logger.warning(f"⚠️ Could not update session directly: {e}")
+
+                        return f"Successfully updated agent mode to '{normalized_mode}' and reloaded the new prompt! The changes are now active in this conversation."
+
                     else:
                         error_text = await response.text()
                         logger.error(f"❌ Failed to update mode: {response.status} - {error_text}")

@@ -712,3 +712,65 @@ class ChatEventHandler:
 
             except Exception as e:
                 logger.error(f"Error processing data channel message: {e}")
+
+
+# Helper functions for prompt management
+async def update_agent_prompt_with_memory(
+    session,
+    enhanced_prompt: str,
+    device_mac: str,
+    memory_provider=None
+) -> str:
+    """
+    Update agent prompt with memory injection
+
+    Args:
+        session: AgentSession instance
+        enhanced_prompt: The enhanced prompt with placeholders
+        device_mac: Device MAC address for memory lookup
+        memory_provider: Optional memory provider (defaults to session provider)
+
+    Returns:
+        str: Final prompt with memory injected
+    """
+    try:
+        # Get memory provider
+        if memory_provider is None and hasattr(session, '_memory_provider'):
+            memory_provider = session._memory_provider
+
+        # Inject memory if provider available
+        if memory_provider:
+            try:
+                memories = await memory_provider.query_memory("conversation history and user preferences")
+                if memories:
+                    # Use regex to replace memory tags
+                    import re
+                    enhanced_prompt = re.sub(
+                        r"<memory>.*?</memory>",
+                        f"<memory>\n{memories}\n</memory>",
+                        enhanced_prompt,
+                        flags=re.DOTALL
+                    )
+                    logger.info(f"💭 Injected memories into prompt ({len(memories)} chars)")
+            except Exception as e:
+                logger.warning(f"Could not inject memories: {e}")
+
+        # Update session chat context
+        if hasattr(session, 'history') and hasattr(session.history, 'messages'):
+            if len(session.history.messages) > 0:
+                if hasattr(session.history.messages[0], 'content'):
+                    session.history.messages[0].content = enhanced_prompt
+                    logger.info(f"✅ Updated session chat context with new prompt")
+
+        # Update agent instructions
+        if hasattr(session, '_agent'):
+            session._agent._instructions = enhanced_prompt
+            logger.info(f"✅ Updated agent instructions")
+
+        return enhanced_prompt
+
+    except Exception as e:
+        logger.error(f"Error updating agent prompt with memory: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return enhanced_prompt  # Return original prompt on error

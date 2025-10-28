@@ -14,14 +14,16 @@ import logging
 from pathlib import Path
 from typing import Dict, List
 from dataclasses import dataclass, asdict
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from qdrant_client import QdrantClient, models
 from sentence_transformers import SentenceTransformer
-import hashlib
-from ruamel.yaml import YAML
 
 # Setup logging
 logging.basicConfig(
@@ -46,49 +48,42 @@ class IndexingStats:
 
 class MusicIndexer:
     """Handles indexing of music metadata into Qdrant"""
-    
+
     def __init__(self, config_path: str = "data/.config.yaml"):
         """Initialize the indexer with configuration"""
-        self.config = self._load_config(config_path)
         self.stats = IndexingStats()
-        
-        # Get semantic search config
-        self.semantic_config = self.config.get('semantic_search', {})
-        if not self.semantic_config.get('enabled', False):
-            logger.warning("Semantic search is disabled in configuration!")
-        
-        # Qdrant settings
-        self.qdrant_url = self.semantic_config.get('qdrant_url')
-        self.qdrant_api_key = self.semantic_config.get('qdrant_api_key')
-        self.collection_name = self.semantic_config.get('collection_name', 'xiaozhi_music')
-        
+
+        # Load Qdrant settings from environment variables
+        self.qdrant_url = os.getenv('QDRANT_URL')
+        self.qdrant_api_key = os.getenv('QDRANT_API_KEY')
+        self.collection_name = 'xiaozhi_music'
+
+        # Validate required environment variables
+        if not self.qdrant_url:
+            logger.error("QDRANT_URL not found in environment variables!")
+            sys.exit(1)
+        if not self.qdrant_api_key:
+            logger.error("QDRANT_API_KEY not found in environment variables!")
+            sys.exit(1)
+
         # Embedding settings
-        self.model_name = self.semantic_config.get('embedding_model', 'all-MiniLM-L6-v2')
-        
+        self.model_name = 'all-MiniLM-L6-v2'
+
         # Music directory settings
-        self.music_dir = Path(self.config.get('plugins', {}).get('play_music', {}).get('music_dir', './music'))
+        self.music_dir = Path('./music')
         self.music_ext = ('.mp3', '.wav', '.p3')
-        
+
         # Initialize clients
         self.qdrant_client = None
         self.embedding_model = None
-        
+
+        logger.info("Loaded Qdrant configuration from environment variables")
+        logger.info(f"Collection name: {self.collection_name}")
+        logger.info(f"Music directory: {self.music_dir}")
+
     def _load_config(self, config_path: str) -> dict:
-        """Load configuration from YAML file"""
-        yaml = YAML()
-        yaml.preserve_quotes = True
-        
-        try:
-            with open(config_path, 'r', encoding='utf-8') as f:
-                config = yaml.load(f)
-            logger.info(f"Loaded configuration from {config_path}")
-            return config
-        except FileNotFoundError:
-            logger.error(f"Configuration file not found: {config_path}")
-            sys.exit(1)
-        except Exception as e:
-            logger.error(f"Failed to load configuration: {e}")
-            sys.exit(1)
+        """Load configuration from YAML file (not used, kept for compatibility)"""
+        return {}
     
     def initialize(self) -> bool:
         """Initialize Qdrant client and embedding model"""
@@ -152,18 +147,27 @@ class MusicIndexer:
     def load_music_metadata(self) -> Dict[str, Dict]:
         """Load all music metadata from the music directory"""
         metadata_cache = {}
-        
+
         if not self.music_dir.exists():
             logger.error(f"Music directory does not exist: {self.music_dir}")
             return metadata_cache
-        
+
+        # Only index English and Phonics folders
+        allowed_folders = ['English', 'Phonics']
         logger.info(f"Scanning music directory: {self.music_dir}")
-        
+        logger.info(f"Only indexing folders: {', '.join(allowed_folders)}")
+
         for language_folder in self.music_dir.iterdir():
             if not language_folder.is_dir():
                 continue
-            
+
             language_name = language_folder.name
+
+            # Skip folders that are not English or Phonics
+            if language_name not in allowed_folders:
+                logger.info(f"Skipping folder: {language_name}")
+                continue
+
             metadata_file = language_folder / "metadata.json"
             
             if metadata_file.exists():

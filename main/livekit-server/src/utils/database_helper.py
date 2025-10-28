@@ -168,3 +168,232 @@ class DatabaseHelper:
         except Exception as e:
             logger.error(f"Failed to verify Manager API connection: {e}")
             return False
+
+    async def get_agent_template_id(self, device_mac: str) -> Optional[str]:
+        """
+        Get agent template_id from database using device MAC address
+
+        Args:
+            device_mac: Device MAC address
+
+        Returns:
+            str: Template ID if found, None if not found or on error
+        """
+        url = f"{self.manager_api_url}/config/agent-template-id"
+        headers = {
+            "Authorization": f"Bearer {self.secret}",
+            "Content-Type": "application/json"
+        }
+        payload = {"macAddress": device_mac.lower()}
+
+        for attempt in range(self.retry_attempts):
+            try:
+                timeout = aiohttp.ClientTimeout(total=10)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.post(url, json=payload, headers=headers) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            # Check for Result<String> format: {code: 0, data: "template_id"}
+                            if data.get('code') == 0 and data.get('data'):
+                                template_id = data.get('data')
+                                logger.info(f"📄✅ Retrieved template_id: {template_id} for MAC: {device_mac}")
+                                return str(template_id)
+                            else:
+                                logger.warning(f"📄⚠️ No template_id in response for MAC: {device_mac}. Response: {data}")
+                                return None
+                        elif response.status == 404:
+                            logger.warning(f"No template found for MAC: {device_mac}")
+                            return None
+                        else:
+                            error_text = await response.text()
+                            logger.warning(f"API request failed: {response.status} - {error_text}")
+
+                            # Don't retry client errors (4xx)
+                            if 400 <= response.status < 500:
+                                logger.error(f"Client error, not retrying: {response.status}")
+                                return None
+
+            except asyncio.TimeoutError:
+                logger.warning(f"API request timeout (attempt {attempt + 1}/{self.retry_attempts})")
+            except aiohttp.ClientError as e:
+                logger.warning(f"API client error (attempt {attempt + 1}/{self.retry_attempts}): {e}")
+            except Exception as e:
+                logger.error(f"Unexpected error getting template_id (attempt {attempt + 1}/{self.retry_attempts}): {e}")
+
+            # Wait before retry with exponential backoff
+            if attempt < self.retry_attempts - 1:
+                wait_time = 2 ** attempt  # 1s, 2s, 4s
+                await asyncio.sleep(wait_time)
+
+        logger.error(f"Failed to get template_id after {self.retry_attempts} attempts for MAC: {device_mac}")
+        return None
+
+    async def fetch_template_content(self, template_id: str) -> Optional[str]:
+        """
+        Fetch template content (personality) from database
+
+        Args:
+            template_id: Template ID
+
+        Returns:
+            str: Template content (agent personality/prompt)
+        """
+        url = f"{self.manager_api_url}/config/template/{template_id}"
+        headers = {
+            "Authorization": f"Bearer {self.secret}",
+            "Content-Type": "application/json"
+        }
+
+        for attempt in range(self.retry_attempts):
+            try:
+                timeout = aiohttp.ClientTimeout(total=10)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(url, headers=headers) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            # Check for Result<String> format: {code: 0, data: "template_content"}
+                            if data.get('code') == 0 and data.get('data'):
+                                content = data.get('data')
+                                logger.info(f"📝✅ Retrieved template content for ID: {template_id} ({len(content)} chars)")
+                                return content
+                            else:
+                                logger.warning(f"📝⚠️ No content in response for template_id: {template_id}. Response: {data}")
+                                return None
+                        elif response.status == 404:
+                            logger.warning(f"Template not found: {template_id}")
+                            return None
+                        else:
+                            error_text = await response.text()
+                            logger.warning(f"API request failed: {response.status} - {error_text}")
+
+                            # Don't retry client errors (4xx)
+                            if 400 <= response.status < 500:
+                                logger.error(f"Client error, not retrying: {response.status}")
+                                return None
+
+            except asyncio.TimeoutError:
+                logger.warning(f"API request timeout (attempt {attempt + 1}/{self.retry_attempts})")
+            except aiohttp.ClientError as e:
+                logger.warning(f"API client error (attempt {attempt + 1}/{self.retry_attempts}): {e}")
+            except Exception as e:
+                logger.error(f"Unexpected error fetching template (attempt {attempt + 1}/{self.retry_attempts}): {e}")
+
+            # Wait before retry with exponential backoff
+            if attempt < self.retry_attempts - 1:
+                wait_time = 2 ** attempt
+                await asyncio.sleep(wait_time)
+
+        logger.error(f"Failed to fetch template after {self.retry_attempts} attempts for ID: {template_id}")
+        return None
+
+    async def get_device_location(self, device_mac: str) -> Optional[str]:
+        """
+        Get device location (city name) from database
+
+        Args:
+            device_mac: Device MAC address
+
+        Returns:
+            str: Location (city name)
+        """
+        url = f"{self.manager_api_url}/config/device-location"
+        headers = {
+            "Authorization": f"Bearer {self.secret}",
+            "Content-Type": "application/json"
+        }
+        payload = {"macAddress": device_mac.lower()}
+
+        for attempt in range(self.retry_attempts):
+            try:
+                timeout = aiohttp.ClientTimeout(total=10)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.post(url, json=payload, headers=headers) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            # Check for Result<String> format: {code: 0, data: "city_name"}
+                            if data.get('code') == 0 and data.get('data'):
+                                location = data.get('data')
+                                logger.info(f"📍✅ Retrieved location: {location} for MAC: {device_mac}")
+                                return location
+                            else:
+                                logger.warning(f"📍⚠️ No location in response for MAC: {device_mac}")
+                                return None
+                        elif response.status == 404:
+                            logger.warning(f"No location found for MAC: {device_mac}")
+                            return None
+                        else:
+                            error_text = await response.text()
+                            logger.warning(f"API request failed: {response.status} - {error_text}")
+
+                            if 400 <= response.status < 500:
+                                return None
+
+            except asyncio.TimeoutError:
+                logger.warning(f"API request timeout (attempt {attempt + 1}/{self.retry_attempts})")
+            except aiohttp.ClientError as e:
+                logger.warning(f"API client error (attempt {attempt + 1}/{self.retry_attempts}): {e}")
+            except Exception as e:
+                logger.error(f"Unexpected error getting location (attempt {attempt + 1}/{self.retry_attempts}): {e}")
+
+            if attempt < self.retry_attempts - 1:
+                wait_time = 2 ** attempt
+                await asyncio.sleep(wait_time)
+
+        logger.error(f"Failed to get location after {self.retry_attempts} attempts for MAC: {device_mac}")
+        return None
+
+    async def get_weather_forecast(self, location: str) -> Optional[str]:
+        """
+        Get 7-day weather forecast for location
+
+        Args:
+            location: City name
+
+        Returns:
+            str: Weather forecast text
+        """
+        url = f"{self.manager_api_url}/config/weather"
+        headers = {
+            "Authorization": f"Bearer {self.secret}",
+            "Content-Type": "application/json"
+        }
+        payload = {"location": location}
+
+        for attempt in range(self.retry_attempts):
+            try:
+                timeout = aiohttp.ClientTimeout(total=10)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.post(url, json=payload, headers=headers) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            # Check for Result<String> format: {code: 0, data: "weather_text"}
+                            if data.get('code') == 0 and data.get('data'):
+                                weather = data.get('data')
+                                logger.info(f"🌤️✅ Retrieved weather for: {location}")
+                                return weather
+                            else:
+                                logger.warning(f"🌤️⚠️ No weather in response for location: {location}")
+                                return None
+                        elif response.status == 404:
+                            logger.warning(f"No weather data found for location: {location}")
+                            return None
+                        else:
+                            error_text = await response.text()
+                            logger.warning(f"API request failed: {response.status} - {error_text}")
+
+                            if 400 <= response.status < 500:
+                                return None
+
+            except asyncio.TimeoutError:
+                logger.warning(f"API request timeout (attempt {attempt + 1}/{self.retry_attempts})")
+            except aiohttp.ClientError as e:
+                logger.warning(f"API client error (attempt {attempt + 1}/{self.retry_attempts}): {e}")
+            except Exception as e:
+                logger.error(f"Unexpected error getting weather (attempt {attempt + 1}/{self.retry_attempts}): {e}")
+
+            if attempt < self.retry_attempts - 1:
+                wait_time = 2 ** attempt
+                await asyncio.sleep(wait_time)
+
+        logger.error(f"Failed to get weather after {self.retry_attempts} attempts for location: {location}")
+        return None

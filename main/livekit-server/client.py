@@ -12,10 +12,9 @@ from typing import Dict, Optional, Tuple
 import requests
 import paho.mqtt.client as mqtt_client
 from paho.mqtt.enums import CallbackAPIVersion
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.backends import default_backend
+# Removed cryptography - no encryption needed for simplified streaming
 from queue import Queue, Empty
-import opuslib
+# Removed opuslib - using direct PCM streaming
 
 # --- Configuration ---
 
@@ -26,10 +25,10 @@ MQTT_BROKER_HOST = "10.171.215.210"
 
 MQTT_BROKER_PORT = 1883
 # DEVICE_MAC is now dynamically generated for uniqueness
-# Minimum frames to have in buffer to continue playback
-PLAYBACK_BUFFER_MIN_FRAMES = 3
-# Number of frames to buffer before starting playback
-PLAYBACK_BUFFER_START_FRAMES = 16
+# Minimum frames to have in buffer to continue playback (reduced for 48kHz PCM)
+PLAYBACK_BUFFER_MIN_FRAMES = 0  # Allow playback even with empty buffer
+# Number of frames to buffer before starting playback (reduced for larger PCM frames)
+PLAYBACK_BUFFER_START_FRAMES = 1  # Start immediately when we have any frame
 
 # --- NEW: Sequence tracking configuration ---
 # Set to False to disable sequence logging
@@ -159,10 +158,10 @@ class TestClient:
                 if self.udp_socket and udp_session_details:
                     try:
                         keepalive_payload = f"keepalive:{udp_session_details['session_id']}".encode()
-                        encrypted_keepalive = self.encrypt_packet(keepalive_payload)
-                        if encrypted_keepalive:
+                        keepalive_packet = self.create_packet(keepalive_payload)
+                        if keepalive_packet:
                             server_udp_addr = (udp_session_details['udp']['server'], udp_session_details['udp']['port'])
-                            self.udp_socket.sendto(encrypted_keepalive, server_udp_addr)
+                            self.udp_socket.sendto(keepalive_packet, server_udp_addr)
                             logger.info("[UDP] Sent UDP keepalive to ensure connection readiness")
                     except Exception as e:
                         logger.warning(f"[WARN] Failed to send UDP keepalive: {e}")
@@ -329,19 +328,16 @@ class TestClient:
             logger.info(
                 f"[SEQ] Packet #{self.total_packets_received}: seq={sequence}, expected={self.expected_sequence}")
 
-    def encrypt_packet(self, payload: bytes) -> bytes:
-        """Encrypts the audio payload using AES-CTR with header as nonce."""
+    def create_packet(self, payload: bytes) -> bytes:
+        """Creates a simple packet with header for direct PCM streaming."""
         global udp_session_details
         if "udp" not in udp_session_details:
-            logger.error("UDP session details not available for encryption.")
+            logger.error("UDP session details not available.")
             return b''
-
-        aes_key = bytes.fromhex(udp_session_details["udp"]["key"])
 
         # Extract connectionId from the nonce (which is the header template)
         nonce_bytes = bytes.fromhex(udp_session_details["udp"]["nonce"])
-        connection_id = struct.unpack('>I', nonce_bytes[4:8])[
-            0]  # Extract connectionId from nonce
+        connection_id = struct.unpack('>I', nonce_bytes[4:8])[0]
 
         packet_type, flags = 0x01, 0x00
         payload_len, timestamp, sequence = len(payload), int(
@@ -351,12 +347,9 @@ class TestClient:
         header = struct.pack('>BBHIII', packet_type, flags,
                              payload_len, connection_id, timestamp, sequence)
 
-        cipher = Cipher(algorithms.AES(aes_key), modes.CTR(
-            header), backend=default_backend())
-        encryptor = cipher.encryptor()
-        encrypted_payload = encryptor.update(payload) + encryptor.finalize()
+        # No encryption - just header + payload
         self.udp_local_sequence += 1
-        return header + encrypted_payload
+        return header + payload
 
     def get_ota_config(self) -> bool:
         """Requests OTA configuration from the server."""
@@ -405,7 +398,7 @@ class TestClient:
                     "password": mqtt_info.get("password")
                 }
                 logger.info(
-                    f"✅ Got MQTT credentials from OTA: {self.mqtt_credentials['client_id']}")
+                    f"[OK] Got MQTT credentials from OTA: {self.mqtt_credentials['client_id']}")
                 # Set P2P topic to match the full client_id (as gateway publishes to this)
                 self.p2p_topic = f"devices/p2p/{self.mqtt_credentials['client_id']}"
             else:
@@ -415,7 +408,7 @@ class TestClient:
                 self.mqtt_credentials = generate_mqtt_credentials(
                     self.device_mac_formatted)
                 logger.info(
-                    f"✅ Generated MQTT credentials locally: {self.mqtt_credentials['client_id']}")
+                    f"[OK] Generated MQTT credentials locally: {self.mqtt_credentials['client_id']}")
                 # Set P2P topic to match the full client_id
                 self.p2p_topic = f"devices/p2p/{self.mqtt_credentials['client_id']}"
 
@@ -518,10 +511,10 @@ class TestClient:
             "version": 3,
             "transport": "mqtt",
             "audio_params": {
-                "sample_rate": 16000,
+                "sample_rate": 48000,
                 "channels": 1,
                 "frame_duration": 20,
-                "format": "opus"
+                "format": "pcm"
             },
             "features": ["tts", "asr", "vad"]
         }
@@ -538,15 +531,15 @@ class TestClient:
                 self.udp_socket.settimeout(1.0)
                 ping_payload = f"ping:{udp_session_details['session_id']}".encode(
                 )
-                encrypted_ping = self.encrypt_packet(ping_payload)
+                ping_packet = self.create_packet(ping_payload)
                 server_udp_addr = (
                     udp_session_details['udp']['server'], udp_session_details['udp']['port'])
                 logger.info(f"[RETRY] Sending UDP Ping to {server_udp_addr} with session ID {udp_session_details['session_id']}"
                             f" and key {udp_session_details['udp']['key']}"
                             f" (local sequence: {self.udp_local_sequence})"
                             )
-                if encrypted_ping:
-                    self.udp_socket.sendto(encrypted_ping, server_udp_addr)
+                if ping_packet:
+                    self.udp_socket.sendto(ping_packet, server_udp_addr)
                     logger.info(f"[OK] UDP Ping sent. Session configured.")
                     return True
             logger.error(f"[ERROR] Received unexpected message: {response}")
@@ -559,52 +552,48 @@ class TestClient:
         """Thread to play back incoming audio from the server with a robust jitter buffer."""
         p = pyaudio.PyAudio()
         audio_params = udp_session_details["audio_params"]
-        stream = p.open(format=p.get_format_from_width(2),
-                        channels=audio_params["channels"],
-                        rate=audio_params["sample_rate"],
-                        output=True)
+        
+        # Try to open the audio stream with the specified parameters
+        try:
+            stream = p.open(format=p.get_format_from_width(2),
+                            channels=audio_params["channels"],
+                            rate=audio_params["sample_rate"],
+                            output=True)
+            logger.info(f"[PLAY] Audio stream opened successfully at {audio_params['sample_rate']}Hz")
+        except Exception as e:
+            logger.error(f"[PLAY] Failed to open audio stream at {audio_params['sample_rate']}Hz: {e}")
+            # Try fallback to 44.1kHz
+            try:
+                stream = p.open(format=p.get_format_from_width(2),
+                                channels=audio_params["channels"],
+                                rate=44100,
+                                output=True)
+                logger.info("[PLAY] Fallback: Audio stream opened at 44.1kHz")
+                audio_params["sample_rate"] = 44100  # Update for frame size calculations
+            except Exception as e2:
+                logger.error(f"[PLAY] Failed to open audio stream at 44.1kHz: {e2}")
+                p.terminate()
+                return
 
-        logger.info("[PLAY] Playback thread started.")
-        is_playing = False
-        buffer_timeout_start = time.time()
+        logger.info(f"[PLAY] Playback thread started - Rate: {audio_params['sample_rate']}Hz, Channels: {audio_params['channels']}, Format: {audio_params['format']}")
+        logger.info("[PLAY] Using simplified buffering for immediate playback.")
 
         while not stop_threads.is_set() and self.session_active:
             try:
-                # --- JITTER BUFFER LOGIC ---
-                if not is_playing:
-                    # Wait until we have enough frames to start playback smoothly
-                    if self.audio_playback_queue.qsize() < PLAYBACK_BUFFER_START_FRAMES:
-                        # Check for timeout
-                        if time.time() - buffer_timeout_start > BUFFER_TIMEOUT_SECONDS:
-                            logger.warning(
-                                f"[TIME] Buffer timeout after {BUFFER_TIMEOUT_SECONDS}s. Queue size: {self.audio_playback_queue.qsize()}")
-                            if self.tts_active:
-                                logger.warning(
-                                    "[PLAY] TTS is active but no audio received. Possible server issue.")
-                            buffer_timeout_start = time.time()  # Reset timeout
-
-                        logger.info(
-                            f"[AUDIO] Buffering audio... {self.audio_playback_queue.qsize()}/{PLAYBACK_BUFFER_START_FRAMES}")
-                        time.sleep(0.05)
-                        continue
-                    else:
-                        logger.info("[OK] Buffer ready. Starting playback.")
-                        is_playing = True
-
-                # --- If buffer runs low, stop playing and re-buffer ---
-                if self.audio_playback_queue.qsize() < PLAYBACK_BUFFER_MIN_FRAMES:
-                    is_playing = False
-                    buffer_timeout_start = time.time()  # Reset timeout when buffering starts
-                    logger.warning(
-                        f"[ALERT] Playback buffer low ({self.audio_playback_queue.qsize()}). Re-buffering...")
-                    continue
-
-                # Get audio chunk from the queue and play it
-                stream.write(self.audio_playback_queue.get(timeout=1))
+                # Simple approach: just play audio as it comes in
+                # Get audio chunk from the queue and play it immediately
+                audio_chunk = self.audio_playback_queue.get(timeout=0.1)
+                
+                # Validate audio chunk size
+                expected_frame_size = int(audio_params["sample_rate"] * audio_params["frame_duration"] / 1000) * 2
+                if len(audio_chunk) != expected_frame_size:
+                    logger.warning(f"[AUDIO] Unexpected frame size: {len(audio_chunk)}B, expected: {expected_frame_size}B")
+                
+                # Play the audio directly (should now be proper int16 PCM from gateway)
+                stream.write(audio_chunk)
 
             except Empty:
-                is_playing = False
-                buffer_timeout_start = time.time()  # Reset timeout
+                # No audio available, just continue waiting
                 continue
             except Exception as e:
                 logger.error(f"Playback error: {e}")
@@ -619,23 +608,13 @@ class TestClient:
         """Thread to listen for incoming UDP audio from the server with sequence tracking."""
         logger.info(
             f"[AUDIO] UDP Listener started on local socket {self.udp_socket.getsockname()}")
-        aes_key = bytes.fromhex(udp_session_details["udp"]["key"])
         audio_params = udp_session_details["audio_params"]
-
-        # Initialize the decoder with the sample rate provided by the server
-        decoder = opuslib.Decoder(
-            audio_params["sample_rate"], audio_params["channels"])
-        frame_size_samples = int(
-            audio_params["sample_rate"] * audio_params["frame_duration"] / 1000)
-        # Maximum frame size for Opus (120ms at 48kHz = 5760 samples, but we'll use a larger buffer)
-        # 120ms worth of samples
-        max_frame_size = int(audio_params["sample_rate"] * 0.12)
 
         while not stop_threads.is_set() and self.session_active:
             try:
                 data, addr = self.udp_socket.recvfrom(4096)
                 if data and len(data) > 16:
-                    header, encrypted = data[:16], data[16:]
+                    header, pcm_payload = data[:16], data[16:]
 
                     # --- Parse header to extract sequence number (optimized) ---
                     if ENABLE_SEQUENCE_LOGGING:
@@ -652,16 +631,21 @@ class TestClient:
                                 logger.info(
                                     f"[PKT] Packet details: seq={sequence}, payload={payload_len}B, ts={timestamp}, from={addr}")
 
-                    # Decrypt and decode as usual
-                    cipher = Cipher(algorithms.AES(aes_key), modes.CTR(
-                        header), backend=default_backend())
-                    decryptor = cipher.decryptor()
-                    opus_payload = decryptor.update(
-                        encrypted) + decryptor.finalize()
-
-                    # Decode the Opus payload to PCM and put it in the playback queue
-                    # Use max_frame_size to provide enough buffer space for variable frame sizes
-                    pcm_payload = decoder.decode(opus_payload, max_frame_size)
+                    # Direct PCM - no decryption or decoding needed
+                    # Validate PCM data format
+                    if self.total_packets_received <= 5:
+                        logger.info(f"[AUDIO] Received PCM frame: {len(pcm_payload)}B, queue size: {self.audio_playback_queue.qsize()}")
+                        # Check if the data looks like valid PCM
+                        if len(pcm_payload) >= 4:
+                            # Try both endianness to see which looks more reasonable
+                            samples_le = struct.unpack('<hh', pcm_payload[:4])  # Little-endian signed 16-bit
+                            samples_be = struct.unpack('>hh', pcm_payload[:4])  # Big-endian signed 16-bit
+                            logger.info(f"[AUDIO] First samples LE: {samples_le}, BE: {samples_be}")
+                            # Check raw bytes
+                            raw_bytes = pcm_payload[:8].hex()
+                            logger.info(f"[AUDIO] Raw bytes: {raw_bytes}")
+                    
+                    # Put the PCM payload directly in the playback queue
                     self.audio_playback_queue.put(pcm_payload)
 
             except socket.timeout:
@@ -690,12 +674,8 @@ class TestClient:
                 "channels"], audio_params["sample_rate"], audio_params["frame_duration"]
             SAMPLES_PER_FRAME = int(RATE * FRAME_DURATION_MS / 1000)
 
-            try:
-                encoder = opuslib.Encoder(
-                    RATE, CHANNELS, opuslib.APPLICATION_VOIP)
-            except Exception as e:
-                logger.error(f"[ERROR] Failed to create Opus encoder: {e}")
-                return  # Exit thread if encoder fails
+            # No encoder needed for direct PCM streaming
+            logger.info("[MIC] Using direct PCM streaming - no encoding needed")
 
             stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE,
                             input=True, frames_per_buffer=SAMPLES_PER_FRAME)
@@ -712,17 +692,17 @@ class TestClient:
                 try:
                     pcm_data = stream.read(
                         SAMPLES_PER_FRAME, exception_on_overflow=False)
-                    opus_data = encoder.encode(pcm_data, SAMPLES_PER_FRAME)
-                    encrypted_packet = self.encrypt_packet(opus_data)
+                    # Send PCM directly without encoding
+                    pcm_packet = self.create_packet(pcm_data)
 
-                    if encrypted_packet:
+                    if pcm_packet:
                         self.udp_socket.sendto(
-                            encrypted_packet, server_udp_addr)
+                            pcm_packet, server_udp_addr)
                         packets_sent += 1
 
                         if time.time() - last_log_time >= 1.0:
                             logger.info(
-                                f"[UP]  Sent {packets_sent} audio packets in the last second.")
+                                f"[UP]  Sent {packets_sent} PCM audio packets in the last second.")
                             packets_sent = 0
                             last_log_time = time.time()
 

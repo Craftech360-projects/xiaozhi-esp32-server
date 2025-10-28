@@ -171,6 +171,11 @@ async def entrypoint(ctx: JobContext):
 
     # Extract MAC address from room name and fetch device-specific prompt
     prompt_service = PromptService()
+
+    # Initialize template-based prompt system
+    await prompt_service.initialize_template_system()
+    logger.info("🎨 Template-based prompt system initialized")
+
     room_name = ctx.room.name
 
     # Parse room name to extract MAC address (format: UUID_MAC)
@@ -240,48 +245,136 @@ async def entrypoint(ctx: JobContext):
             # Create database helper
             db_helper = DatabaseHelper(manager_api_url, manager_api_secret)
 
+            # Determine which prompt method to use
+            use_template_system = prompt_service.is_template_system_enabled()
+
             # Execute all API calls + Mem0 query in parallel
-            results = await asyncio.gather(
-                db_helper.get_agent_id(device_mac),                          # ~200ms
-                prompt_service.get_prompt_and_config(room_name, device_mac), # ~500ms
-                db_helper.get_child_profile_by_mac(device_mac),             # ~500ms
-                query_mem0_memories(device_mac),                             # ~1700ms (PARALLEL!)
-                return_exceptions=True  # Don't fail all if one fails
-            )
+            if use_template_system:
+                logger.info("🎨 Using template-based prompt system")
+
+                # First, get child profile quickly (needed for prompt rendering)
+                child_profile_task = db_helper.get_child_profile_by_mac(device_mac)
+
+                results = await asyncio.gather(
+                    db_helper.get_agent_id(device_mac),                          # ~200ms
+                    child_profile_task,                                          # ~500ms (fetch first)
+                    prompt_service.fetch_model_config_from_api(device_mac, room_name),  # TTS config
+                    query_mem0_memories(device_mac),                             # ~1700ms (PARALLEL!)
+                    return_exceptions=True  # Don't fail all if one fails
+                )
+
+                # Unpack first batch of results
+                agent_id_result, child_profile_result, tts_config_result, mem0_result = results
+
+                # Process child profile result first
+                if isinstance(child_profile_result, Exception):
+                    logger.warning(f"Failed to fetch child profile for MAC {device_mac}: {child_profile_result}")
+                    child_profile = None
+                else:
+                    child_profile = child_profile_result
+                    if child_profile:
+                        logger.info(f"👶 Child profile loaded: {child_profile.get('name')}, age {child_profile.get('age')} ({child_profile.get('ageGroup')})")
+                    else:
+                        logger.info(f"👶 No child profile assigned to device {device_mac}")
+
+                # Now get enhanced prompt WITH child profile
+                try:
+                    prompt_result = await prompt_service.get_enhanced_prompt(
+                        room_name,
+                        device_mac,
+                        child_profile=child_profile
+                    )
+                except Exception as e:
+                    prompt_result = e
+                    logger.error(f"Error getting enhanced prompt: {e}")
+
+                # Re-package results to match original structure
+                results = (agent_id_result, prompt_result, tts_config_result, child_profile_result, mem0_result)
+            else:
+                logger.info("📄 Using legacy prompt system")
+                results = await asyncio.gather(
+                    db_helper.get_agent_id(device_mac),                          # ~200ms
+                    prompt_service.get_prompt_and_config(room_name, device_mac), # ~500ms
+                    None,  # Placeholder for TTS config (included in get_prompt_and_config)
+                    db_helper.get_child_profile_by_mac(device_mac),             # ~500ms
+                    query_mem0_memories(device_mac),                             # ~1700ms (PARALLEL!)
+                    return_exceptions=True  # Don't fail all if one fails
+                )
 
             elapsed_time = (asyncio.get_event_loop().time() - start_time) * 1000
             logger.info(f"⚡✅ Parallel API calls + Mem0 completed in {elapsed_time:.0f}ms")
 
-            # Unpack results with error handling
-            agent_id_result, prompt_config_result, child_profile_result, mem0_result = results
+            # Unpack results with error handling based on system used
+            if use_template_system:
+                agent_id_result, prompt_result, tts_config_result, child_profile_result, mem0_result = results
 
-            # Process agent_id result
-            if isinstance(agent_id_result, Exception):
-                logger.error(f"📝❌ Failed to get agent_id: {agent_id_result}")
-                agent_id = None
-            else:
-                agent_id = agent_id_result
-                logger.info(f"📝 Agent ID fetched: {agent_id}")
-
-            # Process prompt and config result
-            if isinstance(prompt_config_result, Exception):
-                logger.warning(f"Failed to fetch config from API for MAC {device_mac}: {prompt_config_result}")
-                agent_prompt = ConfigLoader.get_default_prompt()
-                tts_config_from_api = None
-                logger.info(f"📄 Fallback to default prompt (length: {len(agent_prompt)} chars)")
-            else:
-                agent_prompt, tts_config_from_api = prompt_config_result
-                logger.info(f"🎯 Using device-specific prompt for MAC: {device_mac} (length: {len(agent_prompt)} chars)")
-                # Log first few lines of the fetched prompt for verification
-                prompt_lines = agent_prompt.split('\n')[:5]
-                logger.info(f"📝 Fetched prompt preview: {' | '.join(line.strip()[:50] for line in prompt_lines if line.strip())}")
-
-                if tts_config_from_api:
-                    logger.info(f"🎤 TTS Config from API: Provider={tts_config_from_api.get('provider')}, Type={tts_config_from_api.get('type')}")
+                # Process agent_id result
+                if isinstance(agent_id_result, Exception):
+                    logger.error(f"📝❌ Failed to get agent_id: {agent_id_result}")
+                    agent_id = None
                 else:
-                    logger.warning(f"⚠️ No TTS config from API, will use .env defaults")
+                    agent_id = agent_id_result
+                    logger.info(f"📝 Agent ID fetched: {agent_id}")
 
-            # Process child profile result
+                # Process enhanced prompt result
+                if isinstance(prompt_result, Exception):
+                    logger.warning(f"Failed to get enhanced prompt for MAC {device_mac}: {prompt_result}")
+                    agent_prompt = ConfigLoader.get_default_prompt()
+                    logger.info(f"📄 Fallback to default prompt (length: {len(agent_prompt)} chars)")
+                else:
+                    agent_prompt = prompt_result
+                    if child_profile:
+                        logger.info(f"🎨✅ Using enhanced template-based prompt with child profile for MAC: {device_mac} (length: {len(agent_prompt)} chars)")
+                    else:
+                        logger.info(f"🎨✅ Using enhanced template-based prompt for MAC: {device_mac} (length: {len(agent_prompt)} chars)")
+
+                # Process TTS config result
+                if isinstance(tts_config_result, Exception):
+                    logger.warning(f"Failed to fetch TTS config: {tts_config_result}")
+                    tts_config_from_api = None
+                else:
+                    model_config = tts_config_result
+                    if model_config:
+                        tts_config_from_api = prompt_service.extract_tts_config(model_config)
+                        if tts_config_from_api:
+                            logger.info(f"🎤 TTS Config from API: Provider={tts_config_from_api.get('provider')}, Type={tts_config_from_api.get('type')}")
+                        else:
+                            logger.warning(f"⚠️ No TTS config extracted, will use .env defaults")
+                    else:
+                        tts_config_from_api = None
+                        logger.warning(f"⚠️ No TTS config from API, will use .env defaults")
+
+            else:
+                # Legacy system
+                agent_id_result, prompt_config_result, _, child_profile_result, mem0_result = results
+
+                # Process agent_id result
+                if isinstance(agent_id_result, Exception):
+                    logger.error(f"📝❌ Failed to get agent_id: {agent_id_result}")
+                    agent_id = None
+                else:
+                    agent_id = agent_id_result
+                    logger.info(f"📝 Agent ID fetched: {agent_id}")
+
+                # Process prompt and config result (legacy)
+                if isinstance(prompt_config_result, Exception):
+                    logger.warning(f"Failed to fetch config from API for MAC {device_mac}: {prompt_config_result}")
+                    agent_prompt = ConfigLoader.get_default_prompt()
+                    tts_config_from_api = None
+                    logger.info(f"📄 Fallback to default prompt (length: {len(agent_prompt)} chars)")
+                else:
+                    agent_prompt, tts_config_from_api = prompt_config_result
+                    logger.info(f"🎯 Using device-specific prompt for MAC: {device_mac} (length: {len(agent_prompt)} chars)")
+                    # Log first few lines of the fetched prompt for verification
+                    prompt_lines = agent_prompt.split('\n')[:5]
+                    logger.info(f"📝 Fetched prompt preview: {' | '.join(line.strip()[:50] for line in prompt_lines if line.strip())}")
+
+                    if tts_config_from_api:
+                        logger.info(f"🎤 TTS Config from API: Provider={tts_config_from_api.get('provider')}, Type={tts_config_from_api.get('type')}")
+                    else:
+                        logger.warning(f"⚠️ No TTS config from API, will use .env defaults")
+
+            # Process child profile result (both systems)
             if isinstance(child_profile_result, Exception):
                 logger.warning(f"Failed to fetch child profile for MAC {device_mac}: {child_profile_result}")
                 child_profile = None
@@ -292,7 +385,7 @@ async def entrypoint(ctx: JobContext):
                 else:
                     logger.info(f"👶 No child profile assigned to device {device_mac}")
 
-            # Process Mem0 result
+            # Process Mem0 result (both systems)
             if isinstance(mem0_result, Exception):
                 logger.error(f"💭❌ Mem0 query failed: {mem0_result}")
                 mem0_provider = None
@@ -330,7 +423,7 @@ async def entrypoint(ctx: JobContext):
     EMOJI_List = ["😶", "🙂", "😆", "😂", "😔", "😠", "😭", "😍", "😳",
                   "😲", "😱", "🤔", "😉", "😎", "😌", "🤤", "😘", "😏", "😴", "😜", "🙄"]
 
-    # Prepare template variables
+    # Prepare template variables (only for legacy system)
     template_vars = {
         'emojiList': EMOJI_List,
         'child_name': child_profile.get('name', '') if child_profile else '',  # Empty string = hidden
@@ -340,13 +433,16 @@ async def entrypoint(ctx: JobContext):
         'child_interests': child_profile.get('interests', '') if child_profile else ''
     }
 
-    # Render agent prompt with Jinja2 template
-    if any(placeholder in agent_prompt for placeholder in ['{{', '{%']):
+    # Render agent prompt with Jinja2 template (skip if using template system)
+    use_template_system = 'use_template_system' in locals() and use_template_system
+    if not use_template_system and any(placeholder in agent_prompt for placeholder in ['{{', '{%']):
         template = Template(agent_prompt)
         agent_prompt = template.render(**template_vars)
-        logger.info("🎨 Rendered agent prompt with template variables")
+        logger.info("🎨 Rendered agent prompt with template variables (legacy)")
         if child_profile:
             logger.info(f"👶 Personalized for: {template_vars['child_name']}, {template_vars['child_age']} years old")
+    elif use_template_system:
+        logger.info("🎨 Using template-based prompt (already rendered with all context)")
 
     # Inject Mem0 memories into prompt (already fetched in parallel)
     if memories:

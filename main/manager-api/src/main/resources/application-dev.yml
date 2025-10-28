@@ -71,3 +71,9 @@ spring:
           max-idle: 8
           min-idle: 0
         shutdown-timeout: 100ms
+
+  # Liquibase configuration for migrations
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+    enabled: true
+    drop-first: false
