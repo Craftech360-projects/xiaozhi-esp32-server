@@ -3,7 +3,7 @@ const mqtt = require('mqtt');
 const crypto = require('crypto');
 
 // Configuration
-const MQTT_BROKER = '192.168.1.235';
+const MQTT_BROKER = '192.168.1.113';
 const MQTT_PORT = 1883;
 const SIGNATURE_KEY = 'test-signature-key-12345';
 
@@ -14,7 +14,7 @@ const groupId = 'GID_test';
 const clientId = `${groupId}@@@${macAddress.replace(/:/g, '_')}@@@${clientUuid}`;
 
 // Generate username (base64 encoded JSON with IP)
-const clientIp = '192.168.1.235';
+const clientIp = '192.168.1.113';
 const userData = JSON.stringify({ ip: clientIp });
 const username = Buffer.from(userData).toString('base64');
 

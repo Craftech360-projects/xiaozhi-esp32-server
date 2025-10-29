@@ -3325,12 +3325,19 @@ class VirtualMQTTConnection {
           return;
         }
 
-        // First send abort signal to stop any current playback
-        console.log(`🛑 [MOBILE] Sending abort signal before new playback`);
-        await this.bridge.sendAbortSignal(this.udp.session_id);
+        // Only send abort signal for playback commands, not for volume control
+        const functionName = json.function_call?.name;
+        const isPlaybackCommand = functionName === 'play_music' || functionName === 'play_story';
+        
+        if (isPlaybackCommand) {
+          console.log(`🛑 [MOBILE] Sending abort signal before new playback`);
+          await this.bridge.sendAbortSignal(this.udp.session_id);
 
-        // Wait a moment for abort to process
-        await new Promise((resolve) => setTimeout(resolve, 100));
+          // Wait a moment for abort to process
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        } else {
+          console.log(`🔊 [MOBILE] Volume control command - skipping abort signal`);
+        }
 
         // Then forward the new function call to LiveKit agent
         const messageString = JSON.stringify({

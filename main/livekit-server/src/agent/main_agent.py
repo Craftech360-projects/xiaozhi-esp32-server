@@ -945,7 +945,7 @@ class Assistant(FilteredAgent):
         return await self.mcp_executor.get_volume()
 
     @function_tool
-    async def self_volume_up(self, context: RunContext):
+    async def self_volume_up(self, context: RunContext, step: int = 10):
         """Increase device volume"""
         if not self.mcp_executor:
             return "Volume control is not available right now."
@@ -953,10 +953,10 @@ class Assistant(FilteredAgent):
         # Always set context for each call to ensure correct room access
         self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
 
-        return await self.mcp_executor.adjust_volume("up")
+        return await self.mcp_executor.adjust_volume("up", step=step)
 
     @function_tool
-    async def self_volume_down(self, context: RunContext):
+    async def self_volume_down(self, context: RunContext, step: int = 10):
         """Decrease device volume"""
         if not self.mcp_executor:
             return "Volume control is not available right now."
@@ -964,7 +964,7 @@ class Assistant(FilteredAgent):
         # Always set context for each call to ensure correct room access
         self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
 
-        return await self.mcp_executor.adjust_volume("down")
+        return await self.mcp_executor.adjust_volume("down", step=step)
 
     @function_tool
     async def self_mute(self, context: RunContext):

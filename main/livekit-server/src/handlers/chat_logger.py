@@ -167,6 +167,16 @@ class ChatEventHandler:
                 logger.info("🛑 [MOBILE] Calling stop_audio()")
                 await assistant.stop_audio(ctx)
 
+            elif function_name == "self_volume_up":
+                step = arguments.get('step', 10)
+                logger.info(f"🔊 [MOBILE] Calling self_volume_up(step={step})")
+                await assistant.self_volume_up(ctx, step=step)
+
+            elif function_name == "self_volume_down":
+                step = arguments.get('step', 10)
+                logger.info(f"🔉 [MOBILE] Calling self_volume_down(step={step})")
+                await assistant.self_volume_down(ctx, step=step)
+
             else:
                 logger.warning(
                     f"⚠️ [MOBILE] Unknown function call: {function_name}")

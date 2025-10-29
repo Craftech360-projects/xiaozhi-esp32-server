@@ -87,24 +87,28 @@ class LiveKitMCPExecutor:
             if not isinstance(step, int) or step < 1 or step > 50:
                 return "Step must be between 1 and 50."
 
-            await handle_volume_adjust(self.mcp_client, action, step)
+            # Get current volume from cache or default to 50%
+            current_volume = self._volume_cache if self._volume_cache is not None else 50
+            logger.info(f"Current volume: {current_volume}% (from {'cache' if self._volume_cache is not None else 'default'})")
 
-            # Calculate estimated new volume if we have cached value
-            if self._volume_cache is not None:
-                if action.lower() in ["up", "increase"]:
-                    new_level = min(100, self._volume_cache + step)
-                    self._volume_cache = new_level
-                    return f"Volume increased to {new_level}%."
-                else:
-                    new_level = max(0, self._volume_cache - step)
-                    self._volume_cache = new_level
-                    if new_level == 0:
-                        return "Volume muted."
-                    else:
-                        return f"Volume decreased to {new_level}%."
+            # Calculate new volume
+            if action.lower() in ["up", "increase"]:
+                new_level = min(100, current_volume + step)
+            else:
+                new_level = max(0, current_volume - step)
+
+            # Set the new volume using self_set_volume
+            await handle_volume_set(self.mcp_client, new_level)
+            
+            # Update cache
+            self._volume_cache = new_level
+
+            # Return appropriate message
+            if new_level == 0:
+                return "Volume muted."
             else:
                 action_word = "increased" if action.lower() in ["up", "increase"] else "decreased"
-                return f"Volume {action_word} by {step}%."
+                return f"Volume {action_word} to {new_level}%."
 
         except Exception as e:
             logger.error(f"Error adjusting volume: {e}")
