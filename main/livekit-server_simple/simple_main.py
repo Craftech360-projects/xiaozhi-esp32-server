@@ -203,49 +203,105 @@ class SimpleAssistant(Agent):
             return "Sorry, I couldn't check the battery level right now."
 
 def prewarm(proc: JobProcess):
-    """Simple prewarm function with model preloading"""
-    logger.info("[PREWARM] Simple prewarm starting...")
-    
+    """Optimized prewarm function - preloads ALL providers to eliminate job startup delay"""
+    import time
+    prewarm_start = time.time()
+    logger.info("🚀 [PREWARM] Starting optimized prewarm - loading all providers...")
+
     # Start background model preloading (but only essential models)
     model_preloader.start_background_loading()
-    
+
     # Load VAD model on main thread (required)
+    vad_start = time.time()
     try:
         vad = model_cache.get_vad_model()
         if vad:
             proc.userdata["vad"] = vad
-            logger.info("[PREWARM] VAD model loaded from cache")
+            logger.info(f"✅ [PREWARM] VAD model loaded from cache ({time.time() - vad_start:.3f}s)")
         else:
             # Direct loading (first time or cache miss)
             vad = silero.VAD.load()
             proc.userdata["vad"] = vad
             # Cache it for next time
             model_cache._models["vad_model"] = vad
-            logger.info("[PREWARM] VAD model loaded and cached for future use")
+            logger.info(f"✅ [PREWARM] VAD model loaded and cached ({time.time() - vad_start:.3f}s)")
     except Exception as e:
-        logger.error(f"[PREWARM] Failed to load VAD: {e}")
+        logger.error(f"❌ [PREWARM] Failed to load VAD: {e}")
         # Final fallback
         try:
             vad = silero.VAD.load()
             proc.userdata["vad"] = vad
-            logger.info("[PREWARM] VAD model loaded using final fallback")
+            logger.info(f"✅ [PREWARM] VAD model loaded using fallback ({time.time() - vad_start:.3f}s)")
         except Exception as e2:
-            logger.error(f"[PREWARM] All VAD loading attempts failed: {e2}")
-    
-    logger.info("[PREWARM] Simple prewarm complete")
+            logger.error(f"❌ [PREWARM] All VAD loading attempts failed: {e2}")
+            vad = None
+
+    # Load configurations
+    groq_config = ConfigLoader.get_groq_config()
+    tts_config = ConfigLoader.get_tts_config()
+    logger.info(f"📋 [PREWARM] Configurations loaded")
+
+    # Preload LLM provider (biggest bottleneck - 1.1s)
+    llm_start = time.time()
+    try:
+        llm = ProviderFactory.create_llm(groq_config)
+        proc.userdata["llm"] = llm
+        logger.info(f"🧠 [PREWARM] LLM provider initialized ({time.time() - llm_start:.3f}s)")
+    except Exception as e:
+        logger.error(f"❌ [PREWARM] Failed to initialize LLM: {e}")
+        proc.userdata["llm"] = None
+
+    # Preload STT provider (second bottleneck - 0.35s)
+    stt_start = time.time()
+    try:
+        stt = ProviderFactory.create_stt(groq_config, vad)
+        proc.userdata["stt"] = stt
+        logger.info(f"🎤 [PREWARM] STT provider initialized ({time.time() - stt_start:.3f}s)")
+    except Exception as e:
+        logger.error(f"❌ [PREWARM] Failed to initialize STT: {e}")
+        proc.userdata["stt"] = None
+
+    # Preload TTS provider (0.1s)
+    tts_start = time.time()
+    try:
+        tts = ProviderFactory.create_tts(groq_config, tts_config)
+        proc.userdata["tts"] = tts
+        logger.info(f"🔊 [PREWARM] TTS provider initialized - {tts_config.get('provider')} ({time.time() - tts_start:.3f}s)")
+    except Exception as e:
+        logger.error(f"❌ [PREWARM] Failed to initialize TTS: {e}")
+        proc.userdata["tts"] = None
+
+    # Preload turn detection
+    try:
+        turn_detection = ProviderFactory.create_turn_detection()
+        proc.userdata["turn_detection"] = turn_detection
+        logger.info(f"🔄 [PREWARM] Turn detection initialized")
+    except Exception as e:
+        logger.error(f"❌ [PREWARM] Failed to initialize turn detection: {e}")
+        proc.userdata["turn_detection"] = None
+
+    # Store configs for entrypoint
+    proc.userdata["groq_config"] = groq_config
+    proc.userdata["tts_config"] = tts_config
+
+    total_time = time.time() - prewarm_start
+    logger.info(f"✅ [PREWARM] Complete! Total time: {total_time:.3f}s - Job startup will now be near-instant!")
 
 async def entrypoint(ctx: JobContext):
-    """Simplified entrypoint for the agent using provider factory pattern"""
+    """Optimized entrypoint - uses preloaded providers for near-instant startup"""
+    import time
+    entrypoint_start = time.time()
+
     ctx.log_context_fields = {"room": ctx.room.name}
-    print(f"Starting simple agent in room: {ctx.room.name}")
-    
+    logger.info(f"🚀 [ENTRYPOINT] Starting agent in room: {ctx.room.name}")
+
     # Start resource monitoring for this session
     resource_monitor.start_monitoring()
     resource_monitor.increment_clients()
-    
+
     room_name = ctx.room.name
     device_mac = None
-    
+
     # Extract MAC address from room name (format: UUID_MAC)
     if '_' in room_name:
         parts = room_name.split('_')
@@ -254,11 +310,10 @@ async def entrypoint(ctx: JobContext):
             if len(mac_part) == 12 and mac_part.isalnum():
                 device_mac = ':'.join(mac_part[i:i+2] for i in range(0, 12, 2))
                 logger.info(f"📱 Extracted MAC from room name: {device_mac}")
-    
-    # Load configuration using ConfigLoader (same as main server)
-    groq_config = ConfigLoader.get_groq_config()
+
+    # Load agent configuration
     agent_config = ConfigLoader.get_agent_config()
-    
+
     # Use default prompt from ConfigLoader or fallback
     try:
         agent_prompt = ConfigLoader.get_default_prompt()
@@ -290,29 +345,56 @@ When you first meet a child, greet them warmly with something like:
 - If asked about battery, use the check_battery_level function
 </guidelines>"""
         logger.info(f"📄 Using fallback prompt (length: {len(agent_prompt)} chars)")
-    
-    # Get VAD from prewarm
+
+    # ⚡ PERFORMANCE OPTIMIZATION: Use preloaded providers from prewarm
+    logger.info("⚡ [OPTIMIZATION] Loading providers from prewarm cache...")
+
+    # Get preloaded providers from prewarm (near-instant)
     vad = ctx.proc.userdata.get("vad")
+    llm = ctx.proc.userdata.get("llm")
+    stt = ctx.proc.userdata.get("stt")
+    tts = ctx.proc.userdata.get("tts")
+    turn_detection = ctx.proc.userdata.get("turn_detection")
+    groq_config = ctx.proc.userdata.get("groq_config")
+    tts_config = ctx.proc.userdata.get("tts_config")
+
+    # Fallback to creating providers if prewarm failed (should be rare)
     if not vad:
-        logger.warning("No VAD from prewarm, loading now...")
+        logger.warning("⚠️ VAD not preloaded, creating now (this will add latency)...")
         vad = ProviderFactory.create_vad()
-    
-    # Create providers using ProviderFactory (same as main server)
-    logger.info("🏭 Creating providers using ProviderFactory...")
-    
-    llm = ProviderFactory.create_llm(groq_config)
-    logger.info(f"🧠 LLM created: {type(llm)}")
-    
-    stt = ProviderFactory.create_stt(groq_config, vad)
-    logger.info(f"🎤 STT created: {type(stt)}")
-    
-    # Get TTS config and create TTS provider
-    tts_config = ConfigLoader.get_tts_config()
-    tts = ProviderFactory.create_tts(groq_config, tts_config)
-    logger.info(f"🔊 TTS created: {type(tts)} - Provider: {tts_config.get('provider')}")
-    
-    # Create turn detection (same as main server)
-    turn_detection = ProviderFactory.create_turn_detection()
+    else:
+        logger.info("✅ VAD loaded from prewarm")
+
+    if not llm:
+        logger.warning("⚠️ LLM not preloaded, creating now (this will add ~1.1s latency)...")
+        groq_config = groq_config or ConfigLoader.get_groq_config()
+        llm = ProviderFactory.create_llm(groq_config)
+    else:
+        logger.info("✅ LLM loaded from prewarm")
+
+    if not stt:
+        logger.warning("⚠️ STT not preloaded, creating now (this will add ~0.35s latency)...")
+        groq_config = groq_config or ConfigLoader.get_groq_config()
+        stt = ProviderFactory.create_stt(groq_config, vad)
+    else:
+        logger.info("✅ STT loaded from prewarm")
+
+    if not tts:
+        logger.warning("⚠️ TTS not preloaded, creating now (this will add ~0.1s latency)...")
+        groq_config = groq_config or ConfigLoader.get_groq_config()
+        tts_config = tts_config or ConfigLoader.get_tts_config()
+        tts = ProviderFactory.create_tts(groq_config, tts_config)
+    else:
+        logger.info(f"✅ TTS loaded from prewarm - Provider: {tts_config.get('provider') if tts_config else 'unknown'}")
+
+    if not turn_detection:
+        logger.info("ℹ️ Turn detection not preloaded (may be disabled)")
+        turn_detection = ProviderFactory.create_turn_detection()
+    else:
+        logger.info("✅ Turn detection loaded from prewarm")
+
+    provider_load_time = time.time() - entrypoint_start
+    logger.info(f"⚡ [PERFORMANCE] Providers loaded in {provider_load_time:.3f}s (vs ~1.6s without prewarm)")
     
     # Create session with basic supported parameters
     session = AgentSession(
@@ -469,14 +551,15 @@ When you first meet a child, greet them warmly with something like:
                 logger.info("🎯 [GREETING-TASK] Creating asyncio task for greeting generation")
                 asyncio.create_task(trigger_greeting())
             elif msg_type == "abort":
-                logger.info("🛑 Abort signal received from device")
-                # Handle abort by stopping current speech and clearing audio
+                logger.info("🛑 [ABORT] Abort signal received from device - interrupting agent speech")
+                # Handle abort by interrupting current speech
                 async def handle_abort():
                     try:
-                        # Stop current speech if any
-                        if hasattr(session, 'stop_speech'):
-                            await session.stop_speech()
-                        
+                        # Interrupt current speech using the session.interrupt() method
+                        logger.info("🛑 [ABORT] Calling session.interrupt() to stop agent speech...")
+                        session.interrupt()
+                        logger.info("✅ [ABORT] Agent speech interrupted successfully")
+
                         # Send immediate audio stop confirmation
                         abort_response = {
                             "type": "audio_stopped",
@@ -486,17 +569,39 @@ When you first meet a child, greet them warmly with something like:
                                 "created_at": datetime.now().timestamp()
                             }
                         }
-                        
+
                         await ctx.room.local_participant.publish_data(
                             json.dumps(abort_response).encode(),
                             topic=""
                         )
-                        logger.info("🛑 Audio stop confirmation sent")
-                        
+                        logger.info("✅ [ABORT] Audio stop confirmation sent to gateway")
+
                     except Exception as e:
-                        logger.error(f"Failed to handle abort: {e}")
-                
+                        logger.error(f"❌ [ABORT] Failed to handle abort: {e}", exc_info=True)
+
                 asyncio.create_task(handle_abort())
+            elif msg_type == "disconnect_agent":
+                logger.info("👋 [DISCONNECT] Disconnect signal received - agent leaving room (room stays alive)")
+                # Handle agent disconnect - leave room but don't shut down process
+                async def handle_disconnect():
+                    try:
+                        logger.info("👋 [DISCONNECT] Agent disconnecting from room...")
+
+                        # Stop any ongoing speech first
+                        try:
+                            session.interrupt()
+                            logger.info("✅ [DISCONNECT] Interrupted ongoing speech")
+                        except Exception as e:
+                            logger.warning(f"⚠️ [DISCONNECT] No speech to interrupt: {e}")
+
+                        # Disconnect from the room
+                        await ctx.room.disconnect()
+                        logger.info("✅ [DISCONNECT] Agent disconnected successfully - room remains alive for redeployment")
+
+                    except Exception as e:
+                        logger.error(f"❌ [DISCONNECT] Failed to disconnect agent: {e}", exc_info=True)
+
+                asyncio.create_task(handle_disconnect())
             else:
                 logger.info(f"📨 Unknown message type received: {msg_type}")
                 
