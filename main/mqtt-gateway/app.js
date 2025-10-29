@@ -1004,7 +1004,7 @@ class LiveKitBridge extends Emitter {
     }
   }
 
-  async connect(audio_params, features) {
+  async connect(audio_params, features, roomService) {
     const connectStartTime = Date.now();
     console.log(`🔍 [DEBUG] LiveKitBridge.connect() called - UUID: ${this.uuid}, MAC: ${this.macAddress}`);
     console.log(`⏱️ [TIMING-START] Connection initiated at ${connectStartTime}`);
@@ -1015,6 +1015,30 @@ class LiveKitBridge extends Emitter {
     const participantName = this.macAddress;
 
     console.log(`🏠 [ROOM] Creating room with name: ${roomName} (UUID: ${this.uuid}, MAC: ${this.macAddress})`);
+
+    // Pre-create room with emptyTimeout setting
+    if (roomService) {
+      try {
+        await roomService.createRoom({
+          name: roomName,
+          empty_timeout: 60, // Auto-close room if empty for 60 seconds (snake_case for LiveKit API)
+          max_participants: 2
+        });
+        console.log(`✅ [ROOM] Pre-created room with 60-second empty_timeout: ${roomName}`);
+      } catch (error) {
+        // Log the actual error for debugging
+        console.error(`❌ [ROOM] Error pre-creating room: ${error.message}`);
+        console.error(`❌ [ROOM] Full error:`, error);
+
+        // Room might already exist, that's okay - continue anyway
+        if (error.message && !error.message.includes('already exists')) {
+          console.warn(`⚠️ [ROOM] Continuing despite error...`);
+        } else {
+          console.log(`ℹ️ [ROOM] Room already exists: ${roomName}`);
+        }
+        // Don't throw - continue with connection even if room pre-creation fails
+      }
+    }
 
     const at = new AccessToken(api_key, api_secret, {
       identity: participantName,
@@ -1353,11 +1377,12 @@ class LiveKitBridge extends Emitter {
               console.log(`✅ [AGENT-READY] Agent join promise resolved`);
             }
 
-            // Clear timeout if set
+            // Clear timeouts if set
             if (this.agentJoinTimeout) {
               clearTimeout(this.agentJoinTimeout);
               this.agentJoinTimeout = null;
             }
+            // Note: Room emptyTimeout is handled by LiveKit server automatically
 
             console.log(`✅ [AGENT] Agent ready, waiting for 's' key press from client to trigger greeting`);
           }
@@ -2996,10 +3021,11 @@ class MQTTConnection {
     try {
       // Connect to LiveKit room (gateway joins, but agent doesn't deploy yet)
       const roomCreationStart = Date.now();
-      await this.bridge.connect(json.audio_params, json.features);
+      await this.bridge.connect(json.audio_params, json.features, this.server?.roomService || this.gateway?.roomService);
       const roomCreationTime = Date.now() - roomCreationStart;
       console.log(`✅ [HELLO] Room created and gateway connected in ${roomCreationTime}ms`);
       console.log(`⏳ [HELLO] Agent will deploy when user presses 's' key`);
+      console.log(`⏰ [HELLO] Room will auto-close if no participants join within 60 seconds (LiveKit emptyTimeout)`);
 
       // Send hello response with UDP session details
       this.sendMqttMessage(
@@ -3058,36 +3084,47 @@ class MQTTConnection {
     }
 
     if (json.type === "goodbye") {
-      console.log(`🧹 [CLEAR-HISTORY] Received goodbye from device: ${this.macAddress} - clearing conversation history`);
+      console.log(`🔌 [DISCONNECT-AGENT] Received goodbye from device: ${this.macAddress} - disconnecting agent but keeping room alive`);
 
-      // Send clear_history signal to agent via data channel
+      // Disconnect agent participant but keep room alive
       if (this.bridge && this.bridge.room && this.bridge.room.localParticipant) {
         try {
-          const clearHistoryMessage = {
-            type: "clear_history",  // Changed from "disconnect_agent"
+          // Send disconnect message to agent via data channel
+          const disconnectMessage = {
+            type: "disconnect_agent",
             session_id: json.session_id,
             timestamp: Date.now(),
             source: "mqtt_gateway"
           };
 
-          const messageString = JSON.stringify(clearHistoryMessage);
+          const messageString = JSON.stringify(disconnectMessage);
           const messageData = new Uint8Array(Buffer.from(messageString, 'utf8'));
 
           await this.bridge.room.localParticipant.publishData(
             messageData,
             { reliable: true }
           );
-          console.log(`✅ [CLEAR-HISTORY] Sent clear history signal to agent - conversation reset to brand new`);
-          console.log(`🏠 [CLEAR-HISTORY] Agent stays connected, room remains alive`);
+
+          console.log(`✅ [DISCONNECT-AGENT] Sent disconnect signal to agent`);
+
+          // Mark agent as not joined so it can rejoin
+          this.bridge.agentJoined = false;
+          this.bridge.agentDeployed = false;
+
+          // Reset agent join promise for next join
+          this.bridge.agentJoinPromise = new Promise((resolve) => {
+            this.bridge.agentJoinResolve = resolve;
+          });
+
+          console.log(`🏠 [DISCONNECT-AGENT] Room remains alive, agent can rejoin on 's' press`);
         } catch (error) {
-          console.error(`❌ [CLEAR-HISTORY] Failed to send clear history to agent:`, error);
+          console.error(`❌ [DISCONNECT-AGENT] Failed to disconnect agent:`, error);
         }
       } else {
-        console.log(`⚠️ [CLEAR-HISTORY] No active bridge/room to send clear history to`);
+        console.log(`⚠️ [DISCONNECT-AGENT] No active bridge/room to disconnect agent from`);
       }
 
-      // Keep bridge and agent connected - just clear history
-      // User can continue conversation immediately after history clear
+      // Keep bridge and room alive - agent can rejoin with 's'
       return;
     }
 
@@ -3504,10 +3541,11 @@ class VirtualMQTTConnection {
     try {
       // Connect to LiveKit room (gateway joins, but agent doesn't deploy yet)
       const roomCreationStart = Date.now();
-      await this.bridge.connect(json.audio_params, json.features);
+      await this.bridge.connect(json.audio_params, json.features, this.server?.roomService || this.gateway?.roomService);
       const roomCreationTime = Date.now() - roomCreationStart;
       console.log(`✅ [HELLO] Room created and gateway connected in ${roomCreationTime}ms`);
       console.log(`⏳ [HELLO] Agent will deploy when user presses 's' key`);
+      console.log(`⏰ [HELLO] Room will auto-close if no participants join within 60 seconds (LiveKit emptyTimeout)`);
 
       // Send hello response with UDP session details
       this.sendMqttMessage(
@@ -3566,36 +3604,45 @@ class VirtualMQTTConnection {
     }
 
     if (json.type === "goodbye") {
-      console.log(`🧹 [CLEAR-HISTORY] Received goodbye from device: ${this.deviceId} - clearing conversation history`);
+      console.log(`🔌 [DISCONNECT-AGENT] Received goodbye from device: ${this.deviceId} - disconnecting agent but keeping room alive`);
 
-      // Send clear_history signal to agent via data channel
+      // Disconnect agent participant but keep room alive
       if (this.bridge && this.bridge.room && this.bridge.room.localParticipant) {
         try {
-          const clearHistoryMessage = {
-            type: "clear_history",  // Changed from "disconnect_agent"
+          // Send disconnect message to agent via data channel
+          const disconnectMessage = {
+            type: "disconnect_agent",
             session_id: json.session_id,
             timestamp: Date.now(),
             source: "mqtt_gateway"
           };
 
-          const messageString = JSON.stringify(clearHistoryMessage);
+          const messageString = JSON.stringify(disconnectMessage);
           const messageData = new Uint8Array(Buffer.from(messageString, 'utf8'));
 
           await this.bridge.room.localParticipant.publishData(
             messageData,
             { reliable: true }
           );
-          console.log(`✅ [CLEAR-HISTORY] Sent clear history signal to agent - conversation reset to brand new`);
-          console.log(`🏠 [CLEAR-HISTORY] Agent stays connected, room remains alive`);
+
+          console.log(`✅ [DISCONNECT-AGENT] Sent disconnect signal to agent`);
+
+          // Mark agent as not joined so it can rejoin
+          this.bridge.agentJoined = false;
+          this.bridge.agentDeployed = false;
+
+          // Reset agent join promise for next join
+          this.bridge.agentJoinPromise = new Promise((resolve) => {
+            this.bridge.agentJoinResolve = resolve;
+          });
+
+          console.log(`🏠 [DISCONNECT-AGENT] Room remains alive, agent can rejoin on 's' press`);
         } catch (error) {
-          console.error(`❌ [CLEAR-HISTORY] Failed to send clear history to agent:`, error);
+          console.error(`❌ [DISCONNECT-AGENT] Failed to disconnect agent:`, error);
         }
-      } else {
-        console.log(`⚠️ [CLEAR-HISTORY] No active bridge/room to send clear history to`);
       }
 
-      // Keep bridge and agent connected - just clear history
-      // User can continue conversation immediately after history clear
+      // Keep bridge and room alive - agent can rejoin with 's'
       return;
     }
 
