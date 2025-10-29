@@ -12,7 +12,7 @@ const debug = debugModule("mqtt-server");
 const crypto = require("crypto");
 const dgram = require("dgram");
 const Emitter = require("events");
-const { AccessToken, RoomServiceClient } = require("livekit-server-sdk");
+const { AccessToken, RoomServiceClient, AgentDispatchClient } = require("livekit-server-sdk");
 const {
   Room,
   RoomEvent,
@@ -3908,13 +3908,23 @@ class MQTTGateway {
           livekitConfig.api_secret
         );
         console.log("✅ [INIT] RoomServiceClient initialized for session cleanup");
+
+        // Initialize AgentDispatchClient for explicit agent dispatch
+        this.agentDispatchClient = new AgentDispatchClient(
+          livekitConfig.url,
+          livekitConfig.api_key,
+          livekitConfig.api_secret
+        );
+        console.log("✅ [INIT] AgentDispatchClient initialized for explicit agent dispatch");
       } else {
         console.warn("⚠️ [INIT] LiveKit config incomplete, room cleanup will be skipped");
         this.roomService = null;
+        this.agentDispatchClient = null;
       }
     } catch (error) {
-      console.error("❌ [INIT] Failed to initialize RoomServiceClient:", error.message);
+      console.error("❌ [INIT] Failed to initialize LiveKit clients:", error.message);
       this.roomService = null;
+      this.agentDispatchClient = null;
     }
   }
 
@@ -4120,12 +4130,36 @@ class MQTTGateway {
           if (deviceInfo && deviceInfo.connection) {
             const connection = deviceInfo.connection;
 
-            // Room should already exist from parseHelloMessage, just wait for agent and send greeting
+            // Room should already exist from parseHelloMessage, explicitly dispatch agent
             if (connection.bridge) {
-              console.log(`👋 [START-GREETING] Room exists, waiting for agent to join...`);
+              console.log(`👋 [START-GREETING] Room exists, explicitly dispatching agent...`);
 
               const bridge = connection.bridge;
               const startTime = Date.now();
+              const roomName = bridge.room ? bridge.room.name : null;
+
+              if (!roomName) {
+                console.error(`❌ [START-GREETING] Cannot dispatch agent - room name not available`);
+                return;
+              }
+
+              // Explicitly dispatch agent using AgentDispatchClient
+              if (this.agentDispatchClient) {
+                this.agentDispatchClient.createDispatch(roomName, 'cheeko-agent', {
+                  metadata: JSON.stringify({
+                    device_mac: connection.macAddress,
+                    device_uuid: deviceId,
+                    timestamp: Date.now()
+                  })
+                }).then((dispatch) => {
+                  console.log(`✅ [START-GREETING] Agent dispatch created:`, dispatch.id);
+                  console.log(`📤 [START-GREETING] Agent 'cheeko-agent' dispatched to room: ${roomName}`);
+                }).catch((error) => {
+                  console.error(`❌ [START-GREETING] Failed to dispatch agent:`, error.message);
+                });
+              } else {
+                console.warn(`⚠️ [START-GREETING] AgentDispatchClient not initialized, agent may not join`);
+              }
 
               // Wait for agent to join the room
               bridge.waitForAgentJoin(4000).then((agentReady) => {
@@ -4160,7 +4194,26 @@ class MQTTGateway {
             const realConnection = this.findRealDeviceConnection(deviceId);
             if (realConnection && realConnection.bridge) {
               console.log(`👋 [START-GREETING] Found real ESP32 device with bridge for: ${deviceId}`);
-              realConnection.bridge.sendInitialGreeting().then(() => {
+
+              const bridge = realConnection.bridge;
+              const roomName = bridge.room ? bridge.room.name : null;
+
+              // Explicitly dispatch agent for real device
+              if (roomName && this.agentDispatchClient) {
+                this.agentDispatchClient.createDispatch(roomName, 'cheeko-agent', {
+                  metadata: JSON.stringify({
+                    device_mac: realConnection.macAddress,
+                    device_uuid: deviceId,
+                    timestamp: Date.now()
+                  })
+                }).then((dispatch) => {
+                  console.log(`✅ [START-GREETING] Agent dispatch created for real device:`, dispatch.id);
+                }).catch((error) => {
+                  console.error(`❌ [START-GREETING] Failed to dispatch agent for real device:`, error.message);
+                });
+              }
+
+              bridge.sendInitialGreeting().then(() => {
                 console.log(`✅ [START-GREETING] Successfully triggered greeting for real device: ${deviceId}`);
               }).catch((error) => {
                 console.error(`❌ [START-GREETING] Error triggering greeting for real device ${deviceId}:`, error);
