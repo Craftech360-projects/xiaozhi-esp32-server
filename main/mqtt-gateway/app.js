@@ -2737,10 +2737,9 @@ class MQTTConnection {
       // Reset the timer while audio is playing to prevent timeout
       this.lastActivityTime = now;
       console.log(`🎵 [AUDIO-ACTIVE] Resetting timer - audio is playing for device: ${this.clientId}`);
-      return;
+      
     }
-
-    if (timeSinceLastActivity > this.inactivityTimeoutMs) {
+    else if (timeSinceLastActivity > this.inactivityTimeoutMs) {
       // Send end prompt instead of immediate close
       if (!this.isEnding && this.bridge) {
         this.isEnding = true;
