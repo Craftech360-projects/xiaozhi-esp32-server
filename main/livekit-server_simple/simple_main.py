@@ -32,6 +32,7 @@ from livekit.agents import (
     Agent,
     RunContext,
 )
+from livekit.agents.llm import ChatContext
 from livekit import rtc
 from livekit.plugins import silero, groq
 
@@ -602,6 +603,56 @@ When you first meet a child, greet them warmly with something like:
                         logger.error(f"❌ [DISCONNECT] Failed to disconnect agent: {e}", exc_info=True)
 
                 asyncio.create_task(handle_disconnect())
+            elif msg_type == "clear_history":
+                logger.info("🧹 [CLEAR-HISTORY] Clear history signal received - resetting conversation to brand new")
+                # Handle clearing chat history without disconnecting
+                async def handle_clear_history():
+                    try:
+                        logger.info("🧹 [CLEAR-HISTORY] Clearing conversation history...")
+
+                        # Get the current agent from the session
+                        agent = session._agent
+                        if not agent:
+                            logger.error("❌ [CLEAR-HISTORY] No agent found in session")
+                            return
+
+                        # Get the system prompt from the agent's instructions
+                        system_prompt = agent._instructions if hasattr(agent, '_instructions') else "You are Cheeko, a friendly AI assistant for kids."
+                        logger.info(f"🧹 [CLEAR-HISTORY] Retrieved system prompt (length: {len(system_prompt)} chars)")
+
+                        # Create a new empty ChatContext with just the system message
+                        new_ctx = ChatContext.empty()
+                        new_ctx.add_message(role="system", content=system_prompt)
+                        logger.info("🧹 [CLEAR-HISTORY] Created new empty context with system prompt")
+
+                        # Update the agent's chat context to the new empty one
+                        await agent.update_chat_ctx(new_ctx)
+                        logger.info("✅ [CLEAR-HISTORY] Chat context updated successfully")
+
+                        # Interrupt any ongoing speech for clean state
+                        session.interrupt()
+                        logger.info("✅ [CLEAR-HISTORY] Interrupted ongoing speech")
+
+                        # Send confirmation back to gateway
+                        history_cleared_response = {
+                            "type": "history_cleared",
+                            "data": {
+                                "type": "history_cleared",
+                                "cleared_at": datetime.now().timestamp(),
+                                "status": "success"
+                            }
+                        }
+
+                        await ctx.room.local_participant.publish_data(
+                            json.dumps(history_cleared_response).encode(),
+                            topic=""
+                        )
+                        logger.info("✅ [CLEAR-HISTORY] History cleared successfully - conversation reset to brand new!")
+
+                    except Exception as e:
+                        logger.error(f"❌ [CLEAR-HISTORY] Failed to clear history: {e}", exc_info=True)
+
+                asyncio.create_task(handle_clear_history())
             else:
                 logger.info(f"📨 Unknown message type received: {msg_type}")
                 

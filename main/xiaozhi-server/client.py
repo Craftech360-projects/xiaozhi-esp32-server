@@ -778,7 +778,7 @@ class TestClient:
         # The server's initial TTS will then trigger the client's recording.
         # Note: We no longer send "listen" message here - waiting for 's' key press
         logger.info(
-            "[WAIT] Test running. Press 's' to deploy agent, 'x'/Space to abort, 'c' to disconnect agent, or Ctrl+C to stop.")
+            "[WAIT] Test running. Press 's' to deploy agent, 'x'/Space to abort, 'c' to clear history (brand new conversation), or Ctrl+C to stop.")
 
         # Start a thread to monitor keyboard presses
         last_greeting_time = [0]  # Use list to make it mutable in nested function
@@ -840,20 +840,20 @@ class TestClient:
                     while keyboard.is_pressed('x') and not stop_threads.is_set():
                         time.sleep(0.01)
 
-                # Monitor 'c' key to disconnect agent (goodbye)
+                # Monitor 'c' key to clear conversation history
                 if keyboard.is_pressed('c'):
                     logger.info(
-                        "[GOODBYE] 'c' key pressed. Disconnecting agent from room...")
+                        "[CLEAR-HISTORY] 'c' key pressed. Clearing conversation history...")
                     goodbye_payload = {
-                        "type": "goodbye",
+                        "type": "goodbye",  # Gateway interprets this as clear_history
                         "session_id": udp_session_details["session_id"]
                     }
                     self.mqtt_client.publish(
                         "device-server", json.dumps(goodbye_payload))
-                    logger.info(f"[GOODBYE] Sent goodbye message: {goodbye_payload}")
-                    # Reset cooldown timer so user can press 's' to redeploy agent
+                    logger.info(f"[CLEAR-HISTORY] Sent clear history request: {goodbye_payload}")
+                    # Reset cooldown timer so user can press 's' immediately
                     last_greeting_time[0] = 0
-                    logger.info("[GOODBYE] Agent disconnected - room still alive. Press 's' to redeploy agent.")
+                    logger.info("[CLEAR-HISTORY] Conversation reset to brand new! Agent stays connected. Continue talking or press 's' for greeting.")
                     # Wait for the key to be released to avoid multiple sends
                     while keyboard.is_pressed('c') and not stop_threads.is_set():
                         time.sleep(0.01)
