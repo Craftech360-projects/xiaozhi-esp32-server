@@ -1,0 +1,25 @@
+[cerebrium.deployment]
+name = "livekit-server-simple"
+python_version = "3.11"
+docker_base_image_url = "debian:bookworm-slim"
+disable_auth = false
+include = ['./*', 'simple_main.py', 'cerebrium.toml', 'src/**/*', 'config/**/*']
+exclude = ['.*', '__pycache__/**/*', 'transcripts/**/*', '*.pyc']
+
+[cerebrium.hardware]
+cpu = 4
+memory = 16.0
+compute = "CPU"
+
+[cerebrium.scaling]
+min_replicas = 1
+max_replicas = 8
+cooldown = 30
+replica_concurrency = 1
+response_grace_period = 900
+scaling_metric = "cpu_utilization"
+scaling_target = 60
+
+[cerebrium.runtime.custom]
+port = 8081
+dockerfile_path = "./Dockerfile"
