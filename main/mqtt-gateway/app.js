@@ -636,7 +636,7 @@ class WorkerPoolManager {
    * Start periodic metrics logging
    * Logs stats every N seconds
    */
-  startMetricsLogging(intervalSeconds = 30) {
+  startMetricsLogging(intervalSeconds = 120) {
     this.metricsInterval = setInterval(() => {
       const stats = this.getDetailedStats();
 
@@ -1359,12 +1359,12 @@ class LiveKitBridge extends Emitter {
               this.agentJoinTimeout = null;
             }
 
-            // Send initial greeting message to let user know agent is ready
+            // Send ready message to client, waiting for 's' key press to trigger greeting
             const greetingStartTime = Date.now();
             setTimeout(() => {
               const greetingEndTime = Date.now();
-              console.log(`⏱️ [TIMING-GREETING] Greeting delay took ${greetingEndTime - greetingStartTime}ms`);
-              this.sendInitialGreeting();
+              console.log(`⏱️ [TIMING-READY] Ready notification delay took ${greetingEndTime - greetingStartTime}ms`);
+              this.sendReadyForGreeting();
             }, 300); // Reduced delay for faster response (optimized from 1000ms)
           }
         });
@@ -2250,6 +2250,31 @@ class LiveKitBridge extends Emitter {
   }
 
   // Send device information and initial greeting when agent joins
+  /**
+   * Send ready notification to client via MQTT
+   * Client will press 's' key to trigger the actual greeting
+   */
+  async sendReadyForGreeting() {
+    if (!this.connection) return;
+
+    try {
+      const readyMessage = {
+        type: "ready_for_greeting",
+        session_id: this.connection.udp.session_id,
+        timestamp: Date.now()
+      };
+
+      this.connection.sendMqttMessage(JSON.stringify(readyMessage));
+      console.log(
+        `✅ [READY] Sent ready_for_greeting notification to client ${this.macAddress}. Waiting for 's' key press...`
+      );
+    } catch (error) {
+      console.error(
+        `❌ [READY] Error sending ready notification to client ${this.macAddress}:`, error
+      );
+    }
+  }
+
   async sendInitialGreeting() {
     if (!this.connection) return;
 
@@ -4037,6 +4062,48 @@ class MQTTGateway {
 
           if (!abortSent) {
             console.log(`⚠️ [ABORT] No connections found for device: ${deviceId}, abort cannot be processed`);
+          }
+        } else if (originalPayload.type === 'start_greeting') {
+          // Special handling for start_greeting - trigger initial greeting from agent
+          console.log(`👋 [START-GREETING] Processing start_greeting from internal/server-ingest: ${deviceId}`);
+
+          let greetingSent = false;
+
+          // Check for virtual device connection first (most common case)
+          const deviceInfo = this.deviceConnections.get(deviceId);
+          if (deviceInfo && deviceInfo.connection && deviceInfo.connection.bridge) {
+            console.log(`👋 [START-GREETING] Found virtual device with bridge for: ${deviceId}`);
+            console.log(`👋 [START-GREETING] Directly calling bridge.sendInitialGreeting()...`);
+
+            // Directly call the bridge's sendInitialGreeting method
+            deviceInfo.connection.bridge.sendInitialGreeting().then(() => {
+              console.log(`✅ [START-GREETING] Successfully triggered initial greeting for device: ${deviceId}`);
+            }).catch((error) => {
+              console.error(`❌ [START-GREETING] Error triggering greeting for ${deviceId}:`, error);
+            });
+
+            greetingSent = true;
+          } else if (deviceInfo && deviceInfo.connection) {
+            console.log(`⚠️ [START-GREETING] Virtual connection exists but no bridge found for: ${deviceId}`);
+          }
+
+          // Fallback: Check for real ESP32 connection
+          if (!greetingSent) {
+            const realConnection = this.findRealDeviceConnection(deviceId);
+            if (realConnection && realConnection.bridge) {
+              console.log(`👋 [START-GREETING] Found real ESP32 device with bridge for: ${deviceId}`);
+              realConnection.bridge.sendInitialGreeting().then(() => {
+                console.log(`✅ [START-GREETING] Successfully triggered greeting for real device: ${deviceId}`);
+              }).catch((error) => {
+                console.error(`❌ [START-GREETING] Error triggering greeting for real device ${deviceId}:`, error);
+              });
+              greetingSent = true;
+            }
+          }
+
+          if (!greetingSent) {
+            console.log(`⚠️ [START-GREETING] No bridge found for device: ${deviceId}, greeting cannot be triggered`);
+            console.log(`⚠️ [START-GREETING] DeviceInfo exists: ${!!deviceInfo}, Connection exists: ${!!(deviceInfo && deviceInfo.connection)}, Bridge exists: ${!!(deviceInfo && deviceInfo.connection && deviceInfo.connection.bridge)}`);
           }
         } else {
           // ALWAYS check for real ESP32 connection FIRST (prioritize over virtual)

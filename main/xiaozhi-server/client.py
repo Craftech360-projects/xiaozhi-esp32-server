@@ -19,9 +19,9 @@ import opuslib
 
 # --- Configuration ---
 
-SERVER_IP = "10.171.215.210"
+SERVER_IP = "192.168.1.98"
 OTA_PORT = 8002
-MQTT_BROKER_HOST = "10.171.215.210"
+MQTT_BROKER_HOST = "192.168.1.98"
 
 
 MQTT_BROKER_PORT = 1883
@@ -129,6 +129,7 @@ class TestClient:
         self.last_audio_received = 0
         self.session_active = True
         self.conversation_count = 0
+        self.ready_for_greeting = False  # Flag to indicate when gateway is ready for greeting trigger
 
         logger.info(
             f"Client initialized with unique MAC: {self.device_mac_formatted}")
@@ -198,6 +199,12 @@ class TestClient:
                 logger.info(
                     "[STOP] Received 'record_stop' signal from server. Stopping current audio recording...")
                 stop_recording_event.set()  # This will cause the recording thread loop to exit
+
+            # Handle ready_for_greeting signal (gateway ready, waiting for 's' key)
+            elif payload.get("type") == "ready_for_greeting":
+                logger.info(
+                    "[READY] Gateway is ready. Press 's' key to trigger initial greeting...")
+                self.ready_for_greeting = True
 
             else:
                 mqtt_message_queue.put(payload)
@@ -769,15 +776,30 @@ class TestClient:
         logger.info(
             "[STEP] STEP 5: Sending 'listen' message to trigger initial TTS from server...")
         # The server's initial TTS will then trigger the client's recording.
-        listen_payload = {
-            "type": "listen", "session_id": udp_session_details["session_id"], "state": "detect", "text": "hello baby"}
-        self.mqtt_client.publish("device-server", json.dumps(listen_payload))
+        # Note: We no longer send "listen" message here - waiting for 's' key press
         logger.info(
-            "[WAIT] Test running. Press Spacebar to abort TTS or Ctrl+C to stop.")
+            "[WAIT] Test running. Press 's' to start greeting, Spacebar to abort TTS, or Ctrl+C to stop.")
 
-        # Start a thread to monitor spacebar press
-        def monitor_spacebar():
+        # Start a thread to monitor keyboard presses
+        def monitor_keyboard():
             while not stop_threads.is_set() and self.session_active:
+                # Monitor 's' key for greeting trigger
+                if keyboard.is_pressed('s') and self.ready_for_greeting:
+                    logger.info(
+                        "[GREETING] 's' key pressed. Sending start_greeting message to server...")
+                    greeting_payload = {
+                        "type": "start_greeting",
+                        "session_id": udp_session_details["session_id"]
+                    }
+                    self.mqtt_client.publish(
+                        "device-server", json.dumps(greeting_payload))
+                    logger.info(f"[GREETING] Sent start_greeting message: {greeting_payload}")
+                    self.ready_for_greeting = False  # Prevent multiple triggers
+                    # Wait for the key to be released to avoid multiple sends
+                    while keyboard.is_pressed('s') and not stop_threads.is_set():
+                        time.sleep(0.01)
+
+                # Monitor spacebar for abort
                 if keyboard.is_pressed('space'):
                     logger.info(
                         "[EMOJI] Spacebar pressed. Sending abort message to server...")
@@ -791,11 +813,12 @@ class TestClient:
                     # Wait for the key to be released to avoid multiple sends
                     while keyboard.is_pressed('space') and not stop_threads.is_set():
                         time.sleep(0.01)
+
                 time.sleep(0.01)
 
-        spacebar_thread = threading.Thread(
-            target=monitor_spacebar, daemon=True)
-        spacebar_thread.start()
+        keyboard_thread = threading.Thread(
+            target=monitor_keyboard, daemon=True)
+        keyboard_thread.start()
 
         try:
             # Keep running with better timeout handling
