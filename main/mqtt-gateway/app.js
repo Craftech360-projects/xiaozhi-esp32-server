@@ -2946,31 +2946,62 @@ class MQTTConnection {
       this.bridge = null;
     }
 
-    // Generate new UUID for future session
+    // Generate new UUID for session
     const newSessionUuid = crypto.randomUUID();
-    console.log(`🔄 [NEW-SESSION] Generated fresh UUID for future session: ${newSessionUuid}`);
+    console.log(`🔄 [NEW-SESSION] Generated UUID: ${newSessionUuid}`);
 
-    // Generate session_id that will be used when room is created
+    // Generate session_id for room
     const macForRoom = this.macAddress.replace(/:/g, '');
     const futureSessionId = `${newSessionUuid}_${macForRoom}`;
     this.udp.session_id = futureSessionId;
 
-    // Store hello message data for later room creation
-    this.pendingHelloData = {
-      version: json.version,
-      audio_params: json.audio_params,
-      features: json.features,
-      sessionUuid: newSessionUuid
-    };
+    console.log(`🏗️ [HELLO] Creating LiveKit room and connecting gateway (NO agent deployment yet)`);
 
-    console.log(`✅ [HELLO] UDP session created (NO LiveKit room yet). Session: ${this.udp.session_id}`);
-    console.log(`⏳ [HELLO] Room will be created when user presses 's' key`);
+    // Clean up old sessions
+    if (this.server.roomService) {
+      const newRoomName = `${newSessionUuid}_${macForRoom}`;
+      console.log(`🧹 [CLEANUP] Cleaning up old sessions for device: ${this.macAddress}`);
+      LiveKitBridge.cleanupOldSessionsForDevice(this.macAddress, this.server.roomService, newRoomName).then(() => {
+        console.log(`✅ [CLEANUP] Old sessions cleaned up`);
+      }).catch((err) => {
+        console.warn(`⚠️ [CLEANUP] Cleanup error (non-fatal):`, err);
+      });
+    }
+
+    // Create bridge immediately (this creates room and gateway joins)
+    this.bridge = new LiveKitBridge(
+      this,
+      json.version,
+      this.macAddress,
+      newSessionUuid,
+      {} // No userData for real ESP32
+    );
+
+    // Mark bridge as waiting for agent deployment
+    this.bridge.agentDeployed = false;
+
+    // Setup bridge close handler
+    this.bridge.on("close", () => {
+      const seconds = (Date.now() - this.udp.startTime) / 1000;
+      console.log(`Call ended: ${this.macAddress} Duration: ${seconds}s`);
+      this.sendMqttMessage(
+        JSON.stringify({ type: "goodbye", session_id: this.udp.session_id })
+      );
+      this.bridge = null;
+    });
 
     // Reset activity timer
     this.lastActivityTime = Date.now();
 
     try {
-      // Send hello response immediately with UDP session details (no LiveKit room needed)
+      // Connect to LiveKit room (gateway joins, but agent doesn't deploy yet)
+      const roomCreationStart = Date.now();
+      await this.bridge.connect(json.audio_params, json.features);
+      const roomCreationTime = Date.now() - roomCreationStart;
+      console.log(`✅ [HELLO] Room created and gateway connected in ${roomCreationTime}ms`);
+      console.log(`⏳ [HELLO] Agent will deploy when user presses 's' key`);
+
+      // Send hello response with UDP session details
       this.sendMqttMessage(
         JSON.stringify({
           type: "hello",
@@ -2985,7 +3016,7 @@ class MQTTConnection {
             nonce: this.udp.nonce.toString("hex"),
           },
           audio_params: {
-            sample_rate: 24000,  // Gateway's expected audio params
+            sample_rate: 24000,
             channels: 1,
             frame_duration: 60,
             format: "opus"
@@ -2993,7 +3024,7 @@ class MQTTConnection {
         })
       );
 
-      // Send ready_for_greeting immediately (no room created yet)
+      // Send ready_for_greeting (room created, waiting for agent deployment)
       this.sendMqttMessage(
         JSON.stringify({
           type: "ready_for_greeting",
@@ -3001,17 +3032,17 @@ class MQTTConnection {
           timestamp: Date.now()
         })
       );
-      console.log(`✅ [READY] Sent ready_for_greeting notification immediately to ${this.clientId}. Press 's' to create room and deploy agent.`);
+      console.log(`✅ [READY] Room ready. Press 's' to deploy agent.`);
 
     } catch (error) {
       this.sendMqttMessage(
         JSON.stringify({
           type: "error",
-          message: "Failed to process hello message",
+          message: "Failed to create room",
         })
       );
       console.error(
-        `${this.clientId} failed to process hello message: ${error}`
+        `${this.clientId} failed to create room: ${error}`
       );
     }
   }
@@ -3027,36 +3058,36 @@ class MQTTConnection {
     }
 
     if (json.type === "goodbye") {
-      console.log(`👋 [GOODBYE] Received goodbye from device: ${this.macAddress} - disconnecting agent, keeping room alive`);
+      console.log(`🧹 [CLEAR-HISTORY] Received goodbye from device: ${this.macAddress} - clearing conversation history`);
 
-      // Send disconnect signal to agent via data channel
+      // Send clear_history signal to agent via data channel
       if (this.bridge && this.bridge.room && this.bridge.room.localParticipant) {
         try {
-          const disconnectMessage = {
-            type: "disconnect_agent",
+          const clearHistoryMessage = {
+            type: "clear_history",  // Changed from "disconnect_agent"
             session_id: json.session_id,
             timestamp: Date.now(),
             source: "mqtt_gateway"
           };
 
-          const messageString = JSON.stringify(disconnectMessage);
+          const messageString = JSON.stringify(clearHistoryMessage);
           const messageData = new Uint8Array(Buffer.from(messageString, 'utf8'));
 
           await this.bridge.room.localParticipant.publishData(
             messageData,
             { reliable: true }
           );
-          console.log(`✅ [GOODBYE] Sent disconnect signal to agent - agent will leave room`);
-          console.log(`🏠 [GOODBYE] Room ${this.bridge.room.name} remains alive for redeployment`);
+          console.log(`✅ [CLEAR-HISTORY] Sent clear history signal to agent - conversation reset to brand new`);
+          console.log(`🏠 [CLEAR-HISTORY] Agent stays connected, room remains alive`);
         } catch (error) {
-          console.error(`❌ [GOODBYE] Failed to send disconnect to agent:`, error);
+          console.error(`❌ [CLEAR-HISTORY] Failed to send clear history to agent:`, error);
         }
       } else {
-        console.log(`⚠️ [GOODBYE] No active bridge/room to disconnect agent from`);
+        console.log(`⚠️ [CLEAR-HISTORY] No active bridge/room to send clear history to`);
       }
 
-      // Don't close bridge or set to null - keep room alive
-      // User can press 's' to redeploy agent to same room
+      // Keep bridge and agent connected - just clear history
+      // User can continue conversation immediately after history clear
       return;
     }
 
@@ -3423,31 +3454,62 @@ class VirtualMQTTConnection {
       this.bridge = null;
     }
 
-    // Generate new UUID for future session
+    // Generate new UUID for session
     const newSessionUuid = crypto.randomUUID();
-    console.log(`🔄 [NEW-SESSION] Generated fresh UUID for future session: ${newSessionUuid}`);
+    console.log(`🔄 [NEW-SESSION] Generated UUID: ${newSessionUuid}`);
 
-    // Generate session_id that will be used when room is created
+    // Generate session_id for room
     const macForRoom = this.macAddress.replace(/:/g, '');
     const futureSessionId = `${newSessionUuid}_${macForRoom}`;
     this.udp.session_id = futureSessionId;
 
-    // Store hello message data for later room creation (when 's' is pressed)
-    this.pendingHelloData = {
-      version: json.version,
-      audio_params: json.audio_params,
-      features: json.features,
-      sessionUuid: newSessionUuid
-    };
+    console.log(`🏗️ [HELLO] Creating LiveKit room and connecting gateway (NO agent deployment yet)`);
 
-    console.log(`✅ [HELLO] UDP session created (NO LiveKit room yet). Session: ${this.udp.session_id}`);
-    console.log(`⏳ [HELLO] Room will be created when user presses 's' key`);
+    // Clean up old sessions
+    if (this.gateway.roomService) {
+      const newRoomName = `${newSessionUuid}_${macForRoom}`;
+      console.log(`🧹 [CLEANUP] Cleaning up old sessions for device: ${this.deviceId}`);
+      LiveKitBridge.cleanupOldSessionsForDevice(this.deviceId, this.gateway.roomService, newRoomName).then(() => {
+        console.log(`✅ [CLEANUP] Old sessions cleaned up`);
+      }).catch((err) => {
+        console.warn(`⚠️ [CLEANUP] Cleanup error (non-fatal):`, err);
+      });
+    }
+
+    // Create bridge immediately (this creates room and gateway joins)
+    this.bridge = new LiveKitBridge(
+      this,
+      json.version,
+      this.deviceId,
+      newSessionUuid,
+      this.userData
+    );
+
+    // Mark bridge as waiting for agent deployment
+    this.bridge.agentDeployed = false;
+
+    // Setup bridge close handler
+    this.bridge.on("close", () => {
+      const seconds = (Date.now() - this.udp.startTime) / 1000;
+      console.log(`Call ended: ${this.deviceId} Duration: ${seconds}s`);
+      this.sendMqttMessage(
+        JSON.stringify({ type: "goodbye", session_id: this.udp.session_id })
+      );
+      this.bridge = null;
+    });
 
     // Reset activity timer
     this.lastActivityTime = Date.now();
 
     try {
-      // Send hello response immediately with UDP session details (no LiveKit room needed)
+      // Connect to LiveKit room (gateway joins, but agent doesn't deploy yet)
+      const roomCreationStart = Date.now();
+      await this.bridge.connect(json.audio_params, json.features);
+      const roomCreationTime = Date.now() - roomCreationStart;
+      console.log(`✅ [HELLO] Room created and gateway connected in ${roomCreationTime}ms`);
+      console.log(`⏳ [HELLO] Agent will deploy when user presses 's' key`);
+
+      // Send hello response with UDP session details
       this.sendMqttMessage(
         JSON.stringify({
           type: "hello",
@@ -3462,7 +3524,7 @@ class VirtualMQTTConnection {
             nonce: this.udp.nonce.toString("hex"),
           },
           audio_params: {
-            sample_rate: 24000,  // Gateway's expected audio params
+            sample_rate: 24000,
             channels: 1,
             frame_duration: 60,
             format: "opus"
@@ -3470,7 +3532,7 @@ class VirtualMQTTConnection {
         })
       );
 
-      // Send ready_for_greeting immediately (no room created yet)
+      // Send ready_for_greeting (room created, waiting for agent deployment)
       this.sendMqttMessage(
         JSON.stringify({
           type: "ready_for_greeting",
@@ -3478,17 +3540,17 @@ class VirtualMQTTConnection {
           timestamp: Date.now()
         })
       );
-      console.log(`✅ [READY] Sent ready_for_greeting notification immediately to ${this.deviceId}. Press 's' to create room and deploy agent.`);
+      console.log(`✅ [READY] Room ready. Press 's' to deploy agent.`);
 
     } catch (error) {
       this.sendMqttMessage(
         JSON.stringify({
           type: "error",
-          message: "Failed to process hello message",
+          message: "Failed to create room",
         })
       );
       console.error(
-        `${this.deviceId} failed to process hello message: ${error}`
+        `${this.deviceId} failed to create room: ${error}`
       );
     }
   }
@@ -3504,36 +3566,36 @@ class VirtualMQTTConnection {
     }
 
     if (json.type === "goodbye") {
-      console.log(`👋 [GOODBYE] Received goodbye from device: ${this.deviceId} - disconnecting agent, keeping room alive`);
+      console.log(`🧹 [CLEAR-HISTORY] Received goodbye from device: ${this.deviceId} - clearing conversation history`);
 
-      // Send disconnect signal to agent via data channel
+      // Send clear_history signal to agent via data channel
       if (this.bridge && this.bridge.room && this.bridge.room.localParticipant) {
         try {
-          const disconnectMessage = {
-            type: "disconnect_agent",
+          const clearHistoryMessage = {
+            type: "clear_history",  // Changed from "disconnect_agent"
             session_id: json.session_id,
             timestamp: Date.now(),
             source: "mqtt_gateway"
           };
 
-          const messageString = JSON.stringify(disconnectMessage);
+          const messageString = JSON.stringify(clearHistoryMessage);
           const messageData = new Uint8Array(Buffer.from(messageString, 'utf8'));
 
           await this.bridge.room.localParticipant.publishData(
             messageData,
             { reliable: true }
           );
-          console.log(`✅ [GOODBYE] Sent disconnect signal to agent - agent will leave room`);
-          console.log(`🏠 [GOODBYE] Room ${this.bridge.room.name} remains alive for redeployment`);
+          console.log(`✅ [CLEAR-HISTORY] Sent clear history signal to agent - conversation reset to brand new`);
+          console.log(`🏠 [CLEAR-HISTORY] Agent stays connected, room remains alive`);
         } catch (error) {
-          console.error(`❌ [GOODBYE] Failed to send disconnect to agent:`, error);
+          console.error(`❌ [CLEAR-HISTORY] Failed to send clear history to agent:`, error);
         }
       } else {
-        console.log(`⚠️ [GOODBYE] No active bridge/room to disconnect agent from`);
+        console.log(`⚠️ [CLEAR-HISTORY] No active bridge/room to send clear history to`);
       }
 
-      // Don't close bridge or set to null - keep room alive
-      // User can press 's' to redeploy agent to same room
+      // Keep bridge and agent connected - just clear history
+      // User can continue conversation immediately after history clear
       return;
     }
 
@@ -4058,23 +4120,26 @@ class MQTTGateway {
           if (deviceInfo && deviceInfo.connection) {
             const connection = deviceInfo.connection;
 
-            // Check if bridge already exists
+            // Room should already exist from parseHelloMessage, just wait for agent and send greeting
             if (connection.bridge) {
-              console.log(`👋 [START-GREETING] Bridge already exists, sending greeting directly`);
+              console.log(`👋 [START-GREETING] Room exists, waiting for agent to join...`);
 
-              // Bridge exists, just wait for agent and send greeting
               const bridge = connection.bridge;
               const startTime = Date.now();
 
+              // Wait for agent to join the room
               bridge.waitForAgentJoin(4000).then((agentReady) => {
                 const waitTime = Date.now() - startTime;
-                console.log(`⏱️ [START-GREETING] Agent wait took ${waitTime}ms`);
+                console.log(`⏱️ [START-GREETING] Agent join wait took ${waitTime}ms`);
 
                 if (agentReady) {
                   console.log(`✅ [START-GREETING] Agent ready, sending initial greeting...`);
+                  // Mark agent as deployed
+                  bridge.agentDeployed = true;
                   return bridge.sendInitialGreeting();
                 } else {
                   console.warn(`⚠️ [START-GREETING] Agent join timeout, trying to send greeting anyway...`);
+                  bridge.agentDeployed = true;
                   return bridge.sendInitialGreeting();
                 }
               }).then(() => {
@@ -4084,78 +4149,9 @@ class MQTTGateway {
               });
 
               greetingSent = true;
-            } else if (connection.pendingHelloData) {
-              // No bridge yet, create it now (this deploys the agent)
-              console.log(`🚀 [START-GREETING] Creating LiveKit room and deploying agent for: ${deviceId}`);
-
-              const helloData = connection.pendingHelloData;
-              const macForRoom = deviceId.replace(/:/g, '');
-
-              // Clean up old sessions
-              if (this.roomService) {
-                const newRoomName = `${helloData.sessionUuid}_${macForRoom}`;
-                console.log(`🧹 [START-GREETING] Cleaning up old sessions for MAC: ${deviceId}`);
-                LiveKitBridge.cleanupOldSessionsForDevice(deviceId, this.roomService, newRoomName).then(() => {
-                  console.log(`✅ [START-GREETING] Cleanup completed`);
-                }).catch((err) => {
-                  console.warn(`⚠️ [START-GREETING] Cleanup error (non-fatal):`, err);
-                });
-              }
-
-              // Create bridge and connect to LiveKit
-              connection.bridge = new LiveKitBridge(
-                connection,
-                helloData.version,
-                deviceId,
-                helloData.sessionUuid,
-                connection.userData
-              );
-
-              // Setup bridge close handler
-              connection.bridge.on("close", () => {
-                const seconds = (Date.now() - connection.udp.startTime) / 1000;
-                console.log(`Call ended: ${deviceId} Duration: ${seconds}s`);
-                connection.sendMqttMessage(
-                  JSON.stringify({ type: "goodbye", session_id: connection.udp.session_id })
-                );
-                connection.bridge = null;
-              });
-
-              // Connect to LiveKit room (this will deploy agent)
-              const roomCreationStart = Date.now();
-              connection.bridge.connect(helloData.audio_params, helloData.features).then((helloReply) => {
-                const roomCreationTime = Date.now() - roomCreationStart;
-                console.log(`✅ [START-GREETING] Room created in ${roomCreationTime}ms, waiting for agent...`);
-
-                // Wait for agent to join
-                const agentWaitStart = Date.now();
-                return connection.bridge.waitForAgentJoin(4000).then((agentReady) => {
-                  const agentWaitTime = Date.now() - agentWaitStart;
-                  console.log(`⏱️ [START-GREETING] Agent wait took ${agentWaitTime}ms`);
-
-                  if (agentReady) {
-                    console.log(`✅ [START-GREETING] Agent deployed and ready, sending greeting...`);
-                    return connection.bridge.sendInitialGreeting();
-                  } else {
-                    console.warn(`⚠️ [START-GREETING] Agent join timeout, trying greeting anyway...`);
-                    return connection.bridge.sendInitialGreeting();
-                  }
-                });
-              }).then(() => {
-                console.log(`✅ [START-GREETING] Successfully created room, deployed agent, and sent greeting for: ${deviceId}`);
-              }).catch((error) => {
-                console.error(`❌ [START-GREETING] Error creating room/deploying agent for ${deviceId}:`, error);
-                connection.sendMqttMessage(
-                  JSON.stringify({
-                    type: "error",
-                    message: "Failed to create room and deploy agent"
-                  })
-                );
-              });
-
-              greetingSent = true;
             } else {
-              console.log(`⚠️ [START-GREETING] Virtual connection exists but no bridge or pending data for: ${deviceId}`);
+              console.error(`❌ [START-GREETING] No bridge found for device ${deviceId} - room should have been created during hello!`);
+              console.log(`⚠️ [START-GREETING] This shouldn't happen. Client may need to reconnect.`);
             }
           }
 
