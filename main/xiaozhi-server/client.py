@@ -778,23 +778,28 @@ class TestClient:
         # The server's initial TTS will then trigger the client's recording.
         # Note: We no longer send "listen" message here - waiting for 's' key press
         logger.info(
-            "[WAIT] Test running. Press 's' to start greeting, Spacebar to abort TTS, or Ctrl+C to stop.")
+            "[WAIT] Test running. Press 's' to deploy agent, 'x'/Space to abort, 'c' to disconnect agent, or Ctrl+C to stop.")
 
         # Start a thread to monitor keyboard presses
+        last_greeting_time = [0]  # Use list to make it mutable in nested function
+
         def monitor_keyboard():
             while not stop_threads.is_set() and self.session_active:
                 # Monitor 's' key for greeting trigger
-                if keyboard.is_pressed('s') and self.ready_for_greeting:
-                    logger.info(
-                        "[GREETING] 's' key pressed. Sending start_greeting message to server...")
-                    greeting_payload = {
-                        "type": "start_greeting",
-                        "session_id": udp_session_details["session_id"]
-                    }
-                    self.mqtt_client.publish(
-                        "device-server", json.dumps(greeting_payload))
-                    logger.info(f"[GREETING] Sent start_greeting message: {greeting_payload}")
-                    self.ready_for_greeting = False  # Prevent multiple triggers
+                if keyboard.is_pressed('s'):
+                    # Add cooldown to prevent spamming (1 second minimum between triggers)
+                    current_time = time.time()
+                    if current_time - last_greeting_time[0] >= 1.0:
+                        logger.info(
+                            "[GREETING] 's' key pressed. Sending start_greeting message to server...")
+                        greeting_payload = {
+                            "type": "start_greeting",
+                            "session_id": udp_session_details["session_id"]
+                        }
+                        self.mqtt_client.publish(
+                            "device-server", json.dumps(greeting_payload))
+                        logger.info(f"[GREETING] Sent start_greeting message: {greeting_payload}")
+                        last_greeting_time[0] = current_time
                     # Wait for the key to be released to avoid multiple sends
                     while keyboard.is_pressed('s') and not stop_threads.is_set():
                         time.sleep(0.01)
@@ -802,16 +807,55 @@ class TestClient:
                 # Monitor spacebar for abort
                 if keyboard.is_pressed('space'):
                     logger.info(
-                        "[EMOJI] Spacebar pressed. Sending abort message to server...")
+                        "[ABORT] Spacebar pressed. Sending abort message to server...")
                     abort_payload = {
                         "type": "abort",
                         "session_id": udp_session_details["session_id"]
                     }
                     self.mqtt_client.publish(
                         "device-server", json.dumps(abort_payload))
-                    logger.info(f"[EMOJI] Sent abort message: {abort_payload}")
+                    logger.info(f"[ABORT] Sent abort message: {abort_payload}")
+                    # Reset cooldown timer so user can immediately press 's' again
+                    last_greeting_time[0] = 0
+                    logger.info("[ABORT] Cooldown reset - you can press 's' again immediately")
                     # Wait for the key to be released to avoid multiple sends
                     while keyboard.is_pressed('space') and not stop_threads.is_set():
+                        time.sleep(0.01)
+
+                # Monitor 'x' key for abort (alternative to spacebar)
+                if keyboard.is_pressed('x'):
+                    logger.info(
+                        "[ABORT] 'x' key pressed. Sending abort message to server...")
+                    abort_payload = {
+                        "type": "abort",
+                        "session_id": udp_session_details["session_id"]
+                    }
+                    self.mqtt_client.publish(
+                        "device-server", json.dumps(abort_payload))
+                    logger.info(f"[ABORT] Sent abort message: {abort_payload}")
+                    # Reset cooldown timer so user can immediately press 's' again
+                    last_greeting_time[0] = 0
+                    logger.info("[ABORT] Cooldown reset - you can press 's' again immediately")
+                    # Wait for the key to be released to avoid multiple sends
+                    while keyboard.is_pressed('x') and not stop_threads.is_set():
+                        time.sleep(0.01)
+
+                # Monitor 'c' key to disconnect agent (goodbye)
+                if keyboard.is_pressed('c'):
+                    logger.info(
+                        "[GOODBYE] 'c' key pressed. Disconnecting agent from room...")
+                    goodbye_payload = {
+                        "type": "goodbye",
+                        "session_id": udp_session_details["session_id"]
+                    }
+                    self.mqtt_client.publish(
+                        "device-server", json.dumps(goodbye_payload))
+                    logger.info(f"[GOODBYE] Sent goodbye message: {goodbye_payload}")
+                    # Reset cooldown timer so user can press 's' to redeploy agent
+                    last_greeting_time[0] = 0
+                    logger.info("[GOODBYE] Agent disconnected - room still alive. Press 's' to redeploy agent.")
+                    # Wait for the key to be released to avoid multiple sends
+                    while keyboard.is_pressed('c') and not stop_threads.is_set():
                         time.sleep(0.01)
 
                 time.sleep(0.01)

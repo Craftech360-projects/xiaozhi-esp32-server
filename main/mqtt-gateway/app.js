@@ -2366,7 +2366,7 @@ class LiveKitBridge extends Emitter {
 
     try {
       const abortMessage = {
-        type: "abort_playback",
+        type: "abort",  // Changed from "abort_playback" to match agent's expected type
         session_id: sessionId,
         timestamp: Date.now(),
         source: "mqtt_gateway"
@@ -3027,9 +3027,36 @@ class MQTTConnection {
     }
 
     if (json.type === "goodbye") {
-      console.log(`👋 [GOODBYE-MAC] Received goodbye message from device: ${this.macAddress}, session: ${json.session_id}`);
-      this.bridge.close();
-      this.bridge = null;
+      console.log(`👋 [GOODBYE] Received goodbye from device: ${this.macAddress} - disconnecting agent, keeping room alive`);
+
+      // Send disconnect signal to agent via data channel
+      if (this.bridge && this.bridge.room && this.bridge.room.localParticipant) {
+        try {
+          const disconnectMessage = {
+            type: "disconnect_agent",
+            session_id: json.session_id,
+            timestamp: Date.now(),
+            source: "mqtt_gateway"
+          };
+
+          const messageString = JSON.stringify(disconnectMessage);
+          const messageData = new Uint8Array(Buffer.from(messageString, 'utf8'));
+
+          await this.bridge.room.localParticipant.publishData(
+            messageData,
+            { reliable: true }
+          );
+          console.log(`✅ [GOODBYE] Sent disconnect signal to agent - agent will leave room`);
+          console.log(`🏠 [GOODBYE] Room ${this.bridge.room.name} remains alive for redeployment`);
+        } catch (error) {
+          console.error(`❌ [GOODBYE] Failed to send disconnect to agent:`, error);
+        }
+      } else {
+        console.log(`⚠️ [GOODBYE] No active bridge/room to disconnect agent from`);
+      }
+
+      // Don't close bridge or set to null - keep room alive
+      // User can press 's' to redeploy agent to same room
       return;
     }
 
@@ -3477,11 +3504,36 @@ class VirtualMQTTConnection {
     }
 
     if (json.type === "goodbye") {
-      console.log(`👋 [GOODBYE-DEVICEID] Received goodbye message from device: ${this.deviceId}, session: ${json.session_id}`);
-      this.bridge.close();
-      this.bridge = null;
-      //commet temporarly, dgoodby message is not working well
-      
+      console.log(`👋 [GOODBYE] Received goodbye from device: ${this.deviceId} - disconnecting agent, keeping room alive`);
+
+      // Send disconnect signal to agent via data channel
+      if (this.bridge && this.bridge.room && this.bridge.room.localParticipant) {
+        try {
+          const disconnectMessage = {
+            type: "disconnect_agent",
+            session_id: json.session_id,
+            timestamp: Date.now(),
+            source: "mqtt_gateway"
+          };
+
+          const messageString = JSON.stringify(disconnectMessage);
+          const messageData = new Uint8Array(Buffer.from(messageString, 'utf8'));
+
+          await this.bridge.room.localParticipant.publishData(
+            messageData,
+            { reliable: true }
+          );
+          console.log(`✅ [GOODBYE] Sent disconnect signal to agent - agent will leave room`);
+          console.log(`🏠 [GOODBYE] Room ${this.bridge.room.name} remains alive for redeployment`);
+        } catch (error) {
+          console.error(`❌ [GOODBYE] Failed to send disconnect to agent:`, error);
+        }
+      } else {
+        console.log(`⚠️ [GOODBYE] No active bridge/room to disconnect agent from`);
+      }
+
+      // Don't close bridge or set to null - keep room alive
+      // User can press 's' to redeploy agent to same room
       return;
     }
 
