@@ -29,9 +29,9 @@ spring:
     druid:
       # Local Docker database configuration
       driver-class-name: com.mysql.cj.jdbc.Driver
-      url: jdbc:mysql://localhost:3307/manager_api
-      username: root
-      password: rootpassword
+      url: jdbc:mysql://localhost:3307/
+      username: manager
+      password: managerpassword
 
       initial-size: 5
       max-active: 20

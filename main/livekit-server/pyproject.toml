@@ -29,7 +29,10 @@ dependencies = [
     "funasr==1.2.3",
     "modelscope",
     "onnxruntime",
-    "psutil"
+    "psutil",
+    "datadog-api-client",
+    "ddtrace",
+    "torchaudio"
 ]
 
 [dependency-groups]

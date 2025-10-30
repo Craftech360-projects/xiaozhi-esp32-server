@@ -31,3 +31,4 @@ mem0ai
 jinja2
 gtts
 pyttsx3
+torchaudio

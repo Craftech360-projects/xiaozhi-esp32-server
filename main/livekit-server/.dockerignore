@@ -46,3 +46,6 @@ test/
 tests/
 eval/
 evals/
+
+# Model cache - exclude FunASR (downloaded during build), but keep embedding model
+model_cache/funasr/

@@ -31,7 +31,7 @@ class FunASRSTT(stt.STT):
     def __init__(
         self,
         *,
-        model_dir: str = "model_cache/funasr/SenseVoiceSmall",
+        model_dir: str = "model_cache/funasr/iic/SenseVoiceSmall",
         language: str = "auto",
         use_itn: bool = True,
         max_single_segment_time: int = 30000,

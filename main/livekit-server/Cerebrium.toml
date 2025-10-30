@@ -1,0 +1,49 @@
+[cerebrium.deployment]
+name = "livekit-server-simple"
+python_version = "3.11"
+docker_base_image_url = "debian:bookworm-slim"
+disable_auth = false
+include = ['./*', 'main.py', 'cerebrium.toml', 'src/**/*', 'config/**/*']
+exclude = ['.*', '__pycache__/**/*', 'transcripts/**/*', '*.pyc', 'model_cache/funasr/**/*']
+
+[cerebrium.hardware]
+cpu = 4
+memory = 16.0
+compute = "CPU"
+
+[cerebrium.scaling]
+min_replicas = 1
+max_replicas = 8
+cooldown = 30
+replica_concurrency = 1
+response_grace_period = 900
+scaling_metric = "cpu_utilization"
+scaling_target = 60
+
+[cerebrium.runtime.custom]
+port = 8081
+dockerfile_path = "./Dockerfile"
+
+[cerebrium.env]
+# LiveKit Cloud Configuration (REQUIRED for Cerebrium deployment)
+LIVEKIT_URL= "wss://cheeko-2l9cex5f.livekit.cloud"
+LIVEKIT_API_KEY= "APItFJZgGpRzeTg"
+LIVEKIT_API_SECRET= "EeDUlc7OneLExZWVLexrI9KecOQUcj0svqr7xq4K3UgC"
+
+# Model Configuration (CRITICAL - no comments in values!)
+EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+AUTO_PRELOAD_MODELS = "true"
+
+# Manager API Configuration
+MANAGER_API_URL = "http://64.227.170.31:8002/toy"
+MANAGER_API_SECRET = "da11d988-f105-4e71-b095-da62ada82189"
+
+# STT Provider Configuration
+STT_PROVIDER = "funasr"
+FUNASR_MODEL_DIR = "model_cache/funasr/iic/SenseVoiceSmall"
+FUNASR_LANGUAGE = "en"
+FUNASR_DEVICE = "cpu"
+
+# Add other required environment variables here
+# Important: Add these via Cerebrium dashboard or CLI for security:
+# GROQ_API_KEY, DATADOG_API_KEY, AWS credentials, etc.

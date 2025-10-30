@@ -40,6 +40,9 @@ load_dotenv(".env")
 
 # Import our organized modules
 
+# Initialize Datadog logging (must be done before logger usage)
+from src.config.datadog_config import DatadogConfig
+DatadogConfig.setup_logging()
 
 logger = logging.getLogger("agent")
 
@@ -138,8 +141,7 @@ def prewarm(proc: JobProcess):
     proc.userdata["vad"] = vad
     proc.userdata["embedding_model"] = model_cache.get_embedding_model()
     proc.userdata["qdrant_client"] = model_cache.get_qdrant_client()
-
-    # Load FunASR model if configured
+    
     groq_config = ConfigLoader.get_groq_config()
     if groq_config.get('stt_provider') == 'funasr':
         logger.info("[PREWARM] Loading FunASR model on main thread...")
@@ -919,7 +921,7 @@ if __name__ == "__main__":
     cli.run_app(WorkerOptions(
         entrypoint_fnc=entrypoint,
         prewarm_fnc=prewarm,
-        num_idle_processes=3,  # Disable process pooling to avoid initialization issues
-        initialize_process_timeout=120.0,  # Increase timeout to 120 seconds for heavy model loading
+        num_idle_processes=1,  # Reduce to 1 for FunASR on CPU - avoids loading multiple models simultaneously
+        initialize_process_timeout=180.0,  # Increase to 180 seconds for FunASR CPU loading
         job_memory_warn_mb=2000,
     ))
