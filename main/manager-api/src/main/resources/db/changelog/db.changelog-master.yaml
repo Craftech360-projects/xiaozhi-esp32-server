@@ -519,3 +519,10 @@ databaseChangeLog:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202510241430_update_template_personalities.sql
+  - changeSet:
+      id: 202510301400
+      author: claude
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202510301400.sql
