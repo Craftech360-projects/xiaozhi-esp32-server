@@ -72,6 +72,23 @@ def normalize_mode_name(mode_input: str) -> str:
 class Assistant(FilteredAgent):
     """Main AI Assistant agent class with TTS text filtering"""
 
+    # Word list for Word Ladder game (100 simple, kid-friendly words)
+    WORD_LIST = [
+        "cat", "dog", "sun", "moon", "tree", "book", "fish", "bird",
+        "cold", "warm", "fast", "slow", "jump", "run", "play", "toy",
+        "red", "blue", "big", "small", "hot", "ice", "rain", "snow",
+        "cup", "pen", "box", "car", "bus", "road", "door", "room",
+        "hand", "foot", "head", "leg", "arm", "nose", "eye", "ear",
+        "day", "night", "star", "sky", "hill", "lake", "sand", "rock",
+        "frog", "duck", "lion", "bear", "wolf", "fox", "owl", "bee",
+        "ball", "kite", "game", "fun", "sing", "dance", "clap", "wave",
+        "coin", "ring", "lamp", "desk", "chair", "bed", "wall", "roof",
+        "wind", "leaf", "stem", "seed", "root", "bark", "twig", "vine",
+        "gold", "silk", "wool", "wood", "iron", "rope", "tile", "mesh",
+        "path", "gate", "step", "yard", "pond", "well", "nest", "cave",
+        "tent", "flag", "drum", "horn"
+    ]
+
     def __init__(self, instructions: str = None, tts_provider=None) -> None:
         # Use provided instructions or fallback to a basic prompt
         if instructions is None:
@@ -94,6 +111,16 @@ class Assistant(FilteredAgent):
 
         # Session reference for dynamic updates
         self._agent_session = None
+
+        # Word Ladder game state
+        self.start_word = "cold"
+        self.target_word = "warm"
+        self.current_word = "cold"
+        self.failure_count = 0
+        self.max_failures = 2
+
+        # Background audio player for game sounds (injected by main.py)
+        self.game_audio_player = None
 
         # Log registered function tools (for debugging)
         logger.info("🔧 Assistant initialized, checking function tools...")
@@ -150,6 +177,28 @@ class Assistant(FilteredAgent):
         """Set session reference for dynamic updates"""
         self._agent_session = session
         logger.info(f"🔗 Session reference stored for dynamic updates")
+
+    def _pick_valid_word_pair(self):
+        """
+        Pick two random words from WORD_LIST ensuring:
+        - Words are different
+        - Last letter of word1 ≠ first letter of word2 (to create a puzzle)
+
+        Returns:
+            tuple: (start_word, target_word)
+        """
+        while True:
+            word1 = random.choice(self.WORD_LIST)
+            word2 = random.choice(self.WORD_LIST)
+
+            # Ensure words are different
+            if word1 == word2:
+                continue
+
+            # CRITICAL: Ensure last letter ≠ first letter (creates puzzle)
+            if word1[-1].lower() != word2[0].lower():
+                logger.info(f"🎮 Generated word pair: {word1} → {word2}")
+                return word1, word2
 
     @function_tool
     async def update_agent_mode(self, context: RunContext, mode_name: str) -> str:
@@ -1211,3 +1260,90 @@ class Assistant(FilteredAgent):
 
         self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
         return await self.mcp_executor.set_rainbow_speed(speed_ms)
+
+    # ============================================================================
+    # Word Ladder Game Function Tools
+    # ============================================================================
+
+    @function_tool
+    async def play_success_sound(self, context: RunContext) -> str:
+        """
+        Play happy/success sound when child says correct word in the word ladder game.
+
+        Use this function when:
+        - The child's word is a valid English word
+        - The word follows the word ladder rules (starts with last letter of previous word)
+        - The answer is correct
+
+        IMPORTANT: Call this BEFORE giving positive feedback to the child.
+        """
+        # Reset failure counter on correct answer
+        self.failure_count = 0
+
+        if self.game_audio_player:
+            try:
+                await self.game_audio_player.play("audio/Happy.wav")
+                logger.info(f"✅ Success sound played (failures reset: {self.failure_count})")
+                return "Success sound played - child answered correctly!"
+            except Exception as e:
+                logger.error(f"Failed to play success sound: {e}")
+                return f"Could not play success sound: {e}"
+        return "Background audio player not available"
+
+    @function_tool
+    async def play_failure_sound(self, context: RunContext) -> str:
+        """
+        Play sad/failure sound when child says wrong word in the word ladder game.
+
+        Use this function when:
+        - The child's word is not a valid English word
+        - The word doesn't follow the word ladder rules
+        - The answer is incorrect
+
+        IMPORTANT: Call this BEFORE giving encouragement to try again.
+        """
+        # Increment failure counter
+        self.failure_count += 1
+        logger.info(f"Failure count: {self.failure_count}/{self.max_failures}")
+
+        # Play failure sound
+        if self.game_audio_player:
+            try:
+                await self.game_audio_player.play("audio/Sad.mp3")
+                logger.info(f"❌ Failure sound played (failure {self.failure_count}/{self.max_failures})")
+            except Exception as e:
+                logger.error(f"Failed to play failure sound: {e}")
+
+        # Check if game should restart (2 consecutive failures)
+        if self.failure_count >= self.max_failures:
+            # Generate new word pair
+            self.start_word, self.target_word = self._pick_valid_word_pair()
+            self.current_word = self.start_word
+            self.failure_count = 0
+
+            logger.info(f"🔄 Game restarting with new words: {self.start_word} → {self.target_word}")
+            return f"GAME RESTART! New words: {self.start_word} → {self.target_word}. Tell the child about the new game!"
+
+        return f"Failure sound played - {self.failure_count}/{self.max_failures} failures"
+
+    @function_tool
+    async def play_victory_sound(self, context: RunContext) -> str:
+        """
+        Play celebration/victory sound when child reaches the final target word.
+
+        Use this function when:
+        - The child has successfully completed the word ladder
+        - The final target word has been reached
+        - It's time to celebrate!
+
+        IMPORTANT: Call this BEFORE celebrating with the child.
+        """
+        if self.game_audio_player:
+            try:
+                await self.game_audio_player.play("audio/Victory.mp3")
+                logger.info("🎉 Victory sound played")
+                return "Victory sound played - game completed successfully!"
+            except Exception as e:
+                logger.error(f"Failed to play victory sound: {e}")
+                return f"Could not play victory sound: {e}"
+        return "Background audio player not available"

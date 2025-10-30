@@ -26,6 +26,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 from livekit.agents import (
     AgentSession,
+    BackgroundAudioPlayer,
     JobContext,
     JobProcess,
     WorkerOptions,
@@ -543,6 +544,11 @@ async def entrypoint(ctx: JobContext):
     # Pass room name and device MAC to assistant
     assistant.set_room_info(room_name=room_name, device_mac=device_mac)
 
+    # Initialize BackgroundAudioPlayer for Word Ladder game sounds
+    game_audio_player = BackgroundAudioPlayer()
+    assistant.game_audio_player = game_audio_player
+    logger.info("🎮 Background audio player initialized for Word Ladder game")
+
     # Log session info (responses will be captured via conversation_item_added event)
     if chat_history_service:
         logger.debug(
@@ -902,13 +908,20 @@ async def entrypoint(ctx: JobContext):
         logger.warning(
             f"Failed to integrate audio players with session/context: {e}")
 
+    # Start the BackgroundAudioPlayer for Word Ladder game sounds
+    try:
+        await game_audio_player.start(room=ctx.room, agent_session=session)
+        logger.info("🎮 Background audio player started for Word Ladder game")
+    except Exception as e:
+        logger.warning(f"Failed to start background audio player: {e}")
+
     await ctx.connect()
 
 if __name__ == "__main__":
     cli.run_app(WorkerOptions(
         entrypoint_fnc=entrypoint,
         prewarm_fnc=prewarm,
-        num_idle_processes=3,  # Disable process pooling to avoid initialization issues
+        num_idle_processes=1,  # Disable process pooling to avoid initialization issues
         initialize_process_timeout=120.0,  # Increase timeout to 120 seconds for heavy model loading
         job_memory_warn_mb=2000,
     ))

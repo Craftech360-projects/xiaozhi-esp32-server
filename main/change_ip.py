@@ -5,7 +5,7 @@ import shutil
 
 # === CONFIGURATION ===
 new_ip = "10.92.50.132"
-old_ip = "192.168.1.166"
+old_ip = "192.168.1.7"
 
 # List of files you want to modify
 file_paths = [
