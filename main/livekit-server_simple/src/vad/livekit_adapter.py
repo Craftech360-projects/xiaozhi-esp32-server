@@ -23,12 +23,13 @@ class VADStream:
     converting audio frames into VAD state events.
     """
 
-    def __init__(self, analyzer: SileroVADAnalyzer, sample_rate: int):
+    def __init__(self, analyzer: SileroVADAnalyzer, sample_rate: int, pre_padding_ms: int = 200):
         """Initialize the VAD stream.
 
         Args:
             analyzer: The underlying VAD analyzer
             sample_rate: Audio sample rate in Hz
+            pre_padding_ms: Milliseconds of audio to include before speech detection
         """
         self._analyzer = analyzer
         self._sample_rate = sample_rate
@@ -40,6 +41,13 @@ class VADStream:
         self._frame_buffer = []  # Buffer for audio frames during speech
         self._samples_index = 0  # Track total samples processed
         self._start_event_emitted = False  # Track if START_OF_SPEECH was emitted
+        
+        # Pre-padding buffer (circular buffer for recent frames)
+        self._pre_padding_ms = pre_padding_ms
+        frames_per_ms = sample_rate / 1000.0 / 20  # 20ms per frame typically
+        self._pre_padding_frames = max(1, int(pre_padding_ms * frames_per_ms / 20))
+        self._pre_buffer = []  # Circular buffer for pre-padding
+        logger.info(f"🎙️ [VAD-INIT] Pre-padding: {pre_padding_ms}ms ({self._pre_padding_frames} frames)")
 
     def __aiter__(self) -> AsyncIterator:
         """Return self as async iterator."""
@@ -92,16 +100,24 @@ class VADStream:
         audio_data = frame.data.tobytes()
         vad_state = self._analyzer.analyze_audio(audio_data)
 
+        # ALWAYS maintain pre-padding buffer (circular buffer)
+        if not self._collecting:
+            self._pre_buffer.append(frame)
+            if len(self._pre_buffer) > self._pre_padding_frames:
+                self._pre_buffer.pop(0)  # Remove oldest frame
+
         # START COLLECTING: First voice activity detected (STARTING state)
         if vad_state == VADState.STARTING and not self._collecting:
             self._collecting = True
             self._reached_speaking = False
             self._start_event_emitted = False
-            self._frame_buffer.clear()
-            logger.info(f"📼 [VAD-COLLECT] Started collecting audio (STARTING detected)")
-
+            
+            # Initialize frame buffer with pre-padding + current frame
+            self._frame_buffer = list(self._pre_buffer) + [frame]
+            logger.info(f"📼 [VAD-COLLECT] Started collecting audio (STARTING detected) with {len(self._pre_buffer)} pre-padding frames")
+        
         # BUFFER ALL FRAMES while collecting (STARTING, SPEAKING, STOPPING)
-        if self._collecting and vad_state in [VADState.STARTING, VADState.SPEAKING, VADState.STOPPING]:
+        elif self._collecting and vad_state in [VADState.STARTING, VADState.SPEAKING, VADState.STOPPING]:
             self._frame_buffer.append(frame)
 
         # TRACK SPEAKING STATE: Mark that we reached actual speech
@@ -152,8 +168,9 @@ class VADStream:
                 # DISCARD: Never reached SPEAKING state (false trigger)
                 logger.info(f"🗑️ [VAD-DISCARD] Discarding {len(frames_to_send)} frames ({len(frames_to_send) * 0.02:.2f}s) - Never reached SPEAKING state")
 
-            # Clear buffer after processing decision
+            # Clear buffers after processing decision
             self._frame_buffer.clear()
+            self._pre_buffer.clear()  # Clear pre-buffer for fresh start
             self._reached_speaking = False
             self._start_event_emitted = False
 
@@ -238,11 +255,12 @@ class LiveKitVAD:
         """Get the configured sample rate."""
         return self._sample_rate
 
-    def stream(self, *, sample_rate: Optional[int] = None) -> VADStream:
+    def stream(self, *, sample_rate: Optional[int] = None, pre_padding_ms: Optional[int] = None) -> VADStream:
         """Create a new VAD stream for processing audio.
 
         Args:
             sample_rate: Override sample rate for this stream
+            pre_padding_ms: Milliseconds of audio to include before speech detection (uses config default if None)
 
         Returns:
             VADStream instance that can be used as an async iterator
@@ -254,10 +272,19 @@ class LiveKitVAD:
         if self._current_stream:
             asyncio.create_task(self._current_stream.aclose())
 
+        # Get pre_padding_ms from config if not provided
+        if pre_padding_ms is None:
+            try:
+                from ..config.config_loader import ConfigLoader
+                vad_config = ConfigLoader.get_vad_config()
+                pre_padding_ms = vad_config.get('pre_padding_ms', 200)
+            except Exception:
+                pre_padding_ms = 200  # Fallback default
+
         # Create new stream
         sr = sample_rate or self._sample_rate
-        self._current_stream = VADStream(self._analyzer, sr)
-        logger.debug(f"Created new VAD stream with sample_rate={sr}")
+        self._current_stream = VADStream(self._analyzer, sr, pre_padding_ms)
+        logger.debug(f"Created new VAD stream with sample_rate={sr}, pre_padding={pre_padding_ms}ms")
         return self._current_stream
 
     def reset(self):

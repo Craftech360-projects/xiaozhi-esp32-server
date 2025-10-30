@@ -273,11 +273,13 @@ def prewarm(proc: JobProcess):
     # Preload STT provider (second bottleneck - 0.35s)
     stt_start = time.time()
     try:
+        logger.info(f"🎤 [PREWARM] Creating STT provider with config: {groq_config}")
+        logger.info(f"🎤 [PREWARM] VAD provided: {vad is not None}, VAD type: {type(vad) if vad else 'None'}")
         stt = ProviderFactory.create_stt(groq_config, vad)
         proc.userdata["stt"] = stt
-        logger.info(f"🎤 [PREWARM] STT provider initialized ({time.time() - stt_start:.3f}s)")
+        logger.info(f"🎤 [PREWARM] STT provider initialized successfully ({time.time() - stt_start:.3f}s)")
     except Exception as e:
-        logger.error(f"❌ [PREWARM] Failed to initialize STT: {e}")
+        logger.error(f"❌ [PREWARM] Failed to initialize STT: {e}", exc_info=True)
         proc.userdata["stt"] = None
 
     # Preload TTS provider (0.1s)

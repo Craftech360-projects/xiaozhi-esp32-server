@@ -32,6 +32,9 @@ class ProviderFactory:
     @staticmethod
     def create_stt(config, vad=None):
         """Create Speech-to-Text provider with fallback based on configuration"""
+        import logging
+        logger = logging.getLogger("provider_factory")
+        
         fallback_enabled = config.get('fallback_enabled', False)
         provider = config.get('stt_provider', 'groq').lower()
 
@@ -41,9 +44,12 @@ class ProviderFactory:
 
             if provider == 'deepgram':
                 import os
+                logger.info(f"🎤 Creating Deepgram STT provider")
                 api_key = os.getenv('DEEPGRAM_API_KEY')
                 if not api_key:
+                    logger.error("❌ DEEPGRAM_API_KEY environment variable is not set")
                     raise ValueError("DEEPGRAM_API_KEY environment variable is not set")
+                logger.info(f"🎤 Deepgram API key found, creating STT with model: {config.get('deepgram_model', 'nova-3')}")
                 providers.append(stt.StreamAdapter(
                     stt=deepgram.STT(
                         api_key=api_key,
@@ -52,7 +58,9 @@ class ProviderFactory:
                     ),
                     vad=vad
                 ))
+                logger.info(f"🎤 Deepgram StreamAdapter created successfully")
             else:
+                logger.info(f"🎤 Creating Groq STT (fallback path) with model: {config['stt_model']}")
                 providers.append(stt.StreamAdapter(
                     stt=groq.STT(
                         model=config['stt_model'],
@@ -60,6 +68,7 @@ class ProviderFactory:
                     ),
                     vad=vad
                 ))
+                logger.info(f"🎤 Groq STT StreamAdapter (fallback) created successfully")
 
             # Add fallback (always Groq)
             providers.append(stt.StreamAdapter(
@@ -75,26 +84,63 @@ class ProviderFactory:
             # Single provider with StreamAdapter and VAD
             if provider == 'deepgram':
                 import os
+                logger.info(f"🎤 Creating single Deepgram STT provider")
                 api_key = os.getenv('DEEPGRAM_API_KEY')
                 if not api_key:
+                    logger.error("❌ DEEPGRAM_API_KEY environment variable is not set")
                     raise ValueError("DEEPGRAM_API_KEY environment variable is not set")
-                return stt.StreamAdapter(
-                    stt=deepgram.STT(
-                        api_key=api_key,
-                        model=config.get('deepgram_model', 'nova-3'),
-                        language=config['stt_language']
-                    ),
+                logger.info(f"🎤 Deepgram API key found, creating STT with model: {config.get('deepgram_model', 'nova-3')}")
+                
+                deepgram_stt = deepgram.STT(
+                    api_key=api_key,
+                    model=config.get('deepgram_model', 'nova-3'),
+                    language=config['stt_language']
+                )
+                logger.info(f"🎤 Deepgram STT created successfully")
+                
+                # Add error handling wrapper
+                class DeepgramSTTWrapper:
+                    def __init__(self, stt_instance):
+                        self._stt = stt_instance
+                        
+                    def __getattr__(self, name):
+                        return getattr(self._stt, name)
+                    
+                    async def recognize(self, *, buffer, language=None):
+                        try:
+                            logger.info(f"🎤 [DEEPGRAM] Starting transcription of {len(buffer.data) if hasattr(buffer, 'data') else 'unknown'} bytes")
+                            result = await self._stt.recognize(buffer=buffer, language=language)
+                            logger.info(f"🎤 [DEEPGRAM] Transcription result: '{result}'" if result else "🎤 [DEEPGRAM] Empty transcription result")
+                            return result
+                        except Exception as e:
+                            logger.error(f"❌ [DEEPGRAM] Transcription failed: {e}", exc_info=True)
+                            return ""
+                
+                wrapped_stt = DeepgramSTTWrapper(deepgram_stt)
+                
+                stream_adapter = stt.StreamAdapter(
+                    stt=wrapped_stt,
                     vad=vad
                 )
+                logger.info(f"🎤 Deepgram StreamAdapter created successfully with VAD and error logging")
+                return stream_adapter
             else:
                 # Default to Groq with StreamAdapter and VAD
-                return stt.StreamAdapter(
-                    stt=groq.STT(
-                        model=config['stt_model'],
-                        language=config['stt_language']
-                    ),
+                logger.info(f"🎤 Creating Groq STT with model: {config['stt_model']}, language: {config['stt_language']}")
+                logger.info(f"🎤 VAD provided: {vad is not None}, VAD type: {type(vad) if vad else 'None'}")
+                
+                groq_stt = groq.STT(
+                    model=config['stt_model'],
+                    language=config['stt_language']
+                )
+                logger.info(f"🎤 Groq STT created successfully")
+                
+                stream_adapter = stt.StreamAdapter(
+                    stt=groq_stt,
                     vad=vad
                 )
+                logger.info(f"🎤 StreamAdapter created successfully with VAD")
+                return stream_adapter
 
     @staticmethod
     def create_tts(groq_config, tts_config):
@@ -199,7 +245,7 @@ class ProviderFactory:
         except Exception:
             pass  # Fall back to direct loading
 
-        # Load custom VAD with optimized parameters
+        # Load custom VAD with optimized parameters including pre-padding
         # Using ONNX implementation for better performance
         from ..config.config_loader import ConfigLoader
         vad_config = ConfigLoader.get_vad_config()
