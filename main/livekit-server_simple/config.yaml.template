@@ -1,0 +1,79 @@
+# Template configuration file for Xiaozhi ESP32 LiveKit Agent
+# Copy this file to config.yaml and replace placeholders with your actual values
+
+# Configuration source control
+read_config_from_api: true
+
+# Manager API settings
+manager_api:
+  url: "http://localhost:8002/toy"
+  secret: "your-manager-api-secret-here"
+  timeout: 5
+  cache_duration: 30
+
+# Default model configurations
+models:
+  llm:
+    provider: "groq"
+    model: "llama-3.1-8b-instant"
+
+  stt:
+    provider: "groq"
+    model: "whisper-large-v3-turbo"
+    language: "en"
+
+  tts:
+    provider: "edge"
+    model: "edge-tts"
+    voice: "Aaliyah-PlayAI"
+
+# LiveKit configuration
+livekit:
+  url: "ws://localhost:7880"
+  api_key: "devkey"
+  api_secret: "your-livekit-secret-here"
+
+# MQTT configuration
+mqtt:
+  host: "192.168.1.98"
+  port: 1883
+  client_id: "GID_test@@@00:11:22:33:44:55"
+  username: "testuser"
+  password: "testpassword"
+
+# Redis configuration
+redis:
+  url: "redis://:redispassword@192.168.1.99:6380"
+  password: "redispassword"
+
+# Agent settings
+agent:
+  preemptive_generation: false
+  noise_cancellation: false
+
+# Default agent prompt
+default_prompt: |
+ <identity>
+  You are Cheeko, a playful AI companion for kids 3–16.
+  </identity>
+
+end_prompt:
+  enable: true
+  prompt: |
+    Please start with "Time flies so fast" and use emotional, reluctant words to end this conversation!
+
+# API Keys - Replace with your actual keys
+api_keys:
+  groq: "your-groq-api-key-here"
+  google: "your-google-api-key-here"
+  deepgram: "your-deepgram-api-key-here"
+  elevenlabs: "your-elevenlabs-api-key-here"
+
+# Embedding model settings
+embedding:
+  model: "all-MiniLM-L6-v2"
+
+# Qdrant configuration
+qdrant:
+  url: "https://your-qdrant-instance.cloud.qdrant.io"
+  api_key: "your-qdrant-api-key-here"

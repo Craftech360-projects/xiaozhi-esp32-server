@@ -190,3 +190,8 @@ main/manager-api/src/main/resources/application-dev.yml
 
 # LiveKit server configuration (contains API keys)
 main/livekit-server/config.yaml
+
+# LiveKit Server Simple environment files
+main/livekit-server_simple/*.env
+main/livekit-server_simple/simple.env
+main/livekit-server_simple/config.yaml
