@@ -574,6 +574,7 @@ class TestClient:
         logger.info("[PLAY] Playback thread started.")
         is_playing = False
         buffer_timeout_start = time.time()
+        last_playback_status_time = 0  # Track last time we sent playback status
 
         while not stop_threads.is_set() and self.session_active:
             try:
@@ -609,6 +610,26 @@ class TestClient:
                 # Get audio chunk from the queue and play it
                 stream.write(self.audio_playback_queue.get(timeout=1))
 
+                # Send playback status MQTT message every 30 seconds while playing
+                current_time = time.time()
+                if current_time - last_playback_status_time >= 30:
+                    try:
+                        playback_status_payload = {
+                            "type": "audio_playback_status",
+                            "session_id": udp_session_details["session_id"],
+                            "status": "playing",
+                            "timestamp": int(current_time),
+                            "buffer_size": self.audio_playback_queue.qsize(),
+                            "packets_received": self.total_packets_received
+                        }
+                        if self.mqtt_client and self.mqtt_client.is_connected():
+                            self.mqtt_client.publish(
+                                "device-server", json.dumps(playback_status_payload))
+                            logger.info(f"[HEARTBEAT] Sent audio playback status: playing (buffer={self.audio_playback_queue.qsize()}, packets={self.total_packets_received})")
+                        last_playback_status_time = current_time
+                    except Exception as e:
+                        logger.warning(f"[WARN] Failed to send playback status: {e}")
+
             except Empty:
                 is_playing = False
                 buffer_timeout_start = time.time()  # Reset timeout
@@ -620,6 +641,22 @@ class TestClient:
         stream.stop_stream()
         stream.close()
         p.terminate()
+
+        # Send final playback status when thread finishes
+        try:
+            if self.mqtt_client and self.mqtt_client.is_connected():
+                final_status_payload = {
+                    "type": "audio_playback_status",
+                    "session_id": udp_session_details.get("session_id"),
+                    "status": "stopped",
+                    "timestamp": int(time.time())
+                }
+                self.mqtt_client.publish(
+                    "device-server", json.dumps(final_status_payload))
+                logger.info("[HEARTBEAT] Sent final audio playback status: stopped")
+        except Exception as e:
+            logger.warning(f"[WARN] Failed to send final playback status: {e}")
+
         logger.info("[PLAY] Playback thread finished.")
 
     def listen_for_udp_audio(self):
