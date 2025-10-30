@@ -543,6 +543,46 @@ async def entrypoint(ctx: JobContext):
     # Pass room name and device MAC to assistant
     assistant.set_room_info(room_name=room_name, device_mac=device_mac)
 
+    # Set up data received handler for mobile app requests
+    @ctx.room.on(RoomEvent.DataReceived)
+    def on_data_received(payload: bytes, participant, kind, topic):
+        """Handle data messages from mobile app via MQTT Gateway"""
+        try:
+            # Parse the JSON payload
+            data = json.loads(payload.decode('utf-8'))
+            
+            # Handle mobile music request
+            if data.get('type') == 'mobile_music_request':
+                logger.info(f"🎵 [MOBILE] Music play request received from mobile app")
+                logger.info(f"   📱 Device: {device_mac}")
+                logger.info(f"   🎵 Song: {data.get('song_name')}")
+                logger.info(f"   🗂️ Type: {data.get('content_type')}")
+                logger.info(f"   🌐 Language: {data.get('language', 'Not specified')}")
+                logger.info(f"   🔁 Loop: {data.get('loop_enabled', False)}")
+                
+                # Forward to assistant for processing (will be implemented in task 5)
+                if hasattr(assistant, 'handle_mobile_music_request'):
+                    assistant.handle_mobile_music_request(data)
+                else:
+                    logger.warning("⚠️ Assistant does not have handle_mobile_music_request method yet")
+            
+            # Handle stop loop request
+            elif data.get('type') in ['mobile_stop_loop', 'stop_loop']:
+                logger.info(f"🔁 [LOOP-STOP] Stop loop request received")
+                
+                # Forward to assistant for processing (will be implemented in task 5)
+                if hasattr(assistant, 'handle_stop_loop_request'):
+                    assistant.handle_stop_loop_request()
+                else:
+                    logger.warning("⚠️ Assistant does not have handle_stop_loop_request method yet")
+                    
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ Failed to parse data payload: {e}")
+        except Exception as e:
+            logger.error(f"❌ Error processing data packet: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+
     # Log session info (responses will be captured via conversation_item_added event)
     if chat_history_service:
         logger.debug(

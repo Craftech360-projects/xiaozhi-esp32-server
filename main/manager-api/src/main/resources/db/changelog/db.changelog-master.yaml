@@ -249,21 +249,21 @@ databaseChangeLog:
       changes:
         - sqlFile:
             encoding: utf8
-            path: classpath:db/changelog/202507101203.sql            
+            path: classpath:db/changelog/202507101203.sql
   - changeSet:
       id: 202507071130
       author: cgd
       changes:
-          - sqlFile:
-              encoding: utf8
-              path: classpath:db/changelog/202507071130.sql
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202507071130.sql
   - changeSet:
       id: 202507071530
       author: cgd
       changes:
-          - sqlFile:
-              encoding: utf8
-              path: classpath:db/changelog/202507071530.sql
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202507071530.sql
   - changeSet:
       id: 202507031602
       author: zjy
@@ -307,7 +307,6 @@ databaseChangeLog:
             encoding: utf8
             path: classpath:db/changelog/202508131557.sql
   - changeSet:
-
       id: 202508231800
       author: Claude
       changes:
@@ -432,6 +431,7 @@ databaseChangeLog:
   - changeSet:
       id: 202510031530
       author: claude
+      validCheckSum: ANY
       changes:
         - sqlFile:
             encoding: utf8
@@ -512,10 +512,23 @@ databaseChangeLog:
             encoding: utf8
             path: classpath:db/changelog/202510162000_update_edgetts_to_english.sql
   - changeSet:
-      id: 202510241430
-      author: claude
-      validCheckSum: ANY
+      id: 202510232000
+      author: local_dev
       changes:
         - sqlFile:
             encoding: utf8
-            path: classpath:db/changelog/202510241430_update_template_personalities.sql
+            path: classpath:db/changelog/202510232000_update_local_ip_config.sql
+  - changeSet:
+      id: 202510301545
+      author: kiro
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202510301545_add_template_id_to_agent.sql
+  - changeSet:
+      id: 202510301550
+      author: kiro
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202510301550_add_location_to_device.sql

@@ -2,7 +2,7 @@
 const mqtt = require('mqtt');
 
 // MQTT broker details from config.yaml
-const brokerUrl = 'mqtt://192.168.1.8:1883';
+const brokerUrl = 'mqtt://192.168.1.113:1883';
 
 // Client details
 const clientId = 'GID_test@@@00:11:22:33:44:55'; // Example clientId

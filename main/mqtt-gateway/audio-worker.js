@@ -11,15 +11,17 @@
 //
 // Performance: Reduces main thread blocking by ~70-90%
 
-const { parentPort, workerData, isMainThread } = require('worker_threads');
+const { parentPort, workerData, isMainThread } = require("worker_threads");
 
 // Only run in worker thread context
 if (isMainThread) {
-  throw new Error('audio-worker.js must be run as a Worker Thread, not in main thread');
+  throw new Error(
+    "audio-worker.js must be run as a Worker Thread, not in main thread"
+  );
 }
 
 // Import Opus encoder (native @discordjs/opus)
-const { OpusEncoder } = require('@discordjs/opus');
+const { OpusEncoder } = require("@discordjs/opus");
 
 /**
  * Audio Processor for Worker Thread
@@ -32,7 +34,7 @@ class AudioProcessor {
     this.outgoingEncoder = null; // 24kHz for LiveKit → Device
     this.incomingDecoder = null; // 16kHz for Device → LiveKit
 
-    console.log('🧵 [WORKER] AudioProcessor initialized in worker thread');
+    console.log("🧵 [WORKER] AudioProcessor initialized in worker thread");
   }
 
   /**
@@ -43,7 +45,9 @@ class AudioProcessor {
   initOutgoingEncoder(sampleRate, channels) {
     if (!this.outgoingEncoder) {
       this.outgoingEncoder = new OpusEncoder(sampleRate, channels);
-      console.log(`🧵 [WORKER] Outgoing encoder initialized: ${sampleRate}Hz ${channels}ch`);
+      console.log(
+        `🧵 [WORKER] Outgoing encoder initialized: ${sampleRate}Hz ${channels}ch`
+      );
     }
   }
 
@@ -55,7 +59,9 @@ class AudioProcessor {
   initIncomingDecoder(sampleRate, channels) {
     if (!this.incomingDecoder) {
       this.incomingDecoder = new OpusEncoder(sampleRate, channels); // OpusEncoder class handles both
-      console.log(`🧵 [WORKER] Incoming decoder initialized: ${sampleRate}Hz ${channels}ch`);
+      console.log(
+        `🧵 [WORKER] Incoming decoder initialized: ${sampleRate}Hz ${channels}ch`
+      );
     }
   }
 
@@ -67,19 +73,43 @@ class AudioProcessor {
    */
   encodeOpus(pcmData, frameSize) {
     if (!this.outgoingEncoder) {
-      throw new Error('Outgoing encoder not initialized');
+      throw new Error("Outgoing encoder not initialized");
+    }
+
+    // Validate input
+    if (!Buffer.isBuffer(pcmData) || pcmData.length === 0) {
+      throw new Error("Invalid PCM data: must be non-empty Buffer");
+    }
+
+    const expectedBytes = frameSize * 2; // 2 bytes per sample (Int16)
+    if (pcmData.length !== expectedBytes) {
+      throw new Error(
+        `Invalid PCM data size: ${pcmData.length}B (expected ${expectedBytes}B for ${frameSize} samples)`
+      );
+    }
+
+    if (frameSize <= 0 || frameSize > 5760) {
+      throw new Error(
+        `Invalid frame size: ${frameSize} samples (must be 1-5760)`
+      );
     }
 
     const startTime = process.hrtime.bigint();
-    const opusData = this.outgoingEncoder.encode(pcmData, frameSize);
-    const duration = Number(process.hrtime.bigint() - startTime) / 1000000; // ms
 
-    return {
-      data: opusData,
-      processingTime: duration,
-      inputSize: pcmData.length,
-      outputSize: opusData.length
-    };
+    try {
+      const opusData = this.outgoingEncoder.encode(pcmData, frameSize);
+      const duration = Number(process.hrtime.bigint() - startTime) / 1000000; // ms
+
+      return {
+        data: opusData,
+        processingTime: duration,
+        inputSize: pcmData.length,
+        outputSize: opusData.length,
+      };
+    } catch (error) {
+      console.error(`🧵 [WORKER ERROR] Opus encode failed: ${error.message}`);
+      throw new Error(`Opus encode failed: ${error.message}`);
+    }
   }
 
   /**
@@ -89,19 +119,36 @@ class AudioProcessor {
    */
   decodeOpus(opusData) {
     if (!this.incomingDecoder) {
-      throw new Error('Incoming decoder not initialized');
+      throw new Error("Incoming decoder not initialized");
+    }
+
+    // Validate input
+    if (!Buffer.isBuffer(opusData) || opusData.length === 0) {
+      throw new Error("Invalid Opus data: must be non-empty Buffer");
+    }
+
+    if (opusData.length > 4000) {
+      throw new Error(
+        `Opus data too large: ${opusData.length} bytes (max 4000)`
+      );
     }
 
     const startTime = process.hrtime.bigint();
-    const pcmData = this.incomingDecoder.decode(opusData);
-    const duration = Number(process.hrtime.bigint() - startTime) / 1000000; // ms
 
-    return {
-      data: pcmData,
-      processingTime: duration,
-      inputSize: opusData.length,
-      outputSize: pcmData.length
-    };
+    try {
+      const pcmData = this.incomingDecoder.decode(opusData);
+      const duration = Number(process.hrtime.bigint() - startTime) / 1000000; // ms
+
+      return {
+        data: pcmData,
+        processingTime: duration,
+        inputSize: opusData.length,
+        outputSize: pcmData.length,
+      };
+    } catch (error) {
+      console.error(`🧵 [WORKER ERROR] Opus decode failed: ${error.message}`);
+      throw new Error(`Opus decode failed: ${error.message}`);
+    }
   }
 }
 
@@ -111,28 +158,28 @@ class AudioProcessor {
 
 const processor = new AudioProcessor();
 
-parentPort.on('message', (message) => {
+parentPort.on("message", (message) => {
   const { id, type, data } = message;
 
   try {
     let result;
 
     switch (type) {
-      case 'init_encoder':
+      case "init_encoder":
         processor.initOutgoingEncoder(data.sampleRate, data.channels);
         result = { success: true };
         break;
 
-      case 'init_decoder':
+      case "init_decoder":
         processor.initIncomingDecoder(data.sampleRate, data.channels);
         result = { success: true };
         break;
 
-      case 'encode':
+      case "encode":
         result = processor.encodeOpus(data.pcmData, data.frameSize);
         break;
 
-      case 'decode':
+      case "decode":
         result = processor.decodeOpus(data.opusData);
         break;
 
@@ -144,29 +191,28 @@ parentPort.on('message', (message) => {
     parentPort.postMessage({
       id,
       success: true,
-      result
+      result,
     });
-
   } catch (error) {
     // Send error back to main thread
     parentPort.postMessage({
       id,
       success: false,
       error: error.message,
-      stack: error.stack
+      stack: error.stack,
     });
   }
 });
 
 // Handle worker errors
-parentPort.on('error', (error) => {
-  console.error('🧵 [WORKER ERROR]', error);
+parentPort.on("error", (error) => {
+  console.error("🧵 [WORKER ERROR]", error);
 });
 
 // Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('🧵 [WORKER] Shutting down gracefully...');
+process.on("SIGTERM", () => {
+  console.log("🧵 [WORKER] Shutting down gracefully...");
   process.exit(0);
 });
 
-console.log('🧵 [WORKER] Audio worker thread started and ready');
+console.log("🧵 [WORKER] Audio worker thread started and ready");

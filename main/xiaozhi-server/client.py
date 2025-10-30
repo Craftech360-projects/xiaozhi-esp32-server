@@ -19,9 +19,9 @@ import opuslib
 
 # --- Configuration ---
 
-SERVER_IP = "10.171.215.210"
+SERVER_IP = "192.168.1.113"
 OTA_PORT = 8002
-MQTT_BROKER_HOST = "10.171.215.210"
+MQTT_BROKER_HOST = "192.168.1.113"
 
 
 MQTT_BROKER_PORT = 1883
@@ -66,7 +66,7 @@ def generate_mqtt_credentials(device_mac: str) -> Dict[str, str]:
     client_id = f"GID_test@@@{device_mac}@@@{uuid.uuid4()}"
 
     # Create username (base64 encoded JSON)
-    username_data = {"ip": "192.168.1.10"}  # Placeholder IP
+    username_data = {"ip": "192.168.1.113"}  # Placeholder IP
     username = base64.b64encode(json.dumps(username_data).encode()).decode()
 
     # Create password (HMAC-SHA256) - must match gateway's logic
@@ -517,6 +517,9 @@ class TestClient:
             "type": "hello",
             "version": 3,
             "transport": "mqtt",
+            "clientId": self.mqtt_credentials["client_id"],
+            "username": self.mqtt_credentials["username"],
+            "password": self.mqtt_credentials["password"],
             "audio_params": {
                 "sample_rate": 16000,
                 "channels": 1,
@@ -525,7 +528,10 @@ class TestClient:
             },
             "features": ["tts", "asr", "vad"]
         }
-        self.mqtt_client.publish("device-server", json.dumps(hello_message))
+        # Publish to the correct topic that the gateway is subscribed to
+        hello_topic = f"devices/{self.device_mac_formatted}/hello"
+        logger.info(f"📤 Publishing hello to topic: {hello_topic}")
+        self.mqtt_client.publish(hello_topic, json.dumps(hello_message))
         try:
             response = mqtt_message_queue.get(timeout=30)
             if response.get("type") == "hello" and "udp" in response:

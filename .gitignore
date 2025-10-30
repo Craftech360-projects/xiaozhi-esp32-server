@@ -190,3 +190,9 @@ main/manager-api/src/main/resources/application-dev.yml
 
 # LiveKit server configuration (contains API keys)
 main/livekit-server/config.yaml
+
+# Model cache files (large binary files that are auto-generated)
+main/livekit-server/model_cache/
+model_cache/
+*.pkl
+*.cache

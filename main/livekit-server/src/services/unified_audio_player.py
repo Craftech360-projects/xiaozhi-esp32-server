@@ -36,6 +36,8 @@ class UnifiedAudioPlayer:
         self.is_playing = False
         self.stop_event = asyncio.Event()
         self.session_say_task = None
+        self.on_completion_callback = None  # Callback for loop mode
+        self._callback_invocation_id = 0  # Track callback invocations to prevent race conditions
 
     def set_session(self, session):
         """Set the LiveKit agent session"""
@@ -50,10 +52,15 @@ class UnifiedAudioPlayer:
     async def stop(self):
         """Stop current playback and interrupt session.say() IMMEDIATELY"""
         logger.info("🛑 UNIFIED: IMMEDIATE STOP requested")
-        
+
+        # Clear completion callback and increment invocation ID to prevent loop continuation
+        self.on_completion_callback = None
+        self._callback_invocation_id += 1
+        logger.info(f"🛑 UNIFIED: Incremented invocation ID to {self._callback_invocation_id} on stop")
+
         # Set stop event FIRST - this stops audio frame iteration immediately
         self.stop_event.set()
-        
+
         # Interrupt session.say() IMMEDIATELY if running
         if self.session_say_task:
             try:
@@ -70,32 +77,45 @@ class UnifiedAudioPlayer:
             self.current_task.cancel()
             logger.info("🛑 UNIFIED: Cancelled background task")
             # Don't wait for cancellation - be immediate
-            
+
         # Force clear all states immediately
         self.is_playing = False
         audio_state_manager.force_stop_music()
         logger.info("🛑 UNIFIED: IMMEDIATE stop completed")
 
-    async def play_from_url(self, url: str, title: str = "Audio"):
-        """Play audio from URL through agent's TTS channel using session.say()"""
+    async def play_from_url(self, url: str, title: str = "Audio", on_completion_callback=None):
+        """Play audio from URL through agent's TTS channel using session.say()
+
+        Args:
+            url: URL of the audio file
+            title: Title of the audio (for logging)
+            on_completion_callback: Optional async callback to call when playback completes
+        """
         await self.stop()  # Stop any current playback
 
         logger.info(f"🎵 UNIFIED: Starting playback: {title}")
         self.is_playing = True
         self.stop_event.clear()
 
+        # Store completion callback for loop mode and increment invocation ID
+        self.on_completion_callback = on_completion_callback
+        if on_completion_callback:
+            self._callback_invocation_id += 1
+            logger.info(f"🔁 UNIFIED: Set callback with invocation ID: {self._callback_invocation_id}")
+
         # Set global music state
         audio_state_manager.set_music_playing(True, title)
 
-        # Start playback task (non-blocking)
-        self.current_task = asyncio.create_task(self._play_via_session_say(url, title))
+        # Start playback task (non-blocking) - pass the invocation ID
+        current_invocation_id = self._callback_invocation_id
+        self.current_task = asyncio.create_task(self._play_via_session_say(url, title, current_invocation_id))
 
         # Return immediately - don't wait for completion to avoid blocking the agent
         # The agent function should return empty string to avoid TTS interference
         logger.info(f"🎵 UNIFIED: Started playback task for: {title}")
         return f"Started playing {title}"
 
-    async def _play_via_session_say(self, url: str, title: str):
+    async def _play_via_session_say(self, url: str, title: str, invocation_id: int = 0):
         """Play audio through session.say() with audio frames"""
         try:
             if not self.session:
@@ -145,6 +165,27 @@ class UnifiedAudioPlayer:
 
             # Send agent state change to listening mode (like normal TTS does)
             await self._send_agent_state_to_listening()
+
+            # Call completion callback for loop mode (if registered)
+            # Only call if the invocation ID matches (prevents race conditions)
+            if self.on_completion_callback and self._callback_invocation_id == invocation_id:
+                try:
+                    logger.info(f"🔁 UNIFIED: Calling completion callback for invocation ID: {invocation_id}")
+                    callback = self.on_completion_callback
+                    if asyncio.iscoroutinefunction(callback):
+                        await callback()
+                    else:
+                        callback()
+                except Exception as e:
+                    logger.error(f"🔁 UNIFIED: Error in completion callback: {e}")
+                finally:
+                    # Only clear callback if invocation ID still matches
+                    # This prevents clearing a newly set callback from the next song
+                    if self._callback_invocation_id == invocation_id:
+                        self.on_completion_callback = None
+                        logger.info(f"🔁 UNIFIED: Cleared callback for invocation ID: {invocation_id}")
+                    else:
+                        logger.info(f"🔁 UNIFIED: Callback invocation ID changed ({self._callback_invocation_id} != {invocation_id}), keeping new callback")
 
             # NOTE: Removed completion message to prevent race condition
             # The completion message was causing the agent to go back to "speaking" state
