@@ -34,7 +34,10 @@ from livekit.agents import (
 )
 from livekit.agents.llm import ChatContext
 from livekit import rtc
-from livekit.plugins import silero, groq
+from livekit.plugins import groq
+
+# Import custom VAD instead of silero plugin
+from src.vad import LiveKitVAD
 
 # Import essential components only
 from src.providers.provider_factory import ProviderFactory
@@ -212,35 +215,50 @@ def prewarm(proc: JobProcess):
     # Start background model preloading (but only essential models)
     model_preloader.start_background_loading()
 
-    # Load VAD model on main thread (required)
+    # Load configurations first (needed for VAD)
+    groq_config = ConfigLoader.get_groq_config()
+    tts_config = ConfigLoader.get_tts_config()
+    vad_config = ConfigLoader.get_vad_config()
+    logger.info(f"📋 [PREWARM] Configurations loaded")
+
+    # Load custom VAD model on main thread (required)
     vad_start = time.time()
     try:
         vad = model_cache.get_vad_model()
         if vad:
             proc.userdata["vad"] = vad
-            logger.info(f"✅ [PREWARM] VAD model loaded from cache ({time.time() - vad_start:.3f}s)")
+            logger.info(f"✅ [PREWARM] Custom VAD model loaded from cache ({time.time() - vad_start:.3f}s)")
         else:
-            # Direct loading (first time or cache miss)
-            vad = silero.VAD.load()
+            # Direct loading with custom VAD (first time or cache miss)
+            vad = LiveKitVAD.load(
+                model_path=vad_config.get('model_path', 'models/silero_vad.onnx'),
+                sample_rate=vad_config.get('sample_rate', 16000),
+                confidence=vad_config.get('confidence', 0.5),
+                start_secs=vad_config.get('start_secs', 0.2),
+                stop_secs=vad_config.get('stop_secs', 0.8),
+                min_volume=vad_config.get('min_volume', 0.001)
+            )
             proc.userdata["vad"] = vad
             # Cache it for next time
             model_cache._models["vad_model"] = vad
-            logger.info(f"✅ [PREWARM] VAD model loaded and cached ({time.time() - vad_start:.3f}s)")
+            logger.info(f"✅ [PREWARM] Custom VAD model loaded and cached ({time.time() - vad_start:.3f}s)")
     except Exception as e:
-        logger.error(f"❌ [PREWARM] Failed to load VAD: {e}")
-        # Final fallback
+        logger.error(f"❌ [PREWARM] Failed to load custom VAD: {e}")
+        # Final fallback with default parameters
         try:
-            vad = silero.VAD.load()
+            vad = LiveKitVAD.load(
+                model_path='models/silero_vad.onnx',
+                sample_rate=16000,
+                confidence=0.5,
+                start_secs=0.2,
+                stop_secs=0.8,
+                min_volume=0.001
+            )
             proc.userdata["vad"] = vad
-            logger.info(f"✅ [PREWARM] VAD model loaded using fallback ({time.time() - vad_start:.3f}s)")
+            logger.info(f"✅ [PREWARM] Custom VAD loaded using fallback ({time.time() - vad_start:.3f}s)")
         except Exception as e2:
             logger.error(f"❌ [PREWARM] All VAD loading attempts failed: {e2}")
             vad = None
-
-    # Load configurations
-    groq_config = ConfigLoader.get_groq_config()
-    tts_config = ConfigLoader.get_tts_config()
-    logger.info(f"📋 [PREWARM] Configurations loaded")
 
     # Preload LLM provider (biggest bottleneck - 1.1s)
     llm_start = time.time()

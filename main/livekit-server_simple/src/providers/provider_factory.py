@@ -2,11 +2,12 @@ import livekit.plugins.groq as groq
 import livekit.plugins.elevenlabs as elevenlabs
 import livekit.plugins.deepgram as deepgram
 import livekit.plugins.cartesia as cartesia
-from livekit.plugins import openai, silero
+from livekit.plugins import openai
 from livekit.agents import stt, llm, tts
 
 # Import our custom providers
 from .edge_tts_provider import EdgeTTS
+from ..vad import LiveKitVAD
 
 
 class ProviderFactory:
@@ -188,7 +189,7 @@ class ProviderFactory:
 
     @staticmethod
     def create_vad():
-        """Create Voice Activity Detection provider optimized for children"""
+        """Create Voice Activity Detection provider with custom Silero ONNX implementation"""
         # Try to use cached VAD first
         try:
             from ..utils.model_cache import model_cache
@@ -198,15 +199,18 @@ class ProviderFactory:
         except Exception:
             pass  # Fall back to direct loading
 
-        # ULTRA-FAST VAD for multi-client performance - prioritize speed over accuracy
-        # Optimized for 5+ concurrent clients to prevent "slower than realtime" errors
-        return silero.VAD.load(
-            min_speech_duration=0.02,      # ULTRA-fast detection (20ms minimum)
-            min_silence_duration=0.15,     # AGGRESSIVE silence detection (150ms)
-            activation_threshold=0.15,     # VERY low threshold for children's voices
-            sample_rate=16000,
-            max_buffered_speech=15.0,      # MINIMAL buffer (15s max) for speed
-            window_size_samples=256,       # SMALLEST window for fastest processing
+        # Load custom VAD with optimized parameters
+        # Using ONNX implementation for better performance
+        from ..config.config_loader import ConfigLoader
+        vad_config = ConfigLoader.get_vad_config()
+
+        return LiveKitVAD.load(
+            model_path=vad_config.get('model_path', 'models/silero_vad.onnx'),
+            sample_rate=vad_config.get('sample_rate', 16000),
+            confidence=vad_config.get('confidence', 0.5),
+            start_secs=vad_config.get('start_secs', 0.2),
+            stop_secs=vad_config.get('stop_secs', 0.8),
+            min_volume=vad_config.get('min_volume', 0.001)
         )
 
     @staticmethod

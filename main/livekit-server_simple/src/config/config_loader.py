@@ -162,3 +162,27 @@ class ConfigLoader:
         """Get manager API configuration from config.yaml"""
         config = ConfigLoader.load_yaml_config()
         return config.get('manager_api', {})
+
+    @staticmethod
+    def get_vad_config():
+        """Get VAD configuration from config.yaml"""
+        config = ConfigLoader.load_yaml_config()
+        vad_config = config.get('vad', {})
+
+        # Set defaults if not specified
+        defaults = {
+            'model_path': 'models/silero_vad.onnx',
+            'sample_rate': 16000,
+            'confidence': 0.5,
+            'start_secs': 0.2,
+            'stop_secs': 0.8,
+            'min_volume': 0.001
+        }
+
+        # Merge with defaults
+        for key, default_value in defaults.items():
+            if key not in vad_config:
+                vad_config[key] = default_value
+
+        logger.info(f"📋 VAD config loaded: {vad_config}")
+        return vad_config
