@@ -1,7 +1,7 @@
 {
   "debug": false,
   "mqtt_broker": {
-    "host": "192.168.175.69",
+    "host": "192.168.1.77",
     "port": 1883,
     "protocol": "mqtt",
     "keepalive": 60,
@@ -10,8 +10,8 @@
     "connectTimeout": 30000
   },
   "livekit": {
-    "url": "ws://localhost:7880",
-    "api_key": "devkey",
-    "api_secret": "secret"
+    "url": "wss://cheekio-ejx8jg6x.livekit.cloud",
+    "api_key": "APIv6Bac2WPd4Gr",
+    "api_secret": "nqLfhrvuNHh1lBRcC5iwmGyA5YZzxuPhrB8TZLjewXw"
   }
 }
