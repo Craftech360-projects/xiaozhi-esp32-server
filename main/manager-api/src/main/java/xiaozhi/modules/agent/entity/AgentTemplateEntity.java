@@ -35,6 +35,11 @@ public class AgentTemplateEntity implements Serializable {
     private String agentName;
 
     /**
+     * 模式分类 (conversation/music/story)
+     */
+    private String modeCategory;
+
+    /**
      * 语音识别模型标识
      */
     private String asrModelId;

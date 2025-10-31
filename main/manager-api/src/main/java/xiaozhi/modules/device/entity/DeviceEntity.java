@@ -43,6 +43,9 @@ public class DeviceEntity {
     @Schema(description = "智能体ID")
     private String agentId;
 
+    @Schema(description = "设备模式 (conversation/music/story)")
+    private String mode;
+
     @Schema(description = "关联的孩子ID")
     private Long kidId;
 

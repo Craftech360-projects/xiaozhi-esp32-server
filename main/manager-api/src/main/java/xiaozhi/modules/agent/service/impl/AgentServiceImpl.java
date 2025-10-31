@@ -608,48 +608,53 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
             throw new RenException("No agent associated with device");
         }
 
-        String currentModeName = agent.getAgentName();
+        // 3. Get current mode from device (not agent)
+        String currentMode = device.getMode();
+        if (currentMode == null || currentMode.isEmpty()) {
+            currentMode = "conversation"; // Default fallback
+        }
 
-        // 3. Get all visible templates ordered by sort
-        List<AgentTemplateEntity> allTemplates = agentTemplateService.list(
+        // 4. Calculate next mode (3-mode cycle: conversation → music → story → conversation)
+        String nextMode;
+        switch (currentMode.toLowerCase()) {
+            case "conversation":
+                nextMode = "music";
+                break;
+            case "music":
+                nextMode = "story";
+                break;
+            case "story":
+                nextMode = "conversation";
+                break;
+            default:
+                nextMode = "conversation"; // Fallback for unknown modes
+        }
+
+        // 5. Find templates in the next mode category
+        List<AgentTemplateEntity> modeTemplates = agentTemplateService.list(
             new QueryWrapper<AgentTemplateEntity>()
                 .eq("is_visible", 1)
+                .eq("mode_category", nextMode)
                 .orderByAsc("sort")
         );
 
-        if (allTemplates.isEmpty()) {
-            throw new RenException("No templates available");
+        if (modeTemplates.isEmpty()) {
+            throw new RenException("No templates found for mode: " + nextMode);
         }
 
-        if (allTemplates.size() == 1) {
-            // Only one mode available, cannot cycle
-            AgentModeCycleResponse response = new AgentModeCycleResponse();
-            response.setSuccess(false);
-            response.setAgentId(agent.getId());
-            response.setOldModeName(currentModeName);
-            response.setNewModeName(currentModeName);
-            response.setModeIndex(0);
-            response.setTotalModes(1);
-            response.setMessage("Only one mode available, cannot cycle");
-            return response;
-        }
+        // Use first template in the mode category (can be enhanced later to remember user preference)
+        AgentTemplateEntity nextTemplate = modeTemplates.get(0);
 
-        // 4. Find current template index by name
-        int currentIndex = -1;
-        for (int i = 0; i < allTemplates.size(); i++) {
-            if (allTemplates.get(i).getAgentName().equalsIgnoreCase(currentModeName)) {
-                currentIndex = i;
-                break;
-            }
-        }
+        // 6. Update DEVICE mode
+        String oldMode = device.getMode();
+        device.setMode(nextMode);
+        device.setUpdateDate(new Date());
+        deviceService.updateById(device);
 
-        // 5. Calculate next index (cycle to next mode)
-        int nextIndex = (currentIndex + 1) % allTemplates.size();
-        AgentTemplateEntity nextTemplate = allTemplates.get(nextIndex);
-
-        // 6. Update agent with template configuration
-        String oldModeName = agent.getAgentName();
-
+        // 7. Update AGENT with template configuration
+        String oldTemplateName = agent.getAgentName();
+        
+        agent.setTemplateId(nextTemplate.getId());  // Update template_id reference
         agent.setAgentName(nextTemplate.getAgentName());
         agent.setAsrModelId(nextTemplate.getAsrModelId());
         agent.setVadModelId(nextTemplate.getVadModelId());
@@ -664,7 +669,7 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
         agent.setLangCode(nextTemplate.getLangCode());
         agent.setLanguage(nextTemplate.getLanguage());
 
-        // 7. Update audit info
+        // 8. Update audit info
         try {
             UserDetail user = SecurityUser.getUser();
             if (user != null) {
@@ -675,31 +680,47 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
         }
         agent.setUpdatedAt(new Date());
 
-        // 8. Save to database
+        // 9. Save agent to database
         this.updateById(agent);
 
-        // 9. Build response
+        // 10. Build response
         AgentModeCycleResponse response = new AgentModeCycleResponse();
         response.setSuccess(true);
         response.setAgentId(agent.getId());
-        response.setOldModeName(oldModeName);
-        response.setNewModeName(nextTemplate.getAgentName());
-        response.setModeIndex(nextIndex);
-        response.setTotalModes(allTemplates.size());
-        response.setMessage("Mode changed successfully from " + oldModeName + " to " + nextTemplate.getAgentName());
+        response.setOldModeName(oldMode != null ? oldMode : "conversation");
+        response.setNewModeName(nextMode);
+        response.setModeIndex(getModeIndex(nextMode));
+        response.setTotalModes(3);
+        response.setMessage("Mode changed successfully from " + oldMode + " to " + nextMode);
         response.setNewSystemPrompt(nextTemplate.getSystemPrompt());
 
-        // 10. Log the change
-        System.out.println("🔘 ===== AGENT MODE CYCLE (BUTTON) =====");
+        // 11. Log the change
+        System.out.println("🔘 ===== DEVICE MODE CYCLE (BUTTON) =====");
         System.out.println("Device MAC: " + macAddress);
+        System.out.println("Device ID: " + device.getId());
         System.out.println("Agent ID: " + agent.getId());
-        System.out.println("Mode Change: " + oldModeName + " → " + nextTemplate.getAgentName());
-        System.out.println("Mode Index: " + nextIndex + " / " + allTemplates.size());
+        System.out.println("Mode Change: " + oldMode + " → " + nextMode);
+        System.out.println("Template Change: " + oldTemplateName + " → " + nextTemplate.getAgentName());
+        System.out.println("Template ID: " + nextTemplate.getId());
+        System.out.println("Device Mode Updated: YES ✅");
+        System.out.println("Agent template_id Updated: YES ✅");
+        System.out.println("Agent Config Updated: YES ✅");
         System.out.println("New LLM Model: " + nextTemplate.getLlmModelId());
         System.out.println("New TTS Model: " + nextTemplate.getTtsModelId());
-        System.out.println("Database Updated: YES ✅");
         System.out.println("========================================");
 
         return response;
+    }
+
+    /**
+     * Helper method to get mode index for response
+     */
+    private int getModeIndex(String mode) {
+        switch (mode.toLowerCase()) {
+            case "conversation": return 0;
+            case "music": return 1;
+            case "story": return 2;
+            default: return 0;
+        }
     }
 }

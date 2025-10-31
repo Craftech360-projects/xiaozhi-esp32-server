@@ -512,6 +512,14 @@ databaseChangeLog:
             encoding: utf8
             path: classpath:db/changelog/202510162000_update_edgetts_to_english.sql
   - changeSet:
+      id: 202510241400
+      author: claude
+      validCheckSum: ANY
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202510241400_add_template_based_prompt_system.sql
+  - changeSet:
       id: 202510241430
       author: claude
       validCheckSum: ANY
@@ -519,3 +527,10 @@ databaseChangeLog:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202510241430_update_template_personalities.sql
+  - changeSet:
+      id: 202501311600
+      author: kiro
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202501311600_add_device_mode_and_template_category.sql

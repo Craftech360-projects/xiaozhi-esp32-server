@@ -19,9 +19,9 @@ import opuslib
 
 # --- Configuration ---
 
-SERVER_IP = "10.171.215.210"
+SERVER_IP = "192.168.175.69"
 OTA_PORT = 8002
-MQTT_BROKER_HOST = "10.171.215.210"
+MQTT_BROKER_HOST = "192.168.175.69"
 
 
 MQTT_BROKER_PORT = 1883
@@ -34,7 +34,8 @@ PLAYBACK_BUFFER_START_FRAMES = 16
 # --- NEW: Sequence tracking configuration ---
 # Set to False to disable sequence logging
 ENABLE_SEQUENCE_LOGGING = True
-LOG_SEQUENCE_EVERY_N_PACKETS = 32  # Reduced logging frequency for multi-client scenarios
+# Reduced logging frequency for multi-client scenarios
+LOG_SEQUENCE_EVERY_N_PACKETS = 32
 
 # --- NEW: Timeout configurations ---
 TTS_TIMEOUT_SECONDS = 30  # Maximum time to wait for TTS audio
@@ -158,14 +159,20 @@ class TestClient:
                 # Send immediate UDP keepalive to ensure connection is ready
                 if self.udp_socket and udp_session_details:
                     try:
-                        keepalive_payload = f"keepalive:{udp_session_details['session_id']}".encode()
-                        encrypted_keepalive = self.encrypt_packet(keepalive_payload)
+                        keepalive_payload = f"keepalive:{udp_session_details['session_id']}".encode(
+                        )
+                        encrypted_keepalive = self.encrypt_packet(
+                            keepalive_payload)
                         if encrypted_keepalive:
-                            server_udp_addr = (udp_session_details['udp']['server'], udp_session_details['udp']['port'])
-                            self.udp_socket.sendto(encrypted_keepalive, server_udp_addr)
-                            logger.info("[UDP] Sent UDP keepalive to ensure connection readiness")
+                            server_udp_addr = (
+                                udp_session_details['udp']['server'], udp_session_details['udp']['port'])
+                            self.udp_socket.sendto(
+                                encrypted_keepalive, server_udp_addr)
+                            logger.info(
+                                "[UDP] Sent UDP keepalive to ensure connection readiness")
                     except Exception as e:
-                        logger.warning(f"[WARN] Failed to send UDP keepalive: {e}")
+                        logger.warning(
+                            f"[WARN] Failed to send UDP keepalive: {e}")
 
             # Handle TTS stop signal (start recording for next user input)
             elif payload.get("type") == "tts" and payload.get("state") == "stop":
@@ -247,10 +254,13 @@ class TestClient:
         logger.info("=" * 60)
         logger.info("[STATS] SEQUENCE TRACKING SUMMARY")
         logger.info("=" * 60)
-        logger.info(f"[PKT] Total packets received: {self.total_packets_received}")
-        logger.info(f"[SEQ] Last sequence number: {self.last_received_sequence}")
+        logger.info(
+            f"[PKT] Total packets received: {self.total_packets_received}")
+        logger.info(
+            f"[SEQ] Last sequence number: {self.last_received_sequence}")
         logger.info(f"[ERROR] Missing packets: {self.missing_packets}")
-        logger.info(f"[RETRY] Out-of-order packets: {self.out_of_order_packets}")
+        logger.info(
+            f"[RETRY] Out-of-order packets: {self.out_of_order_packets}")
         logger.info(f"[DUP] Duplicate packets: {self.duplicate_packets}")
 
         if self.sequence_gaps:
@@ -534,7 +544,8 @@ class TestClient:
                 self.udp_socket = socket.socket(
                     socket.AF_INET, socket.SOCK_DGRAM)
                 # Increase UDP receive buffer to handle burst traffic
-                self.udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024 * 1024)  # 1MB buffer
+                self.udp_socket.setsockopt(
+                    socket.SOL_SOCKET, socket.SO_RCVBUF, 1024 * 1024)  # 1MB buffer
                 self.udp_socket.settimeout(1.0)
                 ping_payload = f"ping:{udp_session_details['session_id']}".encode(
                 )
@@ -644,7 +655,7 @@ class TestClient:
                             sequence = header_info.get('sequence', 0)
                             # Track sequence for analysis (minimal processing)
                             self.track_sequence(sequence)
-                            
+
                             # Only log details for first few packets to reduce overhead
                             if self.total_packets_received <= 5:
                                 timestamp = header_info.get('timestamp', 0)
@@ -774,6 +785,8 @@ class TestClient:
         self.mqtt_client.publish("device-server", json.dumps(listen_payload))
         logger.info(
             "[WAIT] Test running. Press Spacebar to abort TTS or Ctrl+C to stop.")
+        logger.info(
+            "[MUSIC] Press '1' for Twinkle Twinkle Little Star, '2' for Hokey, '3' for Happy")
 
         # Start a thread to monitor spacebar press
         def monitor_spacebar():
@@ -793,9 +806,42 @@ class TestClient:
                         time.sleep(0.01)
                 time.sleep(0.01)
 
+        # Start a thread to monitor music keys for playing specific songs
+        def monitor_music_keys():
+            # Define song mappings
+            song_keys = {
+                '1': 'play twinkle twinkle little star',
+                '2': 'play hokey',
+                '3': 'play happy'
+            }
+
+            while not stop_threads.is_set() and self.session_active:
+                for key, song_request in song_keys.items():
+                    if keyboard.is_pressed(key):
+                        logger.info(
+                            f"[🎵] Key '{key}' pressed. Sending request: {song_request}")
+                        listen_payload = {
+                            "type": "listen",
+                            "session_id": udp_session_details["session_id"],
+                            "state": "detect",
+                            "text": song_request
+                        }
+                        self.mqtt_client.publish(
+                            "device-server", json.dumps(listen_payload))
+                        logger.info(
+                            f"[🎵] Sent music request: {listen_payload}")
+                        # Wait for the key to be released to avoid multiple sends
+                        while keyboard.is_pressed(key) and not stop_threads.is_set():
+                            time.sleep(0.01)
+                time.sleep(0.01)
+
         spacebar_thread = threading.Thread(
             target=monitor_spacebar, daemon=True)
         spacebar_thread.start()
+
+        music_keys_thread = threading.Thread(
+            target=monitor_music_keys, daemon=True)
+        music_keys_thread.start()
 
         try:
             # Keep running with better timeout handling
@@ -809,7 +855,8 @@ class TestClient:
                         f"[TIME] No audio received for {TTS_TIMEOUT_SECONDS}s during TTS. Possible server issue.")
                     timeout_count += 1
                     if timeout_count >= 3:
-                        logger.error("[ERROR] Too many timeouts. Stopping session.")
+                        logger.error(
+                            "[ERROR] Too many timeouts. Stopping session.")
                         self.session_active = False
                         break
                     else:
@@ -889,7 +936,8 @@ if __name__ == "__main__":
     # You can control sequence logging from here
     print(
         f"[SEQ] Sequence logging: {'ENABLED' if ENABLE_SEQUENCE_LOGGING else 'DISABLED'}")
-    print(f"[STATS] Log frequency: Every {LOG_SEQUENCE_EVERY_N_PACKETS} packets")
+    print(
+        f"[STATS] Log frequency: Every {LOG_SEQUENCE_EVERY_N_PACKETS} packets")
 
     client = TestClient()
     try:

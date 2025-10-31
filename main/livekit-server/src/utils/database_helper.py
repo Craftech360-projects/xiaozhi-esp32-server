@@ -18,7 +18,8 @@ class DatabaseHelper:
         """
         self.manager_api_url = manager_api_url.rstrip('/')
         self.secret = secret
-        self.retry_attempts = 3
+        self.retry_attempts = 1  # Reduced from 3 to fail faster when API is down
+        self.request_timeout = 3  # Reduced from 10 to 3 seconds
 
     async def get_agent_id(self, device_mac: str) -> Optional[str]:
         """
@@ -38,7 +39,7 @@ class DatabaseHelper:
 
         for attempt in range(self.retry_attempts):
             try:
-                timeout = aiohttp.ClientTimeout(total=10)
+                timeout = aiohttp.ClientTimeout(total=self.request_timeout)
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     async with session.get(url, headers=headers) as response:
                         if response.status == 200:
@@ -102,7 +103,7 @@ class DatabaseHelper:
 
         for attempt in range(self.retry_attempts):
             try:
-                timeout = aiohttp.ClientTimeout(total=10)
+                timeout = aiohttp.ClientTimeout(total=self.request_timeout)
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     async with session.post(url, json=payload, headers=headers) as response:
                         if response.status == 200:
@@ -188,7 +189,7 @@ class DatabaseHelper:
 
         for attempt in range(self.retry_attempts):
             try:
-                timeout = aiohttp.ClientTimeout(total=10)
+                timeout = aiohttp.ClientTimeout(total=self.request_timeout)
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     async with session.post(url, json=payload, headers=headers) as response:
                         if response.status == 200:
@@ -246,7 +247,7 @@ class DatabaseHelper:
 
         for attempt in range(self.retry_attempts):
             try:
-                timeout = aiohttp.ClientTimeout(total=10)
+                timeout = aiohttp.ClientTimeout(total=self.request_timeout)
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     async with session.get(url, headers=headers) as response:
                         if response.status == 200:
@@ -305,7 +306,7 @@ class DatabaseHelper:
 
         for attempt in range(self.retry_attempts):
             try:
-                timeout = aiohttp.ClientTimeout(total=10)
+                timeout = aiohttp.ClientTimeout(total=self.request_timeout)
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     async with session.post(url, json=payload, headers=headers) as response:
                         if response.status == 200:
@@ -361,7 +362,7 @@ class DatabaseHelper:
 
         for attempt in range(self.retry_attempts):
             try:
-                timeout = aiohttp.ClientTimeout(total=10)
+                timeout = aiohttp.ClientTimeout(total=self.request_timeout)
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     async with session.post(url, json=payload, headers=headers) as response:
                         if response.status == 200:

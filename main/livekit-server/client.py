@@ -18,9 +18,9 @@ from queue import Queue, Empty
 
 # --- Configuration ---
 
-SERVER_IP = "10.171.215.210"
+SERVER_IP = "192.168.175.69"
 OTA_PORT = 8002
-MQTT_BROKER_HOST = "10.171.215.210"
+MQTT_BROKER_HOST = "192.168.175.69"
 
 
 MQTT_BROKER_PORT = 1883

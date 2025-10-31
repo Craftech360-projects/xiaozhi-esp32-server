@@ -644,18 +644,6 @@ class WorkerPoolManager {
       const avgPendingPerWorker = this.workerPendingCount.reduce((a, b) => a + b, 0) / this.workers.length;
       const loadPercent = Math.min(100, (avgPendingPerWorker / 5 * 100)).toFixed(1);
 
-      console.log('\n📊 [WORKER-POOL METRICS] ================');
-      console.log(`   Workers: ${stats.activeWorkers}/${stats.workers} active (min: ${this.minWorkers}, max: ${this.maxWorkers})`);
-      console.log(`   Load: ${loadPercent}% (${avgPendingPerWorker.toFixed(2)} pending/worker)`);
-      console.log(`   Pending Requests: ${stats.pendingRequests}`);
-      console.log(`   Frames Processed: ${stats.performance.framesProcessed}`);
-      console.log(`   Throughput: ${stats.performance.framesPerSecond} fps`);
-      console.log(`   Avg Latency: ${stats.performance.avgLatency}`);
-      console.log(`   Max Latency: ${stats.performance.maxLatency}`);
-      console.log(`   CPU Usage: ${stats.performance.avgCpuUsage} (max: ${stats.performance.maxCpuUsage})`);
-      console.log(`   Memory: ${stats.performance.currentMemory.heapUsed} / ${stats.performance.currentMemory.heapTotal}`);
-      console.log(`   Errors: ${stats.performance.errors}`);
-      console.log('==========================================\n');
     }, intervalSeconds * 1000);
   }
 
@@ -846,7 +834,7 @@ class WorkerPoolManager {
         }, 500)
       ));
 
-      console.log(`✅ [AUTO-SCALE] New workers initialized (${startIndex}-${endIndex-1})`);
+      console.log(`✅ [AUTO-SCALE] New workers initialized (${startIndex}-${endIndex - 1})`);
     } catch (error) {
       console.error(`❌ [AUTO-SCALE] Failed to initialize new workers:`, error);
     }
@@ -1099,12 +1087,11 @@ class LiveKitBridge extends Emitter {
                   }, 500); // Small delay to ensure goodbye message is delivered
                 }
               }
-              else if(
+              else if (
                 data.data.old_state === "listening" &&
                 data.data.new_state === "thinking"
-              )
-              {
-                  this.sendLLMThinkMessage();
+              ) {
+                this.sendLLMThinkMessage();
               }
               break;
             case "user_input_transcribed":
@@ -1141,6 +1128,15 @@ class LiveKitBridge extends Emitter {
               console.log(`   🗂️ Type: ${data.content_type}`);
               console.log(`   🌐 Language: ${data.language || 'Not specified'}`);
               this.handleMobileMusicRequest(data);
+              break;
+            case "music_playback_started":
+              // Handle music playback started - set audio playing flag
+              console.log(`🎵 [MUSIC-START] Music playback started for device: ${this.macAddress}`);
+              this.isAudioPlaying = true;
+              if (this.connection && this.connection.updateActivityTime) {
+                this.connection.updateActivityTime();
+                console.log(`🎵 [MUSIC-START] Timer reset for device: ${this.macAddress}`);
+              }
               break;
             case "music_playback_stopped":
               // Handle music playback stopped - force clear audio playing flag
@@ -1510,7 +1506,7 @@ class LiveKitBridge extends Emitter {
       }
 
       // Attempt to capture the frame
-     await this.audioSource.captureFrame(frame);
+      await this.audioSource.captureFrame(frame);
     } catch (error) {
       console.error(`❌ [AUDIO] Failed to capture frame: ${error.message}`);
 
@@ -1547,69 +1543,69 @@ class LiveKitBridge extends Emitter {
 
 
   checkOpusFormat(data) {
-      if (data.length < 1) return false;
+    if (data.length < 1) return false;
 
-      // PHASE 2: Filter out text messages (keepalive, ping, etc.)
-      // Check if data looks like ASCII text
-      try {
-        const textCheck = data.toString('utf8', 0, Math.min(10, data.length));
-        if (/^(keepalive|ping|pong|hello|goodbye)/.test(textCheck)) {
-          // console.log(`🚫 Filtered out text message: ${textCheck}`);
-          return false; // This is a text message, not Opus
-        }
-      } catch (e) {
-        // Not valid UTF-8, continue with Opus check
+    // PHASE 2: Filter out text messages (keepalive, ping, etc.)
+    // Check if data looks like ASCII text
+    try {
+      const textCheck = data.toString('utf8', 0, Math.min(10, data.length));
+      if (/^(keepalive|ping|pong|hello|goodbye)/.test(textCheck)) {
+        // console.log(`🚫 Filtered out text message: ${textCheck}`);
+        return false; // This is a text message, not Opus
       }
+    } catch (e) {
+      // Not valid UTF-8, continue with Opus check
+    }
 
-      // ESP32 sends 60ms OPUS frames at 16kHz mono with complexity=0
-      const MIN_OPUS_SIZE = 1;    // Minimum OPUS packet (can be very small for silence)
-      const MAX_OPUS_SIZE = 400;  // Maximum OPUS packet for 60ms@16kHz
+    // ESP32 sends 60ms OPUS frames at 16kHz mono with complexity=0
+    const MIN_OPUS_SIZE = 1;    // Minimum OPUS packet (can be very small for silence)
+    const MAX_OPUS_SIZE = 400;  // Maximum OPUS packet for 60ms@16kHz
 
-      // Validate packet size range
-      if (data.length < MIN_OPUS_SIZE || data.length > MAX_OPUS_SIZE) {
-          // console.log(`❌ Invalid OPUS size: ${data.length}B (expected ${MIN_OPUS_SIZE}-${MAX_OPUS_SIZE}B)`);
-          return false;
-      }
-
-
-      // Check OPUS TOC (Table of Contents) byte
-      const firstByte = data[0];
-      const config = (firstByte >> 3) & 0x1f;        // Bits 7-3: config (0-31)
-      const stereo = (firstByte >> 2) & 0x01;        // Bit 2: stereo flag
-      const frameCount = firstByte & 0x03;           // Bits 1-0: frame count
+    // Validate packet size range
+    if (data.length < MIN_OPUS_SIZE || data.length > MAX_OPUS_SIZE) {
+      // console.log(`❌ Invalid OPUS size: ${data.length}B (expected ${MIN_OPUS_SIZE}-${MAX_OPUS_SIZE}B)`);
+      return false;
+    }
 
 
-     // console.log(`🔍 OPUS TOC: config=${config}, stereo=${stereo}, frames=${frameCount}, size=${data.length}B`);
+    // Check OPUS TOC (Table of Contents) byte
+    const firstByte = data[0];
+    const config = (firstByte >> 3) & 0x1f;        // Bits 7-3: config (0-31)
+    const stereo = (firstByte >> 2) & 0x01;        // Bit 2: stereo flag
+    const frameCount = firstByte & 0x03;           // Bits 1-0: frame count
 
 
-      // Validate OPUS TOC byte
-      const validConfig = config >= 0 && config <= 31;
-      const validStereo = stereo === 0;  // ESP32 sends mono (stereo=0)
-      const validFrameCount = frameCount >= 0 && frameCount <= 3;
-
-      // ✅ FIXED: Accept ALL valid OPUS configs (0-31) for ESP32 with complexity=0
-      // ESP32 with complexity=0 can use various configs depending on audio content
-      const validOpusConfigs = [
-        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  // NB/MB/WB configs
-        16, 17, 18, 19,                                          // SWB configs
-        20, 21, 22, 23,                                          // FB configs
-        24, 25, 26, 27, 28, 29, 30, 31                          // Hybrid configs
-      ];
-      const isValidConfig = validOpusConfigs.includes(config);
-
-      // ✅ FIXED: More lenient validation - just check basic OPUS structure
-      const isValidOpus = validConfig && validStereo && validFrameCount && isValidConfig;
+    // console.log(`🔍 OPUS TOC: config=${config}, stereo=${stereo}, frames=${frameCount}, size=${data.length}B`);
 
 
-     // console.log(`📊 OPUS validation: config=${validConfig}(${config}), mono=${validStereo}, frames=${validFrameCount}, validConfig=${isValidConfig} → ${isValidOpus ? "✅ VALID" : "❌ INVALID"}`);
+    // Validate OPUS TOC byte
+    const validConfig = config >= 0 && config <= 31;
+    const validStereo = stereo === 0;  // ESP32 sends mono (stereo=0)
+    const validFrameCount = frameCount >= 0 && frameCount <= 3;
 
-      // ✅ ADDITIONAL: Log first few bytes for debugging
-      if (!isValidOpus) {
-        const hexDump = data.slice(0, Math.min(8, data.length)).toString('hex');
+    // ✅ FIXED: Accept ALL valid OPUS configs (0-31) for ESP32 with complexity=0
+    // ESP32 with complexity=0 can use various configs depending on audio content
+    const validOpusConfigs = [
+      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  // NB/MB/WB configs
+      16, 17, 18, 19,                                          // SWB configs
+      20, 21, 22, 23,                                          // FB configs
+      24, 25, 26, 27, 28, 29, 30, 31                          // Hybrid configs
+    ];
+    const isValidConfig = validOpusConfigs.includes(config);
+
+    // ✅ FIXED: More lenient validation - just check basic OPUS structure
+    const isValidOpus = validConfig && validStereo && validFrameCount && isValidConfig;
+
+
+    // console.log(`📊 OPUS validation: config=${validConfig}(${config}), mono=${validStereo}, frames=${validFrameCount}, validConfig=${isValidConfig} → ${isValidOpus ? "✅ VALID" : "❌ INVALID"}`);
+
+    // ✅ ADDITIONAL: Log first few bytes for debugging
+    if (!isValidOpus) {
+      const hexDump = data.slice(0, Math.min(8, data.length)).toString('hex');
       //  console.log(`🔍 OPUS debug - first ${Math.min(8, data.length)} bytes: ${hexDump}`);
-      }
+    }
 
-      return isValidOpus;
+    return isValidOpus;
   }
 
 
@@ -1800,8 +1796,8 @@ class LiveKitBridge extends Emitter {
   }
 
 
-  sendLLMThinkMessage(){
-     if (!this.connection) return;
+  sendLLMThinkMessage() {
+    if (!this.connection) return;
     console.log("Sending LLM think message");
     const message = {
       type: "llm",
@@ -1920,7 +1916,7 @@ class LiveKitBridge extends Emitter {
       'self_get_battery_status': 'self.battery.get_status',
       'self_set_light_mode': 'self.led.set_mode',
       'self_set_rainbow_speed': 'self.led.set_rainbow_speed'
-      
+
     };
 
     const mcpToolName = functionToMcpToolMap[functionCall.name];
@@ -2737,7 +2733,7 @@ class MQTTConnection {
       // Reset the timer while audio is playing to prevent timeout
       this.lastActivityTime = now;
       console.log(`🎵 [AUDIO-ACTIVE] Resetting timer - audio is playing for device: ${this.clientId}`);
-      
+
     }
     else if (timeSinceLastActivity > this.inactivityTimeoutMs) {
       // Send end prompt instead of immediate close
@@ -3131,7 +3127,7 @@ class VirtualMQTTConnection {
     this.clientId = helloPayload.clientId || deviceId;
     this.username = helloPayload.username;
     this.password = helloPayload.password;
-     this.fullClientId = helloPayload.clientId;
+    this.fullClientId = helloPayload.clientId;
 
     this.bridge = null;
     this.udp = {
@@ -3360,10 +3356,10 @@ class VirtualMQTTConnection {
       // Check if this is a real MQTTConnection (not VirtualMQTTConnection)
       // and matches the MAC address and has UDP endpoint
       if (connection &&
-          connection.macAddress === macAddress &&
-          connection.udp &&
-          connection.udp.remoteAddress &&
-          connection.constructor.name === 'MQTTConnection') {
+        connection.macAddress === macAddress &&
+        connection.udp &&
+        connection.udp.remoteAddress &&
+        connection.constructor.name === 'MQTTConnection') {
         console.log(`✅ [FIND-TOY] Found real toy connection for MAC ${macAddress}`);
         return connection;
       }
@@ -3523,7 +3519,7 @@ class VirtualMQTTConnection {
       this.bridge.close();
       this.bridge = null;
       //commet temporarly, dgoodby message is not working well
-      
+
       return;
     }
 
@@ -4160,10 +4156,10 @@ class MQTTGateway {
       // Check if this is a real MQTTConnection (not VirtualMQTTConnection)
       // and matches the device ID and has UDP endpoint
       if (connection &&
-          (connection.macAddress === deviceId || connection.deviceId === deviceId) &&
-          connection.udp &&
-          connection.udp.remoteAddress &&
-          connection.constructor.name === 'MQTTConnection') {
+        (connection.macAddress === deviceId || connection.deviceId === deviceId) &&
+        connection.udp &&
+        connection.udp.remoteAddress &&
+        connection.constructor.name === 'MQTTConnection') {
         console.log(`✅ [FIND-DEVICE] Found real device connection for ${deviceId}`);
         return connection;
       }
@@ -4391,27 +4387,27 @@ class MQTTGateway {
   }
 
   publishToDevice(clientIdOrDeviceId, message) {
-  console.log(`📤 [MQTT OUT] publishToDevice called - Client/Device: ${clientIdOrDeviceId}`);
-  console.log(`📤 [MQTT OUT] Message:`, JSON.stringify(message, null, 2));
+    console.log(`📤 [MQTT OUT] publishToDevice called - Client/Device: ${clientIdOrDeviceId}`);
+    console.log(`📤 [MQTT OUT] Message:`, JSON.stringify(message, null, 2));
 
-  if (this.mqttClient && this.mqttClient.connected) {
-    // Use the full client ID directly in the topic
-    const topic = `devices/p2p/${clientIdOrDeviceId}`;
-    console.log(`📤 [MQTT OUT] Publishing to topic: ${topic}`);
+    if (this.mqttClient && this.mqttClient.connected) {
+      // Use the full client ID directly in the topic
+      const topic = `devices/p2p/${clientIdOrDeviceId}`;
+      console.log(`📤 [MQTT OUT] Publishing to topic: ${topic}`);
 
-    this.mqttClient.publish(topic, JSON.stringify(message), (err) => {
-      if (err) {
-        console.error(`❌ [MQTT OUT] Failed to publish to client ${clientIdOrDeviceId}:`, err);
-      } else {
-        console.log(`✅ [MQTT OUT] Successfully published to client ${clientIdOrDeviceId} on topic ${topic}`);
-        debug(`📤 Published to client ${clientIdOrDeviceId}: ${JSON.stringify(message)}`);
-      }
-    });
-  } else {
-    console.error('❌ [MQTT OUT] MQTT client not connected, cannot publish message');
-    console.log(`📊 [MQTT OUT] Client connected: ${this.mqttClient ? this.mqttClient.connected : 'null'}`);
+      this.mqttClient.publish(topic, JSON.stringify(message), (err) => {
+        if (err) {
+          console.error(`❌ [MQTT OUT] Failed to publish to client ${clientIdOrDeviceId}:`, err);
+        } else {
+          console.log(`✅ [MQTT OUT] Successfully published to client ${clientIdOrDeviceId} on topic ${topic}`);
+          debug(`📤 Published to client ${clientIdOrDeviceId}: ${JSON.stringify(message)}`);
+        }
+      });
+    } else {
+      console.error('❌ [MQTT OUT] MQTT client not connected, cannot publish message');
+      console.log(`📊 [MQTT OUT] Client connected: ${this.mqttClient ? this.mqttClient.connected : 'null'}`);
+    }
   }
-}
 
   /**
    * Set up global heartbeat check timer
