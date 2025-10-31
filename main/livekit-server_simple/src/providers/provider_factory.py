@@ -98,31 +98,22 @@ class ProviderFactory:
                 )
                 logger.info(f"🎤 Deepgram STT created successfully")
                 
-                # Add error handling wrapper
-                class DeepgramSTTWrapper:
-                    def __init__(self, stt_instance):
-                        self._stt = stt_instance
-                        
-                    def __getattr__(self, name):
-                        return getattr(self._stt, name)
-                    
-                    async def recognize(self, *, buffer, language=None):
-                        try:
-                            logger.info(f"🎤 [DEEPGRAM] Starting transcription of {len(buffer.data) if hasattr(buffer, 'data') else 'unknown'} bytes")
-                            result = await self._stt.recognize(buffer=buffer, language=language)
-                            logger.info(f"🎤 [DEEPGRAM] Transcription result: '{result}'" if result else "🎤 [DEEPGRAM] Empty transcription result")
-                            return result
-                        except Exception as e:
-                            logger.error(f"❌ [DEEPGRAM] Transcription failed: {e}", exc_info=True)
-                            return ""
+                # Use the original STT without wrapper for now
+                wrapped_stt = deepgram_stt
                 
-                wrapped_stt = DeepgramSTTWrapper(deepgram_stt)
+                # Create StreamAdapter with detailed logging
+                logger.info(f"🎤 Creating StreamAdapter with Deepgram STT and custom VAD")
+                logger.info(f"🎤 STT type: {type(wrapped_stt)}, VAD type: {type(vad)}")
                 
                 stream_adapter = stt.StreamAdapter(
                     stt=wrapped_stt,
                     vad=vad
                 )
-                logger.info(f"🎤 Deepgram StreamAdapter created successfully with VAD and error logging")
+                logger.info(f"🎤 Deepgram StreamAdapter created successfully")
+                
+                # Test if the StreamAdapter has the expected methods
+                logger.info(f"🎤 StreamAdapter methods: {[m for m in dir(stream_adapter) if not m.startswith('_')]}")
+                
                 return stream_adapter
             else:
                 # Default to Groq with StreamAdapter and VAD

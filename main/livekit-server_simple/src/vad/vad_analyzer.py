@@ -176,11 +176,7 @@ class VADAnalyzer(ABC):
         self._vad_stopping_count = 0
         self._vad_state: VADState = VADState.QUIET
         
-        # Debug logging
-        logger.info(f"🔧 [VAD-DEBUG] vad_frames={self._vad_frames}, sample_rate={self.sample_rate}")
-        logger.info(f"🔧 [VAD-DEBUG] vad_frames_per_sec={vad_frames_per_sec:.4f}")
-        logger.info(f"🔧 [VAD-DEBUG] stop_secs={self._params.stop_secs}, stop_frames={self._vad_stop_frames}")
-        logger.info(f"🔧 [VAD-DEBUG] Expected stop duration: {self._vad_stop_frames * vad_frames_per_sec:.2f}s")
+
 
     def _get_smoothed_volume(self, audio: bytes) -> float:
         """Calculate smoothed audio volume using exponential smoothing."""
@@ -252,9 +248,7 @@ class VADAnalyzer(ABC):
                     self._vad_stopping_count = 1
                 elif self._vad_state == VADState.STOPPING:
                     self._vad_stopping_count += 1
-                    # Debug logging for stopping count
-                    if self._vad_stopping_count % 10 == 0:  # Log every 10 counts
-                        logger.info(f"🔧 [VAD-DEBUG] STOPPING count: {self._vad_stopping_count}/{self._vad_stop_frames}")
+
 
         if (self._vad_state == VADState.STARTING and
             self._vad_starting_count >= self._vad_start_frames):
