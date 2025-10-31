@@ -8,6 +8,8 @@ import pytz
 import random
 import inspect
 import asyncio
+import os
+from pathlib import Path
 from livekit.agents import (
     Agent,
     RunContext,
@@ -88,6 +90,9 @@ class Assistant(FilteredAgent):
         "path", "gate", "step", "yard", "pond", "well", "nest", "cave",
         "tent", "flag", "drum", "horn"
     ]
+
+    # Audio directory path (relative to project root)
+    AUDIO_DIR = Path(__file__).parent.parent.parent / "audio"
 
     def __init__(self, instructions: str = None, tts_provider=None) -> None:
         # Use provided instructions or fallback to a basic prompt
@@ -1282,13 +1287,17 @@ class Assistant(FilteredAgent):
 
         if self.game_audio_player:
             try:
-                await self.game_audio_player.play("audio/Happy.wav")
+                audio_path = str(self.AUDIO_DIR / "Happy.mp3")
+                logger.info(f"🎵 Playing success sound from: {audio_path}")
+                await self.game_audio_player.play(audio_path)
                 logger.info(f"✅ Success sound played (failures reset: {self.failure_count})")
                 return "Success sound played - child answered correctly!"
             except Exception as e:
                 logger.error(f"Failed to play success sound: {e}")
                 return f"Could not play success sound: {e}"
-        return "Background audio player not available"
+        else:
+            logger.warning("⚠️ Background audio player not available for success sound")
+            return "Background audio player not available"
 
     @function_tool
     async def play_failure_sound(self, context: RunContext) -> str:
@@ -1309,10 +1318,14 @@ class Assistant(FilteredAgent):
         # Play failure sound
         if self.game_audio_player:
             try:
-                await self.game_audio_player.play("audio/Sad.mp3")
+                audio_path = str(self.AUDIO_DIR / "Sad.mp3")
+                logger.info(f"🎵 Playing failure sound from: {audio_path}")
+                await self.game_audio_player.play(audio_path)
                 logger.info(f"❌ Failure sound played (failure {self.failure_count}/{self.max_failures})")
             except Exception as e:
                 logger.error(f"Failed to play failure sound: {e}")
+        else:
+            logger.warning("⚠️ Background audio player not available for failure sound")
 
         # Check if game should restart (2 consecutive failures)
         if self.failure_count >= self.max_failures:
@@ -1340,10 +1353,14 @@ class Assistant(FilteredAgent):
         """
         if self.game_audio_player:
             try:
-                await self.game_audio_player.play("audio/Victory.mp3")
+                audio_path = str(self.AUDIO_DIR / "Victory.mp3")
+                logger.info(f"🎵 Playing victory sound from: {audio_path}")
+                await self.game_audio_player.play(audio_path)
                 logger.info("🎉 Victory sound played")
                 return "Victory sound played - game completed successfully!"
             except Exception as e:
                 logger.error(f"Failed to play victory sound: {e}")
                 return f"Could not play victory sound: {e}"
-        return "Background audio player not available"
+        else:
+            logger.warning("⚠️ Background audio player not available for victory sound")
+            return "Background audio player not available"
