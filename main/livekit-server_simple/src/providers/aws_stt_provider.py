@@ -67,7 +67,8 @@ class MyEventHandler(TranscriptResultStreamHandler):
 class AWSTranscribeSTT(stt.STT):
     """
     Custom AWS Transcribe STT provider for LiveKit
-    Based on xiaozhi-server implementation but adapted for LiveKit agents
+    COMPLETE AUDIO ONLY - Processes complete VAD sessions for best quality
+    No individual frame streaming - only complete audio from VAD triggers
     """
 
     def __init__(
@@ -77,6 +78,8 @@ class AWSTranscribeSTT(stt.STT):
         region: str = "us-east-1",
         sample_rate: int = 16000,
         timeout: int = 30,
+        save_complete_audio: bool = True,
+        complete_audio_dir: str = "aws_stt_complete_audio",
     ):
         super().__init__(
             capabilities=stt.STTCapabilities(
@@ -108,6 +111,15 @@ class AWSTranscribeSTT(stt.STT):
         self.media_encoding = "pcm"  # Fixed for streaming
         self.timeout = timeout
         
+        # Complete audio session handling
+        self.save_complete_audio = save_complete_audio
+        self.complete_audio_dir = complete_audio_dir
+        self._complete_audio_counter = 0
+        
+        # Create directory for complete audio files
+        if self.save_complete_audio:
+            self._ensure_complete_audio_dir()
+        
         # Indian languages supported by Amazon Transcribe
         self.supported_indian_languages = {
             "hi-IN": "Hindi",
@@ -127,8 +139,156 @@ class AWSTranscribeSTT(stt.STT):
         
         logger.info(
             f"AWS Transcribe STT initialized - Region: {self.aws_region}, "
-            f"Language: {self.language_code}, Sample Rate: {self.sample_rate}"
+            f"Language: {self.language_code}, Sample Rate: {self.sample_rate}, "
+            f"Complete Audio: {self.save_complete_audio}"
         )
+
+    def _ensure_complete_audio_dir(self):
+        """Ensure the complete audio save directory exists."""
+        try:
+            if not os.path.exists(self.complete_audio_dir):
+                os.makedirs(self.complete_audio_dir)
+                logger.info(f"Created complete audio directory: {self.complete_audio_dir}")
+        except Exception as e:
+            logger.error(f"Failed to create complete audio directory: {e}")
+
+    async def transcribe_complete_audio(self, audio_frames: list, session_id: str = None) -> Optional[str]:
+        """Transcribe complete audio session using AWS Transcribe.
+        
+        This method takes the complete audio collected by VAD and sends it
+        to AWS Transcribe for high-quality transcription.
+        
+        Args:
+            audio_frames: List of rtc.AudioFrame objects from VAD
+            session_id: Optional session identifier for logging
+            
+        Returns:
+            Transcribed text or None if transcription failed
+        """
+        if not audio_frames:
+            logger.warning("No audio frames provided for complete transcription")
+            return None
+            
+        try:
+            # Convert frames to continuous audio data
+            audio_data = b""
+            for frame in audio_frames:
+                if hasattr(frame, 'data'):
+                    if isinstance(frame.data, memoryview):
+                        audio_data += frame.data.tobytes()
+                    elif hasattr(frame.data, 'tobytes'):
+                        audio_data += frame.data.tobytes()
+                    else:
+                        audio_data += bytes(frame.data)
+            
+            if not audio_data:
+                logger.warning("No audio data extracted from frames")
+                return None
+            
+            duration = len(audio_data) / (self.sample_rate * 2)  # 16-bit = 2 bytes per sample
+            logger.info(f"🎯 [COMPLETE-STT] Processing complete audio session: {len(audio_frames)} frames, "
+                       f"{len(audio_data)} bytes, {duration:.2f}s")
+            
+            # Save complete audio file if enabled
+            if self.save_complete_audio:
+                await self._save_complete_audio_file(audio_data, session_id)
+            
+            # Create a dedicated transcription session for complete audio
+            transcription = await self._transcribe_complete_session(audio_data, session_id)
+            
+            if transcription:
+                logger.info(f"✅ [COMPLETE-STT] Transcription successful: '{transcription}' (session: {session_id})")
+            else:
+                logger.warning(f"⚠️ [COMPLETE-STT] No transcription result (session: {session_id})")
+                
+            return transcription
+            
+        except Exception as e:
+            logger.error(f"❌ [COMPLETE-STT] Failed to transcribe complete audio: {e}", exc_info=True)
+            return None
+
+    async def _save_complete_audio_file(self, audio_data: bytes, session_id: str = None):
+        """Save complete audio data as WAV file."""
+        try:
+            import wave
+            from datetime import datetime
+            
+            self._complete_audio_counter += 1
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            session_suffix = f"_{session_id}" if session_id else ""
+            filename = f"complete_audio_{timestamp}_{self._complete_audio_counter:03d}{session_suffix}.wav"
+            filepath = os.path.join(self.complete_audio_dir, filename)
+            
+            with wave.open(filepath, 'wb') as wav_file:
+                wav_file.setnchannels(1)  # Mono
+                wav_file.setsampwidth(2)  # 16-bit
+                wav_file.setframerate(self.sample_rate)
+                wav_file.writeframes(audio_data)
+            
+            duration = len(audio_data) / (self.sample_rate * 2)
+            logger.info(f"💾 [COMPLETE-STT] Saved complete audio: {filepath} "
+                       f"(duration: {duration:.2f}s, size: {len(audio_data)} bytes)")
+                       
+        except Exception as e:
+            logger.error(f"❌ [COMPLETE-STT] Failed to save audio file: {e}")
+
+    async def _transcribe_complete_session(self, audio_data: bytes, session_id: str = None) -> Optional[str]:
+        """Transcribe complete audio session using AWS Transcribe streaming."""
+        try:
+            # Create a new streaming client for this complete session
+            stream_client = TranscribeStreamingClient(region=self.aws_region)
+            
+            # SIMPLIFIED: Use 16kHz consistently throughout the pipeline
+            # ESP32 sends 16kHz audio, AWS STT processes it at 16kHz
+            effective_sample_rate = 16000  # Native ESP32 sample rate
+            
+            # Configure streaming parameters with correct sample rate
+            stream_params = {
+                'media_sample_rate_hz': effective_sample_rate,
+                'media_encoding': self.media_encoding,
+                'language_code': self.language_code
+            }
+            
+            logger.debug(f"🎯 [COMPLETE-STT] Starting dedicated transcription stream (session: {session_id})")
+            
+            # Start streaming transcription
+            stream = await stream_client.start_stream_transcription(**stream_params)
+            
+            # Create handler to collect results
+            handler = CompleteAudioHandler(stream.output_stream)
+            
+            # Start processing events in background
+            handler_task = asyncio.create_task(handler.process_events())
+            
+            # Send all audio data at once (in chunks to avoid overwhelming)
+            chunk_size = 8192  # 8KB chunks
+            for i in range(0, len(audio_data), chunk_size):
+                chunk = audio_data[i:i + chunk_size]
+                await stream.input_stream.send_audio_event(audio_chunk=chunk)
+                # Small delay to prevent overwhelming the stream
+                await asyncio.sleep(0.01)
+            
+            # End the stream
+            await stream.input_stream.end_stream()
+            
+            # Wait for processing to complete (with timeout)
+            try:
+                await asyncio.wait_for(handler_task, timeout=self.timeout)
+            except asyncio.TimeoutError:
+                logger.warning(f"⚠️ [COMPLETE-STT] Transcription timeout after {self.timeout}s")
+                handler_task.cancel()
+            
+            # Get the final transcription
+            final_transcript = handler.get_final_transcript()
+            
+            if final_transcript:
+                logger.info(f"✅ [COMPLETE-STT] Final transcript: '{final_transcript}' (session: {session_id})")
+            
+            return final_transcript
+            
+        except Exception as e:
+            logger.error(f"❌ [COMPLETE-STT] Transcription session failed: {e}", exc_info=True)
+            return None
 
     def _init_aws_session(self):
         """Initialize AWS session and verify credentials"""
@@ -152,12 +312,12 @@ class AWSTranscribeSTT(stt.STT):
             logger.error(f"Failed to initialize AWS session: {e}")
             raise
 
-    def stream(self, *, language: str = None, conn_options=None, **kwargs) -> "SpeechStream":
+    def stream(self, *, language: str = None, conn_options=None, **kwargs) -> "CompleteAudioSpeechStream":
         """
-        Create a streaming speech recognition session
-        This is the correct method for streaming STT providers
+        Create a complete audio speech recognition session
+        This only processes complete VAD sessions, not individual frames
         """
-        return SpeechStream(
+        return CompleteAudioSpeechStream(
             stt=self,
             language=language or self.language_code,
             conn_options=conn_options,
@@ -166,10 +326,10 @@ class AWSTranscribeSTT(stt.STT):
 
     async def _recognize_impl(self, buffer: utils.AudioBuffer, *, language: str = None, conn_options=None, **kwargs) -> stt.SpeechEvent:
         """
-        Single frame recognition - not supported by AWS Transcribe
-        This method is required by the abstract base class but AWS Transcribe only supports streaming
+        Single frame recognition - not used in complete audio mode
+        This method is required by the abstract base class
         """
-        raise NotImplementedError("Amazon Transcribe does not support single frame recognition. Use streaming mode instead.")
+        raise NotImplementedError("This STT provider only processes complete VAD audio sessions, not individual frames.")
 
 
 
@@ -188,9 +348,10 @@ class AWSTranscribeSTT(stt.STT):
         ]
 
 
-class SpeechStream(stt.SpeechStream):
+class CompleteAudioSpeechStream(stt.SpeechStream):
     """
-    Streaming speech recognition session for AWS Transcribe
+    Complete Audio Speech Recognition Stream for AWS Transcribe
+    Only processes complete VAD audio sessions - no individual frame streaming
     """
     
     def __init__(self, *, stt: AWSTranscribeSTT, language: str, conn_options=None, **kwargs):
@@ -198,155 +359,46 @@ class SpeechStream(stt.SpeechStream):
         self._stt = stt
         self._language = language
         self._closed = False
-        self._cleanup_done = False
-        self._audio_buffer = []
-        self._transcribe_task = None
-        self._stream_client = None
-        self._stream = None
-        self._handler = None
+        logger.info(f"🎯 [COMPLETE-STT] Stream initialized - language: {language}")
         
     async def _run(self):
-        """Main streaming task - required by abstract base class"""
-        return await self._main_task()
-        
-    async def _main_task(self):
-        """Main streaming task"""
+        """Main task - just wait for complete audio sessions"""
+        logger.info(f"🎯 [COMPLETE-STT] Stream ready for complete audio sessions")
         try:
-            # Initialize AWS Transcribe streaming client
-            self._stream_client = TranscribeStreamingClient(region=self._stt.aws_region)
-            
-            # Configure streaming parameters
-            stream_params = {
-                'media_sample_rate_hz': self._stt.sample_rate,
-                'media_encoding': self._stt.media_encoding,
-                'language_code': self._language
-            }
-            
-            logger.debug(f"Starting AWS Transcribe stream with language: {self._language}")
-            
-            # Start streaming transcription
-            self._stream = await self._stream_client.start_stream_transcription(**stream_params)
-            
-            # Create handler for the stream
-            self._handler = StreamEventHandler(self._stream.output_stream, self._event_ch)
-            
-            # Start processing events
-            await self._handler.process_events()
-            
-        except Exception as e:
-            logger.error(f"AWS Transcribe streaming error: {e}")
-            if not self._closed:
-                event = stt.SpeechEvent(
-                    type=stt.SpeechEventType.FINAL_TRANSCRIPT,
-                    alternatives=[],
-                )
-                # Send error event
-                try:
-                    handler = StreamEventHandler(None, self._event_ch)
-                    await handler._send_event(event)
-                except Exception as send_error:
-                    logger.error(f"Failed to send error event: {send_error}")
+            # Just wait - actual processing happens via transcribe_complete_audio
+            while not self._closed:
+                await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            pass
         finally:
-            await self._cleanup()
-    
-    async def _cleanup(self):
-        """Clean up streaming resources"""
-        if self._cleanup_done:
-            return
-            
-        try:
-            self._closed = True
-            self._cleanup_done = True
-            
-            if self._stream and hasattr(self._stream, 'input_stream'):
-                try:
-                    await self._stream.input_stream.end_stream()
-                except Exception as stream_error:
-                    # Stream might already be closed, which is fine
-                    logger.debug(f"Stream already closed during cleanup: {stream_error}")
-                    
-        except Exception as e:
-            logger.error(f"Error during cleanup: {e}")
+            logger.info(f"🎯 [COMPLETE-STT] Stream closed")
     
     async def aclose(self):
         """Close the speech stream"""
-        if not self._closed:
-            await self._cleanup()
+        self._closed = True
         await super().aclose()
     
     def push_frame(self, frame: rtc.AudioFrame):
-        """Push audio frame to the stream"""
-        if self._closed or self._cleanup_done:
-            return
-            
-        try:
-            # Convert frame data to bytes - handle different data types
-            if isinstance(frame.data, memoryview):
-                # Convert memoryview to bytes directly
-                audio_data = frame.data.tobytes()
-            elif hasattr(frame.data, 'astype'):
-                # Handle numpy arrays
-                audio_data = frame.data.astype(np.int16).tobytes()
-            elif hasattr(frame.data, 'tobytes'):
-                # Handle other array-like objects with tobytes method
-                audio_data = frame.data.tobytes()
-            else:
-                # Convert to numpy array first, then to bytes
-                audio_data = np.frombuffer(frame.data, dtype=np.int16).tobytes()
-            
-            # Send to AWS Transcribe stream (only if stream is ready and not closed)
-            if (self._stream and 
-                hasattr(self._stream, 'input_stream') and 
-                not self._closed and 
-                not self._cleanup_done):
-                
-                # Create task to send audio data
-                async def send_audio():
-                    try:
-                        await self._stream.input_stream.send_audio_event(audio_chunk=audio_data)
-                    except Exception as send_error:
-                        # Stream might be closed, which is fine during cleanup
-                        if not self._closed:
-                            logger.debug(f"Failed to send audio chunk: {send_error}")
-                
-                asyncio.create_task(send_audio())
-                
-        except Exception as e:
-            logger.error(f"Error pushing frame: {e}")
+        """
+        Individual frames are ignored - we only process complete VAD sessions
+        This method exists for compatibility but does nothing
+        """
+        # Do nothing - we only process complete audio from VAD
+        pass
 
 
-class StreamEventHandler(TranscriptResultStreamHandler):
-    """Handler for AWS Transcribe streaming events that sends to LiveKit event channel"""
+class CompleteAudioHandler(TranscriptResultStreamHandler):
+    """Handler for complete audio transcription sessions."""
     
-    def __init__(self, output_stream, event_channel):
+    def __init__(self, output_stream):
         super().__init__(output_stream)
-        self._event_ch = event_channel
-        self._partial_transcript = ""
-        self._output_stream = output_stream
-        
-        # Debug: Log the event channel type and available methods
-        logger.debug(f"Event channel type: {type(event_channel)}")
-        logger.debug(f"Event channel methods: {[m for m in dir(event_channel) if not m.startswith('_')]}")
-    
-    async def _send_event(self, event):
-        """Send event through the channel using the correct method"""
-        try:
-            # For Chan objects, use send_nowait or send
-            if hasattr(self._event_ch, 'send_nowait'):
-                self._event_ch.send_nowait(event)
-            elif hasattr(self._event_ch, 'asend'):
-                await self._event_ch.asend(event)
-            elif hasattr(self._event_ch, 'send'):
-                await self._event_ch.send(event)
-            elif hasattr(self._event_ch, 'put'):
-                await self._event_ch.put(event)
-            else:
-                logger.error(f"Unknown event channel type: {type(self._event_ch)}, methods: {dir(self._event_ch)}")
-        except Exception as e:
-            logger.error(f"Failed to send event: {e}")
+        self._output_stream = output_stream  # Store the output stream
+        self._transcript_parts = []
+        self._final_transcript = ""
+        self._processing_complete = False
         
     async def handle_transcript_event(self, transcript_event: TranscriptEvent):
-        """Handle incoming transcript events and send to LiveKit"""
+        """Handle transcript events for complete audio."""
         try:
             results = transcript_event.transcript.results
             
@@ -354,40 +406,28 @@ class StreamEventHandler(TranscriptResultStreamHandler):
                 if result.alternatives:
                     text = result.alternatives[0].transcript.strip()
                     
-                    if text:
-                        if result.is_partial:
-                            # Send interim result
-                            self._partial_transcript = text
-                            event = stt.SpeechEvent(
-                                type=stt.SpeechEventType.INTERIM_TRANSCRIPT,
-                                alternatives=[
-                                    stt.SpeechData(
-                                        text=text,
-                                        language=None,  # Will be filled by framework
-                                    )
-                                ],
-                            )
-                            await self._send_event(event)
-                        else:
-                            # Send final result
-                            event = stt.SpeechEvent(
-                                type=stt.SpeechEventType.FINAL_TRANSCRIPT,
-                                alternatives=[
-                                    stt.SpeechData(
-                                        text=text,
-                                        language=None,  # Will be filled by framework
-                                    )
-                                ],
-                            )
-                            await self._send_event(event)
-                            
+                    if text and not result.is_partial:
+                        # Only collect final results for complete audio
+                        self._transcript_parts.append(text)
+                        logger.debug(f"[COMPLETE-STT] Final part: '{text}'")
+            
+            # Update final transcript
+            if self._transcript_parts:
+                self._final_transcript = " ".join(self._transcript_parts)
+                
         except Exception as e:
-            logger.error(f"Error handling transcript event: {e}")
+            logger.error(f"Error handling complete audio transcript event: {e}")
     
     async def process_events(self):
-        """Process events from the stream"""
+        """Process all events from the stream."""
         try:
             async for event in self._output_stream:
                 await self.handle_transcript_event(event)
         except Exception as e:
-            logger.error(f"Error processing events: {e}")
+            logger.error(f"Error processing complete audio events: {e}")
+        finally:
+            self._processing_complete = True
+    
+    def get_final_transcript(self) -> str:
+        """Get the final complete transcript."""
+        return self._final_transcript
