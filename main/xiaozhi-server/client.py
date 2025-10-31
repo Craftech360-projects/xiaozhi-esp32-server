@@ -19,9 +19,9 @@ import opuslib
 
 # --- Configuration ---
 
-SERVER_IP = "192.168.1.99"
+SERVER_IP = "10.171.157.210"
 OTA_PORT = 8002
-MQTT_BROKER_HOST = "192.168.1.99"
+MQTT_BROKER_HOST = "10.171.157.210"
 
 
 MQTT_BROKER_PORT = 1883
@@ -591,8 +591,8 @@ class TestClient:
                                     "[PLAY] TTS is active but no audio received. Possible server issue.")
                             buffer_timeout_start = time.time()  # Reset timeout
 
-                        logger.info(
-                            f"[AUDIO] Buffering audio... {self.audio_playback_queue.qsize()}/{PLAYBACK_BUFFER_START_FRAMES}")
+                        # logger.info(
+                        #     f"[AUDIO] Buffering audio... {self.audio_playback_queue.qsize()}/{PLAYBACK_BUFFER_START_FRAMES}")
                         time.sleep(0.05)
                         continue
                     else:

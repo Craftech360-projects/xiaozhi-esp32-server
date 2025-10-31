@@ -7,7 +7,23 @@ from livekit.agents import stt, llm, tts
 
 # Import our custom providers
 from .edge_tts_provider import EdgeTTS
+from .aws_stt_provider import AWSTranscribeSTT
 from ..vad import LiveKitVAD
+
+# Import AWS STT plugin
+try:
+    from livekit.plugins import aws
+    AWS_AVAILABLE = True
+except ImportError:
+    AWS_AVAILABLE = False
+
+# Check if AWS dependencies are available for custom provider
+try:
+    import boto3
+    from amazon_transcribe.client import TranscribeStreamingClient
+    AWS_CUSTOM_AVAILABLE = True
+except ImportError:
+    AWS_CUSTOM_AVAILABLE = False
 
 
 class ProviderFactory:
@@ -42,7 +58,49 @@ class ProviderFactory:
             # Create primary and fallback STT providers with StreamAdapter
             providers = []
 
-            if provider == 'deepgram':
+            if provider == 'aws':
+                import os
+                logger.info(f"🎤 Creating custom AWS Transcribe STT provider")
+                if not AWS_AVAILABLE:
+                    logger.error("❌ AWS dependencies not installed. Install with: pip install boto3 amazon-transcribe")
+                    raise ValueError("AWS dependencies not installed")
+                
+                aws_access_key_id = os.getenv('AWS_ACCESS_KEY_ID')
+                aws_secret_access_key = os.getenv('AWS_SECRET_ACCESS_KEY')
+                aws_region = config.get('aws_region', 'us-east-1')
+                
+                if not aws_access_key_id or not aws_secret_access_key:
+                    logger.error("❌ AWS credentials not found in environment variables")
+                    raise ValueError("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables are required")
+                
+                logger.info(f"🎤 AWS credentials found, creating custom STT with region: {aws_region}")
+                try:
+                    # Use custom AWS Transcribe STT provider
+                    if AWS_CUSTOM_AVAILABLE:
+                        aws_stt = AWSTranscribeSTT(
+                            language=config['stt_language'],
+                            region=aws_region,
+                            sample_rate=config.get('sample_rate', 16000),
+                            timeout=config.get('timeout', 30)
+                        )
+                        # Custom AWS STT handles streaming internally
+                        providers.append(aws_stt)
+                        logger.info(f"🎤 Custom AWS Transcribe STT created successfully (direct streaming)")
+                    else:
+                        raise ImportError("AWS custom dependencies not available")
+                except Exception as e:
+                    logger.error(f"❌ Failed to create AWS STT, falling back to Groq: {e}")
+                    # Fallback to Groq with compatible language
+                    groq_language = 'en' if config['stt_language'] == 'en-IN' else config['stt_language']
+                    providers.append(stt.StreamAdapter(
+                        stt=groq.STT(
+                            model=config['stt_model'],
+                            language=groq_language
+                        ),
+                        vad=vad
+                    ))
+                    logger.info(f"🎤 Groq STT fallback created successfully")
+            elif provider == 'deepgram':
                 import os
                 logger.info(f"🎤 Creating Deepgram STT provider")
                 api_key = os.getenv('DEEPGRAM_API_KEY')
@@ -60,21 +118,24 @@ class ProviderFactory:
                 ))
                 logger.info(f"🎤 Deepgram StreamAdapter created successfully")
             else:
-                logger.info(f"🎤 Creating Groq STT (fallback path) with model: {config['stt_model']}")
+                # Use 'en' for Groq compatibility when language is 'en-IN'
+                groq_language = 'en' if config['stt_language'] == 'en-IN' else config['stt_language']
+                logger.info(f"🎤 Creating Groq STT (fallback path) with model: {config['stt_model']}, language: {groq_language}")
                 providers.append(stt.StreamAdapter(
                     stt=groq.STT(
                         model=config['stt_model'],
-                        language=config['stt_language']
+                        language=groq_language
                     ),
                     vad=vad
                 ))
                 logger.info(f"🎤 Groq STT StreamAdapter (fallback) created successfully")
 
-            # Add fallback (always Groq)
+            # Add fallback (always Groq) - use 'en' for Groq compatibility
+            fallback_language = 'en' if config['stt_language'] == 'en-IN' else config['stt_language']
             providers.append(stt.StreamAdapter(
                 stt=groq.STT(
                     model=config['stt_model'],
-                    language=config['stt_language']
+                    language=fallback_language
                 ),
                 vad=vad
             ))
@@ -82,7 +143,59 @@ class ProviderFactory:
             return stt.FallbackAdapter(providers)
         else:
             # Single provider with StreamAdapter and VAD
-            if provider == 'deepgram':
+            if provider == 'aws':
+                import os
+                logger.info(f"🎤 Creating single custom AWS Transcribe STT provider")
+                if not AWS_AVAILABLE:
+                    logger.error("❌ AWS dependencies not installed. Install with: pip install boto3 amazon-transcribe")
+                    raise ValueError("AWS dependencies not installed")
+                
+                aws_access_key_id = os.getenv('AWS_ACCESS_KEY_ID')
+                aws_secret_access_key = os.getenv('AWS_SECRET_ACCESS_KEY')
+                aws_region = config.get('aws_region', 'us-east-1')
+                
+                if not aws_access_key_id or not aws_secret_access_key:
+                    logger.error("❌ AWS credentials not found in environment variables")
+                    raise ValueError("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables are required")
+                
+                logger.info(f"🎤 AWS credentials found, creating custom STT with region: {aws_region}")
+                
+                try:
+                    # Use custom AWS Transcribe STT provider
+                    if AWS_CUSTOM_AVAILABLE:
+                        aws_stt = AWSTranscribeSTT(
+                            language=config['stt_language'],
+                            region=aws_region,
+                            sample_rate=config.get('sample_rate', 16000),
+                            timeout=config.get('timeout', 30)
+                        )
+                        logger.info(f"🎤 Custom AWS Transcribe STT created successfully")
+                        
+                        # Custom AWS STT handles streaming internally
+                        logger.info(f"🎤 Custom AWS STT type: {type(aws_stt)} (direct streaming)")
+                        
+                        return aws_stt
+                    else:
+                        raise ImportError("AWS custom dependencies not available")
+                except Exception as e:
+                    logger.error(f"❌ Failed to create AWS STT, falling back to Groq: {e}")
+                    # Fallback to Groq with compatible language
+                    groq_language = 'en' if config['stt_language'] == 'en-IN' else config['stt_language']
+                    logger.info(f"🎤 Creating Groq STT fallback with language: {groq_language}")
+                    
+                    groq_stt = groq.STT(
+                        model=config['stt_model'],
+                        language=groq_language
+                    )
+                    logger.info(f"🎤 Groq STT created successfully")
+                    
+                    stream_adapter = stt.StreamAdapter(
+                        stt=groq_stt,
+                        vad=vad
+                    )
+                    logger.info(f"🎤 Groq StreamAdapter created successfully as AWS fallback")
+                    return stream_adapter
+            elif provider == 'deepgram':
                 import os
                 logger.info(f"🎤 Creating single Deepgram STT provider")
                 api_key = os.getenv('DEEPGRAM_API_KEY')

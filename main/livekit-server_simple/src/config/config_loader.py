@@ -16,15 +16,33 @@ class ConfigLoader:
 
     @staticmethod
     def get_groq_config():
-        """Get Groq configuration from environment variables"""
+        """Get Groq configuration from environment variables and config file"""
+        # Load YAML config to get AWS credentials
+        yaml_config = ConfigLoader.load_yaml_config()
+        
+        # Set AWS environment variables from config if available
+        if 'api_keys' in yaml_config and 'aws' in yaml_config['api_keys']:
+            aws_config = yaml_config['api_keys']['aws']
+            if 'access_key_id' in aws_config:
+                os.environ['AWS_ACCESS_KEY_ID'] = aws_config['access_key_id']
+            if 'secret_access_key' in aws_config:
+                os.environ['AWS_SECRET_ACCESS_KEY'] = aws_config['secret_access_key']
+            logger.info("🔑 AWS credentials loaded from config file")
+        
+        # Get STT provider and AWS region from models config
+        stt_config = yaml_config.get('models', {}).get('stt', {})
+        stt_provider = stt_config.get('provider', os.getenv('STT_PROVIDER', 'groq'))
+        aws_region = stt_config.get('aws_region', 'us-east-1')
+        
         return {
             'llm_model': os.getenv('LLM_MODEL', 'openai/gpt-oss-20b'),
             'stt_model': os.getenv('STT_MODEL', 'whisper-large-v3-turbo'),
             'tts_model': os.getenv('TTS_MODEL', 'playai-tts'),
             'tts_voice': os.getenv('TTS_VOICE', 'Aaliyah-PlayAI'),
-            'stt_language': os.getenv('STT_LANGUAGE', 'en'),
-            'stt_provider': os.getenv('STT_PROVIDER', 'groq'),  # groq or deepgram
+            'stt_language': os.getenv('STT_LANGUAGE', stt_config.get('language', 'en-IN')),
+            'stt_provider': stt_provider,  # groq, deepgram, or aws
             'deepgram_model': os.getenv('DEEPGRAM_MODEL', 'nova-3'),
+            'aws_region': aws_region,  # AWS region for Transcribe
             # Fallback configuration
             'fallback_enabled': os.getenv('FALLBACK_ENABLED', 'false').lower() == 'true',
             'fallback_llm_model': os.getenv('FALLBACK_LLM_MODEL', 'llama-3.1-8b-instant'),
