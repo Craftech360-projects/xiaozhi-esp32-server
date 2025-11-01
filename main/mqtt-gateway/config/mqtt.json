@@ -13,5 +13,13 @@
     "url": "ws://localhost:7880",
     "api_key": "devkey",
     "api_secret": "a7f8e3d2c1b9a0f6e5d4c3b2a1f9e8d7c6b5a4f3e2d1c0b9a8f7"
+  },
+  "audio_recording": {
+    "enabled": true,
+    "max_duration_seconds": 30,
+    "format": "wav",
+    "sample_rate": 16000,
+    "channels": 1,
+    "bits_per_sample": 16
   }
 }

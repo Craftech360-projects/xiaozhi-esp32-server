@@ -886,6 +886,121 @@ configManager.on("configChanged", (config) => {
 });
 setDebugEnabled(configManager.get("debug"));
 
+/**
+ * WAV file writer for audio recording and quality analysis
+ */
+class WAVWriter {
+  constructor(filePath, sampleRate = 16000, channels = 1, bitsPerSample = 16) {
+    this.filePath = filePath;
+    this.sampleRate = sampleRate;
+    this.channels = channels;
+    this.bitsPerSample = bitsPerSample;
+    this.bytesPerSample = bitsPerSample / 8;
+    this.blockAlign = channels * this.bytesPerSample;
+    this.byteRate = sampleRate * this.blockAlign;
+    
+    this.audioData = [];
+    this.totalBytes = 0;
+    this.isFinalized = false;
+    this.startTime = Date.now();
+    
+    console.log(`🎵 [WAV] Creating WAV writer: ${filePath} (${sampleRate}Hz, ${channels}ch, ${bitsPerSample}bit)`);
+  }
+
+  writeAudio(pcmData) {
+    if (this.isFinalized) {
+      console.warn(`⚠️ [WAV] Cannot write to finalized WAV file: ${this.filePath}`);
+      return;
+    }
+
+    if (!Buffer.isBuffer(pcmData)) {
+      console.warn(`⚠️ [WAV] Invalid audio data type, expected Buffer`);
+      return;
+    }
+
+    this.audioData.push(pcmData);
+    this.totalBytes += pcmData.length;
+  }
+
+  finalize() {
+    if (this.isFinalized) {
+      console.warn(`⚠️ [WAV] WAV file already finalized: ${this.filePath}`);
+      return this.filePath;
+    }
+
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      
+      // Ensure directory exists
+      const dir = path.dirname(this.filePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+
+      // Create WAV header
+      const header = this.createWAVHeader();
+      
+      // Combine header and audio data
+      const audioBuffer = Buffer.concat(this.audioData);
+      const wavFile = Buffer.concat([header, audioBuffer]);
+      
+      // Write to file
+      fs.writeFileSync(this.filePath, wavFile);
+      
+      this.isFinalized = true;
+      const duration = (Date.now() - this.startTime) / 1000;
+      
+      console.log(`✅ [WAV] Saved WAV file: ${this.filePath}`);
+      console.log(`   📊 Duration: ${(this.totalBytes / this.byteRate).toFixed(2)}s (recorded in ${duration.toFixed(1)}s)`);
+      console.log(`   📦 Size: ${wavFile.length} bytes (${this.totalBytes} audio + ${header.length} header)`);
+      
+      return this.filePath;
+    } catch (error) {
+      console.error(`❌ [WAV] Failed to save WAV file ${this.filePath}:`, error.message);
+      throw error;
+    }
+  }
+
+  createWAVHeader() {
+    const header = Buffer.alloc(44);
+    let offset = 0;
+
+    // RIFF header
+    header.write('RIFF', offset); offset += 4;
+    header.writeUInt32LE(36 + this.totalBytes, offset); offset += 4; // File size - 8
+    header.write('WAVE', offset); offset += 4;
+
+    // fmt chunk
+    header.write('fmt ', offset); offset += 4;
+    header.writeUInt32LE(16, offset); offset += 4; // fmt chunk size
+    header.writeUInt16LE(1, offset); offset += 2;  // PCM format
+    header.writeUInt16LE(this.channels, offset); offset += 2;
+    header.writeUInt16LE(this.sampleRate, offset); offset += 4;
+    header.writeUInt32LE(this.byteRate, offset); offset += 4;
+    header.writeUInt16LE(this.blockAlign, offset); offset += 2;
+    header.writeUInt16LE(this.bitsPerSample, offset); offset += 2;
+
+    // data chunk
+    header.write('data', offset); offset += 4;
+    header.writeUInt32LE(this.totalBytes, offset); offset += 4;
+
+    return header;
+  }
+
+  getStats() {
+    return {
+      filePath: this.filePath,
+      sampleRate: this.sampleRate,
+      channels: this.channels,
+      bitsPerSample: this.bitsPerSample,
+      totalBytes: this.totalBytes,
+      durationSeconds: this.totalBytes / this.byteRate,
+      isFinalized: this.isFinalized
+    };
+  }
+}
+
 class LiveKitBridge extends Emitter {
   constructor(connection, protocolVersion, macAddress, uuid, userData) {
     super();
@@ -911,6 +1026,12 @@ class LiveKitBridge extends Emitter {
 
     // Initialize audio resampler for 48kHz -> 24kHz conversion (outgoing: LiveKit -> ESP32)
     this.audioResampler = new AudioResampler(48000, 24000, 1, AudioResamplerQuality.QUICK);
+
+    // WAV recording for incoming audio quality analysis
+    this.wavRecorder = null;
+    this.recordingEnabled = configManager.get("audio_recording")?.enabled || false;
+    this.recordingMaxDuration = configManager.get("audio_recording")?.max_duration_seconds || 30;
+    this.recordingStartTime = null;
 
     // Frame buffer for accumulating resampled audio into proper frame sizes
     this.frameBuffer = Buffer.alloc(0);
@@ -1426,6 +1547,11 @@ class LiveKitBridge extends Emitter {
       return;
     }
 
+    // Initialize WAV recording if enabled and not already started
+    if (this.recordingEnabled && !this.wavRecorder) {
+      this.startWAVRecording();
+    }
+
     try {
       // PHASE 1: Improved Opus detection - check if data is likely Opus
       const isOpus = this.checkOpusFormat(opusData);
@@ -1438,6 +1564,9 @@ class LiveKitBridge extends Emitter {
           // console.log(`✅ [WORKER DECODE] Decoded ${opusData.length}B Opus → ${pcmBuffer.length}B PCM`);
 
           if (pcmBuffer && pcmBuffer.length > 0) {
+            // Record PCM audio to WAV file if recording is enabled (this is the decoded PCM)
+            this.recordPCMAudio(pcmBuffer);
+
             // Convert Buffer to Int16Array
             const samples = new Int16Array(
               pcmBuffer.buffer,
@@ -1457,6 +1586,7 @@ class LiveKitBridge extends Emitter {
 
           // PHASE 2: Fallback to PCM if worker decode fails (likely false positive detection)
           console.log(`⚠️ [FALLBACK] Treating as PCM instead`);
+          
           const samples = new Int16Array(
             opusData.buffer,
             opusData.byteOffset,
@@ -1469,6 +1599,7 @@ class LiveKitBridge extends Emitter {
         }
       } else {
         // Treat as PCM directly
+        
         const samples = new Int16Array(
           opusData.buffer,
           opusData.byteOffset,
@@ -1483,6 +1614,123 @@ class LiveKitBridge extends Emitter {
       }
     } catch (error) {
       console.error(`❌ [AUDIO] Error in sendAudio: ${error.message}`);
+    }
+  }
+
+  /**
+   * Start WAV recording for incoming audio
+   */
+  startWAVRecording() {
+    if (this.wavRecorder) {
+      console.warn(`⚠️ [WAV] Recording already in progress`);
+      return;
+    }
+
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      
+      // Create recordings directory if it doesn't exist
+      const recordingsDir = path.join(__dirname, 'recordings');
+      if (!fs.existsSync(recordingsDir)) {
+        fs.mkdirSync(recordingsDir, { recursive: true });
+      }
+
+      // Generate filename with timestamp and device MAC
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const macForFilename = this.macAddress.replace(/:/g, '_');
+      const filename = `esp32_audio_${macForFilename}_${timestamp}.wav`;
+      const filePath = path.join(recordingsDir, filename);
+
+      // Create WAV writer (16kHz mono 16-bit PCM)
+      this.wavRecorder = new WAVWriter(filePath, 16000, 1, 16);
+      this.recordingStartTime = Date.now();
+
+      console.log(`🎵 [WAV] Started recording incoming audio: ${filename}`);
+      console.log(`   📊 Max duration: ${this.recordingMaxDuration}s`);
+      
+      // Set up auto-stop timer
+      setTimeout(() => {
+        this.stopWAVRecording('max_duration_reached');
+      }, this.recordingMaxDuration * 1000);
+
+    } catch (error) {
+      console.error(`❌ [WAV] Failed to start recording: ${error.message}`);
+      this.wavRecorder = null;
+    }
+  }
+
+  /**
+   * Record PCM audio data to WAV file
+   */
+  recordPCMAudio(audioData) {
+    if (!this.wavRecorder || !this.recordingEnabled) {
+      return;
+    }
+
+    try {
+      // Check if recording duration exceeded
+      const recordingDuration = (Date.now() - this.recordingStartTime) / 1000;
+      if (recordingDuration > this.recordingMaxDuration) {
+        this.stopWAVRecording('max_duration_reached');
+        return;
+      }
+
+      // Ensure we have a Buffer object
+      let pcmBuffer = null;
+      
+      if (Buffer.isBuffer(audioData)) {
+        pcmBuffer = audioData;
+        console.log(`🎵 [WAV] Recording Buffer: ${audioData.length} bytes`);
+      } else if (audioData instanceof Uint8Array) {
+        pcmBuffer = Buffer.from(audioData);
+        console.log(`🎵 [WAV] Recording Uint8Array: ${audioData.length} bytes → Buffer: ${pcmBuffer.length} bytes`);
+      } else if (audioData instanceof ArrayBuffer) {
+        pcmBuffer = Buffer.from(audioData);
+        console.log(`🎵 [WAV] Recording ArrayBuffer: ${audioData.byteLength} bytes → Buffer: ${pcmBuffer.length} bytes`);
+      } else if (typeof audioData === 'object' && audioData.buffer) {
+        // Handle typed arrays like Int16Array, Float32Array, etc.
+        pcmBuffer = Buffer.from(audioData.buffer, audioData.byteOffset, audioData.byteLength);
+        console.log(`🎵 [WAV] Recording ${audioData.constructor.name}: ${audioData.byteLength} bytes → Buffer: ${pcmBuffer.length} bytes`);
+      } else {
+        console.warn(`⚠️ [WAV] Unsupported audio data type: ${typeof audioData}, constructor: ${audioData?.constructor?.name}`);
+        return;
+      }
+
+      // Write PCM data to WAV file
+      this.wavRecorder.writeAudio(pcmBuffer);
+      
+    } catch (error) {
+      console.error(`❌ [WAV] Error recording audio: ${error.message}`);
+    }
+  }
+
+  /**
+   * Stop WAV recording and finalize the file
+   */
+  stopWAVRecording(reason = 'manual') {
+    if (!this.wavRecorder) {
+      return;
+    }
+
+    try {
+      const recordingDuration = (Date.now() - this.recordingStartTime) / 1000;
+      const savedFile = this.wavRecorder.finalize();
+      
+      console.log(`🛑 [WAV] Stopped recording (${reason})`);
+      console.log(`   ⏱️ Duration: ${recordingDuration.toFixed(1)}s`);
+      console.log(`   📁 File: ${savedFile}`);
+      
+      // Get recording statistics
+      const stats = this.wavRecorder.getStats();
+      console.log(`   📊 Audio data: ${stats.totalBytes} bytes (${stats.durationSeconds.toFixed(2)}s)`);
+      
+      this.wavRecorder = null;
+      this.recordingStartTime = null;
+      
+    } catch (error) {
+      console.error(`❌ [WAV] Error stopping recording: ${error.message}`);
+      this.wavRecorder = null;
     }
   }
 
@@ -2412,6 +2660,11 @@ class LiveKitBridge extends Emitter {
   }
 
   async close() {
+    // Stop WAV recording if active
+    if (this.wavRecorder) {
+      this.stopWAVRecording('connection_closed');
+    }
+
     if (this.room) {
       console.log("[LiveKitBridge] Disconnecting from LiveKit room");
 
@@ -2899,6 +3152,27 @@ class VirtualMQTTConnection {
       return;
     }
 
+    // Handle recording control messages
+    if (json.type === "recording_control") {
+      const command = json.command;
+      console.log(`🎛️ [RECORDING] Received recording control: ${command} for device: ${this.deviceId}`);
+      
+      if (command === "start" && this.bridge) {
+        this.bridge.recordingEnabled = true;
+        if (!this.bridge.wavRecorder) {
+          this.bridge.startWAVRecording();
+        }
+        console.log(`🎵 [RECORDING] Started recording for device: ${this.deviceId}`);
+      } else if (command === "stop" && this.bridge && this.bridge.wavRecorder) {
+        this.bridge.stopWAVRecording('manual_stop');
+        console.log(`🛑 [RECORDING] Stopped recording for device: ${this.deviceId}`);
+      } else if (command === "status" && this.bridge) {
+        const isRecording = !!this.bridge.wavRecorder;
+        console.log(`📊 [RECORDING] Status for device ${this.deviceId}: ${isRecording ? 'Recording' : 'Not recording'}`);
+      }
+      return;
+    }
+
     // Handle function_call from mobile app - forward directly to LiveKit agent
     if (json.type === "function_call" && json.source === "mobile_app") {
       try {
@@ -3154,6 +3428,53 @@ class VirtualMQTTConnection {
     }
 
     // Virtual connections don't need traditional keep-alive since EMQX handles it
+  }
+
+  /**
+   * Manually start audio recording
+   */
+  startRecording() {
+    if (this.bridge) {
+      this.bridge.recordingEnabled = true;
+      if (!this.bridge.wavRecorder) {
+        this.bridge.startWAVRecording();
+      }
+      console.log(`🎵 [MANUAL] Started recording for device: ${this.deviceId}`);
+    } else {
+      console.warn(`⚠️ [MANUAL] Cannot start recording - no bridge available for device: ${this.deviceId}`);
+    }
+  }
+
+  /**
+   * Manually stop audio recording
+   */
+  stopRecording() {
+    if (this.bridge && this.bridge.wavRecorder) {
+      this.bridge.stopWAVRecording('manual_stop');
+      console.log(`🛑 [MANUAL] Stopped recording for device: ${this.deviceId}`);
+    } else {
+      console.warn(`⚠️ [MANUAL] No active recording for device: ${this.deviceId}`);
+    }
+  }
+
+  /**
+   * Get recording status
+   */
+  getRecordingStatus() {
+    if (!this.bridge) {
+      return { recording: false, reason: 'no_bridge' };
+    }
+
+    const isRecording = !!this.bridge.wavRecorder;
+    const stats = isRecording ? this.bridge.wavRecorder.getStats() : null;
+    
+    return {
+      recording: isRecording,
+      enabled: this.bridge.recordingEnabled,
+      stats: stats,
+      duration: stats ? stats.durationSeconds : 0,
+      filePath: stats ? stats.filePath : null
+    };
   }
 
   close() {
@@ -3454,12 +3775,108 @@ class MQTTGateway {
         } else {
           console.log(`❓ [UNKNOWN] Unknown message type '${messageType}' from device: ${deviceId}`);
         }
+      } else if (topic.startsWith('control/recording/')) {
+        // Handle recording control commands: control/recording/{device_id}/{command}
+        const controlParts = topic.split('/');
+        if (controlParts.length >= 4) {
+          const deviceId = controlParts[2];
+          const command = controlParts[3];
+          
+          console.log(`🎛️ [CONTROL] Recording control command: ${command} for device: ${deviceId}`);
+          this.handleRecordingControl(deviceId, command, payload);
+        } else {
+          console.log(`❓ [CONTROL] Invalid recording control topic format: ${topic}`);
+        }
       } else {
         console.log(`❓ [MQTT IN] Message on unexpected topic format: ${topic}`);
       }
     } catch (error) {
       console.error('❌ [MQTT IN] Error processing MQTT message:', error);
       console.log(`📨 [MQTT IN] Raw message:`, message.toString());
+    }
+  }
+
+  /**
+   * Handle recording control commands via MQTT
+   * Topic format: control/recording/{device_id}/{command}
+   * Commands: start, stop, status
+   */
+  handleRecordingControl(deviceId, command, payload) {
+    try {
+      // Find the device connection
+      const deviceInfo = this.deviceConnections.get(deviceId);
+      if (!deviceInfo || !deviceInfo.connection) {
+        console.warn(`⚠️ [CONTROL] Device not found: ${deviceId}`);
+        this.publishRecordingResponse(deviceId, command, { 
+          success: false, 
+          error: 'device_not_found' 
+        });
+        return;
+      }
+
+      const connection = deviceInfo.connection;
+      let response = { success: true };
+
+      switch (command) {
+        case 'start':
+          connection.startRecording();
+          response.message = 'Recording started';
+          break;
+
+        case 'stop':
+          connection.stopRecording();
+          response.message = 'Recording stopped';
+          break;
+
+        case 'status':
+          const status = connection.getRecordingStatus();
+          response = { success: true, ...status };
+          break;
+
+        default:
+          response = { 
+            success: false, 
+            error: 'unknown_command',
+            available_commands: ['start', 'stop', 'status']
+          };
+          console.warn(`⚠️ [CONTROL] Unknown recording command: ${command}`);
+      }
+
+      this.publishRecordingResponse(deviceId, command, response);
+
+    } catch (error) {
+      console.error(`❌ [CONTROL] Error handling recording control: ${error.message}`);
+      this.publishRecordingResponse(deviceId, command, { 
+        success: false, 
+        error: error.message 
+      });
+    }
+  }
+
+  /**
+   * Publish recording control response
+   */
+  publishRecordingResponse(deviceId, command, response) {
+    try {
+      const responseTopic = `control/recording/${deviceId}/${command}/response`;
+      const responsePayload = JSON.stringify({
+        timestamp: new Date().toISOString(),
+        device_id: deviceId,
+        command: command,
+        ...response
+      });
+
+      if (this.mqttClient && this.mqttClient.connected) {
+        this.mqttClient.publish(responseTopic, responsePayload, (err) => {
+          if (err) {
+            console.error(`❌ [CONTROL] Failed to publish recording response: ${err.message}`);
+          } else {
+            console.log(`✅ [CONTROL] Published recording response to: ${responseTopic}`);
+          }
+        });
+      }
+    } catch (error) {
+      console.error(`❌ [CONTROL] Error publishing recording response: ${error.message}`);
     }
   }
 
