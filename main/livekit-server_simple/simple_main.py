@@ -728,5 +728,5 @@ if __name__ == "__main__":
         prewarm_fnc=prewarm,
         num_idle_processes=2,  # Reduced for lower thread usage (was 6)
         initialize_process_timeout=60.0,
-        agent_name="cheeko-agent",  # Named agent for explicit dispatch only
+        # agent_name="cheeko-agent",  # Named agent for explicit dispatch only
     ))
