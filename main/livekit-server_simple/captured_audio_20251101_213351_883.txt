@@ -1,0 +1,5 @@
+Timestamp: 20251101_213351_883
+Duration: 5.20s
+Audio bytes: 498240
+Sample rate: 16000Hz
+Transcript:  Hello, am I audible to you? Just checking is everything working or not?

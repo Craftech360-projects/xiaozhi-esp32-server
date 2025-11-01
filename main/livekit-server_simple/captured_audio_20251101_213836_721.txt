@@ -1,0 +1,5 @@
+Timestamp: 20251101_213836_721
+Duration: 4.65s
+Audio bytes: 445440
+Sample rate: 48000Hz
+Transcript:  Okay, can you play Joanie Joanie as Papa?

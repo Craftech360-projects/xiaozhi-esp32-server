@@ -1,0 +1,4 @@
+Timestamp: 20251101_210221
+Transcript:  Bobby.
+Language: en
+Provider: Groq (streaming)

@@ -1,0 +1,4 @@
+Timestamp: 20251101_210239
+Transcript:  you know,
+Language: en
+Provider: Groq (streaming)

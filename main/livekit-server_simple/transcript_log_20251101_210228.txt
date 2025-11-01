@@ -1,0 +1,4 @@
+Timestamp: 20251101_210228
+Transcript:  Thank you.
+Language: en
+Provider: Groq (streaming)

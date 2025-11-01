@@ -1,0 +1,4 @@
+Timestamp: 20251101_210237
+Transcript:  Let me use 700グ nuit
+Language: en
+Provider: Groq (streaming)

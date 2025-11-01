@@ -1,0 +1,4 @@
+Timestamp: 20251101_210227
+Transcript:  Every week you enter your data or you enter your Todo Day
+Language: en
+Provider: Groq (streaming)

@@ -1,0 +1,4 @@
+Timestamp: 20251101_210216
+Transcript:  given the user his tuners
+Language: en
+Provider: Groq (streaming)

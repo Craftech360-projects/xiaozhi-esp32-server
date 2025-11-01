@@ -1,0 +1,4 @@
+Timestamp: 20251101_210016
+Transcript:  Hello, am I audible?
+Language: en
+Provider: Groq (streaming)

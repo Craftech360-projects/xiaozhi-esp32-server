@@ -124,10 +124,10 @@ class KidsOptimizedVADWrapper:
         self._call_count = 0
         self._last_reset_time = time.time()
         
-        # Kids-optimized parameters - MAXIMUM SENSITIVITY FOR WHISPERS
+        # Kids-optimized parameters - OPTIMIZED FOR BUFFERED AUDIO MODE
         self.sensitivity_threshold = 0.001  # MAXIMUM sensitivity (1000x more than default!)
         self.start_secs = 0.05             # INSTANT voice start confirmation
-        self.stop_secs = 5.0               # Very long delay before voice end
+        self.stop_secs = 2.0               # ← Reduced from 5.0s for faster response in buffered mode
         self.min_volume_threshold = 0.00001 # ULTRA sensitive minimum volume (100x more sensitive)
         self.pre_padding_ms = 1200         # Extra long audio padding
         self.volume_boost_factor = 10.0    # MAXIMUM boost for quiet audio

@@ -1,0 +1,4 @@
+Timestamp: 20251101_210208
+Transcript:  No problem with the number.
+Language: en
+Provider: Groq (streaming)
