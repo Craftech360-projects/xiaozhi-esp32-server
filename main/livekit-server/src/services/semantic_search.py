@@ -21,6 +21,7 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+
 @dataclass
 class QdrantSearchResult:
     """Enhanced search result with vector scoring"""
@@ -31,6 +32,7 @@ class QdrantSearchResult:
     metadata: Dict
     alternatives: List[str]
     romanized: str
+
 
 class QdrantSemanticSearch:
     """
@@ -64,7 +66,8 @@ class QdrantSemanticSearch:
         }
 
         if not QDRANT_AVAILABLE:
-            logger.warning("Qdrant dependencies not available, semantic search will be limited")
+            logger.warning(
+                "Qdrant dependencies not available, semantic search will be limited")
 
     def _parse_allowed_languages(self) -> List[str]:
         """Parse allowed music languages from environment variable
@@ -74,31 +77,39 @@ class QdrantSemanticSearch:
         """
         allowed = os.getenv("ALLOWED_MUSIC_LANGUAGES", "")
         if allowed:
-            languages = [lang.strip() for lang in allowed.split(",") if lang.strip()]
-            logger.info(f"🎵 Music search restricted to languages: {', '.join(languages)}")
+            languages = [lang.strip()
+                         for lang in allowed.split(",") if lang.strip()]
+            logger.info(
+                f"🎵 Music search restricted to languages: {', '.join(languages)}")
             return languages
         else:
-            logger.info("🎵 Music search enabled for ALL languages (no restrictions)")
+            logger.info(
+                "🎵 Music search enabled for ALL languages (no restrictions)")
             return []
 
     async def initialize(self) -> bool:
         """Initialize Qdrant client and embedding model with fallback support"""
         if not self.is_available:
-            logger.warning("Qdrant dependencies not available, semantic search will be limited")
+            logger.warning(
+                "Qdrant dependencies not available, semantic search will be limited")
             return False
 
         # Check if Qdrant configuration is provided
         if not self.config["qdrant_url"] or not self.config["qdrant_api_key"]:
-            logger.warning("Qdrant configuration missing, semantic search will be limited")
+            logger.warning(
+                "Qdrant configuration missing, semantic search will be limited")
             return False
 
         try:
             # Use preloaded model if available, otherwise load it from cache
             if self.model is None:
-                logger.info(f"Loading embedding model from cache: {self.config['embedding_model']}")
+                logger.info(
+                    f"Loading embedding model from cache: {self.config['embedding_model']}")
                 from ..utils.model_cache import model_cache
-                self.model = model_cache.get_embedding_model(self.config["embedding_model"])
-                logger.info(f"✅ Loaded embedding model from cache: {self.config['embedding_model']}")
+                self.model = model_cache.get_embedding_model(
+                    self.config["embedding_model"])
+                logger.info(
+                    f"✅ Loaded embedding model from cache: {self.config['embedding_model']}")
             else:
                 logger.info("✅ Using preloaded embedding model from prewarm")
 
@@ -116,17 +127,18 @@ class QdrantSemanticSearch:
             try:
                 collections = self.client.get_collections()
                 logger.info("✅ Connected to Qdrant cloud successfully")
-                
+
                 # Check if collections exist and have data
                 await self._ensure_collections_exist()
-                
+
                 self.is_initialized = True
                 return True
-                
+
             except Exception as conn_error:
                 logger.error(f"❌ Qdrant connection failed: {conn_error}")
-                logger.info("🔄 Semantic search will work with local embeddings only")
-                
+                logger.info(
+                    "🔄 Semantic search will work with local embeddings only")
+
                 # Still mark as initialized if we have the embedding model
                 # This allows for local similarity calculations
                 self.is_initialized = True
@@ -141,17 +153,23 @@ class QdrantSemanticSearch:
         try:
             # Check music collection exists
             try:
-                music_info = self.client.get_collection(self.config["music_collection"])
-                logger.info(f"Music collection '{self.config['music_collection']}' found with {music_info.points_count} points")
+                music_info = self.client.get_collection(
+                    self.config["music_collection"])
+                logger.info(
+                    f"Music collection '{self.config['music_collection']}' found with {music_info.points_count} points")
             except Exception:
-                logger.warning(f"Music collection '{self.config['music_collection']}' not found in cloud")
+                logger.warning(
+                    f"Music collection '{self.config['music_collection']}' not found in cloud")
 
             # Check stories collection exists
             try:
-                stories_info = self.client.get_collection(self.config["stories_collection"])
-                logger.info(f"Stories collection '{self.config['stories_collection']}' found with {stories_info.points_count} points")
+                stories_info = self.client.get_collection(
+                    self.config["stories_collection"])
+                logger.info(
+                    f"Stories collection '{self.config['stories_collection']}' found with {stories_info.points_count} points")
             except Exception:
-                logger.warning(f"Stories collection '{self.config['stories_collection']}' not found in cloud")
+                logger.warning(
+                    f"Stories collection '{self.config['stories_collection']}' not found in cloud")
 
         except Exception as e:
             logger.error(f"Error checking collections: {e}")
@@ -165,7 +183,8 @@ class QdrantSemanticSearch:
     async def index_music_metadata(self, music_metadata: Dict) -> bool:
         """Index music metadata into Qdrant"""
         if not self.is_initialized:
-            logger.warning("Semantic search not initialized, skipping indexing")
+            logger.warning(
+                "Semantic search not initialized, skipping indexing")
             return False
 
         try:
@@ -194,7 +213,8 @@ class QdrantSemanticSearch:
                     searchable_texts.append(language)
 
                     # Combine all searchable text
-                    combined_text = " ".join(filter(None, searchable_texts)).strip()
+                    combined_text = " ".join(
+                        filter(None, searchable_texts)).strip()
 
                     if not combined_text:
                         continue
@@ -244,7 +264,8 @@ class QdrantSemanticSearch:
 
     async def index_stories_metadata(self, stories_metadata: Dict) -> bool:
         """Skip indexing - use existing cloud collections"""
-        logger.info("Skipping stories indexing - using existing cloud collections")
+        logger.info(
+            "Skipping stories indexing - using existing cloud collections")
         return True
 
     async def search_music(self, query: str, language_filter: Optional[str] = None, limit: int = 5) -> List[QdrantSearchResult]:
@@ -266,19 +287,19 @@ class QdrantSemanticSearch:
                             with_payload=True,
                             score_threshold=0.3  # Lower threshold for better recall
                         )
-                        
+
                         # Convert to our result format
                         results = []
                         for scored_point in search_result:
                             payload = scored_point.payload
-                            
+
                             # Apply language filter if specified (but don't exclude all other languages)
                             if language_filter and payload.get('language') != language_filter:
                                 # Reduce score but don't exclude completely
                                 score = scored_point.score * 0.7
                             else:
                                 score = scored_point.score
-                            
+
                             results.append(QdrantSearchResult(
                                 title=payload['title'],
                                 filename=payload['filename'],
@@ -288,20 +309,24 @@ class QdrantSemanticSearch:
                                 alternatives=payload.get('alternatives', []),
                                 romanized=payload.get('romanized', '')
                             ))
-                        
+
                         # Filter by allowed languages if configured
                         if self.config["allowed_music_languages"]:
-                            results = [r for r in results if r.language_or_category in self.config["allowed_music_languages"]]
-                            logger.info(f"🔒 Filtered to allowed languages: {len(results)} results remain")
+                            results = [
+                                r for r in results if r.language_or_category in self.config["allowed_music_languages"]]
+                            logger.info(
+                                f"🔒 Filtered to allowed languages: {len(results)} results remain")
 
                         # If we have good vector results, return them
                         if results:
                             results.sort(key=lambda x: x.score, reverse=True)
-                            logger.info(f"✅ Vector search found {len(results)} results for '{query}'")
+                            logger.info(
+                                f"✅ Vector search found {len(results)} results for '{query}'")
                             return results[:limit]
-                            
+
                 except Exception as e:
-                    logger.warning(f"Vector search failed, trying text search: {e}")
+                    logger.warning(
+                        f"Vector search failed, trying text search: {e}")
 
                 # Fallback to enhanced text search with Qdrant data
                 try:
@@ -317,14 +342,16 @@ class QdrantSemanticSearch:
 
                     for point in scroll_result[0]:
                         payload = point.payload
-                        
+
                         # Get all searchable text fields
                         title = payload.get('title', '').lower()
                         romanized = payload.get('romanized', '').lower()
-                        alternatives = [alt.lower() for alt in payload.get('alternatives', [])]
-                        keywords = [kw.lower() for kw in payload.get('keywords', [])]
+                        alternatives = [alt.lower()
+                                        for alt in payload.get('alternatives', [])]
+                        keywords = [kw.lower()
+                                    for kw in payload.get('keywords', [])]
                         language = payload.get('language', '').lower()
-                        
+
                         # Calculate comprehensive similarity score
                         score = self._calculate_fuzzy_score(query_lower, query_words, {
                             'title': title,
@@ -333,14 +360,14 @@ class QdrantSemanticSearch:
                             'keywords': keywords,
                             'language': language
                         })
-                        
+
                         # Apply language preference (not filter)
                         if language_filter:
                             if payload.get('language') == language_filter:
                                 score *= 1.2  # Boost preferred language
                             else:
                                 score *= 0.8  # Slight penalty for other languages
-                        
+
                         # Only include results with meaningful scores
                         if score > 0.2:
                             results.append(QdrantSearchResult(
@@ -355,24 +382,29 @@ class QdrantSemanticSearch:
 
                     # Filter by allowed languages if configured
                     if self.config["allowed_music_languages"]:
-                        results = [r for r in results if r.language_or_category in self.config["allowed_music_languages"]]
-                        logger.info(f"🔒 Filtered to allowed languages: {len(results)} results remain")
+                        results = [
+                            r for r in results if r.language_or_category in self.config["allowed_music_languages"]]
+                        logger.info(
+                            f"🔒 Filtered to allowed languages: {len(results)} results remain")
 
                     # Sort by score and return top results
                     results.sort(key=lambda x: x.score, reverse=True)
                     final_results = results[:limit]
 
                     if self.config["allowed_music_languages"]:
-                        logger.info(f"✅ Enhanced text search found {len(final_results)} results for '{query}' in allowed languages: {', '.join(self.config['allowed_music_languages'])}")
+                        logger.info(
+                            f"✅ Enhanced text search found {len(final_results)} results for '{query}' in allowed languages: {', '.join(self.config['allowed_music_languages'])}")
                     else:
-                        logger.info(f"✅ Enhanced text search found {len(final_results)} results for '{query}' across all languages")
+                        logger.info(
+                            f"✅ Enhanced text search found {len(final_results)} results for '{query}' across all languages")
                     return final_results
-                    
+
                 except Exception as e:
                     logger.warning(f"Qdrant text search failed: {e}")
 
             # Final fallback: return empty results with helpful message
-            logger.warning(f"All search methods failed for query '{query}' - Qdrant may be unavailable")
+            logger.warning(
+                f"All search methods failed for query '{query}' - Qdrant may be unavailable")
             return []
 
         except Exception as e:
@@ -382,7 +414,7 @@ class QdrantSemanticSearch:
     def _calculate_fuzzy_score(self, query: str, query_words: list, fields: dict) -> float:
         """Calculate fuzzy similarity score with spell tolerance"""
         max_score = 0.0
-        
+
         # Exact matches (highest priority)
         if query == fields['title']:
             return 1.0
@@ -392,7 +424,7 @@ class QdrantSemanticSearch:
             return 0.9
         if query in fields['keywords']:
             return 0.85
-            
+
         # Substring matches
         if query in fields['title']:
             max_score = max(max_score, 0.8)
@@ -404,12 +436,12 @@ class QdrantSemanticSearch:
         for kw in fields['keywords']:
             if query in kw:
                 max_score = max(max_score, 0.65)
-                
+
         # Word-level matching (handles partial matches and misspellings)
         for word in query_words:
             if len(word) < 2:  # Skip very short words
                 continue
-                
+
             # Check each field for word matches
             if word in fields['title']:
                 max_score = max(max_score, 0.6)
@@ -421,7 +453,7 @@ class QdrantSemanticSearch:
             for kw in fields['keywords']:
                 if word in kw:
                     max_score = max(max_score, 0.45)
-                    
+
             # Fuzzy matching for misspellings (simple edit distance)
             for field_name, field_value in [('title', fields['title']), ('romanized', fields['romanized'])]:
                 if field_value:
@@ -429,49 +461,59 @@ class QdrantSemanticSearch:
                     if fuzzy_score > 0.7:  # Only consider good fuzzy matches
                         bonus = 0.4 if field_name == 'title' else 0.35
                         max_score = max(max_score, fuzzy_score * bonus)
-        
+
         return max_score
-    
+
     def _simple_fuzzy_match(self, word: str, text: str) -> float:
         """Simple fuzzy matching for spell tolerance"""
         if not word or not text:
             return 0.0
-            
+
         # Check if word appears with small variations
         text_words = text.split()
         for text_word in text_words:
             if len(text_word) < 2:
                 continue
-                
+
             # Calculate simple similarity
             if word == text_word:
                 return 1.0
             if word in text_word or text_word in word:
                 return 0.8
-                
+
             # Simple character overlap check
             if len(word) >= 3 and len(text_word) >= 3:
                 common_chars = set(word.lower()) & set(text_word.lower())
-                similarity = len(common_chars) / max(len(set(word.lower())), len(set(text_word.lower())))
+                similarity = len(
+                    common_chars) / max(len(set(word.lower())), len(set(text_word.lower())))
                 if similarity > 0.6:
                     return similarity
-                    
+
         return 0.0
 
     async def search_stories(self, query: str, category_filter: Optional[str] = None, limit: int = 5) -> List[QdrantSearchResult]:
         """Search for stories using enhanced semantic search with fuzzy matching"""
+        logger.info(
+            f"🟢 search_stories() called with query='{query}', category_filter='{category_filter}', limit={limit}")
+
         if not self.is_initialized:
+            logger.warning(
+                "⚠️ Qdrant client not initialized. Returning empty list.")
             return []
 
         try:
             # Generate query embedding for true semantic search
+            logger.debug("Generating embedding for query...")
             query_embedding = self._get_embedding(query)
             if not query_embedding:
-                logger.warning("Failed to generate embedding for query")
+                logger.warning("❌ Failed to generate embedding for query")
                 return []
+
+            logger.debug("✅ Query embedding generated successfully.")
 
             # First try vector similarity search
             try:
+                logger.debug("Starting Qdrant vector similarity search...")
                 search_result = self.client.search(
                     collection_name=self.config["stories_collection"],
                     query_vector=query_embedding,
@@ -479,19 +521,23 @@ class QdrantSemanticSearch:
                     with_payload=True,
                     score_threshold=0.3  # Lower threshold for better recall
                 )
-                
-                # Convert to our result format
+                logger.debug(
+                    f"Vector search returned {len(search_result)} results.")
+
                 results = []
-                for scored_point in search_result:
+                for i, scored_point in enumerate(search_result, start=1):
                     payload = scored_point.payload
-                    
+                    logger.debug(
+                        f"🔹 Processing vector result {i}: {payload.get('title', 'N/A')} (category={payload.get('category')})")
+
                     # Apply category filter if specified (but don't exclude all other categories)
                     if category_filter and payload.get('category') != category_filter:
-                        # Reduce score but don't exclude completely
                         score = scored_point.score * 0.7
+                        logger.debug(
+                            f"   ↓ Score reduced for non-matching category. Original={scored_point.score}, New={score}")
                     else:
                         score = scored_point.score
-                    
+
                     results.append(QdrantSearchResult(
                         title=payload['title'],
                         filename=payload['filename'],
@@ -501,53 +547,69 @@ class QdrantSemanticSearch:
                         alternatives=payload.get('alternatives', []),
                         romanized=payload.get('romanized', '')
                     ))
-                
-                # If we have good vector results, return them
+
                 if results:
                     results.sort(key=lambda x: x.score, reverse=True)
-                    logger.info(f"Vector search found {len(results)} results for '{query}'")
+                    logger.info(
+                        f"✅ Vector search found {len(results)} results for '{query}'")
                     return results[:limit]
-                    
+                else:
+                    logger.info(
+                        "ℹ️ Vector search returned no results, proceeding to text fallback.")
+
             except Exception as e:
-                logger.warning(f"Vector search failed, falling back to text search: {e}")
+                logger.warning(
+                    f"⚠️ Vector search failed, falling back to text search: {e}", exc_info=True)
 
             # Fallback to enhanced text search with fuzzy matching
+            logger.debug("Starting fallback text + fuzzy matching search...")
             scroll_result = self.client.scroll(
                 collection_name=self.config["stories_collection"],
                 limit=1000,  # Get all points for comprehensive search
                 with_payload=True
             )
 
+            total_points = len(scroll_result[0])
+            logger.debug(
+                f"Qdrant scroll retrieved {total_points} stories for fallback search.")
+
             results = []
             query_lower = query.lower().strip()
             query_words = query_lower.split()
 
-            for point in scroll_result[0]:
+            for i, point in enumerate(scroll_result[0], start=1):
                 payload = point.payload
-                
-                # Get all searchable text fields
                 title = payload.get('title', '').lower()
                 romanized = payload.get('romanized', '').lower()
-                alternatives = [alt.lower() for alt in payload.get('alternatives', [])]
+                alternatives = [alt.lower()
+                                for alt in payload.get('alternatives', [])]
                 keywords = [kw.lower() for kw in payload.get('keywords', [])]
                 category = payload.get('category', '').lower()
-                
+
+                logger.debug(
+                    f"🔸 [{i}/{total_points}] Evaluating story: '{title}' (category={category})")
+
                 # Calculate comprehensive similarity score
                 score = self._calculate_fuzzy_score(query_lower, query_words, {
                     'title': title,
                     'romanized': romanized,
                     'alternatives': alternatives,
                     'keywords': keywords,
-                    'language': category  # Use category as language field for stories
+                    'language': category
                 })
-                
+                logger.debug(f"   Raw fuzzy score: {score}")
+
                 # Apply category preference (not filter)
                 if category_filter:
                     if payload.get('category') == category_filter:
-                        score *= 1.2  # Boost preferred category
+                        score *= 1.2
+                        logger.debug(
+                            f"   ↑ Score boosted for preferred category: {payload.get('category')}")
                     else:
-                        score *= 0.8  # Slight penalty for other categories
-                
+                        score *= 0.8
+                        logger.debug(
+                            f"   ↓ Score reduced for non-preferred category: {payload.get('category')}")
+
                 # Only include results with meaningful scores
                 if score > 0.2:
                     results.append(QdrantSearchResult(
@@ -560,15 +622,14 @@ class QdrantSemanticSearch:
                         romanized=payload.get('romanized', '')
                     ))
 
-            # Sort by score and return top results
             results.sort(key=lambda x: x.score, reverse=True)
             final_results = results[:limit]
-            
-            logger.info(f"Enhanced text search found {len(final_results)} results for '{query}' across all categories")
+            logger.info(
+                f"✅ Enhanced text search found {len(final_results)} results for '{query}' across all categories.")
             return final_results
 
         except Exception as e:
-            logger.error(f"Story search failed: {e}")
+            logger.error(f"❌ Story search failed: {e}", exc_info=True)
             return []
 
     async def get_random_music(self, language_filter: Optional[str] = None) -> Optional[QdrantSearchResult]:
@@ -591,12 +652,15 @@ class QdrantSemanticSearch:
 
                 # First apply allowed languages filter if configured
                 if self.config["allowed_music_languages"]:
-                    valid_points = [p for p in valid_points if p.payload.get('language') in self.config["allowed_music_languages"]]
-                    logger.info(f"🔒 Random music restricted to allowed languages: {', '.join(self.config['allowed_music_languages'])}")
+                    valid_points = [p for p in valid_points if p.payload.get(
+                        'language') in self.config["allowed_music_languages"]]
+                    logger.info(
+                        f"🔒 Random music restricted to allowed languages: {', '.join(self.config['allowed_music_languages'])}")
 
                 # Then apply specific language filter if requested
                 if language_filter:
-                    valid_points = [p for p in valid_points if p.payload.get('language') == language_filter]
+                    valid_points = [p for p in valid_points if p.payload.get(
+                        'language') == language_filter]
 
                 if valid_points:
                     random_point = random.choice(valid_points)
@@ -606,7 +670,8 @@ class QdrantSemanticSearch:
                         language_or_category=random_point.payload['language'],
                         score=1.0,
                         metadata=random_point.payload,
-                        alternatives=random_point.payload.get('alternatives', []),
+                        alternatives=random_point.payload.get(
+                            'alternatives', []),
                         romanized=random_point.payload.get('romanized', '')
                     )
 
@@ -634,7 +699,8 @@ class QdrantSemanticSearch:
                 # Filter by category if specified
                 valid_points = scroll_result[0]
                 if category_filter:
-                    valid_points = [p for p in scroll_result[0] if p.payload.get('category') == category_filter]
+                    valid_points = [p for p in scroll_result[0] if p.payload.get(
+                        'category') == category_filter]
 
                 if valid_points:
                     random_point = random.choice(valid_points)
@@ -644,7 +710,8 @@ class QdrantSemanticSearch:
                         language_or_category=random_point.payload['category'],
                         score=1.0,
                         metadata=random_point.payload,
-                        alternatives=random_point.payload.get('alternatives', []),
+                        alternatives=random_point.payload.get(
+                            'alternatives', []),
                         romanized=random_point.payload.get('romanized', '')
                     )
 

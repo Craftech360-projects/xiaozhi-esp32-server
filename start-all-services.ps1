@@ -23,12 +23,49 @@ if (-Not (Test-Path $envActivate)) {
 Write-Host "Virtual environment found!" -ForegroundColor Green
 Write-Host ""
 
+Write-Host "=====================================" -ForegroundColor Cyan
+Write-Host "  Starting Docker containers..." -ForegroundColor Cyan
+Write-Host "=====================================" -ForegroundColor Cyan
+Write-Host ""
+
+# Check if Docker is running
+try {
+    $dockerCheck = docker info 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "ERROR: Docker is not running!" -ForegroundColor Red
+        Write-Host "Please start Docker Desktop and try again." -ForegroundColor Yellow
+        Read-Host "Press Enter to exit"
+        exit
+    }
+    Write-Host "[OK] Docker is running" -ForegroundColor Green
+} catch {
+    Write-Host "ERROR: Docker is not installed or not running!" -ForegroundColor Red
+    Write-Host "Please install Docker Desktop and try again." -ForegroundColor Yellow
+    Read-Host "Press Enter to exit"
+    exit
+}
+
+# Start MySQL and Redis containers
+Write-Host ""
+Write-Host "Starting MySQL database (port 3307)..." -ForegroundColor Cyan
+docker-compose up -d manager-api-db 2>&1 | Out-Null
+
+Write-Host "Starting Redis cache (port 6380)..." -ForegroundColor Cyan
+docker-compose up -d manager-api-redis 2>&1 | Out-Null
+
+Write-Host ""
+Write-Host "Waiting for database to be ready..." -ForegroundColor Yellow
+Start-Sleep -Seconds 5
+
+Write-Host "[OK] Docker containers started" -ForegroundColor Green
+Write-Host ""
+
 Write-Host "=====================================" -ForegroundColor Yellow
 Write-Host "  Terminating existing services..." -ForegroundColor Yellow
 Write-Host "=====================================" -ForegroundColor Yellow
 Write-Host ""
 
-# Define ports used by each service
+# Define ports used by each service (excluding Docker ports 3307, 6380)
 $ports = @(8002, 8080, 8081, 1883, 7880, 3000, 8884)
 
 # Step 1: Kill all processes on the required ports using taskkill
@@ -193,13 +230,20 @@ Write-Host "=====================================" -ForegroundColor Green
 Write-Host "  All services started successfully!" -ForegroundColor Green
 Write-Host "=====================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "Each service is running in a separate Command Prompt window." -ForegroundColor Yellow
+Write-Host "Running Services:" -ForegroundColor Cyan
+Write-Host "  - MySQL Database: localhost:3307 (Docker)" -ForegroundColor Gray
+Write-Host "  - Redis Cache: localhost:6380 (Docker)" -ForegroundColor Gray
+Write-Host "  - LiveKit Server: CMD Window" -ForegroundColor Gray
+Write-Host "  - Manager API: CMD Window (http://localhost:8002)" -ForegroundColor Gray
+Write-Host "  - Manager Web: CMD Window (http://localhost:3000)" -ForegroundColor Gray
+Write-Host "  - MQTT Gateway: CMD Window" -ForegroundColor Gray
 Write-Host ""
 Write-Host "To RESTART all services:" -ForegroundColor Cyan
-Write-Host "  Simply run this script again - it will automatically terminate and restart everything!" -ForegroundColor Cyan
+Write-Host "  Simply run this script again!" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "To STOP all services:" -ForegroundColor Cyan
-Write-Host "  Close each Command Prompt window individually" -ForegroundColor Cyan
+Write-Host "  1. Close each Command Prompt window" -ForegroundColor Yellow
+Write-Host "  2. Run: docker-compose down" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "This window will close in 5 seconds..." -ForegroundColor Gray
 Start-Sleep -Seconds 5
