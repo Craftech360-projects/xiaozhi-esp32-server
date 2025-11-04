@@ -8,6 +8,8 @@ import pytz
 import random
 import inspect
 import asyncio
+import os
+from pathlib import Path
 from livekit.agents import (
     Agent,
     RunContext,
@@ -72,13 +74,53 @@ def normalize_mode_name(mode_input: str) -> str:
 class Assistant(FilteredAgent):
     """Main AI Assistant agent class with TTS text filtering"""
 
+    # Word list for Word Ladder game (100 simple, kid-friendly words)
+    WORD_LIST = [
+        "cat", "dog", "sun", "moon", "tree", "book", "fish", "bird",
+        "cold", "warm", "fast", "slow", "jump", "run", "play", "toy",
+        "red", "blue", "big", "small", "hot", "ice", "rain", "snow",
+        "cup", "pen", "box", "car", "bus", "road", "door", "room",
+        "hand", "foot", "head", "leg", "arm", "nose", "eye", "ear",
+        "day", "night", "star", "sky", "hill", "lake", "sand", "rock",
+        "frog", "duck", "lion", "bear", "wolf", "fox", "owl", "bee",
+        "ball", "kite", "game", "fun", "sing", "dance", "clap", "wave",
+        "coin", "ring", "lamp", "desk", "chair", "bed", "wall", "roof",
+        "wind", "leaf", "stem", "seed", "root", "bark", "twig", "vine",
+        "gold", "silk", "wool", "wood", "iron", "rope", "tile", "mesh",
+        "path", "gate", "step", "yard", "pond", "well", "nest", "cave",
+        "tent", "flag", "drum", "horn"
+    ]
+
+    # Audio directory path (relative to project root)
+    AUDIO_DIR = Path(__file__).parent.parent.parent / "audio"
+
     def __init__(self, instructions: str = None, tts_provider=None) -> None:
         # Use provided instructions or fallback to a basic prompt
         if instructions is None:
             instructions = "You are a helpful AI assistant."
 
-        super().__init__(instructions=instructions, tts_provider=tts_provider)
+         # Word Ladder game state (set BEFORE formatting prompt)
+        # Pick random word pair for the game
+        self.start_word, self.target_word = self._pick_valid_word_pair()
+        self.current_word = self.start_word
+        self.failure_count = 0
+        self.max_failures = 2
+        self.word_history = [self.start_word]  # Track all words used in game
+        logger.info(f"🎮 Word Ladder initialized: {self.start_word} → {self.target_word}")
 
+        # Math Tutor game state
+        self.current_riddle = ""  # Will be set by LLM when it asks a question
+        self.current_answer = None  # The correct answer
+        self.correct_streak = 0  # Track consecutive correct answers
+        logger.info(f"🧮 Math Tutor initialized: streak={self.correct_streak}")
+
+        # Store original instructions template for later re-formatting
+        self._original_instructions = instructions
+
+        # Format the prompt with actual game state values
+        formatted_instructions = self._format_instructions(instructions)
+
+        super().__init__(instructions=formatted_instructions, tts_provider=tts_provider)
         # These will be injected by main.py
         self.music_service = None
         self.story_service = None
@@ -128,6 +170,117 @@ class Assistant(FilteredAgent):
             import traceback
             logger.warning(f"🔧 Traceback: {traceback.format_exc()}")
 
+    def _format_instructions(self, prompt: str) -> str:
+        """
+        Internal method to format prompt by replacing game state placeholders with actual values.
+
+        Replaces:
+        - {self.start_word} with actual start_word
+        - {self.target_word} with actual target_word
+        - {self.current_word} with actual current_word
+        - {self.failure_count} with actual failure_count
+        - {self.max_failures} with actual max_failures
+
+        Args:
+            prompt: The prompt string with placeholders
+
+        Returns:
+            Formatted prompt with actual game state values
+        """
+        try:
+            # Use string.Template for safer partial replacement
+            # This allows us to replace {self.xxx} without requiring other placeholders
+            import re
+
+            # Replace {self.xxx} patterns manually to avoid KeyError from format()
+            def replace_self_placeholders(match):
+                attr_name = match.group(1)
+                try:
+                    value = getattr(self, attr_name)
+                    return str(value)
+                except AttributeError:
+                    logger.warning(f"⚠️ Attribute not found: self.{attr_name}")
+                    return match.group(0)  # Keep original if attribute doesn't exist
+
+            # Pattern to match {self.attribute_name}
+            pattern = r'\{self\.([a-zA-Z_][a-zA-Z0-9_]*)\}'
+            formatted_prompt = re.sub(pattern, replace_self_placeholders, prompt)
+
+            logger.info(f"📝 Formatted prompt with game state: start_word={self.start_word}, target_word={self.target_word}, failure_count={self.failure_count}/{self.max_failures}")
+
+            # DEBUG: Log a sample of the formatted prompt to verify placeholders are replaced
+            if "{self.start_word}" in formatted_prompt or "{self.target_word}" in formatted_prompt:
+                logger.error(f"❌ PLACEHOLDERS NOT REPLACED! Sample: {formatted_prompt[:500]}")
+            else:
+                logger.info(f"✅ Placeholders successfully replaced. Sample: {formatted_prompt[300:500]}")
+
+            # DEBUG: Save final formatted prompt to file
+            try:
+                import os
+                import time
+                debug_file_path = os.path.join(os.path.dirname(__file__), '..', '..', 'prompt_final_formatted.txt')
+                with open(debug_file_path, 'w', encoding='utf-8') as f:
+                    f.write(f"=== FINAL FORMATTED PROMPT (SENT TO LLM) ===\n")
+                    f.write(f"Start Word: {self.start_word}\n")
+                    f.write(f"Target Word: {self.target_word}\n")
+                    f.write(f"Current Word: {self.current_word}\n")
+                    f.write(f"Failure Count: {self.failure_count}/{self.max_failures}\n")
+                    f.write(f"Timestamp: {time.time()}\n")
+                    f.write(f"Length: {len(formatted_prompt)} chars\n")
+                    f.write(f"="*50 + "\n\n")
+                    f.write(formatted_prompt)
+                logger.info(f"📝 Saved final formatted prompt to: {debug_file_path}")
+            except Exception as e:
+                logger.warning(f"Failed to save final prompt file: {e}")
+
+            return formatted_prompt
+        except Exception as e:
+            logger.error(f"❌ Error formatting prompt: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return prompt
+
+    async def update_prompt_with_game_state(self):
+        """
+        Update the agent's instructions with current game state values.
+        Call this method whenever game state changes (start_word, target_word, failure_count).
+        """
+        try:
+            # Get the original prompt (unformatted) from _instructions
+            # Since we need the original template, we'll store it
+            if not hasattr(self, '_original_instructions'):
+                logger.warning("⚠️ No original instructions template available for formatting")
+                return
+
+            # Format with current game state
+            formatted_prompt = self._format_instructions(self._original_instructions)
+
+            # Update agent's instructions
+            self._instructions = formatted_prompt
+
+            # Update session if available (for immediate effect)
+            if self._agent_session:
+                try:
+                    # Update session's agent internal instructions
+                    self._agent_session._agent._instructions = formatted_prompt
+
+                    # Also update session chat context if possible
+                    if hasattr(self._agent_session, 'history') and hasattr(self._agent_session.history, 'messages'):
+                        # Update the system message in history
+                        if len(self._agent_session.history.messages) > 0:
+                            if hasattr(self._agent_session.history.messages[0], 'content'):
+                                self._agent_session.history.messages[0].content = formatted_prompt
+                                logger.info(f"🔄 Session chat context updated with new game state!")
+
+                    logger.info(f"🔄 Session instructions updated with game state in real-time!")
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not update session directly: {e}")
+
+        except Exception as e:
+            logger.error(f"❌ Error updating prompt with game state: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+
 
 
     def set_services(self, music_service, story_service, audio_player, unified_audio_player=None, device_control_service=None, mcp_executor=None, google_search_service=None):
@@ -150,6 +303,28 @@ class Assistant(FilteredAgent):
         """Set session reference for dynamic updates"""
         self._agent_session = session
         logger.info(f"🔗 Session reference stored for dynamic updates")
+
+    def _pick_valid_word_pair(self):
+        """
+        Pick two random words from WORD_LIST ensuring:
+        - Words are different
+        - Last letter of word1 ≠ first letter of word2 (to create a puzzle)
+
+        Returns:
+            tuple: (start_word, target_word)
+        """
+        while True:
+            word1 = random.choice(self.WORD_LIST)
+            word2 = random.choice(self.WORD_LIST)
+
+            # Ensure words are different
+            if word1 == word2:
+                continue
+
+            # CRITICAL: Ensure last letter ≠ first letter (creates puzzle)
+            if word1[-1].lower() != word2[0].lower():
+                logger.info(f"🎮 Generated word pair: {word1} → {word2}")
+                return word1, word2
 
     @function_tool
     async def update_agent_mode(self, context: RunContext, mode_name: str) -> str:
@@ -609,6 +784,118 @@ class Assistant(FilteredAgent):
         except Exception as e:
             logger.error(f"Error playing music: {e}")
             return "Sorry, I encountered an error while trying to play music."
+
+    @function_tool
+    async def check_math_answer(
+        self,
+        context: RunContext,
+        question: str,
+        user_answer: str
+    ):
+        """Validate a math answer from the child
+
+        Args:
+            question: The math question/riddle that was asked (e.g., "What's 2 + 5?")
+            user_answer: The child's answer as a string
+
+        Returns:
+            A dict with 'correct' (bool), 'expected_answer' (str), and 'message' (str)
+        """
+        try:
+            import re
+
+            logger.info(f"🧮 Math check - Q: '{question}', User answer: '{user_answer}'")
+
+            # Extract the math expression from the question
+            # Patterns: "What's 2 + 5?", "How much is 10 - 3?", "What is 4 times 2?"
+            expression = None
+
+            # Pattern 1: "What's X + Y?" or "What is X + Y?"
+            match = re.search(r'(\d+)\s*([\+\-\*\/x×÷])\s*(\d+)', question)
+            if match:
+                num1 = int(match.group(1))
+                operator = match.group(2)
+                num2 = int(match.group(3))
+
+                # Calculate the correct answer
+                if operator in ['+', 'plus']:
+                    correct_answer = num1 + num2
+                elif operator in ['-', 'minus']:
+                    correct_answer = num1 - num2
+                elif operator in ['*', 'x', '×', 'times']:
+                    correct_answer = num1 * num2
+                elif operator in ['/', '÷', 'divided by']:
+                    correct_answer = num1 / num2 if num2 != 0 else None
+                else:
+                    correct_answer = None
+
+                if correct_answer is not None:
+                    # Parse user's answer (handle "seven", "7", etc.)
+                    try:
+                        # Try to convert to number
+                        user_number = float(user_answer.strip())
+                    except ValueError:
+                        # Try word-to-number conversion for simple cases
+                        word_to_num = {
+                            'zero': 0, 'one': 1, 'two': 2, 'three': 3, 'four': 4,
+                            'five': 5, 'six': 6, 'seven': 7, 'eight': 8, 'nine': 9,
+                            'ten': 10, 'eleven': 11, 'twelve': 12, 'thirteen': 13,
+                            'fourteen': 14, 'fifteen': 15, 'sixteen': 16, 'seventeen': 17,
+                            'eighteen': 18, 'nineteen': 19, 'twenty': 20
+                        }
+                        user_number = word_to_num.get(user_answer.lower().strip(), None)
+
+                    if user_number is not None:
+                        is_correct = abs(user_number - correct_answer) < 0.01
+
+                        # Update game state
+                        if is_correct:
+                            self.correct_streak += 1
+                            logger.info(f"✅ Correct! Streak: {self.correct_streak}/3")
+
+                            if self.correct_streak >= 3:
+                                message = f"Correct! That's {self.correct_streak} in a row! You're a math star!"
+                                self.correct_streak = 0  # Reset after celebration
+                            else:
+                                message = f"Correct! Great job! You've got {self.correct_streak} right so far!"
+                        else:
+                            self.correct_streak = 0  # Reset on wrong answer
+                            logger.info(f"❌ Wrong answer. Expected {correct_answer}, got {user_number}")
+                            message = f"Not quite! The answer is {int(correct_answer)}. Let's try another one!"
+
+                        # Store current riddle for reference
+                        self.current_riddle = question
+                        self.current_answer = correct_answer
+
+                        return {
+                            'correct': is_correct,
+                            'expected_answer': str(int(correct_answer) if correct_answer == int(correct_answer) else correct_answer),
+                            'user_answer': str(user_number),
+                            'streak': self.correct_streak,
+                            'message': message
+                        }
+
+            # Fallback if we can't parse the question
+            logger.warning(f"⚠️ Could not parse math question: {question}")
+            return {
+                'correct': False,
+                'expected_answer': 'unknown',
+                'user_answer': user_answer,
+                'streak': self.correct_streak,
+                'message': "I couldn't understand the question format. Let's try another riddle!"
+            }
+
+        except Exception as e:
+            logger.error(f"Error checking math answer: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return {
+                'correct': False,
+                'expected_answer': 'error',
+                'user_answer': user_answer,
+                'streak': self.correct_streak,
+                'message': "Oops! Something went wrong. Let's try another riddle!"
+            }
 
     @function_tool
     async def play_story(
@@ -1211,3 +1498,211 @@ class Assistant(FilteredAgent):
 
         self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
         return await self.mcp_executor.set_rainbow_speed(speed_ms)
+
+    @function_tool
+    async def validate_word_ladder_move(self, context: RunContext, user_word: str) -> str:
+        """
+        Validate user's word in the Word Ladder game.
+
+        CRITICAL: Call this function for EVERY word the user says in the game.
+        DO NOT validate manually. Trust this function's JSON result.
+
+        Game Rules:
+        1. New word must start with the last letter of current word
+        2. Goal is to reach the target word
+
+        Args:
+            user_word: The word the user just said
+
+        Returns:
+            JSON string with validation result and game state
+        """
+        try:
+            # 1. Normalize input
+            user_word = user_word.lower().strip()
+
+            logger.info(f"🎮 Validating word: '{user_word}' | Current: '{self.current_word}' | Target: '{self.target_word}'")
+            logger.info(f"🎮 Word history: {self.word_history}")
+            logger.info(f"🎮 Failure count: {self.failure_count}/{self.max_failures}")
+
+            # Edge case: empty or invalid input
+            if not user_word or len(user_word) < 2:
+                self.failure_count += 1
+                logger.warning(f"❌ Invalid input: '{user_word}' (too short or empty)")
+
+                if self.failure_count >= self.max_failures:
+                    return await self._restart_game("Too many failures")
+
+                result = {
+                    "success": False,
+                    "game_status": "in_progress",
+                    "current_word": self.current_word,
+                    "target_word": self.target_word,
+                    "next_letter": self.current_word[-1],
+                    "words_used": len(self.word_history),
+                    "failure_count": self.failure_count,
+                    "max_failures": self.max_failures,
+                    "message": "Invalid word (too short or empty)",
+                    "error_type": "invalid_input"
+                }
+                return json.dumps(result)
+
+            # 2. Check letter matching (MOST IMPORTANT)
+            last_letter_of_current = self.current_word[-1].lower()
+            first_letter_of_user = user_word[0].lower()
+
+            if last_letter_of_current != first_letter_of_user:
+                self.failure_count += 1
+                logger.warning(f"❌ Wrong letter: '{user_word}' starts with '{first_letter_of_user}' but '{self.current_word}' ends with '{last_letter_of_current}'")
+
+                if self.failure_count >= self.max_failures:
+                    return await self._restart_game("Too many wrong attempts")
+
+                result = {
+                    "success": False,
+                    "game_status": "in_progress",
+                    "current_word": self.current_word,
+                    "target_word": self.target_word,
+                    "next_letter": last_letter_of_current,
+                    "words_used": len(self.word_history),
+                    "failure_count": self.failure_count,
+                    "max_failures": self.max_failures,
+                    "message": "Wrong letter",
+                    "error_type": "wrong_letter",
+                    "expected_letter": last_letter_of_current,
+                    "received_letter": first_letter_of_user,
+                    "user_word": user_word
+                }
+                return json.dumps(result)
+
+            # 3. Check victory condition
+            if user_word == self.target_word:
+                logger.info(f"🏆 VICTORY! User reached target word: {self.target_word}")
+                self.word_history.append(user_word)
+
+                # Auto-restart game with new words
+                return await self._restart_game("Victory!", is_victory=True)
+
+            # 4. Valid move! Update state
+            self.current_word = user_word
+            self.word_history.append(user_word)
+            logger.info(f"✅ Valid move! Current word: '{self.current_word}' | History: {self.word_history}")
+
+            # Update prompt with new current_word state
+            await self.update_prompt_with_game_state()
+
+            # Calculate progress
+            next_letter = self.current_word[-1]
+            words_used = len(self.word_history)
+
+            result = {
+                "success": True,
+                "game_status": "in_progress",
+                "current_word": self.current_word,
+                "target_word": self.target_word,
+                "next_letter": next_letter,
+                "words_used": words_used,
+                "failure_count": self.failure_count,
+                "max_failures": self.max_failures,
+                "message": "Valid move",
+                "error_type": None,
+                "user_word": user_word
+            }
+            return json.dumps(result)
+
+        except Exception as e:
+            logger.error(f"❌ Error validating word: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+
+            result = {
+                "success": False,
+                "game_status": "error",
+                "current_word": self.current_word,
+                "target_word": self.target_word,
+                "next_letter": self.current_word[-1] if self.current_word else "",
+                "words_used": len(self.word_history),
+                "failure_count": self.failure_count,
+                "max_failures": self.max_failures,
+                "message": "System error",
+                "error_type": "system_error"
+            }
+            return json.dumps(result)
+
+    async def _restart_game(self, reason: str, is_victory: bool = False) -> str:
+        """
+        Internal method to restart the Word Ladder game with new words.
+
+        Args:
+            reason: Why the game is restarting
+            is_victory: Whether this restart is due to victory
+
+        Returns:
+            JSON string announcing the new game
+        """
+        try:
+            # Pick new word pair
+            old_start = self.start_word
+            old_target = self.target_word
+
+            self.start_word, self.target_word = self._pick_valid_word_pair()
+            self.current_word = self.start_word
+            self.failure_count = 0
+            self.word_history = [self.start_word]
+
+            # Update prompt with new game state
+            await self.update_prompt_with_game_state()
+
+            if is_victory:
+                logger.info(f"🎉 Victory restart! Old: {old_start}→{old_target} | New: {self.start_word}→{self.target_word}")
+                result = {
+                    "success": True,
+                    "game_status": "victory",
+                    "current_word": self.start_word,
+                    "target_word": self.target_word,
+                    "next_letter": self.start_word[-1],
+                    "words_used": 1,
+                    "failure_count": 0,
+                    "max_failures": self.max_failures,
+                    "message": "Victory! Starting new game",
+                    "error_type": None,
+                    "old_start_word": old_start,
+                    "old_target_word": old_target
+                }
+            else:
+                logger.info(f"🔄 Game restart ({reason}): {self.start_word} → {self.target_word}")
+                result = {
+                    "success": False,
+                    "game_status": "game_over",
+                    "current_word": self.start_word,
+                    "target_word": self.target_word,
+                    "next_letter": self.start_word[-1],
+                    "words_used": 1,
+                    "failure_count": 0,
+                    "max_failures": self.max_failures,
+                    "message": f"Game over! {reason}. Starting new game",
+                    "error_type": "max_failures_reached",
+                    "old_start_word": old_start,
+                    "old_target_word": old_target
+                }
+
+            return json.dumps(result)
+
+        except Exception as e:
+            logger.error(f"❌ Error restarting game: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+
+            result = {
+                "success": False,
+                "game_status": "error",
+                "current_word": self.current_word,
+                "target_word": self.target_word,
+                "next_letter": self.current_word[-1] if self.current_word else "",
+                "words_used": len(self.word_history),
+                "failure_count": self.failure_count,
+                "max_failures": self.max_failures,
+                "message": "Error restarting game",
+                "error_type": "restart_error"
+            }
+            return json.dumps(result)

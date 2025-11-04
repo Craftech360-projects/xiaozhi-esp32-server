@@ -23,10 +23,20 @@ module.exports = {
     },
     {
       name: "livekit-server",
-      script: "python",
-      args: "main.py dev",
+      script: "main.py",
+      args: "dev",
       cwd: "/root/xiaozhi-esp32-server/main/livekit-server",
-      interpreter: "none"
+      interpreter: "python3"
+    },
+    {
+      name: "livekit-react-cheeko",
+      script: "npm",
+      args: "run dev",
+      cwd: "/root/xiaozhi-esp32-server/livkit-react-with-python-cheeko",
+      interpreter: "none",
+      env: {
+        NODE_ENV: "development"
+      }
     }
   ]
 };

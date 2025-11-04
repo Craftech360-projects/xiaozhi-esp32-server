@@ -69,7 +69,7 @@
                         resize="none"
                         placeholder="Enter content"
                         v-model="form.systemPrompt"
-                        maxlength="4000"
+                        maxlength="10000"
                         show-word-limit
                         class="form-textarea"
                       />
