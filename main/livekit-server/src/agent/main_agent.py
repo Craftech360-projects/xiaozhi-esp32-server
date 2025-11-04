@@ -214,25 +214,6 @@ class Assistant(FilteredAgent):
             else:
                 logger.info(f"✅ Placeholders successfully replaced. Sample: {formatted_prompt[300:500]}")
 
-            # DEBUG: Save final formatted prompt to file
-            try:
-                import os
-                import time
-                debug_file_path = os.path.join(os.path.dirname(__file__), '..', '..', 'prompt_final_formatted.txt')
-                with open(debug_file_path, 'w', encoding='utf-8') as f:
-                    f.write(f"=== FINAL FORMATTED PROMPT (SENT TO LLM) ===\n")
-                    f.write(f"Start Word: {self.start_word}\n")
-                    f.write(f"Target Word: {self.target_word}\n")
-                    f.write(f"Current Word: {self.current_word}\n")
-                    f.write(f"Failure Count: {self.failure_count}/{self.max_failures}\n")
-                    f.write(f"Timestamp: {time.time()}\n")
-                    f.write(f"Length: {len(formatted_prompt)} chars\n")
-                    f.write(f"="*50 + "\n\n")
-                    f.write(formatted_prompt)
-                logger.info(f"📝 Saved final formatted prompt to: {debug_file_path}")
-            except Exception as e:
-                logger.warning(f"Failed to save final prompt file: {e}")
-
             return formatted_prompt
         except Exception as e:
             logger.error(f"❌ Error formatting prompt: {e}")
