@@ -19,9 +19,9 @@ import opuslib
 
 # --- Configuration ---
 
-SERVER_IP = "10.171.157.210"
+SERVER_IP = "192.168.1.98"
 OTA_PORT = 8002
-MQTT_BROKER_HOST = "10.171.157.210"
+MQTT_BROKER_HOST = "192.168.1.98"
 
 
 MQTT_BROKER_PORT = 1883
@@ -977,8 +977,16 @@ class TestClient:
         else:
             logger.info("[SEQ] Sequence tracking is DISABLED")
 
-        if not self.get_ota_config():
-            return
+        # OTA request disabled - setting up MQTT credentials directly
+        logger.info("[INFO] Skipping OTA config, generating MQTT credentials locally...")
+        self.mqtt_credentials = generate_mqtt_credentials(self.device_mac_formatted)
+        self.p2p_topic = f"devices/p2p/{self.mqtt_credentials['client_id']}"
+        logger.info(f"[OK] Generated MQTT credentials: {self.mqtt_credentials['client_id']}")
+        logger.info(f"[OK] P2P Topic set to: {self.p2p_topic}")
+
+        # if not self.get_ota_config():
+        #     return
+
         if not self.connect_mqtt():
             return
         time.sleep(1)  # Give MQTT a moment to connect and subscribe

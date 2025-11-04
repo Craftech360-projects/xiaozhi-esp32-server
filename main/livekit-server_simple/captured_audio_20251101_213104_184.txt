@@ -1,5 +1,0 @@
-Timestamp: 20251101_213104_184
-Duration: 4.21s
-Audio bytes: 405120
-Sample rate: 16000Hz
-Transcript:  Hello, am I audible TV? Just checking is everything working?

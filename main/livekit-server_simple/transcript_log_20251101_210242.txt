@@ -1,4 +1,0 @@
-Timestamp: 20251101_210242
-Transcript:  He has won last year
-Language: en
-Provider: Groq (streaming)

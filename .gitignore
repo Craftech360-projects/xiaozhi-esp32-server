@@ -195,3 +195,4 @@ main/livekit-server/config.yaml
 main/livekit-server_simple/*.env
 main/livekit-server_simple/simple.env
 main/livekit-server_simple/config.yaml
+nul

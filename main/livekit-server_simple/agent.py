@@ -1,144 +1,116 @@
-import logging
-import asyncio
-import os
-import json
 from dotenv import load_dotenv
-from livekit.agents import (
-    NOT_GIVEN,
-    Agent,
-    AgentFalseInterruptionEvent,
-    AgentSession,
-    JobContext,
-    JobProcess,
-    AgentStateChangedEvent,
-    UserInputTranscribedEvent,
-    SpeechCreatedEvent,
-    UserStateChangedEvent,
-    AgentHandoffEvent,
-    MetricsCollectedEvent,
-    RoomInputOptions,
-    RunContext,
-    WorkerOptions,
-    function_tool,
-    cli,
-    metrics,
-)
+from livekit.plugins import groq
+from livekit import agents, rtc
+from livekit.agents import AgentSession, Agent, WorkerOptions, cli
 from livekit.plugins import silero
-import livekit.plugins.groq as groq
-from livekit.plugins.turn_detector.multilingual import MultilingualModel
-from livekit.plugins import noise_cancellation
-
-logger = logging.getLogger("agent")
-
+from livekit.plugins import aws
+from livekit.plugins import deepgram
+from livekit.plugins import google
+from google.genai.types import Modality
+from livekit.agents.utils.codecs import AudioStreamDecoder
+import asyncio
 load_dotenv(".env")
+
 
 class Assistant(Agent):
     def __init__(self) -> None:
         super().__init__(
-            instructions="""You are a helpful voice AI assistant.
+            instructions="""You are 'Cheeko' voice AI assistant.
             You eagerly assist users with their questions by providing information from your extensive knowledge.
             Your responses are concise, to the point, and without any complex formatting or punctuation including emojis, asterisks, or other symbols.
             You are curious, friendly, and have a sense of humor.""",
         )
 
-    @function_tool
-    async def lookup_weather(self, context: RunContext, location: str):
-        logger.info(f"Looking up weather for {location}")
-        return "sunny with a temperature of 70 degrees."
 
-def prewarm(proc: JobProcess):
-    proc.userdata["vad"] = silero.VAD.load()
-
-async def entrypoint(ctx: JobContext):
-    ctx.log_context_fields = {"room": ctx.room.name}
-    print(f"Starting agent in room: {ctx.room.name}")
-
-    # Set up voice AI pipeline
-    session = AgentSession(
-        llm=groq.LLM(model="openai/gpt-oss-20b"),
-        stt=groq.STT(model="whisper-large-v3-turbo", language="en"),
-        tts=groq.TTS(model="playai-tts", voice="Aaliyah-PlayAI"),
-        turn_detection=MultilingualModel(),
-        vad=ctx.proc.userdata["vad"],
-        preemptive_generation=False,
-        
-    )
-
-    @session.on("agent_false_interruption")
-    def _on_agent_false_interruption(ev: AgentFalseInterruptionEvent):
-        logger.info("False positive interruption, resuming")
-        session.generate_reply(instructions=ev.extra_instructions or NOT_GIVEN)
-        payload = json.dumps({
-            "type": "agent_false_interruption",
-            "data": ev.dict()
-        })
-        asyncio.create_task(ctx.room.local_participant.publish_data(payload.encode("utf-8"), reliable=True))
-        logger.info("Sent agent_false_interruption via data channel")
-
-    usage_collector = metrics.UsageCollector()
-
-    # @session.on("metrics_collected")
-    # def _on_metrics_collected(ev: MetricsCollectedEvent):
-    #     metrics.log_metrics(ev.metrics)
-    #     usage_collector.collect(ev.metrics)
-    #     payload = json.dumps({
-    #         "type": "metrics_collected",
-    #         "data": ev.metrics.dict()
-    #     })
-    #     asyncio.create_task(ctx.room.local_participant.publish_data(payload.encode("utf-8"), reliable=True))
-    #     logger.info("Sent metrics_collected via data channel")
-
-    @session.on("agent_state_changed")
-    def _on_agent_state_changed(ev: AgentStateChangedEvent):
-        logger.info(f"Agent state changed: {ev}")
-        payload = json.dumps({
-            "type": "agent_state_changed",
-            "data": ev.dict()
-        })
-        asyncio.create_task(ctx.room.local_participant.publish_data(payload.encode("utf-8"), reliable=True))
-        logger.info("Sent agent_state_changed via data channel")
-
-    @session.on("user_input_transcribed")
-    def _on_user_input_transcribed(ev: UserInputTranscribedEvent):
-        logger.info(f"User said: {ev}")
-        payload = json.dumps({
-            "type": "user_input_transcribed",
-            "data": ev.dict()
-        })
-        asyncio.create_task(ctx.room.local_participant.publish_data(payload.encode("utf-8"), reliable=True))
-        logger.info("Sent user_input_transcribed via data channel")
-
-    @session.on("speech_created")
-    def _on_speech_created(ev: SpeechCreatedEvent):
-        # logger.info(f"Speech created with id: {ev.speech_id}, duration: {ev.duration_ms}ms")
-        payload = json.dumps({
-            "type": "speech_created",
-            "data": ev.dict()
-        })
-        asyncio.create_task(ctx.room.local_participant.publish_data(payload.encode("utf-8"), reliable=True))
-        logger.info("Sent speech_created via data channel")
-
-        
-    async def log_usage():
-        summary = usage_collector.get_summary()
-        logger.info(f"Usage: {summary}")
-        payload = json.dumps({
-            "type": "usage_summary",
-            "summary": summary.llm_prompt_tokens
-        })
-        # session.local_participant.publishData(payload.encode("utf-8"), reliable=True)
-        logger.info("Sent usage_summary via data channel")
-
-    ctx.add_shutdown_callback(log_usage)
-
-    await session.start(
-        agent=Assistant(),
-        room=ctx.room,
-        room_input_options=RoomInputOptions(
-            noise_cancellation=noise_cancellation.BVC(),
-        ),
-    )
+async def entrypoint(ctx: agents.JobContext):
+    # Connect to the room first
     await ctx.connect()
+    
+    # NEW: Setup audio source and decoder for Opus data channel
+    audio_source = rtc.AudioSource(16000, 1)  # 16kHz mono
+    opus_decoder = None
+    opus_buffer = bytearray()
+
+    # Publish audio track from our audio source
+    track = rtc.LocalAudioTrack.create_audio_track("microphone", audio_source)
+    await ctx.room.local_participant.publish_track(track, rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE))
+    print("✅ [OPUS] Published audio track from custom source")
+
+    # NEW: Listen for Opus data on 'audio/opus' topic
+    @ctx.room.on("data_received")
+    def on_data_received(data: rtc.DataPacket):
+        # Create async task for the actual processing
+        asyncio.create_task(process_opus_data(data))
+
+    async def process_opus_data(data: rtc.DataPacket):
+        nonlocal opus_decoder, opus_buffer
+
+        # Only process audio/opus topic
+        if data.topic != "audio/opus":
+            return
+
+        try:
+            # Initialize decoder if not already created
+            if opus_decoder is None:
+                opus_decoder = AudioStreamDecoder(sample_rate=16000, num_channels=1)
+                print("✅ [OPUS] AudioStreamDecoder initialized for 16kHz mono")
+
+            # Push Opus data to decoder
+            opus_decoder.push(bytes(data.data))
+
+            # Decode and push frames to audio source
+            async for audio_frame in opus_decoder:
+                # Capture decoded PCM frame to audio source
+                await audio_source.capture_frame(audio_frame)
+                print(f"🎵 [OPUS] Decoded and captured frame: {len(audio_frame.data)} samples")
+
+        except Exception as e:
+            print(f"❌ [OPUS] Error decoding: {e}")
+
+    session = AgentSession(
+        # stt=aws.STT(
+        #     region="us-east-1",
+        #     language="en-US",
+        #     enable_partial_results_stabilization=True,
+        #     partial_results_stability="high",
+        # ),
+
+        stt=deepgram.STT(
+            model="nova-3",
+            language="en-US",
+            endpointing_ms=3000,  # 3 seconds of silence before finalizing
+            interim_results=True,
+            punctuate=True,
+            smart_format=True,
+            filler_words=True,
+        ),
+        llm=groq.LLM(model="llama-3.1-8b-instant"),
+        tts=groq.TTS(),
+        vad=silero.VAD.load(),
+        # vad=silero.VAD.load(
+        #     activation_threshold=0.5,      # Adjusted threshold (default is 0.5)
+        #     min_speech_duration=0.1,      # Minimum duration to consider as speech
+        #     min_silence_duration=0.5,      # Wait 1.5 seconds of silence before ending
+        #     prefix_padding_duration=0.1,   # Padding before speech to avoid cutting off start
+        #     max_buffered_speech=60.0,      # Allow up to 60 seconds of continuous speech
+        # ),
+    )
+
+
+
+    # session = AgentSession(
+    #     llm=google.realtime.RealtimeModel(modalities=[Modality.TEXT]),
+    #      tts=groq.TTS(),
+    # )
+    await session.start(
+        room=ctx.room,
+        agent=Assistant(),
+    )
+
+    await session.generate_reply(
+        instructions="Greet the user and offer your assistance."
+    )
+
 
 if __name__ == "__main__":
-    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, prewarm_fnc=prewarm))
+    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))

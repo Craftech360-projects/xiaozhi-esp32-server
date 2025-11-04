@@ -1,5 +1,0 @@
-Timestamp: 20251101_213513_112
-Duration: 3.02s
-Audio bytes: 289920
-Sample rate: 16000Hz
-Transcript:  Oh

@@ -1,4 +1,0 @@
-Timestamp: 20251101_210018
-Transcript:  Can you listen to me right now properly?
-Language: en
-Provider: Groq (streaming)

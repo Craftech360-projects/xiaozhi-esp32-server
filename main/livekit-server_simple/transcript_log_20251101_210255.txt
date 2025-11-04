@@ -1,4 +1,0 @@
-Timestamp: 20251101_210255
-Transcript:  All right.
-Language: en
-Provider: Groq (streaming)

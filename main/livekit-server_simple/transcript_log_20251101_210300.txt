@@ -1,4 +1,0 @@
-Timestamp: 20251101_210300
-Transcript:  I'm gonna tell me I told you
-Language: en
-Provider: Groq (streaming)

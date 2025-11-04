@@ -18,7 +18,10 @@
     "dotenv": "^17.2.1",
     "json5": "^2.2.3",
     "livekit-server-sdk": "^2.13.3",
+    "mic": "^2.1.2",
     "mqtt": "^5.14.1",
+    "node-record-lpcm16": "^1.0.1",
+    "speaker": "^0.5.5",
     "ws": "^8.18.3"
   }
 }

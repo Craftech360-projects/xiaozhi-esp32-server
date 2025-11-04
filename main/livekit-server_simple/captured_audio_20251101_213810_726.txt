@@ -1,5 +1,0 @@
-Timestamp: 20251101_213810_726
-Duration: 3.93s
-Audio bytes: 377280
-Sample rate: 48000Hz
-Transcript:  player joanie joanie yes pepper

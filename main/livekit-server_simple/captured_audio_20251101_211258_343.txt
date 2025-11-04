@@ -1,5 +1,0 @@
-Timestamp: 20251101_211258_343
-Duration: 7.98s
-Audio bytes: 767040
-Sample rate: 16000Hz
-Transcript:  I'm able to can you listen to me properly right now just checking is everything working fine or not

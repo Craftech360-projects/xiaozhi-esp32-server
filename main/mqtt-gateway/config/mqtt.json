@@ -1,7 +1,7 @@
 {
   "debug": false,
   "mqtt_broker": {
-    "host": "192.168.1.7",
+    "host": "192.168.1.98",
     "port": 1883,
     "protocol": "mqtt",
     "keepalive": 60,
@@ -11,11 +11,11 @@
   },
   "livekit": {
     "url": "ws://localhost:7880",
-    "api_key": "devkey",
-    "api_secret": "a7f8e3d2c1b9a0f6e5d4c3b2a1f9e8d7c6b5a4f3e2d1c0b9a8f7"
+    "api_key": "key1",
+    "api_secret": "secret1"
   },
   "audio_recording": {
-    "enabled": true,
+    "enabled": false,
     "max_duration_seconds": 30,
     "format": "wav",
     "sample_rate": 16000,

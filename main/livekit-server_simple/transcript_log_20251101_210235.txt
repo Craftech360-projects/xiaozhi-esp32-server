@@ -1,4 +1,0 @@
-Timestamp: 20251101_210235
-Transcript:  Do I only have the opportunity to just visit this area,
-Language: en
-Provider: Groq (streaming)
