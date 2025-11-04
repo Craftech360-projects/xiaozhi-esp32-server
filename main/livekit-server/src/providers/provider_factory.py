@@ -187,16 +187,6 @@ class ProviderFactory:
 
         logger.info(f"[VAD] Creating VAD provider: {provider}")
 
-        # Try to use cached VAD first
-        try:
-            from ..utils.model_cache import model_cache
-            cached_vad = model_cache.get_vad_model()
-            if cached_vad:
-                logger.info(f"[VAD] Using cached VAD model")
-                return cached_vad
-        except Exception:
-            pass  # Fall back to direct loading
-
         # Create VAD based on provider
         if provider == 'ten':
             # TEN VAD

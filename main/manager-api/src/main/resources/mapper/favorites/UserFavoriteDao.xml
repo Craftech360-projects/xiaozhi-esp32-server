@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="xiaozhi.modules.favorites.dao.UserFavoriteDao">
+
+    <resultMap id="userFavoriteMap" type="xiaozhi.modules.favorites.entity.UserFavoriteEntity">
+        <id column="id" property="id"/>
+        <result column="user_id" property="userId"/>
+        <result column="content_id" property="contentId"/>
+        <result column="content_type" property="contentType"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+
+    <!-- Get user's favorites by content type -->
+    <select id="getFavoritesByUserAndType" resultMap="userFavoriteMap">
+        SELECT *
+        FROM user_favorites
+        WHERE user_id = #{userId}
+        <if test="contentType != null and contentType != ''">
+            AND content_type = #{contentType}
+        </if>
+        ORDER BY created_at DESC
+    </select>
+
+    <!-- Check if content is favorited by user -->
+    <select id="findByUserAndContent" resultMap="userFavoriteMap">
+        SELECT *
+        FROM user_favorites
+        WHERE user_id = #{userId}
+        AND content_id = #{contentId}
+        LIMIT 1
+    </select>
+
+    <!-- Batch check if multiple content items are favorited -->
+    <select id="checkBatchFavorites" resultType="String">
+        SELECT content_id
+        FROM user_favorites
+        WHERE user_id = #{userId}
+        AND content_id IN
+        <foreach collection="contentIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+
+    <!-- Get user's favorites count by type -->
+    <select id="getFavoritesCount" resultType="int">
+        SELECT COUNT(*)
+        FROM user_favorites
+        WHERE user_id = #{userId}
+        <if test="contentType != null and contentType != ''">
+            AND content_type = #{contentType}
+        </if>
+    </select>
+
+    <!-- Delete favorite by user and content -->
+    <delete id="deleteByUserAndContent">
+        DELETE FROM user_favorites
+        WHERE user_id = #{userId}
+        AND content_id = #{contentId}
+    </delete>
+
+</mapper>
