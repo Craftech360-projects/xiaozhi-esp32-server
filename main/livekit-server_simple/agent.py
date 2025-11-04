@@ -87,6 +87,7 @@ async def entrypoint(ctx: agents.JobContext):
         llm=groq.LLM(model="llama-3.1-8b-instant"),
         tts=groq.TTS(),
         vad=silero.VAD.load(),
+        
         # vad=silero.VAD.load(
         #     activation_threshold=0.5,      # Adjusted threshold (default is 0.5)
         #     min_speech_duration=0.1,      # Minimum duration to consider as speech
@@ -113,4 +114,6 @@ async def entrypoint(ctx: agents.JobContext):
 
 
 if __name__ == "__main__":
-    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
+    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint,num_idle_processes=2,  # Disable process pooling to avoid initialization issues
+        initialize_process_timeout=120.0,  # Increase timeout to 120 seconds for heavy model loading
+        job_memory_warn_mb=2000,))
