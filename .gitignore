@@ -190,3 +190,6 @@ main/manager-api/src/main/resources/application-dev.yml
 
 # LiveKit server configuration (contains API keys)
 main/livekit-server/config.yaml
+
+# LiveKit model cache (large ML model files)
+main/livekit-server/model_cache/
