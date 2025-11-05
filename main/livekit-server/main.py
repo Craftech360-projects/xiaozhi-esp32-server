@@ -161,6 +161,8 @@ class QwenRealtimeHandler:
         self.audio_queue = asyncio.Queue()
         self.transcript_queue = asyncio.Queue()
         self.running = False
+        self.is_speaking = False  # Track if Qwen is currently speaking (prevent interruptions)
+        self.response_generation_done = False  # Track if Qwen finished generating response
         self.chat_history_service = chat_history_service
         self.assistant = assistant  # Reference to assistant for function calls
         self.room = room  # LiveKit room for sending MQTT messages via data channel
@@ -274,7 +276,9 @@ class QwenRealtimeHandler:
                                 logger.error(f"Failed to log assistant message: {e}")
 
                 elif event_type == "response.created":
-                    # Qwen started responding - send speech_created message to MQTT
+                    # Qwen started responding - mark as speaking to prevent interruptions
+                    self.is_speaking = True
+                    self.response_generation_done = False
                     logger.info("🎤 Qwen response started - sending speech_created to MQTT")
                     await self.send_mqtt_message("speech_created", {
                         "timestamp": time.time()
@@ -287,13 +291,11 @@ class QwenRealtimeHandler:
                         await self.audio_queue.put(audio_data)
 
                 elif event_type == "response.done":
-                    # Qwen finished responding - send agent_state_changed message to MQTT
-                    logger.info("🎤 Qwen response finished - sending agent_state_changed to MQTT")
-                    await self.send_mqtt_message("agent_state_changed", {
-                        "old_state": "speaking",
-                        "new_state": "listening",
-                        "timestamp": time.time()
-                    })
+                    # Qwen finished GENERATING response (but playback may still be ongoing)
+                    # Mark generation as done, but don't send TTS stop yet
+                    # The audio playback loop will send it when queue is empty
+                    self.response_generation_done = True
+                    logger.info("✅ Qwen finished generating audio (playback may still be ongoing)")
 
         except Exception as e:
             logger.error(f"❌ Error listening to Qwen events: {e}")
@@ -305,6 +307,11 @@ class QwenRealtimeHandler:
     async def send_audio(self, audio_frame: rtc.AudioFrame):
         """Send audio frame to Qwen"""
         if not self.connection or not self.running:
+            return
+
+        # Prevent interruptions while Qwen is speaking
+        if self.is_speaking:
+            logger.debug("🔇 Ignoring user audio - Qwen is currently speaking")
             return
 
         try:
@@ -335,6 +342,44 @@ class QwenRealtimeHandler:
             return await asyncio.wait_for(self.transcript_queue.get(), timeout=0.001)
         except asyncio.TimeoutError:
             return None
+
+    async def send_text_message(self, text: str):
+        """Send a text message to Qwen (for greetings and text prompts)"""
+        if not self.connection or not self.running:
+            logger.warning("Cannot send text message - not connected to Qwen")
+            return
+
+        try:
+            # Create conversation item with text
+            text_message = {
+                "event_id": self.msg_id(),
+                "type": "conversation.item.create",
+                "item": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": text
+                        }
+                    ]
+                }
+            }
+
+            await self.connection.send(json.dumps(text_message))
+            logger.info(f"📝 Sent text message to Qwen: {text}")
+
+            # Request response
+            response_request = {
+                "event_id": self.msg_id(),
+                "type": "response.create"
+            }
+
+            await self.connection.send(json.dumps(response_request))
+            logger.info("📤 Requested response from Qwen")
+
+        except Exception as e:
+            logger.error(f"❌ Error sending text message to Qwen: {e}")
 
     async def disconnect(self):
         """Disconnect from Qwen"""
@@ -1099,14 +1144,60 @@ async def entrypoint(ctx: JobContext):
         logger.info("🎤 Using Qwen Realtime Model")
         logger.info(f"🔑 Qwen API Key configured: {QWEN_API_KEY[:20]}...")
 
-        # Connect to LiveKit room first
+        # Initialize Qwen handler BEFORE connecting to room (needed for data channel handler)
+        qwen_voice = os.getenv("QWEN_VOICE", "Cherry")
+        qwen = QwenRealtimeHandler(voice=qwen_voice, chat_history_service=chat_history_service, assistant=assistant, room=ctx.room)
+
+        # Register data channel handler BEFORE connecting to room
+        # This ensures we catch the initial agent_ready message from MQTT gateway
+        @ctx.room.on("data_received")
+        def on_qwen_data_received_early(data_packet: rtc.DataPacket):
+            """Handle data channel messages from MQTT gateway"""
+            logger.info(f"🔔 DATA CHANNEL EVENT TRIGGERED - Raw data length: {len(data_packet.data) if data_packet.data else 0}")
+            try:
+                message = json.loads(data_packet.data.decode('utf-8'))
+                msg_type = message.get('type')
+
+                logger.info(f"📨 Received data channel message: {msg_type}")
+
+                if msg_type == 'device_info':
+                    device_mac = message.get('device_mac')
+                    logger.info(f"📱 Device connected - MAC: {device_mac}")
+
+                elif msg_type == 'agent_ready':
+                    # MQTT gateway is requesting initial greeting
+                    greeting_prompt = message.get('message', 'Say hello to the user')
+                    logger.info(f"👋 Agent ready - sending greeting: {greeting_prompt}")
+
+                    # Send greeting prompt to Qwen
+                    asyncio.create_task(qwen.send_text_message(greeting_prompt))
+
+                elif msg_type == 'abort':
+                    # User interrupted - clear Qwen's audio queue
+                    logger.info("🛑 Abort signal received - clearing Qwen audio queue")
+                    while not qwen.audio_queue.empty():
+                        try:
+                            qwen.audio_queue.get_nowait()
+                        except:
+                            break
+
+                else:
+                    logger.debug(f"Unhandled data channel message type: {msg_type}")
+
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to decode data channel message: {e}")
+                logger.warning(f"Raw data: {data_packet.data[:100] if data_packet.data else 'None'}")
+            except Exception as e:
+                logger.error(f"Error handling data channel message: {e}")
+                import traceback
+                traceback.print_exc()
+
+        logger.info("✅ Data channel handler registered BEFORE room connection")
+
+        # Connect to LiveKit room NOW (after handler is registered)
         logger.info("🔗 Connecting to LiveKit room...")
         await ctx.connect()
         logger.info("✅ Connected to LiveKit room")
-
-        # Initialize Qwen handler with chat history service and room for MQTT messages
-        qwen_voice = os.getenv("QWEN_VOICE", "Cherry")
-        qwen = QwenRealtimeHandler(voice=qwen_voice, chat_history_service=chat_history_service, assistant=assistant, room=ctx.room)
 
         if not await qwen.connect():
             logger.error("❌ Failed to connect to Qwen - falling back to standard session")
@@ -1126,6 +1217,12 @@ async def entrypoint(ctx: JobContext):
             audio_options.source = rtc.TrackSource.SOURCE_MICROPHONE
             await ctx.room.local_participant.publish_track(audio_track, audio_options)
             logger.info("✅ Published Qwen audio track")
+
+            # Send initial greeting immediately when agent is ready
+            logger.info("👋 Agent is ready - sending initial greeting to Qwen")
+            initial_greeting = "Say hello to the user in a friendly and warm way"
+            asyncio.create_task(qwen.send_text_message(initial_greeting))
+            logger.info(f"📤 Triggered initial greeting: '{initial_greeting}'")
 
             # Audio resampler for input
             audio_resampler = rtc.AudioResampler(input_rate=48000, output_rate=16000, num_channels=1)
@@ -1191,6 +1288,18 @@ async def entrypoint(ctx: JobContext):
                                 samples_per_channel=len(audio_array),
                             )
                             await audio_source.capture_frame(frame)
+
+                        # Check if generation is done AND queue is empty AND we're still speaking
+                        # This ensures TTS stop is sent AFTER all audio has been played
+                        if qwen.response_generation_done and qwen.audio_queue.empty() and qwen.is_speaking:
+                            qwen.is_speaking = False
+                            qwen.response_generation_done = False
+                            logger.info("🎤 All audio playback finished - sending agent_state_changed to MQTT")
+                            await qwen.send_mqtt_message("agent_state_changed", {
+                                "old_state": "speaking",
+                                "new_state": "listening",
+                                "timestamp": time.time()
+                            })
 
                         # Get transcripts
                         transcript = await qwen.get_transcript()
