@@ -181,7 +181,7 @@ class ModelCache:
             return self._models["vad_model"]
 
         # VAD model must be loaded on main thread
-        # This is a requirement for both Silero and TEN VAD
+        # This is a requirement for Silero VAD
         try:
             import threading
             if threading.current_thread() != threading.main_thread():
@@ -189,7 +189,7 @@ class ModelCache:
                     "[CACHE] VAD model must be loaded on main thread, deferring...")
                 return None
 
-            # Use ProviderFactory to create VAD (supports both Silero and TEN)
+            # Use ProviderFactory to create VAD
             from ..providers.provider_factory import ProviderFactory
             logger.info("[CACHE] Loading VAD model on main thread...")
 

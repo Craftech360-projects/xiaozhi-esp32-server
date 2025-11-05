@@ -183,46 +183,20 @@ class ProviderFactory:
 
         # Get VAD configuration
         vad_config = ConfigLoader.get_vad_config()
-        provider = vad_config['provider'].lower()
 
-        logger.info(f"[VAD] Creating VAD provider: {provider}")
+        logger.info(f"[VAD] Creating Silero VAD provider")
 
-        # Try to use cached VAD first
-        try:
-            from ..utils.model_cache import model_cache
-            cached_vad = model_cache.get_vad_model()
-            if cached_vad:
-                logger.info(f"[VAD] Using cached VAD model")
-                return cached_vad
-        except Exception:
-            pass  # Fall back to direct loading
+        # # Try to use cached VAD first
+        # try:
+        #     from ..utils.model_cache import model_cache
+        #     cached_vad = model_cache.get_vad_model()
+        #     if cached_vad:
+        #         logger.info(f"[VAD] Using cached VAD model")
+        #         return cached_vad
+        # except Exception:
+        #     pass  # Fall back to direct loading
 
-        # Create VAD based on provider
-        if provider == 'ten':
-            # TEN VAD
-            try:
-                from .ten_vad_wrapper import TENVAD
-                logger.info("[VAD] Loading TEN VAD with child-optimized settings")
-                logger.info(f"[VAD] Config: threshold={vad_config['activation_threshold']}, "
-                           f"min_speech={vad_config['min_speech_duration']}s, "
-                           f"min_silence={vad_config['min_silence_duration']}s, "
-                           f"hop_size={vad_config['hop_size']}")
-
-                return TENVAD.load(
-                    min_speech_duration=vad_config['min_speech_duration'],
-                    min_silence_duration=vad_config['min_silence_duration'],
-                    activation_threshold=vad_config['activation_threshold'],
-                    prefix_padding_duration=vad_config['prefix_padding_duration'],
-                    max_buffered_speech=vad_config['max_buffered_speech'],
-                    sample_rate=vad_config['sample_rate'],
-                    hop_size=vad_config['hop_size'],
-                )
-            except Exception as e:
-                logger.error(f"[VAD] Failed to load TEN VAD: {e}")
-                logger.warning("[VAD] Falling back to Silero VAD")
-                provider = 'silero'  # Fallback
-
-        # Silero VAD (default or fallback)
+        # Silero VAD
         logger.info("[VAD] Loading Silero VAD with child-optimized settings")
         logger.info(f"[VAD] Config: threshold={vad_config['activation_threshold']}, "
                    f"min_speech={vad_config['min_speech_duration']}s, "

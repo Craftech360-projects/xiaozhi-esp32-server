@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>LiveKit CDN Music Streaming</title>
+  <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.0.0/dist/livekit-client.umd.min.js"
+          onerror="console.error('Failed to load from jsdelivr')"></script>
+</head>
+<body>
+  <h2>🎧 LiveKit CDN Music Streaming</h2>
+  <div style="margin: 20px;">
+    <label for="user">User ID:</label>
+    <input type="text" id="user" placeholder="Enter your user ID" style="margin: 10px; padding: 5px;" />
+
+    <br>
+
+    <label for="language">Language:</label>
+    <select id="language" style="margin: 10px; padding: 5px;">
+      <option value="">All Languages (Random)</option>
+      <option value="English">English</option>
+      <option value="Hindi">Hindi</option>
+      <option value="Telugu">Telugu</option>
+    </select>
+
+    <br>
+
+    <button id="start" style="margin: 10px; padding: 10px 20px; font-size: 16px;">🎵 Join & Start Music</button>
+  </div>
+  <div id="status" style="margin: 20px; padding: 10px; font-weight: bold;"></div>
+
+  <!-- Playback Controls (hidden until connected) -->
+  <div id="controls" style="display: none; margin: 20px; text-align: center;">
+    <button id="prevBtn" style="margin: 5px; padding: 10px 20px; font-size: 16px; cursor: pointer;">⏮️ Previous</button>
+    <button id="nextBtn" style="margin: 5px; padding: 10px 20px; font-size: 16px; cursor: pointer;">⏭️ Next</button>
+  </div>
+
+  <!-- Now Playing Display -->
+  <div id="nowPlayingContainer" style="display: none; margin: 20px; padding: 15px; background-color: #f0f0f0; border-radius: 8px;">
+    <h3 style="margin-top: 0;">🎵 Now Playing</h3>
+    <div id="nowPlaying" style="font-size: 18px; font-weight: bold;">...</div>
+    <div id="songLanguage" style="font-size: 14px; color: #666; margin-top: 5px;">...</div>
+  </div>
+
+  <script>
+    const SERVER_URL = "http://localhost:8000";
+    let connectedRoom = null;
+
+    // Check what's loaded
+    window.addEventListener('load', () => {
+      console.log("Available globals:", Object.keys(window).filter(k => k.toLowerCase().includes('live')));
+    });
+
+    document.getElementById("start").onclick = async () => {
+      try {
+        const userId = document.getElementById("user").value || "guest";
+        const language = document.getElementById("language").value;
+        const statusEl = document.getElementById("status");
+
+        console.log("📡 Sending request to server...");
+        statusEl.innerHTML = "📡 Connecting to server...";
+
+        const requestBody = { user_id: userId };
+        if (language) {
+          requestBody.language = language;
+        }
+
+        const resp = await fetch(`${SERVER_URL}/create-room`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody),
+        });
+
+        if (!resp.ok) {
+          console.error("❌ Server error:", resp.status, resp.statusText);
+          statusEl.innerHTML = "❌ Failed to create room";
+          alert("Failed to create room. Check console for details.");
+          return;
+        }
+
+        const data = await resp.json();
+        console.log("✅ Server response:", data);
+
+        console.log("🔗 Connecting to LiveKit:", data.livekitUrl);
+        statusEl.innerHTML = "🔗 Connecting to LiveKit room...";
+
+        // Check which global is available
+        const LK = window.LivekitClient || window.LiveKitClient || window.livekit;
+
+        if (!LK) {
+          console.error("Available window properties:", Object.keys(window).filter(k => k.toLowerCase().includes('live')));
+          throw new Error("LiveKit library not loaded. Check browser console for details.");
+        }
+
+        console.log("Using LiveKit client:", LK);
+
+        // Use the correct API - Room constructor and connect method
+        const room = new LK.Room();
+
+        // Set up event listeners BEFORE connecting
+        room.on(LK.RoomEvent.TrackSubscribed, (track, publication, participant) => {
+          console.log("🎵 Track subscribed from", participant.identity, track.kind);
+          if (track.kind === LK.Track.Kind.Audio) {
+            const audioEl = track.attach();
+            document.body.appendChild(audioEl);
+            statusEl.innerHTML = "🎵 Playing music!";
+            console.log("🎵 Audio track attached");
+          }
+        });
+
+        room.on(LK.RoomEvent.Connected, () => {
+          console.log("✅ Connected to room");
+          const lang = data.language || "all languages";
+          statusEl.innerHTML = `✅ Connected! Playing random music (${lang})...`;
+
+          // Show playback controls
+          document.getElementById("controls").style.display = "block";
+          document.getElementById("nowPlayingContainer").style.display = "block";
+        });
+
+        room.on(LK.RoomEvent.Disconnected, () => {
+          console.log("👋 Disconnected from room");
+          statusEl.innerHTML = "👋 Disconnected";
+
+          // Hide playback controls
+          document.getElementById("controls").style.display = "none";
+          document.getElementById("nowPlayingContainer").style.display = "none";
+        });
+
+        // Listen for song info updates from bot
+        room.on(LK.RoomEvent.DataReceived, (payload, participant) => {
+          try {
+            const message = JSON.parse(new TextDecoder().decode(payload));
+            console.log("📨 Received data message:", message);
+
+            if (message.type === 'song_info') {
+              const song = message.song;
+              document.getElementById("nowPlaying").innerHTML = song.title;
+              document.getElementById("songLanguage").innerHTML = `Language: ${song.language}`;
+              console.log(`🎵 Now Playing: ${song.title} (${song.language})`);
+            }
+          } catch (e) {
+            console.error("Error parsing data message:", e);
+          }
+        });
+
+        // Connect to the room
+        await room.connect(data.livekitUrl, data.token);
+        connectedRoom = room;
+
+        console.log("✅ Joined room:", data.roomName);
+
+        // Setup Next button handler
+        document.getElementById("nextBtn").onclick = async () => {
+          if (!connectedRoom) return;
+          try {
+            console.log("⏭️  Sending 'next' command...");
+            const message = JSON.stringify({ command: "next" });
+            await connectedRoom.localParticipant.publishData(
+              new TextEncoder().encode(message),
+              { reliable: true }
+            );
+            console.log("✅ Next command sent");
+          } catch (e) {
+            console.error("❌ Error sending next command:", e);
+          }
+        };
+
+        // Setup Previous button handler
+        document.getElementById("prevBtn").onclick = async () => {
+          if (!connectedRoom) return;
+          try {
+            console.log("⏮️  Sending 'previous' command...");
+            const message = JSON.stringify({ command: "previous" });
+            await connectedRoom.localParticipant.publishData(
+              new TextEncoder().encode(message),
+              { reliable: true }
+            );
+            console.log("✅ Previous command sent");
+          } catch (e) {
+            console.error("❌ Error sending previous command:", e);
+          }
+        };
+
+      } catch (error) {
+        console.error("❌ Error:", error);
+        document.getElementById("status").innerHTML = "❌ Error: " + error.message;
+        alert("Error: " + error.message);
+      }
+    };
+  </script>
+</body>
+</html>

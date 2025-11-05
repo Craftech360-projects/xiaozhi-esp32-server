@@ -99,7 +99,22 @@ class Assistant(FilteredAgent):
         if instructions is None:
             instructions = "You are a helpful AI assistant."
 
-        super().__init__(instructions=instructions, tts_provider=tts_provider)
+        # Word Ladder game state (set BEFORE formatting prompt)
+        # Pick random word pair for the game
+        self.start_word, self.target_word = self._pick_valid_word_pair()
+        self.current_word = self.start_word
+        self.failure_count = 0
+        self.max_failures = 2
+        self.word_history = [self.start_word]  # Track all words used in game
+        logger.info(f"🎮 Word Ladder initialized: {self.start_word} → {self.target_word}")
+
+        # Store original instructions template for later re-formatting
+        self._original_instructions = instructions
+
+        # Format the prompt with actual game state values
+        formatted_instructions = self._format_instructions(instructions)
+
+        super().__init__(instructions=formatted_instructions, tts_provider=tts_provider)
 
         # These will be injected by main.py
         self.music_service = None
@@ -116,16 +131,6 @@ class Assistant(FilteredAgent):
 
         # Session reference for dynamic updates
         self._agent_session = None
-
-        # Word Ladder game state
-        self.start_word = "cold"
-        self.target_word = "warm"
-        self.current_word = "cold"
-        self.failure_count = 0
-        self.max_failures = 2
-
-        # Background audio player for game sounds (injected by main.py)
-        self.game_audio_player = None
 
         # Log registered function tools (for debugging)
         logger.info("🔧 Assistant initialized, checking function tools...")
@@ -159,6 +164,77 @@ class Assistant(FilteredAgent):
             logger.warning(f"🔧 Error inspecting function tools: {e}")
             import traceback
             logger.warning(f"🔧 Traceback: {traceback.format_exc()}")
+
+    def _format_instructions(self, prompt: str) -> str:
+        """
+        Internal method to format prompt by replacing game state placeholders with actual values.
+
+        Replaces:
+        - {self.start_word} with actual start_word
+        - {self.target_word} with actual target_word
+        - {self.current_word} with actual current_word
+        - {self.failure_count} with actual failure_count
+        - {self.max_failures} with actual max_failures
+
+        Args:
+            prompt: The prompt string with placeholders
+
+        Returns:
+            Formatted prompt with actual game state values
+        """
+        try:
+            formatted_prompt = prompt.format(
+                self=self
+            )
+            logger.info(f"📝 Formatted prompt with game state: start_word={self.start_word}, target_word={self.target_word}, failure_count={self.failure_count}/{self.max_failures}")
+            return formatted_prompt
+        except KeyError as e:
+            logger.warning(f"⚠️ Failed to format some placeholders in prompt: {e}")
+            return prompt
+        except Exception as e:
+            logger.error(f"❌ Error formatting prompt: {e}")
+            return prompt
+
+    async def update_prompt_with_game_state(self):
+        """
+        Update the agent's instructions with current game state values.
+        Call this method whenever game state changes (start_word, target_word, failure_count).
+        """
+        try:
+            # Get the original prompt (unformatted) from _instructions
+            # Since we need the original template, we'll store it
+            if not hasattr(self, '_original_instructions'):
+                logger.warning("⚠️ No original instructions template available for formatting")
+                return
+
+            # Format with current game state
+            formatted_prompt = self._format_instructions(self._original_instructions)
+
+            # Update agent's instructions
+            self._instructions = formatted_prompt
+
+            # Update session if available (for immediate effect)
+            if self._agent_session:
+                try:
+                    # Update session's agent internal instructions
+                    self._agent_session._agent._instructions = formatted_prompt
+
+                    # Also update session chat context if possible
+                    if hasattr(self._agent_session, 'history') and hasattr(self._agent_session.history, 'messages'):
+                        # Update the system message in history
+                        if len(self._agent_session.history.messages) > 0:
+                            if hasattr(self._agent_session.history.messages[0], 'content'):
+                                self._agent_session.history.messages[0].content = formatted_prompt
+                                logger.info(f"🔄 Session chat context updated with new game state!")
+
+                    logger.info(f"🔄 Session instructions updated with game state in real-time!")
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not update session directly: {e}")
+
+        except Exception as e:
+            logger.error(f"❌ Error updating prompt with game state: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
 
 
 
@@ -1266,101 +1342,210 @@ class Assistant(FilteredAgent):
         self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
         return await self.mcp_executor.set_rainbow_speed(speed_ms)
 
-    # ============================================================================
-    # Word Ladder Game Function Tools
-    # ============================================================================
-
     @function_tool
-    async def play_success_sound(self, context: RunContext) -> str:
+    async def validate_word_ladder_move(self, context: RunContext, user_word: str) -> str:
         """
-        Play happy/success sound when child says correct word in the word ladder game.
+        Validate user's word in the Word Ladder game.
 
-        Use this function when:
-        - The child's word is a valid English word
-        - The word follows the word ladder rules (starts with last letter of previous word)
-        - The answer is correct
+        CRITICAL: Call this function for EVERY word the user says in the game.
+        DO NOT validate manually. Trust this function's JSON result.
 
-        IMPORTANT: Call this BEFORE giving positive feedback to the child.
+        Game Rules:
+        1. New word must start with the last letter of current word
+        2. Goal is to reach the target word
+
+        Args:
+            user_word: The word the user just said
+
+        Returns:
+            JSON string with validation result and game state
         """
-        # Reset failure counter on correct answer
-        self.failure_count = 0
+        try:
+            # 1. Normalize input
+            user_word = user_word.lower().strip()
 
-        if self.game_audio_player:
-            try:
-                audio_path = str(self.AUDIO_DIR / "Happy.mp3")
-                logger.info(f"🎵 Playing success sound from: {audio_path}")
-                await self.game_audio_player.play(audio_path)
-                logger.info(f"✅ Success sound played (failures reset: {self.failure_count})")
-                return "Success sound played - child answered correctly!"
-            except Exception as e:
-                logger.error(f"Failed to play success sound: {e}")
-                return f"Could not play success sound: {e}"
-        else:
-            logger.warning("⚠️ Background audio player not available for success sound")
-            return "Background audio player not available"
+            logger.info(f"🎮 Validating word: '{user_word}' | Current: '{self.current_word}' | Target: '{self.target_word}'")
+            logger.info(f"🎮 Word history: {self.word_history}")
+            logger.info(f"🎮 Failure count: {self.failure_count}/{self.max_failures}")
 
-    @function_tool
-    async def play_failure_sound(self, context: RunContext) -> str:
+            # Edge case: empty or invalid input
+            if not user_word or len(user_word) < 2:
+                self.failure_count += 1
+                logger.warning(f"❌ Invalid input: '{user_word}' (too short or empty)")
+
+                if self.failure_count >= self.max_failures:
+                    return await self._restart_game("Too many failures")
+
+                result = {
+                    "success": False,
+                    "game_status": "in_progress",
+                    "current_word": self.current_word,
+                    "target_word": self.target_word,
+                    "next_letter": self.current_word[-1],
+                    "words_used": len(self.word_history),
+                    "failure_count": self.failure_count,
+                    "max_failures": self.max_failures,
+                    "message": "Invalid word (too short or empty)",
+                    "error_type": "invalid_input"
+                }
+                return json.dumps(result)
+
+            # 2. Check letter matching (MOST IMPORTANT)
+            last_letter_of_current = self.current_word[-1].lower()
+            first_letter_of_user = user_word[0].lower()
+
+            if last_letter_of_current != first_letter_of_user:
+                self.failure_count += 1
+                logger.warning(f"❌ Wrong letter: '{user_word}' starts with '{first_letter_of_user}' but '{self.current_word}' ends with '{last_letter_of_current}'")
+
+                if self.failure_count >= self.max_failures:
+                    return await self._restart_game("Too many wrong attempts")
+
+                result = {
+                    "success": False,
+                    "game_status": "in_progress",
+                    "current_word": self.current_word,
+                    "target_word": self.target_word,
+                    "next_letter": last_letter_of_current,
+                    "words_used": len(self.word_history),
+                    "failure_count": self.failure_count,
+                    "max_failures": self.max_failures,
+                    "message": "Wrong letter",
+                    "error_type": "wrong_letter",
+                    "expected_letter": last_letter_of_current,
+                    "received_letter": first_letter_of_user,
+                    "user_word": user_word
+                }
+                return json.dumps(result)
+
+            # 3. Check victory condition
+            if user_word == self.target_word:
+                logger.info(f"🏆 VICTORY! User reached target word: {self.target_word}")
+                self.word_history.append(user_word)
+
+                # Auto-restart game with new words
+                return await self._restart_game("Victory!", is_victory=True)
+
+            # 4. Valid move! Update state
+            self.current_word = user_word
+            self.word_history.append(user_word)
+            logger.info(f"✅ Valid move! Current word: '{self.current_word}' | History: {self.word_history}")
+
+            # Update prompt with new current_word state
+            await self.update_prompt_with_game_state()
+
+            # Calculate progress
+            next_letter = self.current_word[-1]
+            words_used = len(self.word_history)
+
+            result = {
+                "success": True,
+                "game_status": "in_progress",
+                "current_word": self.current_word,
+                "target_word": self.target_word,
+                "next_letter": next_letter,
+                "words_used": words_used,
+                "failure_count": self.failure_count,
+                "max_failures": self.max_failures,
+                "message": "Valid move",
+                "error_type": None,
+                "user_word": user_word
+            }
+            return json.dumps(result)
+
+        except Exception as e:
+            logger.error(f"❌ Error validating word: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+
+            result = {
+                "success": False,
+                "game_status": "error",
+                "current_word": self.current_word,
+                "target_word": self.target_word,
+                "next_letter": self.current_word[-1] if self.current_word else "",
+                "words_used": len(self.word_history),
+                "failure_count": self.failure_count,
+                "max_failures": self.max_failures,
+                "message": "System error",
+                "error_type": "system_error"
+            }
+            return json.dumps(result)
+
+    async def _restart_game(self, reason: str, is_victory: bool = False) -> str:
         """
-        Play sad/failure sound when child says wrong word in the word ladder game.
+        Internal method to restart the Word Ladder game with new words.
 
-        Use this function when:
-        - The child's word is not a valid English word
-        - The word doesn't follow the word ladder rules
-        - The answer is incorrect
+        Args:
+            reason: Why the game is restarting
+            is_victory: Whether this restart is due to victory
 
-        IMPORTANT: Call this BEFORE giving encouragement to try again.
+        Returns:
+            JSON string announcing the new game
         """
-        # Increment failure counter
-        self.failure_count += 1
-        logger.info(f"Failure count: {self.failure_count}/{self.max_failures}")
+        try:
+            # Pick new word pair
+            old_start = self.start_word
+            old_target = self.target_word
 
-        # Play failure sound
-        if self.game_audio_player:
-            try:
-                audio_path = str(self.AUDIO_DIR / "Sad.mp3")
-                logger.info(f"🎵 Playing failure sound from: {audio_path}")
-                await self.game_audio_player.play(audio_path)
-                logger.info(f"❌ Failure sound played (failure {self.failure_count}/{self.max_failures})")
-            except Exception as e:
-                logger.error(f"Failed to play failure sound: {e}")
-        else:
-            logger.warning("⚠️ Background audio player not available for failure sound")
-
-        # Check if game should restart (2 consecutive failures)
-        if self.failure_count >= self.max_failures:
-            # Generate new word pair
             self.start_word, self.target_word = self._pick_valid_word_pair()
             self.current_word = self.start_word
             self.failure_count = 0
+            self.word_history = [self.start_word]
 
-            logger.info(f"🔄 Game restarting with new words: {self.start_word} → {self.target_word}")
-            return f"GAME RESTART! New words: {self.start_word} → {self.target_word}. Tell the child about the new game!"
+            # Update prompt with new game state
+            await self.update_prompt_with_game_state()
 
-        return f"Failure sound played - {self.failure_count}/{self.max_failures} failures"
+            if is_victory:
+                logger.info(f"🎉 Victory restart! Old: {old_start}→{old_target} | New: {self.start_word}→{self.target_word}")
+                result = {
+                    "success": True,
+                    "game_status": "victory",
+                    "current_word": self.start_word,
+                    "target_word": self.target_word,
+                    "next_letter": self.start_word[-1],
+                    "words_used": 1,
+                    "failure_count": 0,
+                    "max_failures": self.max_failures,
+                    "message": "Victory! Starting new game",
+                    "error_type": None,
+                    "old_start_word": old_start,
+                    "old_target_word": old_target
+                }
+            else:
+                logger.info(f"🔄 Game restart ({reason}): {self.start_word} → {self.target_word}")
+                result = {
+                    "success": False,
+                    "game_status": "game_over",
+                    "current_word": self.start_word,
+                    "target_word": self.target_word,
+                    "next_letter": self.start_word[-1],
+                    "words_used": 1,
+                    "failure_count": 0,
+                    "max_failures": self.max_failures,
+                    "message": f"Game over! {reason}. Starting new game",
+                    "error_type": "max_failures_reached",
+                    "old_start_word": old_start,
+                    "old_target_word": old_target
+                }
 
-    @function_tool
-    async def play_victory_sound(self, context: RunContext) -> str:
-        """
-        Play celebration/victory sound when child reaches the final target word.
+            return json.dumps(result)
 
-        Use this function when:
-        - The child has successfully completed the word ladder
-        - The final target word has been reached
-        - It's time to celebrate!
+        except Exception as e:
+            logger.error(f"❌ Error restarting game: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
 
-        IMPORTANT: Call this BEFORE celebrating with the child.
-        """
-        if self.game_audio_player:
-            try:
-                audio_path = str(self.AUDIO_DIR / "Victory.mp3")
-                logger.info(f"🎵 Playing victory sound from: {audio_path}")
-                await self.game_audio_player.play(audio_path)
-                logger.info("🎉 Victory sound played")
-                return "Victory sound played - game completed successfully!"
-            except Exception as e:
-                logger.error(f"Failed to play victory sound: {e}")
-                return f"Could not play victory sound: {e}"
-        else:
-            logger.warning("⚠️ Background audio player not available for victory sound")
-            return "Background audio player not available"
+            result = {
+                "success": False,
+                "game_status": "error",
+                "current_word": self.current_word,
+                "target_word": self.target_word,
+                "next_letter": self.current_word[-1] if self.current_word else "",
+                "words_used": len(self.word_history),
+                "failure_count": self.failure_count,
+                "max_failures": self.max_failures,
+                "message": "Error restarting game",
+                "error_type": "restart_error"
+            }
+            return json.dumps(result)
