@@ -78,6 +78,8 @@ if (OpusEncoder) {
 
 const mqtt = require("mqtt");
 const { ConfigManager } = require("./utils/config-manager");
+const fs = require("fs");
+const path = require("path");
 
 // ========================================
 // PHASE 1 OPTIMIZATION: Streaming AES Encryption
@@ -159,6 +161,115 @@ class StreamingCrypto {
 
 // Global streaming crypto instance for reuse across connections
 const streamingCrypto = new StreamingCrypto();
+
+// ========================================
+// WAV File Recording Class
+// ========================================
+/**
+ * WAV file writer for saving audio streams
+ * Handles PCM audio data and creates proper WAV file format
+ */
+class WAVWriter {
+  constructor(filePath, sampleRate = 16000, channels = 1, bitsPerSample = 16) {
+    this.filePath = filePath;
+    this.sampleRate = sampleRate;
+    this.channels = channels;
+    this.bitsPerSample = bitsPerSample;
+    this.bytesPerSample = bitsPerSample / 8;
+    this.blockAlign = channels * this.bytesPerSample;
+    this.byteRate = sampleRate * this.blockAlign;
+    
+    this.audioData = [];
+    this.totalBytes = 0;
+    this.isFinalized = false;
+    
+    console.log(`🎵 [WAV] Creating WAV writer: ${filePath} (${sampleRate}Hz, ${channels}ch, ${bitsPerSample}bit)`);
+  }
+
+  writeAudio(pcmData) {
+    if (this.isFinalized) {
+      console.warn(`⚠️ [WAV] Cannot write to finalized WAV file: ${this.filePath}`);
+      return;
+    }
+
+    this.audioData.push(pcmData);
+    this.totalBytes += pcmData.length;
+  }
+
+  finalize() {
+    if (this.isFinalized) {
+      console.warn(`⚠️ [WAV] WAV file already finalized: ${this.filePath}`);
+      return;
+    }
+
+    try {
+      // Ensure directory exists
+      const dir = path.dirname(this.filePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+
+      // Create WAV header
+      const header = this.createWAVHeader();
+      
+      // Combine header and audio data
+      const audioBuffer = Buffer.concat(this.audioData);
+      const wavFile = Buffer.concat([header, audioBuffer]);
+      
+      // Write to file
+      fs.writeFileSync(this.filePath, wavFile);
+      
+      this.isFinalized = true;
+      
+      console.log(`✅ [WAV] Saved WAV file: ${this.filePath}`);
+      console.log(`   📊 Duration: ${(this.totalBytes / this.byteRate).toFixed(2)}s`);
+      console.log(`   📦 Size: ${wavFile.length} bytes (${this.totalBytes} audio + ${header.length} header)`);
+      
+      return this.filePath;
+    } catch (error) {
+      console.error(`❌ [WAV] Failed to save WAV file ${this.filePath}:`, error.message);
+      throw error;
+    }
+  }
+
+  createWAVHeader() {
+    const header = Buffer.alloc(44);
+    let offset = 0;
+
+    // RIFF header
+    header.write('RIFF', offset); offset += 4;
+    header.writeUInt32LE(36 + this.totalBytes, offset); offset += 4; // File size - 8
+    header.write('WAVE', offset); offset += 4;
+
+    // fmt chunk
+    header.write('fmt ', offset); offset += 4;
+    header.writeUInt32LE(16, offset); offset += 4; // fmt chunk size
+    header.writeUInt16LE(1, offset); offset += 2;  // PCM format
+    header.writeUInt16LE(this.channels, offset); offset += 2;
+    header.writeUInt32LE(this.sampleRate, offset); offset += 4;
+    header.writeUInt32LE(this.byteRate, offset); offset += 4;
+    header.writeUInt16LE(this.blockAlign, offset); offset += 2;
+    header.writeUInt16LE(this.bitsPerSample, offset); offset += 2;
+
+    // data chunk
+    header.write('data', offset); offset += 4;
+    header.writeUInt32LE(this.totalBytes, offset); offset += 4;
+
+    return header;
+  }
+
+  getStats() {
+    return {
+      filePath: this.filePath,
+      sampleRate: this.sampleRate,
+      channels: this.channels,
+      bitsPerSample: this.bitsPerSample,
+      totalBytes: this.totalBytes,
+      durationSeconds: this.totalBytes / this.byteRate,
+      isFinalized: this.isFinalized
+    };
+  }
+}
 
 // ========================================
 // PHASE 2: Performance Monitoring with CPU & Memory Metrics
@@ -401,7 +512,6 @@ class PerformanceMonitor {
 // PHASE 2: Worker Pool Manager
 // ========================================
 const { Worker } = require('worker_threads');
-const path = require('path');
 
 /**
  * Worker Pool Manager for parallel audio processing
@@ -642,18 +752,18 @@ class WorkerPoolManager {
       const avgPendingPerWorker = this.workerPendingCount.reduce((a, b) => a + b, 0) / this.workers.length;
       const loadPercent = Math.min(100, (avgPendingPerWorker / 5 * 100)).toFixed(1);
 
-      console.log('\n📊 [WORKER-POOL METRICS] ================');
-      console.log(`   Workers: ${stats.activeWorkers}/${stats.workers} active (min: ${this.minWorkers}, max: ${this.maxWorkers})`);
-      console.log(`   Load: ${loadPercent}% (${avgPendingPerWorker.toFixed(2)} pending/worker)`);
-      console.log(`   Pending Requests: ${stats.pendingRequests}`);
-      console.log(`   Frames Processed: ${stats.performance.framesProcessed}`);
-      console.log(`   Throughput: ${stats.performance.framesPerSecond} fps`);
-      console.log(`   Avg Latency: ${stats.performance.avgLatency}`);
-      console.log(`   Max Latency: ${stats.performance.maxLatency}`);
-      console.log(`   CPU Usage: ${stats.performance.avgCpuUsage} (max: ${stats.performance.maxCpuUsage})`);
-      console.log(`   Memory: ${stats.performance.currentMemory.heapUsed} / ${stats.performance.currentMemory.heapTotal}`);
-      console.log(`   Errors: ${stats.performance.errors}`);
-      console.log('==========================================\n');
+      // console.log('\n📊 [WORKER-POOL METRICS] ================');
+      // console.log(`   Workers: ${stats.activeWorkers}/${stats.workers} active (min: ${this.minWorkers}, max: ${this.maxWorkers})`);
+      // console.log(`   Load: ${loadPercent}% (${avgPendingPerWorker.toFixed(2)} pending/worker)`);
+      // console.log(`   Pending Requests: ${stats.pendingRequests}`);
+      // console.log(`   Frames Processed: ${stats.performance.framesProcessed}`);
+      // console.log(`   Throughput: ${stats.performance.framesPerSecond} fps`);
+      // console.log(`   Avg Latency: ${stats.performance.avgLatency}`);
+      // console.log(`   Max Latency: ${stats.performance.maxLatency}`);
+      // console.log(`   CPU Usage: ${stats.performance.avgCpuUsage} (max: ${stats.performance.maxCpuUsage})`);
+      // console.log(`   Memory: ${stats.performance.currentMemory.heapUsed} / ${stats.performance.currentMemory.heapTotal}`);
+      // console.log(`   Errors: ${stats.performance.errors}`);
+      // console.log('==========================================\n');
     }, intervalSeconds * 1000);
   }
 
@@ -886,121 +996,6 @@ configManager.on("configChanged", (config) => {
 });
 setDebugEnabled(configManager.get("debug"));
 
-/**
- * WAV file writer for audio recording and quality analysis
- */
-class WAVWriter {
-  constructor(filePath, sampleRate = 16000, channels = 1, bitsPerSample = 16) {
-    this.filePath = filePath;
-    this.sampleRate = sampleRate;
-    this.channels = channels;
-    this.bitsPerSample = bitsPerSample;
-    this.bytesPerSample = bitsPerSample / 8;
-    this.blockAlign = channels * this.bytesPerSample;
-    this.byteRate = sampleRate * this.blockAlign;
-    
-    this.audioData = [];
-    this.totalBytes = 0;
-    this.isFinalized = false;
-    this.startTime = Date.now();
-    
-    console.log(`🎵 [WAV] Creating WAV writer: ${filePath} (${sampleRate}Hz, ${channels}ch, ${bitsPerSample}bit)`);
-  }
-
-  writeAudio(pcmData) {
-    if (this.isFinalized) {
-      console.warn(`⚠️ [WAV] Cannot write to finalized WAV file: ${this.filePath}`);
-      return;
-    }
-
-    if (!Buffer.isBuffer(pcmData)) {
-      console.warn(`⚠️ [WAV] Invalid audio data type, expected Buffer`);
-      return;
-    }
-
-    this.audioData.push(pcmData);
-    this.totalBytes += pcmData.length;
-  }
-
-  finalize() {
-    if (this.isFinalized) {
-      console.warn(`⚠️ [WAV] WAV file already finalized: ${this.filePath}`);
-      return this.filePath;
-    }
-
-    try {
-      const fs = require('fs');
-      const path = require('path');
-      
-      // Ensure directory exists
-      const dir = path.dirname(this.filePath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-
-      // Create WAV header
-      const header = this.createWAVHeader();
-      
-      // Combine header and audio data
-      const audioBuffer = Buffer.concat(this.audioData);
-      const wavFile = Buffer.concat([header, audioBuffer]);
-      
-      // Write to file
-      fs.writeFileSync(this.filePath, wavFile);
-      
-      this.isFinalized = true;
-      const duration = (Date.now() - this.startTime) / 1000;
-      
-      console.log(`✅ [WAV] Saved WAV file: ${this.filePath}`);
-      console.log(`   📊 Duration: ${(this.totalBytes / this.byteRate).toFixed(2)}s (recorded in ${duration.toFixed(1)}s)`);
-      console.log(`   📦 Size: ${wavFile.length} bytes (${this.totalBytes} audio + ${header.length} header)`);
-      
-      return this.filePath;
-    } catch (error) {
-      console.error(`❌ [WAV] Failed to save WAV file ${this.filePath}:`, error.message);
-      throw error;
-    }
-  }
-
-  createWAVHeader() {
-    const header = Buffer.alloc(44);
-    let offset = 0;
-
-    // RIFF header
-    header.write('RIFF', offset); offset += 4;
-    header.writeUInt32LE(36 + this.totalBytes, offset); offset += 4; // File size - 8
-    header.write('WAVE', offset); offset += 4;
-
-    // fmt chunk
-    header.write('fmt ', offset); offset += 4;
-    header.writeUInt32LE(16, offset); offset += 4; // fmt chunk size
-    header.writeUInt16LE(1, offset); offset += 2;  // PCM format
-    header.writeUInt16LE(this.channels, offset); offset += 2;
-    header.writeUInt16LE(this.sampleRate, offset); offset += 4;
-    header.writeUInt32LE(this.byteRate, offset); offset += 4;
-    header.writeUInt16LE(this.blockAlign, offset); offset += 2;
-    header.writeUInt16LE(this.bitsPerSample, offset); offset += 2;
-
-    // data chunk
-    header.write('data', offset); offset += 4;
-    header.writeUInt32LE(this.totalBytes, offset); offset += 4;
-
-    return header;
-  }
-
-  getStats() {
-    return {
-      filePath: this.filePath,
-      sampleRate: this.sampleRate,
-      channels: this.channels,
-      bitsPerSample: this.bitsPerSample,
-      totalBytes: this.totalBytes,
-      durationSeconds: this.totalBytes / this.byteRate,
-      isFinalized: this.isFinalized
-    };
-  }
-}
-
 class LiveKitBridge extends Emitter {
   constructor(connection, protocolVersion, macAddress, uuid, userData) {
     super();
@@ -1024,14 +1019,23 @@ class LiveKitBridge extends Emitter {
       this.agentJoinResolve = resolve;
     });
 
+    // WAV recording setup
+    this.currentWavWriter = null;
+    this.wavRecordingTimer = null;
+    this.wavRecordingInterval = 30000; // 30 seconds
+    this.wavOutputDir = path.join(__dirname, 'recordings', this.macAddress.replace(/:/g, '-'));
+    
+    // Ensure recordings directory exists
+    if (!fs.existsSync(this.wavOutputDir)) {
+      fs.mkdirSync(this.wavOutputDir, { recursive: true });
+      console.log(`📁 [WAV] Created recordings directory: ${this.wavOutputDir}`);
+    }
+    
+    // Start first WAV recording session
+    this.startNewWavRecording();
+
     // Initialize audio resampler for 48kHz -> 24kHz conversion (outgoing: LiveKit -> ESP32)
     this.audioResampler = new AudioResampler(48000, 24000, 1, AudioResamplerQuality.QUICK);
-
-    // WAV recording for incoming audio quality analysis
-    this.wavRecorder = null;
-    this.recordingEnabled = configManager.get("audio_recording")?.enabled || false;
-    this.recordingMaxDuration = configManager.get("audio_recording")?.max_duration_seconds || 30;
-    this.recordingStartTime = null;
 
     // Frame buffer for accumulating resampled audio into proper frame sizes
     this.frameBuffer = Buffer.alloc(0);
@@ -1541,57 +1545,15 @@ class LiveKitBridge extends Emitter {
   }
 
   async sendAudio(opusData, timestamp) {
-    // Check if room is connected
-    if (!this.room || !this.room.isConnected) {
-      console.warn(`⚠️ [AUDIO] Cannot send audio - room not ready. Room connected: ${this.room?.isConnected}`);
+    // Check if audioSource is available and room is connected
+    if (!this.audioSource || !this.room || !this.room.isConnected) {
+      console.warn(`⚠️ [AUDIO] Cannot send audio - audioSource or room not ready. Room connected: ${this.room?.isConnected}`);
       return;
-    }
-
-    // Initialize WAV recording if enabled and not already started
-    if (this.recordingEnabled && !this.wavRecorder) {
-      this.startWAVRecording();
     }
 
     try {
       // PHASE 1: Improved Opus detection - check if data is likely Opus
       const isOpus = this.checkOpusFormat(opusData);
-
-      // NEW: Send Opus directly via data channel (zero-copy mode)
-      if (this.useOpusDataChannel && isOpus) {
-        try {
-          // Send Opus directly without decoding - ZERO COPY!
-          await this.room.localParticipant.publishData(
-            opusData,
-            {
-              topic: 'audio/opus',
-              reliable: false
-            }
-          );
-
-          // Optional: Decode only for recording purposes
-          if (this.recordingEnabled) {
-            try {
-              const pcmBuffer = await this.workerPool.decodeOpus(opusData);
-              this.recordPCMAudio(pcmBuffer);
-            } catch (err) {
-              // Ignore recording errors
-              console.error(`⚠️ [RECORDING] Decode failed: ${err.message}`);
-            }
-          }
-
-          return; // Successfully sent via Opus data channel
-        } catch (err) {
-          console.error(`❌ [OPUS-CHANNEL] Failed to send: ${err.message}`);
-          console.log(`⚠️ [FALLBACK] Switching to PCM AudioSource mode`);
-          this.useOpusDataChannel = false; // Disable for future frames
-        }
-      }
-
-      // FALLBACK: Original PCM AudioSource mode
-      if (!this.audioSource) {
-        console.warn(`⚠️ [AUDIO] AudioSource not available`);
-        return;
-      }
 
       if (isOpus) {
         // PHASE 2: Use worker thread for decoding (non-blocking)
@@ -1601,9 +1563,12 @@ class LiveKitBridge extends Emitter {
           // console.log(`✅ [WORKER DECODE] Decoded ${opusData.length}B Opus → ${pcmBuffer.length}B PCM`);
 
           if (pcmBuffer && pcmBuffer.length > 0) {
-            // Record PCM audio to WAV file if recording is enabled (this is the decoded PCM)
-            this.recordPCMAudio(pcmBuffer);
-
+            // Debug: Analyze PCM data quality
+            this.debugAnalyzePcmData(pcmBuffer, 'OPUS_DECODED');
+            
+            // Save PCM data to WAV file
+            this.writeToWavFile(pcmBuffer);
+            
             // Convert Buffer to Int16Array
             const samples = new Int16Array(
               pcmBuffer.buffer,
@@ -1623,7 +1588,12 @@ class LiveKitBridge extends Emitter {
 
           // PHASE 2: Fallback to PCM if worker decode fails (likely false positive detection)
           console.log(`⚠️ [FALLBACK] Treating as PCM instead`);
-
+          // Debug: Analyze PCM data quality
+          this.debugAnalyzePcmData(opusData, 'FALLBACK_PCM');
+          
+          // Save PCM data to WAV file
+          this.writeToWavFile(opusData);
+          
           const samples = new Int16Array(
             opusData.buffer,
             opusData.byteOffset,
@@ -1636,7 +1606,12 @@ class LiveKitBridge extends Emitter {
         }
       } else {
         // Treat as PCM directly
-
+        // Debug: Analyze PCM data quality
+        this.debugAnalyzePcmData(opusData, 'RAW_PCM');
+        
+        // Save PCM data to WAV file
+        this.writeToWavFile(opusData);
+        
         const samples = new Int16Array(
           opusData.buffer,
           opusData.byteOffset,
@@ -1651,123 +1626,6 @@ class LiveKitBridge extends Emitter {
       }
     } catch (error) {
       console.error(`❌ [AUDIO] Error in sendAudio: ${error.message}`);
-    }
-  }
-
-  /**
-   * Start WAV recording for incoming audio
-   */
-  startWAVRecording() {
-    if (this.wavRecorder) {
-      console.warn(`⚠️ [WAV] Recording already in progress`);
-      return;
-    }
-
-    try {
-      const fs = require('fs');
-      const path = require('path');
-      
-      // Create recordings directory if it doesn't exist
-      const recordingsDir = path.join(__dirname, 'recordings');
-      if (!fs.existsSync(recordingsDir)) {
-        fs.mkdirSync(recordingsDir, { recursive: true });
-      }
-
-      // Generate filename with timestamp and device MAC
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const macForFilename = this.macAddress.replace(/:/g, '_');
-      const filename = `esp32_audio_${macForFilename}_${timestamp}.wav`;
-      const filePath = path.join(recordingsDir, filename);
-
-      // Create WAV writer (16kHz mono 16-bit PCM)
-      this.wavRecorder = new WAVWriter(filePath, 16000, 1, 16);
-      this.recordingStartTime = Date.now();
-
-      console.log(`🎵 [WAV] Started recording incoming audio: ${filename}`);
-      console.log(`   📊 Max duration: ${this.recordingMaxDuration}s`);
-      
-      // Set up auto-stop timer
-      setTimeout(() => {
-        this.stopWAVRecording('max_duration_reached');
-      }, this.recordingMaxDuration * 1000);
-
-    } catch (error) {
-      console.error(`❌ [WAV] Failed to start recording: ${error.message}`);
-      this.wavRecorder = null;
-    }
-  }
-
-  /**
-   * Record PCM audio data to WAV file
-   */
-  recordPCMAudio(audioData) {
-    if (!this.wavRecorder || !this.recordingEnabled) {
-      return;
-    }
-
-    try {
-      // Check if recording duration exceeded
-      const recordingDuration = (Date.now() - this.recordingStartTime) / 1000;
-      if (recordingDuration > this.recordingMaxDuration) {
-        this.stopWAVRecording('max_duration_reached');
-        return;
-      }
-
-      // Ensure we have a Buffer object
-      let pcmBuffer = null;
-      
-      if (Buffer.isBuffer(audioData)) {
-        pcmBuffer = audioData;
-        console.log(`🎵 [WAV] Recording Buffer: ${audioData.length} bytes`);
-      } else if (audioData instanceof Uint8Array) {
-        pcmBuffer = Buffer.from(audioData);
-        console.log(`🎵 [WAV] Recording Uint8Array: ${audioData.length} bytes → Buffer: ${pcmBuffer.length} bytes`);
-      } else if (audioData instanceof ArrayBuffer) {
-        pcmBuffer = Buffer.from(audioData);
-        console.log(`🎵 [WAV] Recording ArrayBuffer: ${audioData.byteLength} bytes → Buffer: ${pcmBuffer.length} bytes`);
-      } else if (typeof audioData === 'object' && audioData.buffer) {
-        // Handle typed arrays like Int16Array, Float32Array, etc.
-        pcmBuffer = Buffer.from(audioData.buffer, audioData.byteOffset, audioData.byteLength);
-        console.log(`🎵 [WAV] Recording ${audioData.constructor.name}: ${audioData.byteLength} bytes → Buffer: ${pcmBuffer.length} bytes`);
-      } else {
-        console.warn(`⚠️ [WAV] Unsupported audio data type: ${typeof audioData}, constructor: ${audioData?.constructor?.name}`);
-        return;
-      }
-
-      // Write PCM data to WAV file
-      this.wavRecorder.writeAudio(pcmBuffer);
-      
-    } catch (error) {
-      console.error(`❌ [WAV] Error recording audio: ${error.message}`);
-    }
-  }
-
-  /**
-   * Stop WAV recording and finalize the file
-   */
-  stopWAVRecording(reason = 'manual') {
-    if (!this.wavRecorder) {
-      return;
-    }
-
-    try {
-      const recordingDuration = (Date.now() - this.recordingStartTime) / 1000;
-      const savedFile = this.wavRecorder.finalize();
-      
-      console.log(`🛑 [WAV] Stopped recording (${reason})`);
-      console.log(`   ⏱️ Duration: ${recordingDuration.toFixed(1)}s`);
-      console.log(`   📁 File: ${savedFile}`);
-      
-      // Get recording statistics
-      const stats = this.wavRecorder.getStats();
-      console.log(`   📊 Audio data: ${stats.totalBytes} bytes (${stats.durationSeconds.toFixed(2)}s)`);
-      
-      this.wavRecorder = null;
-      this.recordingStartTime = null;
-      
-    } catch (error) {
-      console.error(`❌ [WAV] Error stopping recording: ${error.message}`);
-      this.wavRecorder = null;
     }
   }
 
@@ -1843,16 +1701,15 @@ class LiveKitBridge extends Emitter {
       // Not valid UTF-8, continue with Opus check
     }
 
+    // ✅ IMPROVED: Stricter Opus validation to prevent noise
     // ESP32 sends 60ms OPUS frames at 16kHz mono with complexity=0
-    const MIN_OPUS_SIZE = 1;    // Minimum OPUS packet (can be very small for silence)
-    const MAX_OPUS_SIZE = 400;  // Maximum OPUS packet for 60ms@16kHz
+    const MIN_OPUS_SIZE = 8;    // Increased minimum - very small packets are likely not Opus
+    const MAX_OPUS_SIZE = 200;  // Reduced maximum for 16kHz 60ms frames
 
     // Validate packet size range
     if (data.length < MIN_OPUS_SIZE || data.length > MAX_OPUS_SIZE) {
-      // console.log(`❌ Invalid OPUS size: ${data.length}B (expected ${MIN_OPUS_SIZE}-${MAX_OPUS_SIZE}B)`);
       return false;
     }
-
 
     // Check OPUS TOC (Table of Contents) byte
     const firstByte = data[0];
@@ -1860,35 +1717,42 @@ class LiveKitBridge extends Emitter {
     const stereo = (firstByte >> 2) & 0x01;        // Bit 2: stereo flag
     const frameCount = firstByte & 0x03;           // Bits 1-0: frame count
 
-
-    // console.log(`🔍 OPUS TOC: config=${config}, stereo=${stereo}, frames=${frameCount}, size=${data.length}B`);
-
-
-    // Validate OPUS TOC byte
-    const validConfig = config >= 0 && config <= 31;
+    // ✅ STRICTER: Only accept common Opus configs for 16kHz
+    // Narrowband (8kHz) and Wideband (16kHz) configs are most likely for ESP32
+    const validOpusConfigs = [
+      0, 1, 2, 3,     // Narrowband SILK-only
+      4, 5, 6, 7,     // Narrowband Hybrid  
+      8, 9, 10, 11,   // Wideband SILK-only
+      12, 13, 14, 15  // Wideband Hybrid
+    ];
+    
+    const validConfig = validOpusConfigs.includes(config);
     const validStereo = stereo === 0;  // ESP32 sends mono (stereo=0)
     const validFrameCount = frameCount >= 0 && frameCount <= 3;
 
-    // ✅ FIXED: Accept ALL valid OPUS configs (0-31) for ESP32 with complexity=0
-    // ESP32 with complexity=0 can use various configs depending on audio content
-    const validOpusConfigs = [
-      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  // NB/MB/WB configs
-      16, 17, 18, 19,                                          // SWB configs
-      20, 21, 22, 23,                                          // FB configs
-      24, 25, 26, 27, 28, 29, 30, 31                          // Hybrid configs
-    ];
-    const isValidConfig = validOpusConfigs.includes(config);
+    // ✅ ADDITIONAL: Check for reasonable data patterns
+    // Opus packets should not be mostly zeros or have extreme values
+    let zeroCount = 0;
+    let extremeCount = 0;
+    const sampleSize = Math.min(16, data.length);
+    
+    for (let i = 0; i < sampleSize; i++) {
+      if (data[i] === 0) zeroCount++;
+      if (data[i] === 0xFF || data[i] === 0x00) extremeCount++;
+    }
+    
+    const zeroRatio = zeroCount / sampleSize;
+    const extremeRatio = extremeCount / sampleSize;
+    
+    // Reject if too many zeros or extreme values (likely not Opus)
+    const reasonableData = zeroRatio < 0.5 && extremeRatio < 0.7;
 
-    // ✅ FIXED: More lenient validation - just check basic OPUS structure
-    const isValidOpus = validConfig && validStereo && validFrameCount && isValidConfig;
+    const isValidOpus = validConfig && validStereo && validFrameCount && reasonableData;
 
-
-    // console.log(`📊 OPUS validation: config=${validConfig}(${config}), mono=${validStereo}, frames=${validFrameCount}, validConfig=${isValidConfig} → ${isValidOpus ? "✅ VALID" : "❌ INVALID"}`);
-
-    // ✅ ADDITIONAL: Log first few bytes for debugging
-    if (!isValidOpus) {
+    // ✅ DEBUG: Log suspicious packets for analysis
+    if (!isValidOpus && data.length >= MIN_OPUS_SIZE && data.length <= MAX_OPUS_SIZE) {
       const hexDump = data.slice(0, Math.min(8, data.length)).toString('hex');
-      //  console.log(`🔍 OPUS debug - first ${Math.min(8, data.length)} bytes: ${hexDump}`);
+      console.log(`🔍 [OPUS-REJECT] Size:${data.length}B, Config:${config}, Stereo:${stereo}, Frames:${frameCount}, Zero:${(zeroRatio*100).toFixed(1)}%, Hex:${hexDump}`);
     }
 
     return isValidOpus;
@@ -2696,12 +2560,257 @@ class LiveKitBridge extends Emitter {
     }
   }
 
-  async close() {
-    // Stop WAV recording if active
-    if (this.wavRecorder) {
-      this.stopWAVRecording('connection_closed');
+  // WAV Recording Methods
+  startNewWavRecording() {
+    // Finalize current recording if exists
+    if (this.currentWavWriter) {
+      try {
+        this.currentWavWriter.finalize();
+      } catch (error) {
+        console.error(`❌ [WAV] Error finalizing previous recording: ${error.message}`);
+      }
     }
 
+    // Create new WAV file with timestamp
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const fileName = `audio_${timestamp}.wav`;
+    const filePath = path.join(this.wavOutputDir, fileName);
+    
+    // Create new WAV writer
+    this.currentWavWriter = new WAVWriter(filePath, 16000, 1, 16);
+    console.log(`🎵 [WAV] Started new 30s recording session: ${fileName}`);
+    
+    // Set timer for next recording session
+    if (this.wavRecordingTimer) {
+      clearTimeout(this.wavRecordingTimer);
+    }
+    
+    this.wavRecordingTimer = setTimeout(() => {
+      this.startNewWavRecording();
+    }, this.wavRecordingInterval);
+  }
+
+  stopWavRecording() {
+    // Clear timer
+    if (this.wavRecordingTimer) {
+      clearTimeout(this.wavRecordingTimer);
+      this.wavRecordingTimer = null;
+    }
+    
+    // Finalize current recording
+    if (this.currentWavWriter) {
+      try {
+        this.currentWavWriter.finalize();
+        console.log(`🎵 [WAV] Stopped recording for device: ${this.macAddress}`);
+      } catch (error) {
+        console.error(`❌ [WAV] Error finalizing recording: ${error.message}`);
+      }
+      this.currentWavWriter = null;
+    }
+  }
+
+  writeToWavFile(pcmData) {
+    if (this.currentWavWriter && pcmData && pcmData.length > 0) {
+      try {
+        // Apply basic noise reduction before saving
+        const filteredData = this.applyNoiseReduction(pcmData);
+        this.currentWavWriter.writeAudio(filteredData);
+      } catch (error) {
+        console.error(`❌ [WAV] Error writing audio data: ${error.message}`);
+      }
+    }
+  }
+
+  // Advanced audio processing with noise reduction and clipping prevention
+  applyNoiseReduction(pcmData) {
+    if (!pcmData || pcmData.length < 4) return pcmData;
+    
+    try {
+      const samples = new Int16Array(pcmData.buffer, pcmData.byteOffset, pcmData.length / 2);
+      let processed = new Int16Array(samples.length);
+      
+      // Step 1: Copy original samples
+      for (let i = 0; i < samples.length; i++) {
+        processed[i] = samples[i];
+      }
+      
+      // Step 2: Remove digital artifacts (sudden changes)
+      processed = this.removeDigitalArtifacts(processed);
+      
+      // Step 3: Apply soft clipping prevention
+      processed = this.preventClipping(processed);
+      
+      // Step 4: Apply gentle low-pass filter for noise reduction
+      processed = this.applyLowPassFilter(processed);
+      
+      // Step 5: Normalize audio levels
+      processed = this.normalizeAudio(processed);
+      
+      // Convert back to Buffer
+      return Buffer.from(processed.buffer, processed.byteOffset, processed.byteLength);
+    } catch (error) {
+      console.error(`❌ [AUDIO-PROCESS] Error applying audio processing: ${error.message}`);
+      return pcmData; // Return original data if processing fails
+    }
+  }
+
+  // Remove sudden amplitude changes (digital artifacts)
+  removeDigitalArtifacts(samples) {
+    const filtered = new Int16Array(samples.length);
+    const threshold = 3000; // Maximum allowed change between samples
+    
+    filtered[0] = samples[0]; // Keep first sample
+    
+    for (let i = 1; i < samples.length; i++) {
+      const change = samples[i] - samples[i - 1];
+      
+      if (Math.abs(change) > threshold) {
+        // Sudden change detected - smooth it out
+        const direction = change > 0 ? 1 : -1;
+        filtered[i] = samples[i - 1] + (direction * threshold * 0.5);
+      } else {
+        filtered[i] = samples[i];
+      }
+    }
+    
+    return filtered;
+  }
+
+  // Prevent clipping with soft limiting
+  preventClipping(samples) {
+    const limited = new Int16Array(samples.length);
+    const maxSafe = 28000; // Leave headroom to prevent clipping (85% of max)
+    const minSafe = -28000;
+    
+    for (let i = 0; i < samples.length; i++) {
+      let sample = samples[i];
+      
+      // Soft limiting - compress values approaching clipping
+      if (sample > maxSafe) {
+        const excess = sample - maxSafe;
+        const compressed = excess * 0.3; // Compress by 70%
+        sample = maxSafe + compressed;
+      } else if (sample < minSafe) {
+        const excess = sample - minSafe;
+        const compressed = excess * 0.3; // Compress by 70%
+        sample = minSafe + compressed;
+      }
+      
+      // Hard limit as final safety
+      limited[i] = Math.max(-32767, Math.min(32767, Math.round(sample)));
+    }
+    
+    return limited;
+  }
+
+  // Apply gentle low-pass filter to reduce high-frequency noise
+  applyLowPassFilter(samples) {
+    const filtered = new Int16Array(samples.length);
+    const alpha = 0.6; // Filter strength (0.6 = more aggressive noise reduction)
+    
+    filtered[0] = samples[0];
+    
+    for (let i = 1; i < samples.length; i++) {
+      // Simple IIR low-pass filter: y[n] = α * x[n] + (1-α) * y[n-1]
+      filtered[i] = Math.round(alpha * samples[i] + (1 - alpha) * filtered[i - 1]);
+    }
+    
+    return filtered;
+  }
+
+  // Normalize audio levels for consistent volume
+  normalizeAudio(samples) {
+    if (samples.length === 0) return samples;
+    
+    // Find peak amplitude
+    let peak = 0;
+    for (let i = 0; i < samples.length; i++) {
+      peak = Math.max(peak, Math.abs(samples[i]));
+    }
+    
+    // Only normalize if peak is reasonable (avoid amplifying noise)
+    if (peak < 100 || peak > 25000) {
+      return samples; // Don't normalize very quiet or very loud audio
+    }
+    
+    // Calculate normalization factor (target 70% of max range)
+    const targetPeak = 22000;
+    const factor = targetPeak / peak;
+    
+    // Apply normalization only if it won't cause clipping
+    if (factor > 1.5) {
+      return samples; // Don't over-amplify
+    }
+    
+    const normalized = new Int16Array(samples.length);
+    for (let i = 0; i < samples.length; i++) {
+      normalized[i] = Math.round(samples[i] * factor);
+    }
+    
+    return normalized;
+  }
+
+  // Debug method to analyze PCM data quality
+  debugAnalyzePcmData(pcmData, source) {
+    if (!pcmData || pcmData.length < 4) return;
+    
+    // Only analyze first few packets to avoid spam
+    if (!this.debugPacketCount) this.debugPacketCount = 0;
+    this.debugPacketCount++;
+    
+    if (this.debugPacketCount > 10) return; // Only analyze first 10 packets
+    
+    try {
+      const samples = new Int16Array(pcmData.buffer, pcmData.byteOffset, pcmData.length / 2);
+      
+      // Calculate basic statistics
+      let sum = 0;
+      let max = -32768;
+      let min = 32767;
+      let zeroCount = 0;
+      
+      for (let i = 0; i < samples.length; i++) {
+        const sample = samples[i];
+        sum += Math.abs(sample);
+        max = Math.max(max, sample);
+        min = Math.min(min, sample);
+        if (sample === 0) zeroCount++;
+      }
+      
+      const avgAmplitude = sum / samples.length;
+      const zeroRatio = zeroCount / samples.length;
+      const dynamicRange = max - min;
+      
+      console.log(`🔍 [AUDIO-DEBUG] ${source} Packet ${this.debugPacketCount}:`);
+      console.log(`   📊 Size: ${pcmData.length}B (${samples.length} samples)`);
+      console.log(`   🔊 Avg Amplitude: ${avgAmplitude.toFixed(1)}`);
+      console.log(`   📏 Range: ${min} to ${max} (${dynamicRange})`);
+      console.log(`   🔇 Zero Ratio: ${(zeroRatio * 100).toFixed(1)}%`);
+      console.log(`   📋 First 8 bytes: ${pcmData.subarray(0, Math.min(8, pcmData.length)).toString('hex')}`);
+      
+      // Quality warnings
+      if (avgAmplitude < 50) {
+        console.log(`   ⚠️  Very low amplitude - possible silence or encoding issue`);
+      }
+      if (zeroRatio > 0.8) {
+        console.log(`   ⚠️  Mostly zeros - possible data corruption`);
+      }
+      if (dynamicRange < 100) {
+        console.log(`   ⚠️  Very low dynamic range - possible constant value or noise`);
+      }
+      if (max === 32767 || min === -32768) {
+        console.log(`   ⚠️  Clipping detected - audio may be distorted`);
+      }
+      
+    } catch (error) {
+      console.error(`❌ [AUDIO-DEBUG] Error analyzing PCM data: ${error.message}`);
+    }
+  }
+
+  async close() {
+    // Stop WAV recording before closing
+    this.stopWavRecording();
+    
     if (this.room) {
       console.log("[LiveKitBridge] Disconnecting from LiveKit room");
 
@@ -3189,27 +3298,6 @@ class VirtualMQTTConnection {
       return;
     }
 
-    // Handle recording control messages
-    if (json.type === "recording_control") {
-      const command = json.command;
-      console.log(`🎛️ [RECORDING] Received recording control: ${command} for device: ${this.deviceId}`);
-      
-      if (command === "start" && this.bridge) {
-        this.bridge.recordingEnabled = true;
-        if (!this.bridge.wavRecorder) {
-          this.bridge.startWAVRecording();
-        }
-        console.log(`🎵 [RECORDING] Started recording for device: ${this.deviceId}`);
-      } else if (command === "stop" && this.bridge && this.bridge.wavRecorder) {
-        this.bridge.stopWAVRecording('manual_stop');
-        console.log(`🛑 [RECORDING] Stopped recording for device: ${this.deviceId}`);
-      } else if (command === "status" && this.bridge) {
-        const isRecording = !!this.bridge.wavRecorder;
-        console.log(`📊 [RECORDING] Status for device ${this.deviceId}: ${isRecording ? 'Recording' : 'Not recording'}`);
-      }
-      return;
-    }
-
     // Handle function_call from mobile app - forward directly to LiveKit agent
     if (json.type === "function_call" && json.source === "mobile_app") {
       try {
@@ -3465,53 +3553,6 @@ class VirtualMQTTConnection {
     }
 
     // Virtual connections don't need traditional keep-alive since EMQX handles it
-  }
-
-  /**
-   * Manually start audio recording
-   */
-  startRecording() {
-    if (this.bridge) {
-      this.bridge.recordingEnabled = true;
-      if (!this.bridge.wavRecorder) {
-        this.bridge.startWAVRecording();
-      }
-      console.log(`🎵 [MANUAL] Started recording for device: ${this.deviceId}`);
-    } else {
-      console.warn(`⚠️ [MANUAL] Cannot start recording - no bridge available for device: ${this.deviceId}`);
-    }
-  }
-
-  /**
-   * Manually stop audio recording
-   */
-  stopRecording() {
-    if (this.bridge && this.bridge.wavRecorder) {
-      this.bridge.stopWAVRecording('manual_stop');
-      console.log(`🛑 [MANUAL] Stopped recording for device: ${this.deviceId}`);
-    } else {
-      console.warn(`⚠️ [MANUAL] No active recording for device: ${this.deviceId}`);
-    }
-  }
-
-  /**
-   * Get recording status
-   */
-  getRecordingStatus() {
-    if (!this.bridge) {
-      return { recording: false, reason: 'no_bridge' };
-    }
-
-    const isRecording = !!this.bridge.wavRecorder;
-    const stats = isRecording ? this.bridge.wavRecorder.getStats() : null;
-    
-    return {
-      recording: isRecording,
-      enabled: this.bridge.recordingEnabled,
-      stats: stats,
-      duration: stats ? stats.durationSeconds : 0,
-      filePath: stats ? stats.filePath : null
-    };
   }
 
   close() {
@@ -3812,108 +3853,12 @@ class MQTTGateway {
         } else {
           console.log(`❓ [UNKNOWN] Unknown message type '${messageType}' from device: ${deviceId}`);
         }
-      } else if (topic.startsWith('control/recording/')) {
-        // Handle recording control commands: control/recording/{device_id}/{command}
-        const controlParts = topic.split('/');
-        if (controlParts.length >= 4) {
-          const deviceId = controlParts[2];
-          const command = controlParts[3];
-          
-          console.log(`🎛️ [CONTROL] Recording control command: ${command} for device: ${deviceId}`);
-          this.handleRecordingControl(deviceId, command, payload);
-        } else {
-          console.log(`❓ [CONTROL] Invalid recording control topic format: ${topic}`);
-        }
       } else {
         console.log(`❓ [MQTT IN] Message on unexpected topic format: ${topic}`);
       }
     } catch (error) {
       console.error('❌ [MQTT IN] Error processing MQTT message:', error);
       console.log(`📨 [MQTT IN] Raw message:`, message.toString());
-    }
-  }
-
-  /**
-   * Handle recording control commands via MQTT
-   * Topic format: control/recording/{device_id}/{command}
-   * Commands: start, stop, status
-   */
-  handleRecordingControl(deviceId, command, payload) {
-    try {
-      // Find the device connection
-      const deviceInfo = this.deviceConnections.get(deviceId);
-      if (!deviceInfo || !deviceInfo.connection) {
-        console.warn(`⚠️ [CONTROL] Device not found: ${deviceId}`);
-        this.publishRecordingResponse(deviceId, command, { 
-          success: false, 
-          error: 'device_not_found' 
-        });
-        return;
-      }
-
-      const connection = deviceInfo.connection;
-      let response = { success: true };
-
-      switch (command) {
-        case 'start':
-          connection.startRecording();
-          response.message = 'Recording started';
-          break;
-
-        case 'stop':
-          connection.stopRecording();
-          response.message = 'Recording stopped';
-          break;
-
-        case 'status':
-          const status = connection.getRecordingStatus();
-          response = { success: true, ...status };
-          break;
-
-        default:
-          response = { 
-            success: false, 
-            error: 'unknown_command',
-            available_commands: ['start', 'stop', 'status']
-          };
-          console.warn(`⚠️ [CONTROL] Unknown recording command: ${command}`);
-      }
-
-      this.publishRecordingResponse(deviceId, command, response);
-
-    } catch (error) {
-      console.error(`❌ [CONTROL] Error handling recording control: ${error.message}`);
-      this.publishRecordingResponse(deviceId, command, { 
-        success: false, 
-        error: error.message 
-      });
-    }
-  }
-
-  /**
-   * Publish recording control response
-   */
-  publishRecordingResponse(deviceId, command, response) {
-    try {
-      const responseTopic = `control/recording/${deviceId}/${command}/response`;
-      const responsePayload = JSON.stringify({
-        timestamp: new Date().toISOString(),
-        device_id: deviceId,
-        command: command,
-        ...response
-      });
-
-      if (this.mqttClient && this.mqttClient.connected) {
-        this.mqttClient.publish(responseTopic, responsePayload, (err) => {
-          if (err) {
-            console.error(`❌ [CONTROL] Failed to publish recording response: ${err.message}`);
-          } else {
-            console.log(`✅ [CONTROL] Published recording response to: ${responseTopic}`);
-          }
-        });
-      }
-    } catch (error) {
-      console.error(`❌ [CONTROL] Error publishing recording response: ${error.message}`);
     }
   }
 
