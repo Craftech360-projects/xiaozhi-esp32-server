@@ -49,6 +49,9 @@ RUN python -m pip install --user --no-cache-dir \
     'livekit-plugins-groq' \
     'livekit.plugins.deepgram' \
     'livekit-plugins-elevenlabs' \
+    'livekit-agents[ultravox]' \
+    'livekit-plugins-google '\
+    'livekit-agents[google] '\
     'python-dotenv' \
     'paho-mqtt' \
     'aiohttp' \
@@ -66,10 +69,10 @@ RUN python -m pip install --user --no-cache-dir \
 COPY . .
 
 # Ensure that any dependent models are downloaded at build-time
-RUN python main.py download-files || echo "No download-files command available"
+RUN python agent2.py download-files || echo "No download-files command available"
 
 # Expose healthcheck port
 EXPOSE 8081
 
 # Run the application
-CMD ["python", "main.py", "start"]
+CMD ["python", "agent2.py", "start"]

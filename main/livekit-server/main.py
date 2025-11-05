@@ -22,6 +22,7 @@ import asyncio
 import os
 import aiohttp
 import json
+import time
 from datetime import datetime
 from dotenv import load_dotenv
 from livekit.agents import (
@@ -34,6 +35,10 @@ from livekit.agents import (
 )
 from livekit import rtc
 from livekit.plugins import noise_cancellation
+import base64
+import secrets
+import numpy as np
+from websockets.asyncio.client import connect
 
 # Load environment variables first, before importing modules
 load_dotenv(".env")
@@ -118,6 +123,226 @@ async def delete_livekit_room(room_name: str):
             logger.error(f"Failed to delete room via HTTP API: {e}")
     except Exception as e:
         logger.error(f"Failed to delete room: {e}")
+
+
+# Qwen Realtime Configuration
+QWEN_API_KEY = os.getenv("DASHSCOPE_API_KEY", "")
+QWEN_API_URL = "wss://dashscope-intl.aliyuncs.com/api-ws/v1/realtime?model=qwen3-omni-flash-realtime"
+QWEN_ENABLED = os.getenv("QWEN_REALTIME_ENABLED", "false").lower() == "true"
+
+QWEN_VOICES = {
+    "芊悦": "Cherry",
+    "晨煦": "Ethan",
+    "程川": "Eric",
+    "甜茶": "Ryan",
+    "晓东": "Dylan",
+    "李彼得": "Peter",
+    "阿珍": "Jada",
+    "晴儿": "Sunny",
+    "詹妮弗": "Jennifer",
+    "卡捷琳娜": "Katerina",
+    "老李": "Li",
+    "墨讲师": "Elias",
+    "秦川": "Marcus",
+    "阿清": "Kiki",
+    "阿强": "Rocky",
+    "阿杰": "Roy",
+}
+
+qwen_headers = {"Authorization": f"Bearer {QWEN_API_KEY}"}
+
+
+class QwenRealtimeHandler:
+    """Handles Qwen realtime WebSocket connection"""
+
+    def __init__(self, voice="Cherry", chat_history_service=None, assistant=None, room=None):
+        self.voice = voice
+        self.connection = None
+        self.audio_queue = asyncio.Queue()
+        self.transcript_queue = asyncio.Queue()
+        self.running = False
+        self.chat_history_service = chat_history_service
+        self.assistant = assistant  # Reference to assistant for function calls
+        self.room = room  # LiveKit room for sending MQTT messages via data channel
+
+    @staticmethod
+    def msg_id() -> str:
+        return f"event_{secrets.token_hex(10)}"
+
+    async def send_mqtt_message(self, message_type: str, data: dict = None):
+        """Send message to MQTT gateway via LiveKit data channel"""
+        if not self.room or not self.room.local_participant:
+            logger.warning(f"Cannot send MQTT message - room not available")
+            return
+
+        try:
+            message = {
+                "type": message_type,
+                "data": data or {}
+            }
+            message_str = json.dumps(message)
+            message_bytes = message_str.encode("utf-8")
+
+            await self.room.local_participant.publish_data(
+                message_bytes,
+                reliable=True
+            )
+            logger.debug(f"📨 Sent MQTT message: {message_type}")
+        except Exception as e:
+            logger.error(f"Failed to send MQTT message {message_type}: {e}")
+
+    async def connect(self):
+        """Connect to Qwen realtime API"""
+        try:
+            logger.info(f"🔗 Connecting to Qwen realtime API...")
+            self.connection = await connect(QWEN_API_URL, additional_headers=qwen_headers)
+
+            # Send session configuration
+            session_config = {
+                "event_id": self.msg_id(),
+                "type": "session.update",
+                "session": {
+                    "modalities": ["text", "audio"],
+                    "voice": self.voice,
+                    "input_audio_format": "pcm16",
+                    "output_audio_format": "pcm16",
+                },
+            }
+
+            await self.connection.send(json.dumps(session_config))
+            logger.info(f"✅ Connected to Qwen with voice: {self.voice}")
+
+            # Start listening for events
+            self.running = True
+            asyncio.create_task(self._listen_events())
+
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Failed to connect to Qwen: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    async def _listen_events(self):
+        """Listen for Qwen realtime events"""
+        try:
+            async for data in self.connection:
+                if not self.running:
+                    break
+
+                event = json.loads(data)
+                if "type" not in event:
+                    continue
+
+                event_type = event["type"]
+                logger.debug(f"📨 Qwen event: {event_type}")
+
+                if event_type == "input_audio_buffer.speech_started":
+                    logger.debug("🎤 Speech started - clearing output queue")
+                    # Clear any pending audio when user starts speaking
+                    while not self.audio_queue.empty():
+                        try:
+                            self.audio_queue.get_nowait()
+                        except:
+                            break
+
+                elif event_type == "conversation.item.input_audio_transcription.completed":
+                    transcript = event.get("transcript", "")
+                    if transcript:
+                        await self.transcript_queue.put(("user", transcript))
+                        logger.info(f"👤 User said: {transcript}")
+
+                        # Log to chat history service
+                        if self.chat_history_service:
+                            try:
+                                self.chat_history_service.add_message(1, transcript)  # 1 = user
+                            except Exception as e:
+                                logger.error(f"Failed to log user message: {e}")
+
+                elif event_type == "response.audio_transcript.done":
+                    transcript = event.get("transcript", "")
+                    if transcript:
+                        await self.transcript_queue.put(("assistant", transcript))
+                        logger.info(f"🤖 Qwen said: {transcript}")
+
+                        # Log to chat history service
+                        if self.chat_history_service:
+                            try:
+                                self.chat_history_service.add_message(2, transcript)  # 2 = agent
+                            except Exception as e:
+                                logger.error(f"Failed to log assistant message: {e}")
+
+                elif event_type == "response.created":
+                    # Qwen started responding - send speech_created message to MQTT
+                    logger.info("🎤 Qwen response started - sending speech_created to MQTT")
+                    await self.send_mqtt_message("speech_created", {
+                        "timestamp": time.time()
+                    })
+
+                elif event_type == "response.audio.delta":
+                    audio_b64 = event.get("delta", "")
+                    if audio_b64:
+                        audio_data = base64.b64decode(audio_b64)
+                        await self.audio_queue.put(audio_data)
+
+                elif event_type == "response.done":
+                    # Qwen finished responding - send agent_state_changed message to MQTT
+                    logger.info("🎤 Qwen response finished - sending agent_state_changed to MQTT")
+                    await self.send_mqtt_message("agent_state_changed", {
+                        "old_state": "speaking",
+                        "new_state": "listening",
+                        "timestamp": time.time()
+                    })
+
+        except Exception as e:
+            logger.error(f"❌ Error listening to Qwen events: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            self.running = False
+
+    async def send_audio(self, audio_frame: rtc.AudioFrame):
+        """Send audio frame to Qwen"""
+        if not self.connection or not self.running:
+            return
+
+        try:
+            audio_data = audio_frame.data
+            audio_b64 = base64.b64encode(audio_data).decode("utf-8")
+
+            message = {
+                "event_id": self.msg_id(),
+                "type": "input_audio_buffer.append",
+                "audio": audio_b64,
+            }
+
+            await self.connection.send(json.dumps(message))
+
+        except Exception as e:
+            logger.error(f"❌ Error sending audio to Qwen: {e}")
+
+    async def get_audio_response(self):
+        """Get audio response from Qwen (non-blocking)"""
+        try:
+            return await asyncio.wait_for(self.audio_queue.get(), timeout=0.001)
+        except asyncio.TimeoutError:
+            return None
+
+    async def get_transcript(self):
+        """Get transcript from Qwen (non-blocking)"""
+        try:
+            return await asyncio.wait_for(self.transcript_queue.get(), timeout=0.001)
+        except asyncio.TimeoutError:
+            return None
+
+    async def disconnect(self):
+        """Disconnect from Qwen"""
+        self.running = False
+        if self.connection:
+            await self.connection.close()
+            self.connection = None
+        logger.info("🔌 Disconnected from Qwen")
 
 
 def prewarm(proc: JobProcess):
@@ -869,40 +1094,171 @@ async def entrypoint(ctx: JobContext):
     # Add cleanup to shutdown callback
     ctx.add_shutdown_callback(cleanup_room_and_session)
 
-    # Start agent session
-    await session.start(
-        agent=assistant,
-        room=ctx.room,
-        room_input_options=room_options,
-    )
+    # Check if Qwen Realtime is enabled
+    if QWEN_ENABLED and QWEN_API_KEY:
+        logger.info("🎤 Using Qwen Realtime Model")
+        logger.info(f"🔑 Qwen API Key configured: {QWEN_API_KEY[:20]}...")
 
-    # PERFORMANCE: Log total initialization time
-    init_elapsed_time = (asyncio.get_event_loop().time() - init_start_time) * 1000
-    logger.info(f"⚡ Total room initialization completed in {init_elapsed_time:.0f}ms")
+        # Connect to LiveKit room first
+        logger.info("🔗 Connecting to LiveKit room...")
+        await ctx.connect()
+        logger.info("✅ Connected to LiveKit room")
 
-    # Pass session reference to assistant for dynamic updates
-    assistant.set_agent_session(session)
-    logger.info(
-        "🔗 Session reference passed to assistant for dynamic prompt updates")
+        # Initialize Qwen handler with chat history service and room for MQTT messages
+        qwen_voice = os.getenv("QWEN_VOICE", "Cherry")
+        qwen = QwenRealtimeHandler(voice=qwen_voice, chat_history_service=chat_history_service, assistant=assistant, room=ctx.room)
 
-    # Pass context to assistant for emotion publishing via data channel
-    assistant._session_context = ctx
-    logger.info(
-        "😊 Context reference passed to assistant for emotion publishing")
+        if not await qwen.connect():
+            logger.error("❌ Failed to connect to Qwen - falling back to standard session")
+            # Fall back to standard session
+            await session.start(
+                agent=assistant,
+                room=ctx.room,
+                room_input_options=room_options,
+            )
+        else:
+            # Create audio source for Qwen output (24kHz mono PCM16)
+            audio_source = rtc.AudioSource(24000, 1)
+            audio_track = rtc.LocalAudioTrack.create_audio_track("qwen-voice", audio_source)
 
-    # Set up music/story integration with session and context
-    try:
-        # Pass session and context to both audio players
-        audio_player.set_session(session)
-        audio_player.set_context(ctx)
-        unified_audio_player.set_session(session)
-        unified_audio_player.set_context(ctx)
-        logger.info("Audio players integrated with session and context")
-    except Exception as e:
-        logger.warning(
-            f"Failed to integrate audio players with session/context: {e}")
+            # Publish the audio track
+            audio_options = rtc.TrackPublishOptions()
+            audio_options.source = rtc.TrackSource.SOURCE_MICROPHONE
+            await ctx.room.local_participant.publish_track(audio_track, audio_options)
+            logger.info("✅ Published Qwen audio track")
 
-    await ctx.connect()
+            # Audio resampler for input
+            audio_resampler = rtc.AudioResampler(input_rate=48000, output_rate=16000, num_channels=1)
+
+            # Track subscriptions
+            @ctx.room.on("track_subscribed")
+            def on_qwen_track_subscribed(
+                track: rtc.Track,
+                publication: rtc.RemoteTrackPublication,
+                participant: rtc.RemoteParticipant,
+            ):
+                logger.info(f"📥 Track subscribed: {track.kind} from {participant.identity}")
+
+                if track.kind == rtc.TrackKind.KIND_AUDIO:
+                    logger.info("🎤 Audio track subscribed - starting stream")
+                    audio_stream = rtc.AudioStream(track)
+
+                    async def process_audio():
+                        try:
+                            async for event in audio_stream:
+                                resampled_frames = audio_resampler.push(event.frame)
+                                for frame in resampled_frames:
+                                    await qwen.send_audio(frame)
+                        except Exception as e:
+                            logger.error(f"❌ Error processing audio: {e}")
+
+                    asyncio.create_task(process_audio())
+
+            # Check for existing participants
+            logger.info("🔍 Checking for existing participants...")
+            for participant in ctx.room.remote_participants.values():
+                logger.info(f"   - Found participant: {participant.identity}")
+                for publication in participant.track_publications.values():
+                    if publication.kind == rtc.TrackKind.KIND_AUDIO and publication.track:
+                        logger.info("     - Subscribing to existing audio track")
+                        audio_stream = rtc.AudioStream(publication.track)
+
+                        async def process_existing_audio():
+                            try:
+                                async for event in audio_stream:
+                                    resampled_frames = audio_resampler.push(event.frame)
+                                    for frame in resampled_frames:
+                                        await qwen.send_audio(frame)
+                            except Exception as e:
+                                logger.error(f"❌ Error processing existing audio: {e}")
+
+                        asyncio.create_task(process_existing_audio())
+
+            # Main loop - play Qwen responses
+            logger.info("🔄 Starting Qwen audio playback loop...")
+
+            async def qwen_audio_loop():
+                try:
+                    while qwen.running:
+                        # Get audio from Qwen
+                        audio_data = await qwen.get_audio_response()
+                        if audio_data is not None:
+                            audio_array = np.frombuffer(audio_data, dtype=np.int16)
+                            frame = rtc.AudioFrame(
+                                data=audio_array.tobytes(),
+                                sample_rate=24000,
+                                num_channels=1,
+                                samples_per_channel=len(audio_array),
+                            )
+                            await audio_source.capture_frame(frame)
+
+                        # Get transcripts
+                        transcript = await qwen.get_transcript()
+                        if transcript:
+                            role, text = transcript
+                            logger.debug(f"📝 [{role.upper()}]: {text}")
+
+                            # Save to mem0 if enabled
+                            if mem0_provider:
+                                conversation_messages.append({'role': role, 'content': text})
+
+                        await asyncio.sleep(0.001)
+
+                except Exception as e:
+                    logger.error(f"❌ Error in Qwen audio loop: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+            # Start the audio loop
+            asyncio.create_task(qwen_audio_loop())
+
+            logger.info("✅ Qwen Realtime Agent running")
+
+        # PERFORMANCE: Log total initialization time
+        init_elapsed_time = (asyncio.get_event_loop().time() - init_start_time) * 1000
+        logger.info(f"⚡ Total room initialization completed in {init_elapsed_time:.0f}ms")
+
+    else:
+        # Standard AgentSession path
+        if not QWEN_ENABLED:
+            logger.info("🎤 Using standard AgentSession (Qwen disabled)")
+        else:
+            logger.warning("⚠️ Qwen enabled but API key not found - using standard session")
+
+        # Start agent session
+        await session.start(
+            agent=assistant,
+            room=ctx.room,
+            room_input_options=room_options,
+        )
+
+        # PERFORMANCE: Log total initialization time
+        init_elapsed_time = (asyncio.get_event_loop().time() - init_start_time) * 1000
+        logger.info(f"⚡ Total room initialization completed in {init_elapsed_time:.0f}ms")
+
+        # Pass session reference to assistant for dynamic updates
+        assistant.set_agent_session(session)
+        logger.info(
+            "🔗 Session reference passed to assistant for dynamic prompt updates")
+
+        # Pass context to assistant for emotion publishing via data channel
+        assistant._session_context = ctx
+        logger.info(
+            "😊 Context reference passed to assistant for emotion publishing")
+
+        # Set up music/story integration with session and context
+        try:
+            # Pass session and context to both audio players
+            audio_player.set_session(session)
+            audio_player.set_context(ctx)
+            unified_audio_player.set_session(session)
+            unified_audio_player.set_context(ctx)
+            logger.info("Audio players integrated with session and context")
+        except Exception as e:
+            logger.warning(
+                f"Failed to integrate audio players with session/context: {e}")
+
+        await ctx.connect()
 
 if __name__ == "__main__":
     cli.run_app(WorkerOptions(

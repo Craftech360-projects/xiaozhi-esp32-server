@@ -23,12 +23,13 @@ scaling_target = 60
 [cerebrium.runtime.custom]
 port = 8081
 dockerfile_path = "./Dockerfile"
+entrypoint = "python agent2.py start"
 
 [cerebrium.env]
 # LiveKit Cloud Configuration (REQUIRED for Cerebrium deployment)
-LIVEKIT_URL = "wss://cheeko-ycahauzs.livekit.cloud"
-LIVEKIT_API_KEY = "APIFrjVQFMvUte3"
-LIVEKIT_API_SECRET = "GHGRD7WJmUVlfD9KoXTI3C5ZcD1dK9YGoBUbPSYmX5D"
+LIVEKIT_URL = "wss://cheek0-u03ee1np.livekit.cloud"
+LIVEKIT_API_KEY = "APIQEnUh9Htfegz"
+LIVEKIT_API_SECRET = "mEaJRbCX1e52daWBK1MbH1nyGyMpgqMflUnVvrsoqdd"
 
 # Model Configuration (CRITICAL - no comments in values!)
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
