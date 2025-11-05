@@ -5,12 +5,14 @@ Wraps Microsoft Edge TTS service for use with LiveKit
 
 import asyncio
 import logging
+import ssl
 import uuid
 from typing import AsyncIterable, Optional, Union
 from dataclasses import dataclass
 
 try:
     import edge_tts
+    import aiohttp
     EDGE_TTS_AVAILABLE = True
 except ImportError:
     EDGE_TTS_AVAILABLE = False
@@ -225,14 +227,30 @@ class EdgeTTSChunkedStream(tts.ChunkedStream if LIVEKIT_AVAILABLE else object):
         try:
             logger.info(f"🎤 EdgeTTS synthesizing: {self._input_text[:50]}...")
 
-            # Create EdgeTTS communicate instance
-            communicate = edge_tts.Communicate(
-                text=self._input_text,
-                voice=self._opts.voice,
-                rate=self._opts.rate,
-                volume=self._opts.volume,
-                pitch=self._opts.pitch
-            )
+            # Monkey-patch ssl.create_default_context to disable SSL verification
+            # This is necessary because edge_tts creates its own SSL context internally
+            original_create_default_context = ssl.create_default_context
+
+            def patched_create_default_context(*args, **kwargs):
+                ctx = original_create_default_context(*args, **kwargs)
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                return ctx
+
+            ssl.create_default_context = patched_create_default_context
+
+            try:
+                # Create EdgeTTS communicate instance
+                communicate = edge_tts.Communicate(
+                    text=self._input_text,
+                    voice=self._opts.voice,
+                    rate=self._opts.rate,
+                    volume=self._opts.volume,
+                    pitch=self._opts.pitch
+                )
+            finally:
+                # Restore original function
+                ssl.create_default_context = original_create_default_context
 
             # Initialize the audio emitter with MP3 format (same as ElevenLabs)
             request_id = str(uuid.uuid4())[:8]
@@ -265,14 +283,29 @@ async def generate_audio_bytes(text: str, voice: str = "en-US-AvaNeural") -> byt
     Useful for testing or non-LiveKit applications
     """
     try:
-        communicate = edge_tts.Communicate(text=text, voice=voice)
+        # Monkey-patch ssl.create_default_context to disable SSL verification
+        original_create_default_context = ssl.create_default_context
 
-        audio_data = b""
-        async for chunk in communicate.stream():
-            if chunk["type"] == "audio":
-                audio_data += chunk["data"]
+        def patched_create_default_context(*args, **kwargs):
+            ctx = original_create_default_context(*args, **kwargs)
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            return ctx
 
-        return audio_data
+        ssl.create_default_context = patched_create_default_context
+
+        try:
+            communicate = edge_tts.Communicate(text=text, voice=voice)
+
+            audio_data = b""
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    audio_data += chunk["data"]
+
+            return audio_data
+        finally:
+            # Restore original function
+            ssl.create_default_context = original_create_default_context
     except Exception as e:
         logger.error(f"Error generating audio bytes: {e}")
         return b""
