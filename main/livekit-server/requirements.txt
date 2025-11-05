@@ -10,7 +10,7 @@ google-api-python-client>=2.100.0
 
 # Optional dependencies for enhanced semantic search
 qdrant-client
-sentence-transformers
+sentence-transformers==2.3.1
 
 # EdgeTTS support (uses Microsoft servers but can work offline)
 edge-tts

@@ -562,3 +562,11 @@ databaseChangeLog:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202511041630_create_favorites_table.sql
+  - changeSet:
+      id: 202511041700
+      author: claude
+      validCheckSum: ANY
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202511041700_create_content_library_table.sql

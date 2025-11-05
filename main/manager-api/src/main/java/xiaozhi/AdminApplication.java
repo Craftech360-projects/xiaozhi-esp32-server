@@ -2,10 +2,13 @@ package xiaozhi;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.core.env.Environment;
 import org.springframework.context.ConfigurableApplicationContext;
+import xiaozhi.common.config.SupabaseConfig;
 
 @SpringBootApplication
+@EnableConfigurationProperties(SupabaseConfig.class)
 public class AdminApplication {
 
     public static void main(String[] args) {
