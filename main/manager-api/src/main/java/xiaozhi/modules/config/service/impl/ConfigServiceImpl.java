@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 
 import lombok.AllArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import xiaozhi.common.constant.Constant;
 import xiaozhi.common.exception.ErrorCode;
 import xiaozhi.common.exception.RenException;
@@ -42,6 +43,7 @@ import xiaozhi.modules.sys.service.KidProfileService;
 import xiaozhi.modules.sys.dto.KidProfileDTO;
 import xiaozhi.modules.config.dto.ChildProfileDTO;
 
+@Slf4j
 @Service
 @AllArgsConstructor
 public class ConfigServiceImpl implements ConfigService {
@@ -462,23 +464,36 @@ public class ConfigServiceImpl implements ConfigService {
 
     @Override
     public String getAgentPrompt(String macAddress) {
+        log.info("📡 [PROMPT SERVICE] Fetching prompt from database for MAC: {}", macAddress);
+
         // 根据MAC地址查找设备
         DeviceEntity device = deviceService.getDeviceByMacAddress(macAddress);
         if (device == null) {
+            log.error("❌ [PROMPT SERVICE] Device not found for MAC: {}", macAddress);
             throw new RenException(ErrorCode.OTA_DEVICE_NOT_FOUND, "Device not found for MAC: " + macAddress);
         }
+        log.debug("✓ [PROMPT SERVICE] Found device ID: {} for MAC: {}", device.getId(), macAddress);
 
         // 获取智能体信息
         AgentEntity agent = agentService.selectById(device.getAgentId());
         if (agent == null) {
+            log.error("❌ [PROMPT SERVICE] Agent not found for device: {}, agentId: {}",
+                macAddress, device.getAgentId());
             throw new RenException("Agent not found for device: " + macAddress);
         }
+        log.debug("✓ [PROMPT SERVICE] Found agent: {} (ID: {}) for MAC: {}",
+            agent.getAgentName(), agent.getId(), macAddress);
 
         // 返回系统提示词 (now contains Jinja2 templates directly in database)
         String systemPrompt = agent.getSystemPrompt();
         if (StringUtils.isBlank(systemPrompt)) {
+            log.error("❌ [PROMPT SERVICE] No system prompt configured for agent: {} (MAC: {})",
+                agent.getAgentName(), macAddress);
             throw new RenException("No system prompt configured for agent: " + agent.getAgentName());
         }
+
+        log.info("✅ [PROMPT SERVICE] Successfully retrieved prompt from DB for MAC: {} - Agent: {} (length: {} chars)",
+            macAddress, agent.getAgentName(), systemPrompt.length());
 
         // Simply return the prompt as-is (templates already in database)
         return systemPrompt;
@@ -529,28 +544,22 @@ public class ConfigServiceImpl implements ConfigService {
             throw new RenException("Agent not found for device: " + macAddress);
         }
 
-        // 返回模板ID
-        String templateId = agent.getTemplateId();
-        if (StringUtils.isBlank(templateId)) {
-            throw new RenException("No template_id configured for agent: " + agent.getAgentName());
-        }
-
-        return templateId;
+        // 返回智能体ID（不再使用模板ID）
+        return agent.getId();
     }
 
     @Override
     public String getTemplateContent(String templateId) {
-        // 根据模板ID查找模板
-        // Note: AgentTemplateService extends IService (MyBatis-Plus) which uses getById()
-        AgentTemplateEntity template = agentTemplateService.getById(templateId);
-        if (template == null) {
-            throw new RenException("Template not found for ID: " + templateId);
+        // templateId 现在实际上是 agentId，直接获取智能体的system_prompt
+        AgentEntity agent = agentService.selectById(templateId);
+        if (agent == null) {
+            throw new RenException("Agent not found for ID: " + templateId);
         }
 
-        // 返回模板内容（personality）
-        String systemPrompt = template.getSystemPrompt();
+        // 返回智能体的system_prompt
+        String systemPrompt = agent.getSystemPrompt();
         if (StringUtils.isBlank(systemPrompt)) {
-            throw new RenException("No system_prompt configured for template: " + template.getAgentName());
+            throw new RenException("No system_prompt configured for agent: " + agent.getAgentName());
         }
 
         return systemPrompt;
@@ -564,16 +573,9 @@ public class ConfigServiceImpl implements ConfigService {
             throw new RenException(ErrorCode.OTA_DEVICE_NOT_FOUND, "Device not found for MAC: " + macAddress);
         }
 
-        // TODO: 实现位置获取逻辑
-        // 可以从设备表获取，或调用第三方IP定位服务
+        // TODO: 实现位置获取逻辑（可以调用第三方IP定位服务）
         // 目前返回默认值
-        String location = device.getLocation();
-        if (StringUtils.isBlank(location)) {
-            // 默认返回 "Unknown" 或从IP获取
-            return "Mumbai";  // 默认印度孟买
-        }
-
-        return location;
+        return "Mumbai";  // 默认印度孟买
     }
 
     @Override

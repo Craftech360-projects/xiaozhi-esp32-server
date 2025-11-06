@@ -253,6 +253,11 @@ async def entrypoint(ctx: JobContext):
             # Create database helper
             db_helper = DatabaseHelper(manager_api_url, manager_api_secret)
 
+            # Clear prompt cache to ensure fresh prompt on new session
+            logger.info("🔄 Clearing prompt cache for new session")
+            prompt_service.clear_cache()
+            prompt_service.clear_enhanced_cache(device_mac)
+
             # Using direct API-based prompt fetching
             logger.info("📄 Fetching prompt and config from API in parallel")
 

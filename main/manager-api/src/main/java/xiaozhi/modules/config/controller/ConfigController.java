@@ -13,6 +13,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.AllArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import xiaozhi.common.utils.Result;
 import xiaozhi.common.validator.ValidatorUtils;
 import xiaozhi.modules.config.dto.AgentModelsDTO;
@@ -23,6 +24,7 @@ import xiaozhi.modules.config.service.ConfigService;
  *
  * @since 1.0.0
  */
+@Slf4j
 @RestController
 @RequestMapping("config")
 @Tag(name = "Parameter Management")
@@ -50,12 +52,32 @@ public class ConfigController {
     @Operation(summary = "获取智能体提示词")
     public Result<String> getAgentPrompt(@Valid @RequestBody Map<String, String> request) {
         String macAddress = request.get("macAddress");
+
+        log.info("🤖 [NEW SESSION] Agent prompt request received for MAC: {}", macAddress);
+
         if (macAddress == null || macAddress.trim().isEmpty()) {
+            log.error("❌ [PROMPT FETCH] MAC address is required but not provided");
             return new Result<String>().error("MAC address is required");
         }
 
-        String prompt = configService.getAgentPrompt(macAddress);
-        return new Result<String>().ok(prompt);
+        try {
+            String prompt = configService.getAgentPrompt(macAddress);
+
+            if (prompt != null && !prompt.trim().isEmpty()) {
+                log.info("✅ [PROMPT FETCH] Successfully fetched prompt for MAC: {} (length: {} chars)",
+                    macAddress, prompt.length());
+                log.debug("📝 [PROMPT PREVIEW] First 100 chars: {}",
+                    prompt.length() > 100 ? prompt.substring(0, 100) + "..." : prompt);
+            } else {
+                log.warn("⚠️ [PROMPT FETCH] Empty prompt returned for MAC: {}", macAddress);
+            }
+
+            return new Result<String>().ok(prompt);
+        } catch (Exception e) {
+            log.error("❌ [PROMPT FETCH] Failed to fetch prompt for MAC: {} - Error: {}",
+                macAddress, e.getMessage(), e);
+            throw e;
+        }
     }
 
     @PostMapping("child-profile-by-mac")

@@ -512,14 +512,6 @@ databaseChangeLog:
             encoding: utf8
             path: classpath:db/changelog/202510162000_update_edgetts_to_english.sql
   - changeSet:
-      id: 202510241430
-      author: claude
-      validCheckSum: ANY
-      changes:
-        - sqlFile:
-            encoding: utf8
-            path: classpath:db/changelog/202510241430_update_template_personalities.sql
-  - changeSet:
       id: 202510301400
       author: claude
       changes:
