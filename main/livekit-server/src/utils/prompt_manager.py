@@ -317,8 +317,26 @@ class PromptManager:
 
             # Step 4: Render template
             context['base_prompt'] = personality  # Insert personality into {{base_prompt}}
-            template = Template(base_template_str)
-            enhanced_prompt = template.render(**context)
+
+            # IMPORTANT: Configure Jinja2 to preserve Python format() placeholders like {self.start_word}
+            # By using variable_start_string and variable_end_string with triple braces,
+            # we avoid conflicts with single-brace Python format syntax
+            from jinja2 import Environment
+            env = Environment(
+                variable_start_string='{{{',  # Use {{{ instead of {{
+                variable_end_string='}}}',    # Use }}} instead of }}
+                block_start_string='{%',
+                block_end_string='%}',
+                comment_start_string='{#',
+                comment_end_string='#}'
+            )
+            template = env.from_string(base_template_str)
+
+            # First pass: Render with Jinja2 (child profile, dates, etc.)
+            jinja_rendered = template.render(**context)
+
+            # Second pass: The {self.xxx} placeholders remain intact for Python format() later
+            enhanced_prompt = jinja_rendered
 
             logger.info(
                 f"✅ Built enhanced prompt: template_id={template_id}, "

@@ -8,6 +8,8 @@ import pytz
 import random
 import inspect
 import asyncio
+import os
+from pathlib import Path
 from livekit.agents import (
     Agent,
     RunContext,
@@ -69,16 +71,489 @@ def normalize_mode_name(mode_input: str) -> str:
     logger.warning(f"⚠️ No alias match found for '{mode_input}', passing as-is")
     return mode_input
 
+
+class MathGameState:
+    """
+    Helper class to track math game state (like TicTacToeBoard structure).
+
+    Manages game state for math riddles:
+    - Stores question bank (5 pre-generated questions)
+    - Tracks current question index
+    - Tracks retry attempts (max 2 per question)
+    - Tracks streak (consecutive correct answers)
+    """
+
+    def __init__(self):
+        """Initialize game state"""
+        self.reset()
+
+    def reset(self):
+        """Reset game to initial state"""
+        self.question_bank = []        # List of {question: str, answer: float}
+        self.current_index = 0         # Which question we're on (0-4)
+        self.current_attempts = 0      # Attempts on current question (0-2)
+        self.max_attempts = 2          # Max retry attempts per question
+        self.streak = 0                # Consecutive correct answers
+        self.total_questions = 0       # Total questions answered
+        logger.info("🔄 Math game state reset")
+
+    def load_question_bank(self, questions: list):
+        """
+        Load pre-generated question bank
+
+        Args:
+            questions: List of {question: str, answer: float/int}
+        """
+        self.question_bank = questions
+        self.current_index = 0
+        self.current_attempts = 0
+        self.streak = 0  # Reset streak for new question bank
+        logger.info(f"📚 Loaded {len(questions)} questions into bank")
+
+    def get_current_question(self) -> dict:
+        """
+        Get current question from bank
+
+        Returns:
+            dict: {question: str, answer: float} or None if bank empty
+        """
+        if not self.question_bank or self.current_index >= len(self.question_bank):
+            return None
+        return self.question_bank[self.current_index]
+
+    def validate_answer(self, user_answer: float) -> dict:
+        """
+        Validate user's answer against current question
+
+        Args:
+            user_answer: User's parsed answer
+
+        Returns:
+            dict: {
+                'correct': bool,
+                'retry': bool,
+                'move_next': bool,
+                'attempts_left': int,
+                'correct_answer': float
+            }
+        """
+        current_q = self.get_current_question()
+        if not current_q:
+            return {'correct': False, 'retry': False, 'move_next': False, 'error': 'No question available'}
+
+        is_correct = abs(user_answer - current_q['answer']) < 0.01
+
+        if is_correct:
+            # Correct answer
+            self.streak += 1
+            self.total_questions += 1
+            self.current_index += 1
+            self.current_attempts = 0
+            return {
+                'correct': True,
+                'retry': False,
+                'move_next': True,
+                'attempts_left': 0,
+                'correct_answer': current_q['answer']
+            }
+        else:
+            # Wrong answer
+            self.streak = 0  # Reset streak on ANY wrong answer
+            self.current_attempts += 1
+
+            if self.current_attempts < self.max_attempts:
+                # Still have retries left
+                return {
+                    'correct': False,
+                    'retry': True,
+                    'move_next': False,
+                    'attempts_left': self.max_attempts - self.current_attempts,
+                    'correct_answer': current_q['answer']
+                }
+            else:
+                # Max attempts reached, move to next
+                self.total_questions += 1
+                self.current_index += 1
+                self.current_attempts = 0
+                return {
+                    'correct': False,
+                    'retry': False,
+                    'move_next': True,
+                    'attempts_left': 0,
+                    'correct_answer': current_q['answer']
+                }
+
+    def needs_new_bank(self) -> bool:
+        """Check if we need to generate new question bank"""
+        return not self.question_bank or self.current_index >= len(self.question_bank)
+
+    def is_game_complete(self) -> bool:
+        """
+        Check if game is complete (3 correct in a row).
+
+        Returns:
+            bool: True if streak reached 3
+        """
+        return self.streak >= 3
+
+    def get_state(self) -> dict:
+        """
+        Get current game state.
+
+        Returns:
+            dict: Current game state information
+        """
+        current_q = self.get_current_question()
+        return {
+            'streak': self.streak,
+            'current_index': self.current_index,
+            'current_attempts': self.current_attempts,
+            'max_attempts': self.max_attempts,
+            'total_questions': self.total_questions,
+            'question_bank_size': len(self.question_bank),
+            'current_question': current_q['question'] if current_q else None,
+            'needs_new_bank': self.needs_new_bank(),
+            'game_complete': self.is_game_complete()
+        }
+
+
+class RiddleGameState:
+    """
+    Helper class to track riddle game state (same structure as MathGameState).
+
+    Manages game state for riddles:
+    - Stores riddle bank (5 pre-generated riddles)
+    - Tracks current riddle index
+    - Tracks retry attempts (max 2 per riddle)
+    - Tracks streak (consecutive correct answers)
+    """
+
+    def __init__(self):
+        """Initialize game state"""
+        self.reset()
+
+    def reset(self):
+        """Reset game to initial state"""
+        self.riddle_bank = []          # List of {riddle: str, answer: str}
+        self.current_index = 0         # Which riddle we're on (0-4)
+        self.current_attempts = 0      # Attempts on current riddle (0-2)
+        self.max_attempts = 2          # Max retry attempts per riddle
+        self.streak = 0                # Consecutive correct answers
+        self.total_riddles = 0         # Total riddles answered
+        logger.info("🔄 Riddle game state reset")
+
+    def load_riddle_bank(self, riddles: list):
+        """
+        Load pre-generated riddle bank
+
+        Args:
+            riddles: List of {riddle: str, answer: str}
+        """
+        self.riddle_bank = riddles
+        self.current_index = 0
+        self.current_attempts = 0
+        self.streak = 0  # Reset streak for new riddle bank
+        logger.info(f"📚 Loaded {len(riddles)} riddles into bank")
+
+    def get_current_riddle(self) -> dict:
+        """
+        Get current riddle from bank
+
+        Returns:
+            dict: {riddle: str, answer: str} or None if bank empty
+        """
+        if not self.riddle_bank or self.current_index >= len(self.riddle_bank):
+            return None
+        return self.riddle_bank[self.current_index]
+
+    def get_next_riddle(self) -> dict:
+        """
+        Get next riddle (for previewing what comes after current)
+
+        Returns:
+            dict: {riddle: str, answer: str} or None
+        """
+        next_index = self.current_index + 1
+        if next_index >= len(self.riddle_bank):
+            return None
+        return self.riddle_bank[next_index]
+
+    def validate_answer(self, user_answer: str) -> dict:
+        """
+        Validate user's answer against current riddle (exact string match)
+
+        Args:
+            user_answer: User's answer (string)
+
+        Returns:
+            dict: {
+                'correct': bool,
+                'retry': bool,
+                'move_next': bool,
+                'attempts_left': int,
+                'correct_answer': str
+            }
+        """
+        current_r = self.get_current_riddle()
+        if not current_r:
+            return {'correct': False, 'retry': False, 'move_next': False, 'error': 'No riddle available'}
+
+        # Exact string match (case-insensitive, strip whitespace)
+        user_normalized = user_answer.lower().strip()
+        correct_normalized = current_r['answer'].lower().strip()
+        is_correct = user_normalized == correct_normalized
+
+        if is_correct:
+            # Correct answer
+            self.streak += 1
+            self.total_riddles += 1
+            self.current_index += 1
+            self.current_attempts = 0
+            return {
+                'correct': True,
+                'retry': False,
+                'move_next': True,
+                'attempts_left': 0,
+                'correct_answer': current_r['answer']
+            }
+        else:
+            # Wrong answer
+            self.streak = 0  # Reset streak on ANY wrong answer
+            self.current_attempts += 1
+
+            if self.current_attempts < self.max_attempts:
+                # Still have retries left
+                return {
+                    'correct': False,
+                    'retry': True,
+                    'move_next': False,
+                    'attempts_left': self.max_attempts - self.current_attempts,
+                    'correct_answer': current_r['answer']
+                }
+            else:
+                # Max attempts reached, move to next
+                self.total_riddles += 1
+                self.current_index += 1
+                self.current_attempts = 0
+                return {
+                    'correct': False,
+                    'retry': False,
+                    'move_next': True,
+                    'attempts_left': 0,
+                    'correct_answer': current_r['answer']
+                }
+
+    def needs_new_bank(self) -> bool:
+        """Check if we need to generate new riddle bank"""
+        return not self.riddle_bank or self.current_index >= len(self.riddle_bank)
+
+    def is_game_complete(self) -> bool:
+        """
+        Check if game is complete (3 correct in a row).
+
+        Returns:
+            bool: True if streak reached 3
+        """
+        return self.streak >= 3
+
+    def get_state(self) -> dict:
+        """
+        Get current game state.
+
+        Returns:
+            dict: Current game state information
+        """
+        current_r = self.get_current_riddle()
+        return {
+            'streak': self.streak,
+            'current_index': self.current_index,
+            'current_attempts': self.current_attempts,
+            'max_attempts': self.max_attempts,
+            'total_riddles': self.total_riddles,
+            'riddle_bank_size': len(self.riddle_bank),
+            'current_riddle': current_r['riddle'] if current_r else None,
+            'needs_new_bank': self.needs_new_bank(),
+            'game_complete': self.is_game_complete()
+        }
+
+
+class WordLadderGameState:
+    """
+    Helper class to track Word Ladder game state (like MathGameState structure).
+
+    Manages game state for Word Ladder:
+    - Tracks current word, target word, and word history
+    - Validates letter matching
+    - Manages failure count
+    """
+
+    def __init__(self):
+        """Initialize game state"""
+        self.reset()
+
+    def reset(self, start_word: str = None, target_word: str = None):
+        """
+        Reset game state with new words
+
+        Args:
+            start_word: Starting word for the game
+            target_word: Target word to reach
+        """
+        self.start_word = start_word
+        self.target_word = target_word
+        self.current_word = start_word
+        self.word_history = [start_word] if start_word else []
+        self.failure_count = 0
+        self.max_failures = 3
+        logger.info(f"🔄 Word Ladder state reset: {start_word} → {target_word}")
+
+    def validate_letter_match(self, user_word: str) -> tuple:
+        """
+        Check if user's word starts with last letter of current word
+
+        Args:
+            user_word: The word provided by user
+
+        Returns:
+            tuple: (is_valid: bool, error_message: str)
+        """
+        if not user_word or len(user_word) < 2:
+            return False, "Word too short or empty"
+
+        last_letter = self.current_word[-1].lower()
+        first_letter = user_word[0].lower()
+
+        if last_letter != first_letter:
+            return False, f"Must start with '{last_letter}'"
+
+        return True, ""
+
+    def check_victory(self, user_word: str) -> bool:
+        """
+        Check if user reached target word
+
+        Args:
+            user_word: The word to check
+
+        Returns:
+            bool: True if user reached target
+        """
+        return user_word.lower() == self.target_word.lower()
+
+    def add_valid_move(self, user_word: str):
+        """
+        Update state after valid move
+
+        Args:
+            user_word: The valid word to add
+        """
+        self.current_word = user_word.lower()
+        self.word_history.append(self.current_word)
+        self.failure_count = 0  # Reset failures on valid move
+        logger.info(f"✅ Valid move added: {self.current_word}")
+
+    def increment_failure(self) -> bool:
+        """
+        Increment failure count
+
+        Returns:
+            bool: True if max failures reached
+        """
+        self.failure_count += 1
+        max_reached = self.failure_count >= self.max_failures
+        if max_reached:
+            logger.warning(f"⚠️ Max failures reached: {self.failure_count}/{self.max_failures}")
+        return max_reached
+
+    def get_next_letter(self) -> str:
+        """
+        Get the letter the next word must start with
+
+        Returns:
+            str: The next required starting letter
+        """
+        return self.current_word[-1].lower() if self.current_word else ''
+
+    def get_state(self) -> dict:
+        """
+        Get current game state
+
+        Returns:
+            dict: Current game state information
+        """
+        return {
+            'start_word': self.start_word,
+            'target_word': self.target_word,
+            'current_word': self.current_word,
+            'word_history': self.word_history.copy(),
+            'failure_count': self.failure_count,
+            'max_failures': self.max_failures,
+            'words_used': len(self.word_history),
+            'next_letter': self.get_next_letter()
+        }
+
+
 class Assistant(FilteredAgent):
     """Main AI Assistant agent class with TTS text filtering"""
+
+    # Word list for Word Ladder game (100 simple, kid-friendly words)
+    WORD_LIST = [
+        "cat", "dog", "sun", "moon", "tree", "book", "fish", "bird",
+        "cold", "warm", "fast", "slow", "jump", "run", "play", "toy",
+        "red", "blue", "big", "small", "hot", "ice", "rain", "snow",
+        "cup", "pen", "box", "car", "bus", "road", "door", "room",
+        "hand", "foot", "head", "leg", "arm", "nose", "eye", "ear",
+        "day", "night", "star", "sky", "hill", "lake", "sand", "rock",
+        "frog", "duck", "lion", "bear", "wolf", "fox", "owl", "bee",
+        "ball", "kite", "game", "fun", "sing", "dance", "clap", "wave",
+        "coin", "ring", "lamp", "desk", "chair", "bed", "wall", "roof",
+        "wind", "leaf", "stem", "seed", "root", "bark", "twig", "vine",
+        "gold", "silk", "wool", "wood", "iron", "rope", "tile", "mesh",
+        "path", "gate", "step", "yard", "pond", "well", "nest", "cave",
+        "tent", "flag", "drum", "horn"
+    ]
+
+    # Audio directory path (relative to project root)
+    AUDIO_DIR = Path(__file__).parent.parent.parent / "audio"
 
     def __init__(self, instructions: str = None, tts_provider=None) -> None:
         # Use provided instructions or fallback to a basic prompt
         if instructions is None:
             instructions = "You are a helpful AI assistant."
 
-        super().__init__(instructions=instructions, tts_provider=tts_provider)
+         # Word Ladder game state (using clean WordLadderGameState structure)
+        self.word_ladder_state = WordLadderGameState()
+        # Pick random word pair for the game
+        start, target = self._pick_valid_word_pair()
+        self.word_ladder_state.reset(start, target)
+        # Keep old variables for backward compatibility with prompts
+        self.start_word = start
+        self.target_word = target
+        self.current_word = start
+        self.word_history = [start]
+        self.failure_count = 0
+        self.max_failures = 3
+        logger.info(f"🎮 Word Ladder initialized: {start} → {target}")
 
+        # Math Tutor game state (using clean MathGameState structure)
+        self.math_game_state = MathGameState()
+        # Keep old variables for backward compatibility with prompts
+        self.current_riddle = ""
+        self.current_answer = None
+        self.correct_streak = 0
+        logger.info(f"🧮 Math Tutor initialized with MathGameState")
+
+        # Riddle Solver game state (using clean RiddleGameState structure)
+        self.riddle_game_state = RiddleGameState()
+        logger.info(f"🤔 Riddle Solver initialized with RiddleGameState")
+
+        # Store original instructions template for later re-formatting
+        self._original_instructions = instructions
+
+        # Format the prompt with actual game state values
+        formatted_instructions = self._format_instructions(instructions)
+
+        super().__init__(instructions=formatted_instructions, tts_provider=tts_provider)
         # These will be injected by main.py
         self.music_service = None
         self.story_service = None
@@ -87,6 +562,7 @@ class Assistant(FilteredAgent):
         self.device_control_service = None
         self.mcp_executor = None
         self.google_search_service = None
+        self.praison_math_service = None
 
         # Room and device information
         self.room_name = None
@@ -128,10 +604,102 @@ class Assistant(FilteredAgent):
             import traceback
             logger.warning(f"🔧 Traceback: {traceback.format_exc()}")
 
+    def _format_instructions(self, prompt: str) -> str:
+        """
+        Internal method to format prompt by replacing game state placeholders with actual values.
+
+        Replaces:
+        - {self.start_word} with actual start_word
+        - {self.target_word} with actual target_word
+        - {self.current_word} with actual current_word
+        - {self.failure_count} with actual failure_count
+        - {self.max_failures} with actual max_failures
+
+        Args:
+            prompt: The prompt string with placeholders
+
+        Returns:
+            Formatted prompt with actual game state values
+        """
+        try:
+            # Use string.Template for safer partial replacement
+            # This allows us to replace {self.xxx} without requiring other placeholders
+            import re
+
+            # Replace {self.xxx} patterns manually to avoid KeyError from format()
+            def replace_self_placeholders(match):
+                attr_name = match.group(1)
+                try:
+                    value = getattr(self, attr_name)
+                    return str(value)
+                except AttributeError:
+                    logger.warning(f"⚠️ Attribute not found: self.{attr_name}")
+                    return match.group(0)  # Keep original if attribute doesn't exist
+
+            # Pattern to match {self.attribute_name}
+            pattern = r'\{self\.([a-zA-Z_][a-zA-Z0-9_]*)\}'
+            formatted_prompt = re.sub(pattern, replace_self_placeholders, prompt)
+
+            logger.info(f"📝 Formatted prompt with game state: start_word={self.start_word}, target_word={self.target_word}, failure_count={self.failure_count}/{self.max_failures}")
+
+            # DEBUG: Log a sample of the formatted prompt to verify placeholders are replaced
+            if "{self.start_word}" in formatted_prompt or "{self.target_word}" in formatted_prompt:
+                logger.error(f"❌ PLACEHOLDERS NOT REPLACED! Sample: {formatted_prompt[:500]}")
+            else:
+                logger.info(f"✅ Placeholders successfully replaced. Sample: {formatted_prompt[300:500]}")
+
+            return formatted_prompt
+        except Exception as e:
+            logger.error(f"❌ Error formatting prompt: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return prompt
+
+    async def update_prompt_with_game_state(self):
+        """
+        Update the agent's instructions with current game state values.
+        Call this method whenever game state changes (start_word, target_word, failure_count).
+        """
+        try:
+            # Get the original prompt (unformatted) from _instructions
+            # Since we need the original template, we'll store it
+            if not hasattr(self, '_original_instructions'):
+                logger.warning("⚠️ No original instructions template available for formatting")
+                return
+
+            # Format with current game state
+            formatted_prompt = self._format_instructions(self._original_instructions)
+
+            # Update agent's instructions
+            self._instructions = formatted_prompt
+
+            # Update session if available (for immediate effect)
+            if self._agent_session:
+                try:
+                    # Update session's agent internal instructions
+                    self._agent_session._agent._instructions = formatted_prompt
+
+                    # Also update session chat context if possible
+                    if hasattr(self._agent_session, 'history') and hasattr(self._agent_session.history, 'messages'):
+                        # Update the system message in history
+                        if len(self._agent_session.history.messages) > 0:
+                            if hasattr(self._agent_session.history.messages[0], 'content'):
+                                self._agent_session.history.messages[0].content = formatted_prompt
+                                logger.info(f"🔄 Session chat context updated with new game state!")
+
+                    logger.info(f"🔄 Session instructions updated with game state in real-time!")
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not update session directly: {e}")
+
+        except Exception as e:
+            logger.error(f"❌ Error updating prompt with game state: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
 
 
-    def set_services(self, music_service, story_service, audio_player, unified_audio_player=None, device_control_service=None, mcp_executor=None, google_search_service=None):
-        """Set the music, story, device control services, MCP executor, and Google Search service"""
+
+    def set_services(self, music_service, story_service, audio_player, unified_audio_player=None, device_control_service=None, mcp_executor=None, google_search_service=None, question_generator_service=None, riddle_generator_service=None):
+        """Set the music, story, device control services, MCP executor, Google Search service, Question Generator service, and Riddle Generator service"""
         self.music_service = music_service
         self.story_service = story_service
         self.audio_player = audio_player
@@ -139,6 +707,8 @@ class Assistant(FilteredAgent):
         self.device_control_service = device_control_service
         self.mcp_executor = mcp_executor
         self.google_search_service = google_search_service
+        self.question_generator_service = question_generator_service
+        self.riddle_generator_service = riddle_generator_service
 
     def set_room_info(self, room_name: str = None, device_mac: str = None):
         """Set room name and device MAC address"""
@@ -150,6 +720,28 @@ class Assistant(FilteredAgent):
         """Set session reference for dynamic updates"""
         self._agent_session = session
         logger.info(f"🔗 Session reference stored for dynamic updates")
+
+    def _pick_valid_word_pair(self):
+        """
+        Pick two random words from WORD_LIST ensuring:
+        - Words are different
+        - Last letter of word1 ≠ first letter of word2 (to create a puzzle)
+
+        Returns:
+            tuple: (start_word, target_word)
+        """
+        while True:
+            word1 = random.choice(self.WORD_LIST)
+            word2 = random.choice(self.WORD_LIST)
+
+            # Ensure words are different
+            if word1 == word2:
+                continue
+
+            # CRITICAL: Ensure last letter ≠ first letter (creates puzzle)
+            if word1[-1].lower() != word2[0].lower():
+                logger.info(f"🎮 Generated word pair: {word1} → {word2}")
+                return word1, word2
 
     @function_tool
     async def update_agent_mode(self, context: RunContext, mode_name: str) -> str:
@@ -609,6 +1201,570 @@ class Assistant(FilteredAgent):
         except Exception as e:
             logger.error(f"Error playing music: {e}")
             return "Sorry, I encountered an error while trying to play music."
+
+    def _extract_and_solve_math(self, question: str) -> Optional[float]:
+        """
+        Universal math expression extractor and solver.
+        Converts natural language questions to mathematical expressions and solves them.
+
+        Args:
+            question: Natural language math question
+
+        Returns:
+            The numerical answer, or None if cannot be solved
+        """
+        try:
+            import sympy
+            import re
+
+            # Normalize the question
+            q = question.lower().strip()
+
+            # Step 1: Convert word operators to symbols
+            replacements = {
+                ' plus ': '+', ' add ': '+', ' and ': '+',
+                ' minus ': '-', ' subtract ': '-', ' take away ': '-',
+                ' times ': '*', ' multiply ': '*', ' multiplied by ': '*',
+                ' divided by ': '/', ' divide ': '/', ' over ': '/',
+                ' percent of ': '*0.01*',
+                ' squared ': '**2', ' cubed ': '**3',
+                'square root of ': 'sqrt(',
+            }
+
+            for word, symbol in replacements.items():
+                q = q.replace(word, symbol)
+
+            # Handle special patterns
+            # "How many more than X is Y?" → Y - X
+            more_pattern = r'how\s+many\s+more\s+than\s+(\d+\.?\d*)\s+is\s+(\d+\.?\d*)'
+            match = re.search(more_pattern, q)
+            if match:
+                return float(match.group(2)) - float(match.group(1))
+
+            # "How much is X more than Y?" → Y + X
+            more_than = r'how\s+much\s+is\s+(\d+\.?\d*)\s+more\s+than\s+(\d+\.?\d*)'
+            match = re.search(more_than, q)
+            if match:
+                return float(match.group(2)) + float(match.group(1))
+
+            # Step 2: Extract mathematical expression (numbers and operators)
+            # Check for squared/cubed first
+            squared_pattern = r'(\d+\.?\d*)\s*\*\*2'
+            match = re.search(squared_pattern, q)
+            if match:
+                num = float(match.group(1))
+                return num ** 2
+
+            cubed_pattern = r'(\d+\.?\d*)\s*\*\*3'
+            match = re.search(cubed_pattern, q)
+            if match:
+                num = float(match.group(1))
+                return num ** 3
+
+            # Find all numbers and operators
+            expr_pattern = r'[\d\.]+[\s\+\-\*/\^×÷\(\)]+[\d\.\s\+\-\*/\^×÷\(\)]*[\d\.]+'
+            match = re.search(expr_pattern, q)
+
+            if match:
+                expression = match.group(0)
+            else:
+                # Try to find just a simple number operation
+                simple_pattern = r'(\d+\.?\d*)\s*[\+\-\*/×÷]\s*(\d+\.?\d*)'
+                match = re.search(simple_pattern, q)
+                if match:
+                    expression = match.group(0)
+                else:
+                    logger.warning(f"Could not extract math expression from: {q}")
+                    return None
+
+            # Step 3: Clean and normalize expression
+            expression = expression.replace('×', '*').replace('÷', '/').replace('^', '**')
+
+            # Handle square root if not already handled
+            if 'sqrt(' in q and ')' not in expression:
+                expression = expression + ')'
+
+            # Step 4: Solve using sympy (safe evaluation)
+            logger.debug(f"Extracted expression: {expression}")
+            result = sympy.sympify(expression)
+            answer = float(result.evalf())
+
+            logger.info(f"✅ Solved: {expression} = {answer}")
+            return answer
+
+        except Exception as e:
+            logger.warning(f"⚠️ Error solving math expression: {e}")
+            return None
+
+    def _parse_user_answer(self, answer: str) -> Optional[float]:
+        """
+        Parse user's answer (handles both numeric and word forms)
+
+        Args:
+            answer: User's answer as string
+
+        Returns:
+            Numeric value, or None if cannot parse
+        """
+        try:
+            # Try direct number conversion
+            return float(answer.strip())
+        except ValueError:
+            pass
+
+        # Normalize the answer
+        answer_lower = answer.lower().strip()
+
+        # Try simple word-to-number conversion
+        word_to_num = {
+            'zero': 0, 'one': 1, 'two': 2, 'three': 3, 'four': 4,
+            'five': 5, 'six': 6, 'seven': 7, 'eight': 8, 'nine': 9,
+            'ten': 10, 'eleven': 11, 'twelve': 12, 'thirteen': 13,
+            'fourteen': 14, 'fifteen': 15, 'sixteen': 16, 'seventeen': 17,
+            'eighteen': 18, 'nineteen': 19, 'twenty': 20,
+            'thirty': 30, 'forty': 40, 'fifty': 50, 'sixty': 60,
+            'seventy': 70, 'eighty': 80, 'ninety': 90, 'hundred': 100
+        }
+
+        # Check if it's a single word number
+        if answer_lower in word_to_num:
+            return word_to_num[answer_lower]
+
+        # Handle compound numbers like "fifty four", "twenty one", etc.
+        # Split by space and try to combine
+        words = answer_lower.split()
+        if len(words) == 2:
+            # Check if both words are valid numbers
+            if words[0] in word_to_num and words[1] in word_to_num:
+                # Handle cases like "fifty four" = 50 + 4 = 54
+                tens = word_to_num[words[0]]
+                ones = word_to_num[words[1]]
+
+                # Only combine if first word is a tens value (20, 30, 40, etc.)
+                if tens >= 20 and tens % 10 == 0 and ones < 10:
+                    return tens + ones
+                # Handle "X hundred Y" like "one hundred five" = 105
+                elif words[0] in word_to_num and words[1] == 'hundred':
+                    return word_to_num[words[0]] * 100
+        elif len(words) == 3:
+            # Handle "X hundred Y" like "two hundred fifty"
+            if words[1] == 'hundred' and words[0] in word_to_num and words[2] in word_to_num:
+                return word_to_num[words[0]] * 100 + word_to_num[words[2]]
+        elif len(words) == 4:
+            # Handle "X hundred Y Z" like "two hundred fifty four"
+            if words[1] == 'hundred' and words[0] in word_to_num and words[2] in word_to_num and words[3] in word_to_num:
+                hundreds = word_to_num[words[0]] * 100
+                tens = word_to_num[words[2]]
+                ones = word_to_num[words[3]]
+                if tens >= 20 and tens % 10 == 0 and ones < 10:
+                    return hundreds + tens + ones
+
+        # Handle comparison question responses like "three plus four is bigger"
+        # or "seven minus two" or "5 + 3"
+        try:
+            # Remove common phrases
+            for phrase in ['is bigger', 'is smaller', 'is larger', 'is less', 'is greater',
+                          'is the answer', 'is correct', 'that is', 'equals', '=']:
+                answer_lower = answer_lower.replace(phrase, '')
+
+            answer_lower = answer_lower.strip()
+
+            # Convert word numbers to digits
+            for word, num in word_to_num.items():
+                answer_lower = answer_lower.replace(word, str(num))
+
+            # Convert word operators to symbols
+            replacements = {
+                ' plus ': '+', ' add ': '+',
+                ' minus ': '-', ' subtract ': '-',
+                ' times ': '*', ' multiply by ': '*', ' multiplied by ': '*',
+                ' divided by ': '/', ' divide ': '/',
+            }
+
+            for word, symbol in replacements.items():
+                answer_lower = answer_lower.replace(word, symbol)
+
+            # Extract expression with numbers and operators
+            import re
+            expression = re.findall(r'[\d+\-*/\.\s()]+', answer_lower)
+
+            if expression:
+                expr_str = ''.join(expression).strip()
+                if expr_str:
+                    # Evaluate the expression
+                    import sympy
+                    result = sympy.sympify(expr_str)
+                    return float(result.evalf())
+
+        except Exception as e:
+            logger.debug(f"Could not parse as expression: {answer} - {e}")
+            pass
+
+        return None
+
+    @function_tool
+    async def generate_question_bank(
+        self,
+        context: RunContext,
+        count: int = 5,
+        difficulty: str = "easy"
+    ):
+        """
+        Generate a bank of math questions for the game.
+
+        Call this when:
+        - Starting a new math game session
+        - Running out of questions (question bank empty)
+
+        Args:
+            count: Number of questions to generate (default 5)
+            difficulty: "easy", "medium", or "hard"
+
+        Returns:
+            dict: Status and generated questions
+        """
+        try:
+            logger.info(f"🎲 Generating {count} {difficulty} questions...")
+
+            # Check if question generator service is available
+            if hasattr(self, 'question_generator_service') and self.question_generator_service and self.question_generator_service.is_available():
+                result = await self.question_generator_service.generate_question_bank(count, difficulty)
+
+                if result['success'] and result['questions']:
+                    # Load questions into MathGameState
+                    self.math_game_state.load_question_bank(result['questions'])
+
+                    logger.info(f"✅ Loaded {len(result['questions'])} questions into game state")
+
+                    return {
+                        'success': True,
+                        'count': len(result['questions']),
+                        'first_question': result['questions'][0]['question'] if result['questions'] else None,
+                        'message': f"Generated {len(result['questions'])} new questions. Let's start!"
+                    }
+                else:
+                    logger.warning(f"⚠️ Question generation failed: {result.get('error')}")
+                    return {
+                        'success': False,
+                        'count': 0,
+                        'message': f"Could not generate questions. Error: {result.get('error')}"
+                    }
+            else:
+                logger.warning("⚠️ Question generator service not available")
+                return {
+                    'success': False,
+                    'count': 0,
+                    'message': "Question generator service not available"
+                }
+
+        except Exception as e:
+            logger.error(f"❌ Error in generate_question_bank: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return {
+                'success': False,
+                'count': 0,
+                'message': f"Error generating questions: {str(e)}"
+            }
+
+    @function_tool
+    async def generate_riddle_bank(
+        self,
+        context: RunContext,
+        count: int = 5,
+        difficulty: str = "easy"
+    ):
+        """
+        Generate a bank of riddles for the game.
+
+        Call this when:
+        - Starting a new riddle game session
+        - Running out of riddles (riddle bank empty)
+
+        Args:
+            count: Number of riddles to generate (default 5)
+            difficulty: "easy", "medium", or "hard"
+
+        Returns:
+            dict: Status and generated riddles
+        """
+        try:
+            logger.info(f"🤔 Generating {count} {difficulty} riddles...")
+
+            # Check if riddle generator service is available
+            if hasattr(self, 'riddle_generator_service') and self.riddle_generator_service and self.riddle_generator_service.is_available():
+                result = await self.riddle_generator_service.generate_riddle_bank(count, difficulty)
+
+                if result['success'] and result['riddles']:
+                    # Load riddles into RiddleGameState
+                    self.riddle_game_state.load_riddle_bank(result['riddles'])
+
+                    logger.info(f"✅ Loaded {len(result['riddles'])} riddles into game state")
+
+                    return {
+                        'success': True,
+                        'count': len(result['riddles']),
+                        'first_riddle': result['riddles'][0]['riddle'] if result['riddles'] else None,
+                        'message': f"Generated {len(result['riddles'])} new riddles. Let's start!"
+                    }
+                else:
+                    logger.warning(f"⚠️ Riddle generation failed: {result.get('error')}")
+                    return {
+                        'success': False,
+                        'count': 0,
+                        'message': f"Could not generate riddles. Error: {result.get('error')}"
+                    }
+            else:
+                logger.warning("⚠️ Riddle generator service not available")
+                return {
+                    'success': False,
+                    'count': 0,
+                    'message': "Riddle generator service not available"
+                }
+
+        except Exception as e:
+            logger.error(f"❌ Error in generate_riddle_bank: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return {
+                'success': False,
+                'count': 0,
+                'message': f"Error generating riddles: {str(e)}"
+            }
+
+    @function_tool
+    async def check_math_answer(
+        self,
+        context: RunContext,
+        user_answer: str
+    ):
+        """
+        Validate math answer using pre-generated question bank with retry logic.
+
+        Flow:
+        1. Parse user's answer (handles any format: "8", "eight", etc.)
+        2. Compare with answer from question bank
+        3. Handle retry logic (2 attempts per question)
+        4. Update MathGameState (streak, index, attempts)
+        5. Return clear result with retry/move_next flags
+
+        Args:
+            user_answer: User's answer in any format (e.g., "8", "eight", "Eight.")
+
+        Returns:
+            dict: {
+                'correct': bool,
+                'retry': bool,
+                'move_next': bool,
+                'attempts_left': int,
+                'current_question': str,
+                'next_question': str or None,
+                'correct_answer': float,
+                'streak': int,
+                'game_complete': bool,
+                'needs_new_bank': bool,
+                'message': str
+            }
+        """
+        try:
+            logger.info(f"🧮 Validating answer: '{user_answer}'")
+
+            # Check if we need to generate questions first
+            if self.math_game_state.needs_new_bank():
+                logger.warning("⚠️ No questions in bank! Need to call generate_question_bank first")
+                return {
+                    'correct': False,
+                    'retry': False,
+                    'move_next': False,
+                    'needs_new_bank': True,
+                    'message': "No questions available. Please generate questions first."
+                }
+
+            # Get current question from bank
+            current_q = self.math_game_state.get_current_question()
+            if not current_q:
+                logger.warning("⚠️ No current question available")
+                return {
+                    'correct': False,
+                    'retry': False,
+                    'move_next': False,
+                    'needs_new_bank': True,
+                    'message': "Questions ran out. Need new question bank."
+                }
+
+            logger.info(f"📝 Current Q: '{current_q['question']}', Expected: {current_q['answer']}")
+
+            # Step 1: Parse user's answer
+            user_number = self._parse_user_answer(user_answer)
+
+            if user_number is None:
+                logger.warning(f"⚠️ Could not parse: '{user_answer}'")
+                # Treat as wrong answer, increase attempt count
+                validation = self.math_game_state.validate_answer(-999999)  # Dummy wrong value
+            else:
+                # Step 2: Validate answer
+                validation = self.math_game_state.validate_answer(user_number)
+
+            # Step 3: Check if game complete
+            game_complete = self.math_game_state.is_game_complete()
+
+            # Step 4: Get next question if moving forward
+            next_q = None
+            if validation['move_next']:
+                next_q = self.math_game_state.get_current_question()
+
+            # Step 5: Format answer for display
+            correct_answer_display = str(int(validation['correct_answer']) if validation['correct_answer'] == int(validation['correct_answer']) else validation['correct_answer'])
+
+            # Step 6: Generate message
+            if game_complete:
+                message = "Correct! You won!"
+            elif validation['correct']:
+                message = "Correct!"
+            elif validation['retry']:
+                message = f"Not quite. Try again!"
+            else:
+                # Max attempts reached, move to next
+                message = f"The answer is {correct_answer_display}. Let's try another!"
+
+            logger.info(f"Result: correct={validation['correct']}, retry={validation['retry']}, attempts_left={validation['attempts_left']}, streak={self.math_game_state.streak}")
+
+            return {
+                'correct': validation['correct'],
+                'retry': validation['retry'],
+                'move_next': validation['move_next'],
+                'attempts_left': validation['attempts_left'],
+                'current_question': current_q['question'],
+                'next_question': next_q['question'] if next_q else None,
+                'correct_answer': validation['correct_answer'],
+                'correct_answer_display': correct_answer_display,
+                'user_parsed': user_number,
+                'streak': self.math_game_state.streak,
+                'game_complete': game_complete,
+                'needs_new_bank': self.math_game_state.needs_new_bank(),
+                'message': message
+            }
+
+        except Exception as e:
+            logger.error(f"❌ Error in check_math_answer: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return {
+                'correct': False,
+                'retry': False,
+                'move_next': False,
+                'message': "Error validating answer. Let's try another!",
+                'error': str(e)
+            }
+
+    @function_tool
+    async def check_riddle_answer(
+        self,
+        context: RunContext,
+        user_answer: str
+    ):
+        """
+        Validate riddle answer using pre-generated riddle bank with retry logic.
+
+        Args:
+            user_answer: User's answer to current riddle
+
+        Returns:
+            dict: Validation result with retry/move_next flags
+        """
+        try:
+            logger.info(f"🤔 Checking riddle answer: '{user_answer}'")
+
+            # Check if we need to generate riddles first
+            if self.riddle_game_state.needs_new_bank():
+                logger.warning("⚠️ No riddle bank loaded")
+                return {
+                    'correct': False,
+                    'retry': False,
+                    'move_next': False,
+                    'needs_new_bank': True,
+                    'message': "Please generate riddles first by calling generate_riddle_bank()."
+                }
+
+            # Get current riddle
+            current_r = self.riddle_game_state.get_current_riddle()
+            if not current_r:
+                return {
+                    'correct': False,
+                    'retry': False,
+                    'move_next': False,
+                    'needs_new_bank': True,
+                    'message': "No more riddles. Generate new ones!"
+                }
+
+            logger.info(f"📝 Current Riddle: '{current_r['riddle']}', Expected: '{current_r['answer']}'")
+
+            # Validate answer (exact string match, case-insensitive)
+            validation = self.riddle_game_state.validate_answer(user_answer)
+
+            # Check if game complete
+            game_complete = self.riddle_game_state.is_game_complete()
+
+            # Get next riddle if moving forward
+            next_r = None
+            if validation['move_next']:
+                next_r = self.riddle_game_state.get_current_riddle()
+
+            # Generate message
+            if game_complete:
+                message = "Correct! You won! 🎉"
+            elif validation['correct']:
+                message = "Correct!"
+            elif validation['retry']:
+                message = "Not quite. Try again!"
+            else:
+                message = f"The answer is '{validation['correct_answer']}'. Let's try another!"
+
+            logger.info(f"Result: correct={validation['correct']}, retry={validation['retry']}, attempts_left={validation['attempts_left']}, streak={self.riddle_game_state.streak}")
+
+            return {
+                'correct': validation['correct'],
+                'retry': validation['retry'],
+                'move_next': validation['move_next'],
+                'attempts_left': validation['attempts_left'],
+                'current_riddle': current_r['riddle'],
+                'next_riddle': next_r['riddle'] if next_r else None,
+                'correct_answer': validation['correct_answer'],
+                'user_answer': user_answer,
+                'streak': self.riddle_game_state.streak,
+                'game_complete': game_complete,
+                'needs_new_bank': self.riddle_game_state.needs_new_bank(),
+                'message': message
+            }
+
+        except Exception as e:
+            logger.error(f"❌ Error in check_riddle_answer: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return {
+                'correct': False,
+                'retry': False,
+                'move_next': False,
+                'message': "Error validating answer. Let's try another!",
+                'error': str(e)
+            }
+
+    async def _solve_question(self, question: str) -> tuple[Optional[float], str]:
+        """
+        Solve math question using sympy solver.
+
+        Args:
+            question: Math question to solve
+
+        Returns:
+            tuple: (answer: float or None, solving_method: str)
+        """
+        logger.info("📐 Using sympy solver...")
+        answer = self._extract_and_solve_math(question)
+        if answer is not None:
+            return answer, "sympy"
+        else:
+            return None, "failed"
 
     @function_tool
     async def play_story(
@@ -1211,3 +2367,155 @@ class Assistant(FilteredAgent):
 
         self.mcp_executor.set_context(context, self.audio_player, self.unified_audio_player)
         return await self.mcp_executor.set_rainbow_speed(speed_ms)
+
+    @function_tool
+    async def validate_word_ladder_move(self, context: RunContext, user_word: str) -> str:
+        """
+        Validate user's word in the Word Ladder game.
+
+        Uses WordLadderGameState class for clean state management.
+
+        Flow:
+        1. Check letter matching (WordLadderGameState)
+        2. Check victory condition
+        3. Update state and return JSON result
+
+        Args:
+            user_word: The word the user just said
+
+        Returns:
+            JSON string with validation result
+        """
+        try:
+            import json
+
+            # Normalize input
+            user_word = user_word.lower().strip()
+
+            logger.info(f"🎮 Validating: '{user_word}' | Current: '{self.word_ladder_state.current_word}' | Target: '{self.word_ladder_state.target_word}'")
+            logger.info(f"🎮 History: {self.word_ladder_state.word_history} | Failures: {self.word_ladder_state.failure_count}/{self.word_ladder_state.max_failures}")
+
+            # Step 1: Check letter matching using WordLadderGameState
+            is_letter_match, error_msg = self.word_ladder_state.validate_letter_match(user_word)
+
+            if not is_letter_match:
+                max_reached = self.word_ladder_state.increment_failure()
+                logger.warning(f"❌ Letter mismatch: {error_msg}")
+
+                if max_reached:
+                    return await self._restart_word_ladder_game("Too many failures")
+
+                state = self.word_ladder_state.get_state()
+                result = {
+                    "success": False,
+                    "game_status": "in_progress",
+                    **state,
+                    "message": error_msg,
+                    "error_type": "wrong_letter"
+                }
+                return json.dumps(result)
+
+            # Step 2: Check victory (skip English word validation)
+            if self.word_ladder_state.check_victory(user_word):
+                logger.info(f"🏆 VICTORY! User reached target: {self.word_ladder_state.target_word}")
+                self.word_ladder_state.add_valid_move(user_word)
+                return await self._restart_word_ladder_game("Victory!", is_victory=True)
+
+            # Step 3: Valid move! Update state
+            self.word_ladder_state.add_valid_move(user_word)
+            logger.info(f"✅ Valid move! New current word: '{self.word_ladder_state.current_word}'")
+
+            # Update backward-compatible variables
+            self.current_word = self.word_ladder_state.current_word
+            self.word_history = self.word_ladder_state.word_history.copy()
+            self.failure_count = self.word_ladder_state.failure_count
+
+            # Update prompt with new state
+            await self.update_prompt_with_game_state()
+
+            state = self.word_ladder_state.get_state()
+            result = {
+                "success": True,
+                "game_status": "in_progress",
+                **state,
+                "message": "Valid move",
+                "error_type": None
+            }
+            return json.dumps(result)
+
+        except Exception as e:
+            logger.error(f"❌ Error validating word: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+
+            state = self.word_ladder_state.get_state()
+            result = {
+                "success": False,
+                "game_status": "error",
+                **state,
+                "message": "System error",
+                "error_type": "system_error"
+            }
+            return json.dumps(result)
+
+    async def _restart_word_ladder_game(self, reason: str, is_victory: bool = False) -> str:
+        """
+        Restart Word Ladder game with new words (uses WordLadderGameState)
+
+        Args:
+            reason: Why restarting
+            is_victory: If this is due to victory
+
+        Returns:
+            JSON string announcing new game
+        """
+        import json
+
+        try:
+            old_start = self.word_ladder_state.start_word
+            old_target = self.word_ladder_state.target_word
+
+            # Pick new word pair
+            new_start, new_target = self._pick_valid_word_pair()
+
+            # Reset state with new words
+            self.word_ladder_state.reset(new_start, new_target)
+
+            # Update backward-compatible variables
+            self.start_word = new_start
+            self.target_word = new_target
+            self.current_word = new_start
+            self.word_history = [new_start]
+            self.failure_count = 0
+
+            logger.info(f"🔄 Game restarted: {new_start} → {new_target} (Reason: {reason})")
+
+            # Update prompt
+            await self.update_prompt_with_game_state()
+
+            state = self.word_ladder_state.get_state()
+            result = {
+                "success": is_victory,
+                "game_status": "victory" if is_victory else "restart",
+                **state,
+                "message": f"{'Victory!' if is_victory else 'Game over!'} New game: {new_start} → {new_target}",
+                "reason": reason,
+                "previous_game": {
+                    "start": old_start,
+                    "target": old_target
+                }
+            }
+            return json.dumps(result)
+
+        except Exception as e:
+            logger.error(f"❌ Error restarting game: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+
+            result = {
+                "success": False,
+                "game_status": "error",
+                "message": "Failed to restart game",
+                "error_type": "restart_error"
+            }
+            return json.dumps(result)

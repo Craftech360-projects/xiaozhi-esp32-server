@@ -29,14 +29,15 @@ spring:
     druid:
       # Local Azure database (same as Azure VM configuration)
       driver-class-name: com.mysql.cj.jdbc.Driver
-      url: jdbc:mysql://centerbeam.proxy.rlwy.net:11592/railway
-      username: root
-      password: livbAddcEsRSaqNSPgvBJpbzBQHOxest
+      url: jdbc:mysql://localhost:3306/manager_api?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&nullCatalogMeansCurrent=true&useSSL=false&allowPublicKeyRetrieval=true
+      username: manager
+      password: managerpassword
 
-      initial-size: 5
+      initial-size: 1
       max-active: 20
-      min-idle: 5
-      max-wait: 6000
+      min-idle: 1
+      max-wait: 3000
+
       pool-prepared-statements: true
       max-pool-prepared-statement-per-connection-size: 20
       time-between-eviction-runs-millis: 60000
@@ -58,11 +59,9 @@ spring:
   data:
     redis:
       # Local Azure Redis (same as Azure VM configuration)
-      url: redis://default:HUWlOebkEFahegpfkksWJSTuOBuSfEaT@hopper.proxy.rlwy.net:36680
-      host: maglev.proxy.rlwy.net
-      port: 36680
-      password: HUWlOebkEFahegpfkksWJSTuOBuSfEaT
-      username: default
+      host: localhost
+      port: 6380
+      password: redispassword
       database: 0
       timeout: 10000ms
       lettuce:
@@ -71,9 +70,3 @@ spring:
           max-idle: 8
           min-idle: 0
         shutdown-timeout: 100ms
-
-  # Liquibase configuration for migrations
-  liquibase:
-    change-log: classpath:db/changelog/db.changelog-master.yaml
-    enabled: true
-    drop-first: false

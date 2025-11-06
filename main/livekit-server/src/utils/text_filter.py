@@ -198,16 +198,31 @@ class TextFilter:
             ]
             has_math_context = any(regex_mod.search(pattern, text.lower()) for pattern in math_patterns)
 
+            # Step 1.5: Convert math operators to speech-friendly words for TTS
+            # This ensures TTS pronounces "5-2" as "5 minus 2" instead of "5 2"
+            if has_math_context:
+                # Convert operators to words, but only when surrounded by numbers
+                # This preserves hyphenated words like "twenty-five"
+                text = regex_mod.sub(r'(\d+)\s*-\s*(\d+)', r'\1 minus \2', text)
+                text = regex_mod.sub(r'(\d+)\s*\+\s*(\d+)', r'\1 plus \2', text)
+                text = regex_mod.sub(r'(\d+)\s*\*\s*(\d+)', r'\1 times \2', text)
+                text = regex_mod.sub(r'(\d+)\s*×\s*(\d+)', r'\1 times \2', text)
+                text = regex_mod.sub(r'(\d+)\s*/\s*(\d+)', r'\1 divided by \2', text)
+                text = regex_mod.sub(r'(\d+)\s*÷\s*(\d+)', r'\1 divided by \2', text)
+                logger.debug(f"🧮 Converted math operators to words for TTS: '{text[:50]}...')")
+
             # Step 2: Remove emojis
             text = self.emoji_pattern.sub(' ', text)
 
-            # Step 3: Handle markdown formatting (be smart about * in math context)
+            # Step 3: Handle markdown formatting (be smart about * and - in math context)
             # IMPORTANT: Replace with space to prevent word merging!
             if has_math_context:
-                # Only remove non-math markdown characters, preserve & and @
+                # Only remove non-math markdown characters, preserve & and @ and - (minus sign)
+                # CRITICAL: Preserve minus sign (-) for math expressions like "5-2"
                 text = re.sub(r'[_`~\[\]{}#|\\]', ' ', text)
             else:
                 # Remove all markdown including * but preserve & and @ for natural expressions
+                # Also preserve - in non-math context as it could be hyphenated words
                 text = re.sub(r'[*_`~\[\]{}#|\\]', ' ', text)
 
             # Step 4: Handle excessive punctuation (keep rhythm but reduce noise)

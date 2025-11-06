@@ -424,17 +424,16 @@ class PromptService:
             Tuple of (prompt_string, tts_config_dict)
         """
         import time
+        import re
+        from jinja2 import Template
 
         if not self.should_read_from_api():
             return self.get_default_prompt(), None
 
-        # Check cache first
+        # DISABLED CACHE - Always fetch fresh prompt from API
+        # This ensures we always get the latest prompt without stale data
         cache_key = mac_address
-        if cache_key in self.prompt_cache:
-            cached = self.prompt_cache[cache_key]
-            if (time.time() - cached['timestamp']) < self.cache_timeout:
-                logger.info(f"📦 Using cached config for MAC: {mac_address}")
-                return cached.get('prompt'), cached.get('tts_config')
+        logger.info(f"🔄 Fetching fresh prompt from API (cache disabled)")
 
         # Fetch prompt
         prompt = await self.fetch_prompt_from_api(mac_address)

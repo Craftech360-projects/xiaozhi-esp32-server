@@ -519,3 +519,60 @@ databaseChangeLog:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202510241430_update_template_personalities.sql
+  - changeSet:
+      id: 202510301400
+      author: claude
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202510301400.sql
+  - changeSet:
+      id: 202511031400
+      author: claude
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202511031400_cleanup_templates_keep_cheeko.sql
+  - changeSet:
+      id: 202511031401
+      author: claude
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202511031401_add_new_game_templates.sql
+  - changeSet:
+      id: 202511041600
+      author: claude
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202511041600_update_math_tutor_tool.sql
+  - changeSet:
+      id: 202511052130
+      author: claude
+      validCheckSum: ANY
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202511052130_update_math_tutor_prompt.sql
+  - changeSet:
+      id: 202511052200
+      author: claude
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202511052200_math_tutor_question_bank_retry.sql
+  - changeSet:
+      id: 202511052230
+      author: claude
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202511052230_riddle_solver_prompt.sql
+  - changeSet:
+      id: 202511061400
+      author: claude
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202511061400_word_ladder_prompt_fix.sql
