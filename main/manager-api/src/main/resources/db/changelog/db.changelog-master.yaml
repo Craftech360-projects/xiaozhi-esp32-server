@@ -569,3 +569,10 @@ databaseChangeLog:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202511052230_riddle_solver_prompt.sql
+  - changeSet:
+      id: 202511061400
+      author: claude
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202511061400_word_ladder_prompt_fix.sql

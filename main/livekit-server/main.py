@@ -8,6 +8,8 @@ from src.services.foreground_audio_player import ForegroundAudioPlayer
 from src.services.story_service import StoryService
 from src.services.music_service import MusicService
 from src.services.google_search_service import GoogleSearchService
+from src.services.question_generator_service import QuestionGeneratorService
+from src.services.riddle_generator_service import RiddleGeneratorService
 from src.mcp.device_control_service import DeviceControlService
 from src.mcp.mcp_executor import LiveKitMCPExecutor
 from src.utils.helpers import UsageManager
@@ -437,11 +439,27 @@ async def entrypoint(ctx: JobContext):
     else:
         logger.info("📚 Wikipedia search service disabled (check .env: GOOGLE_SEARCH_ENABLED, GOOGLE_API_KEY, GOOGLE_SEARCH_ENGINE_ID)")
 
+    # Initialize Question Generator Service (for math game)
+    question_generator_service = QuestionGeneratorService()
+    await question_generator_service.initialize()
+    if question_generator_service.is_available():
+        logger.info("🧮 Question Generator Service initialized and ready")
+    else:
+        logger.warning("🧮 Question Generator Service not available (check .env: GROQ_API_KEY)")
+
+    # Initialize Riddle Generator Service (for riddle game)
+    riddle_generator_service = RiddleGeneratorService()
+    await riddle_generator_service.initialize()
+    if riddle_generator_service.is_available():
+        logger.info("🧩 Riddle Generator Service initialized and ready")
+    else:
+        logger.warning("🧩 Riddle Generator Service not available (check .env: GROQ_API_KEY)")
+
     # Create agent with dynamic prompt and inject services
     assistant = Assistant(instructions=agent_prompt, tts_provider=tts)
     assistant.set_services(music_service, story_service,
                            audio_player, unified_audio_player, device_control_service, mcp_executor,
-                           google_search_service)
+                           google_search_service, question_generator_service, riddle_generator_service)
     # Pass room name and device MAC to assistant
     assistant.set_room_info(room_name=room_name, device_mac=device_mac)
 

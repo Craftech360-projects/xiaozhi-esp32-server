@@ -107,6 +107,7 @@ class MathGameState:
         self.question_bank = questions
         self.current_index = 0
         self.current_attempts = 0
+        self.streak = 0  # Reset streak for new question bank
         logger.info(f"📚 Loaded {len(questions)} questions into bank")
 
     def get_current_question(self) -> dict:
@@ -251,6 +252,7 @@ class RiddleGameState:
         self.riddle_bank = riddles
         self.current_index = 0
         self.current_attempts = 0
+        self.streak = 0  # Reset streak for new riddle bank
         logger.info(f"📚 Loaded {len(riddles)} riddles into bank")
 
     def get_current_riddle(self) -> dict:
@@ -1324,8 +1326,38 @@ class Assistant(FilteredAgent):
             'seventy': 70, 'eighty': 80, 'ninety': 90, 'hundred': 100
         }
 
+        # Check if it's a single word number
         if answer_lower in word_to_num:
             return word_to_num[answer_lower]
+
+        # Handle compound numbers like "fifty four", "twenty one", etc.
+        # Split by space and try to combine
+        words = answer_lower.split()
+        if len(words) == 2:
+            # Check if both words are valid numbers
+            if words[0] in word_to_num and words[1] in word_to_num:
+                # Handle cases like "fifty four" = 50 + 4 = 54
+                tens = word_to_num[words[0]]
+                ones = word_to_num[words[1]]
+
+                # Only combine if first word is a tens value (20, 30, 40, etc.)
+                if tens >= 20 and tens % 10 == 0 and ones < 10:
+                    return tens + ones
+                # Handle "X hundred Y" like "one hundred five" = 105
+                elif words[0] in word_to_num and words[1] == 'hundred':
+                    return word_to_num[words[0]] * 100
+        elif len(words) == 3:
+            # Handle "X hundred Y" like "two hundred fifty"
+            if words[1] == 'hundred' and words[0] in word_to_num and words[2] in word_to_num:
+                return word_to_num[words[0]] * 100 + word_to_num[words[2]]
+        elif len(words) == 4:
+            # Handle "X hundred Y Z" like "two hundred fifty four"
+            if words[1] == 'hundred' and words[0] in word_to_num and words[2] in word_to_num and words[3] in word_to_num:
+                hundreds = word_to_num[words[0]] * 100
+                tens = word_to_num[words[2]]
+                ones = word_to_num[words[3]]
+                if tens >= 20 and tens % 10 == 0 and ones < 10:
+                    return hundreds + tens + ones
 
         # Handle comparison question responses like "three plus four is bigger"
         # or "seven minus two" or "5 + 3"

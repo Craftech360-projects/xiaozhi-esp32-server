@@ -195,7 +195,7 @@ class ModelCache:
 
             vad = ProviderFactory.create_vad()
             self._models["vad_model"] = vad
-            logger.info("[CACHE] VAD model loaded and cached")
+            logger.debug("[CACHE] VAD model loaded and cached")  # Changed to DEBUG to reduce log spam
             return vad
 
         except Exception as e:

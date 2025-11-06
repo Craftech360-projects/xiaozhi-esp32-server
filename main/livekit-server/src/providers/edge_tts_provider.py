@@ -12,10 +12,12 @@ from dataclasses import dataclass
 
 try:
     import edge_tts
+    from edge_tts.exceptions import NoAudioReceived
     import aiohttp
     EDGE_TTS_AVAILABLE = True
 except ImportError:
     EDGE_TTS_AVAILABLE = False
+    NoAudioReceived = Exception  # Fallback if not available
 
 try:
     from livekit import rtc
@@ -225,6 +227,20 @@ class EdgeTTSChunkedStream(tts.ChunkedStream if LIVEKIT_AVAILABLE else object):
     async def _run(self, output_emitter: tts.AudioEmitter) -> None:
         """Run the TTS synthesis and emit audio frames"""
         try:
+            # Validate input text
+            if not self._input_text or not self._input_text.strip():
+                logger.warning(f"🎤 EdgeTTS: Empty or whitespace-only text, skipping synthesis")
+                # Initialize emitter and flush immediately for empty text
+                request_id = str(uuid.uuid4())[:8]
+                output_emitter.initialize(
+                    request_id=request_id,
+                    sample_rate=self._tts.sample_rate,
+                    num_channels=self._tts.num_channels,
+                    mime_type="audio/mp3",
+                )
+                output_emitter.flush()
+                return
+
             logger.info(f"🎤 EdgeTTS synthesizing: {self._input_text[:50]}...")
 
             # Monkey-patch ssl.create_default_context to disable SSL verification
@@ -262,15 +278,33 @@ class EdgeTTSChunkedStream(tts.ChunkedStream if LIVEKIT_AVAILABLE else object):
             )
 
             # Stream audio data directly as MP3 (same as ElevenLabs approach)
+            audio_received = False
             async for chunk in communicate.stream():
                 if chunk["type"] == "audio":
                     # Push MP3 data directly without conversion (simpler approach)
                     output_emitter.push(chunk["data"])
+                    audio_received = True
 
             # Flush to signal completion
             output_emitter.flush()
-            logger.info(f"🎤 EdgeTTS: Audio streaming completed")
 
+            if audio_received:
+                logger.info(f"🎤 EdgeTTS: Audio streaming completed")
+            else:
+                logger.warning(f"🎤 EdgeTTS: No audio chunks received for text: {self._input_text[:100]}")
+
+        except NoAudioReceived as e:
+            logger.warning(f"🎤 EdgeTTS: No audio received from service (text may be empty or service unavailable): {e}")
+            # Initialize and flush to allow fallback
+            request_id = str(uuid.uuid4())[:8]
+            output_emitter.initialize(
+                request_id=request_id,
+                sample_rate=self._tts.sample_rate,
+                num_channels=self._tts.num_channels,
+                mime_type="audio/mp3",
+            )
+            output_emitter.flush()
+            raise  # Re-raise to trigger fallback
         except Exception as e:
             logger.error(f"🎤 EdgeTTS synthesis error: {e}")
             raise
