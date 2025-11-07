@@ -568,3 +568,10 @@ databaseChangeLog:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202511061400_word_ladder_prompt_fix.sql
+  - changeSet:
+      id: 202511071501
+      author: claude
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202511071501_word_ladder_function_call_fix.sql

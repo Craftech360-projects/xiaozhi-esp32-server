@@ -1608,6 +1608,18 @@ class Assistant(FilteredAgent):
             # Step 3: Check if game complete
             game_complete = self.math_game_state.is_game_complete()
 
+            # Step 3a: Handle game completion (streak of 3) - Clear context
+            if game_complete:
+                logger.info(f"🏆 MATH STREAK COMPLETE! User achieved 3 correct answers in a row")
+                await self._clear_chat_context("Math streak completed")
+                return await self._restart_math_game("Streak completed", is_victory=True)
+
+            # Step 3b: Check if question bank exhausted - Clear context
+            if self.math_game_state.needs_new_bank():
+                logger.info(f"📚 Math question bank exhausted, need new questions")
+                await self._clear_chat_context("Math question bank exhausted")
+                return await self._restart_math_game("Question bank exhausted", is_victory=False)
+
             # Step 4: Get next question if moving forward
             next_q = None
             if validation['move_next']:
@@ -1617,9 +1629,7 @@ class Assistant(FilteredAgent):
             correct_answer_display = str(int(validation['correct_answer']) if validation['correct_answer'] == int(validation['correct_answer']) else validation['correct_answer'])
 
             # Step 6: Generate message
-            if game_complete:
-                message = "Correct! You won!"
-            elif validation['correct']:
+            if validation['correct']:
                 message = "Correct!"
             elif validation['retry']:
                 message = f"Not quite. Try again!"
@@ -1705,15 +1715,25 @@ class Assistant(FilteredAgent):
             # Check if game complete
             game_complete = self.riddle_game_state.is_game_complete()
 
+            # Handle game completion (streak of 3) - Clear context
+            if game_complete:
+                logger.info(f"🏆 RIDDLE STREAK COMPLETE! User achieved 3 correct answers in a row")
+                await self._clear_chat_context("Riddle streak completed")
+                return await self._restart_riddle_game("Streak completed", is_victory=True)
+
+            # Check if riddle bank exhausted - Clear context
+            if self.riddle_game_state.needs_new_bank():
+                logger.info(f"📚 Riddle bank exhausted, need new riddles")
+                await self._clear_chat_context("Riddle bank exhausted")
+                return await self._restart_riddle_game("Riddle bank exhausted", is_victory=False)
+
             # Get next riddle if moving forward
             next_r = None
             if validation['move_next']:
                 next_r = self.riddle_game_state.get_current_riddle()
 
             # Generate message
-            if game_complete:
-                message = "Correct! You won! 🎉"
-            elif validation['correct']:
+            if validation['correct']:
                 message = "Correct!"
             elif validation['retry']:
                 message = "Not quite. Try again!"
@@ -2403,6 +2423,8 @@ class Assistant(FilteredAgent):
                 logger.warning(f"❌ Letter mismatch: {error_msg}")
 
                 if max_reached:
+                    # Clear context before restarting due to max failures
+                    await self._clear_chat_context("Max failures reached")
                     return await self._restart_word_ladder_game("Too many failures")
 
                 state = self.word_ladder_state.get_state()
@@ -2419,6 +2441,8 @@ class Assistant(FilteredAgent):
             if self.word_ladder_state.check_victory(user_word):
                 logger.info(f"🏆 VICTORY! User reached target: {self.word_ladder_state.target_word}")
                 self.word_ladder_state.add_valid_move(user_word)
+                # Clear context before restarting due to victory
+                await self._clear_chat_context("Victory achieved")
                 return await self._restart_word_ladder_game("Victory!", is_victory=True)
 
             # Step 3: Valid move! Update state
@@ -2457,6 +2481,95 @@ class Assistant(FilteredAgent):
                 "error_type": "system_error"
             }
             return json.dumps(result)
+
+    async def _clear_chat_context(self, reason: str):
+        """
+        Clear chat context/history to prevent agent confusion.
+        
+        This method clears the accumulated conversation history while preserving
+        essential system instructions and current game state.
+        
+        Args:
+            reason: Reason for clearing context (for logging)
+        """
+        try:
+            logger.info(f"🧹 Clearing chat context - Reason: {reason}")
+            
+            # Method 1: Try to clear via agent session if available
+            if self._agent_session and hasattr(self._agent_session, 'history'):
+                try:
+                    # Store the system message (first message) before clearing
+                    system_message = None
+                    if (hasattr(self._agent_session.history, 'messages') and 
+                        len(self._agent_session.history.messages) > 0):
+                        system_message = self._agent_session.history.messages[0]
+                        logger.info(f"🧹 Preserved system message: {len(system_message.content) if hasattr(system_message, 'content') else 'N/A'} chars")
+                    
+                    # Clear all messages
+                    if hasattr(self._agent_session.history, 'messages'):
+                        original_count = len(self._agent_session.history.messages)
+                        self._agent_session.history.messages.clear()
+                        logger.info(f"🧹 Cleared {original_count} messages from session history")
+                        
+                        # Restore system message with updated game state
+                        if system_message:
+                            # Update system message with current game state
+                            updated_instructions = self._format_instructions(self._original_instructions)
+                            if hasattr(system_message, 'content'):
+                                system_message.content = updated_instructions
+                            self._agent_session.history.messages.append(system_message)
+                            logger.info(f"🧹 Restored system message with updated game state")
+                    
+                    logger.info(f"✅ Successfully cleared chat context via session history")
+                    return
+                    
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to clear via session history: {e}")
+            
+            # Method 2: Try to clear via ChatContext if available in the session
+            if self._agent_session and hasattr(self._agent_session, 'chat_ctx'):
+                try:
+                    # Check if there's a clear method
+                    if hasattr(self._agent_session.chat_ctx, 'clear'):
+                        self._agent_session.chat_ctx.clear()
+                        logger.info(f"✅ Successfully cleared chat context via chat_ctx.clear()")
+                        return
+                    elif hasattr(self._agent_session.chat_ctx, 'messages'):
+                        # Clear messages manually
+                        original_count = len(self._agent_session.chat_ctx.messages)
+                        self._agent_session.chat_ctx.messages.clear()
+                        logger.info(f"✅ Successfully cleared {original_count} messages via chat_ctx.messages")
+                        return
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to clear via chat_ctx: {e}")
+            
+            # Method 3: Try to access context through other session attributes
+            if self._agent_session:
+                try:
+                    # Look for other possible context attributes
+                    for attr_name in ['_chat_ctx', 'context', '_context', 'conversation']:
+                        if hasattr(self._agent_session, attr_name):
+                            attr = getattr(self._agent_session, attr_name)
+                            if hasattr(attr, 'clear'):
+                                attr.clear()
+                                logger.info(f"✅ Successfully cleared context via {attr_name}.clear()")
+                                return
+                            elif hasattr(attr, 'messages') and hasattr(attr.messages, 'clear'):
+                                original_count = len(attr.messages) if hasattr(attr.messages, '__len__') else 'unknown'
+                                attr.messages.clear()
+                                logger.info(f"✅ Successfully cleared {original_count} messages via {attr_name}.messages")
+                                return
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to clear via session attributes: {e}")
+            
+            # If all methods fail, log warning but continue
+            logger.warning(f"⚠️ Could not clear chat context - no accessible clearing method found")
+            logger.info(f"🔄 Game will continue with accumulated context")
+            
+        except Exception as e:
+            logger.error(f"❌ Error in _clear_chat_context: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
 
     async def _restart_word_ladder_game(self, reason: str, is_victory: bool = False) -> str:
         """
@@ -2519,3 +2632,113 @@ class Assistant(FilteredAgent):
                 "error_type": "restart_error"
             }
             return json.dumps(result)
+
+    async def _restart_math_game(self, reason: str, is_victory: bool = False) -> dict:
+        """
+        Restart Math game with new question bank (uses MathGameState)
+
+        Args:
+            reason: Why restarting
+            is_victory: If this is due to victory (streak completion)
+
+        Returns:
+            dict: Result with new game status
+        """
+        try:
+            logger.info(f"🔄 Math game restarting - Reason: {reason}")
+            
+            # Store previous game stats
+            previous_streak = self.math_game_state.streak
+            previous_total = self.math_game_state.total_questions
+            
+            # Reset game state
+            self.math_game_state.reset()
+            
+            logger.info(f"🔄 Math game reset complete - Previous streak: {previous_streak}, Total questions: {previous_total}")
+            
+            # Update prompt with new state
+            await self.update_prompt_with_game_state()
+            
+            result = {
+                "success": is_victory,
+                "game_status": "victory" if is_victory else "restart",
+                "game_type": "math",
+                "message": f"{'🏆 Streak completed!' if is_victory else '📚 New questions needed!'} Math game restarted.",
+                "reason": reason,
+                "previous_game": {
+                    "streak": previous_streak,
+                    "total_questions": previous_total
+                },
+                "needs_new_bank": True,
+                "streak": self.math_game_state.streak
+            }
+            return result
+            
+        except Exception as e:
+            logger.error(f"❌ Error restarting math game: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            
+            result = {
+                "success": False,
+                "game_status": "error",
+                "game_type": "math",
+                "message": "Failed to restart math game",
+                "error_type": "restart_error"
+            }
+            return result
+
+    async def _restart_riddle_game(self, reason: str, is_victory: bool = False) -> dict:
+        """
+        Restart Riddle game with new riddle bank (uses RiddleGameState)
+
+        Args:
+            reason: Why restarting
+            is_victory: If this is due to victory (streak completion)
+
+        Returns:
+            dict: Result with new game status
+        """
+        try:
+            logger.info(f"🔄 Riddle game restarting - Reason: {reason}")
+            
+            # Store previous game stats
+            previous_streak = self.riddle_game_state.streak
+            previous_total = self.riddle_game_state.total_riddles
+            
+            # Reset game state
+            self.riddle_game_state.reset()
+            
+            logger.info(f"🔄 Riddle game reset complete - Previous streak: {previous_streak}, Total riddles: {previous_total}")
+            
+            # Update prompt with new state
+            await self.update_prompt_with_game_state()
+            
+            result = {
+                "success": is_victory,
+                "game_status": "victory" if is_victory else "restart",
+                "game_type": "riddle",
+                "message": f"{'🏆 Streak completed!' if is_victory else '📚 New riddles needed!'} Riddle game restarted.",
+                "reason": reason,
+                "previous_game": {
+                    "streak": previous_streak,
+                    "total_riddles": previous_total
+                },
+                "needs_new_bank": True,
+                "streak": self.riddle_game_state.streak
+            }
+            return result
+            
+        except Exception as e:
+            logger.error(f"❌ Error restarting riddle game: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            
+            result = {
+                "success": False,
+                "game_status": "error",
+                "game_type": "riddle",
+                "message": "Failed to restart riddle game",
+                "error_type": "restart_error"
+            }
+            return result
