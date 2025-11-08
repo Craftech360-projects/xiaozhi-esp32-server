@@ -160,7 +160,22 @@ class QdrantSemanticSearch:
         """Generate embedding for text"""
         if not text or not self.model:
             return []
-        return self.model.encode(text).tolist()
+        try:
+            return self.model.encode(text).tolist()
+        except AttributeError as e:
+            if "model_forward_params" in str(e):
+                logger.error("Embedding model version incompatibility detected. Please update sentence-transformers: pip install sentence-transformers>=2.2.2 transformers>=4.21.0")
+                # Try to reload the model with proper error handling
+                try:
+                    from ..utils.model_cache import model_cache
+                    model_cache.clear_cache()  # Clear the problematic cached model
+                    logger.info("Cleared model cache due to compatibility issue")
+                except Exception:
+                    pass
+            raise e
+        except Exception as e:
+            logger.error(f"Failed to generate embedding: {e}")
+            return []
 
     async def index_music_metadata(self, music_metadata: Dict) -> bool:
         """Index music metadata into Qdrant"""

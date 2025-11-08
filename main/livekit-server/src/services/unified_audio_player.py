@@ -110,7 +110,7 @@ class UnifiedAudioPlayer:
                 logger.warning(f"🎵 UNIFIED: Streaming failed for {title}, falling back to full download")
                 audio_frames = await self._download_and_convert_to_frames_fallback(url, title)
 
-            if audio_frames:
+            if audio_frames is not None:
                 logger.info(f"🎵 UNIFIED: Injecting {title} into TTS queue via session.say()")
 
                 # Use session.say() with audio frames - NO TEXT to avoid TTS before music!
@@ -124,10 +124,17 @@ class UnifiedAudioPlayer:
                 # Store the speech handle for potential interruption
                 self.session_say_task = speech_handle
 
-                # Wait for the speech to complete
-                await speech_handle
+                # Wait for the speech to complete (only if we got a valid handle)
+                if speech_handle is not None:
+                    await speech_handle
+                else:
+                    logger.error("🎵 UNIFIED: session.say() returned None - cannot await")
+                    return
 
                 logger.info(f"🎵 UNIFIED: Successfully queued {title} in TTS pipeline")
+            else:
+                logger.error(f"🎵 UNIFIED: No audio frames available for {title} - cannot play")
+                return
 
         except asyncio.CancelledError:
             logger.info(f"🎵 UNIFIED: Playback cancelled: {title}")
@@ -163,19 +170,38 @@ class UnifiedAudioPlayer:
             }
 
             session = aiohttp.ClientSession(timeout=timeout)
+            response = None
+            
             try:
                 response = await session.get(url, headers=headers)
+                
+                # Check if response is valid
+                if response is None:
+                    logger.error("Failed to get response from URL")
+                    await session.close()
+                    return None
 
                 if response.status == 403 and 'cloudfront' in url:
                     # Try S3 fallback
-                    await response.close()
+                    close_result = response.close()
+                    if close_result is not None and asyncio.iscoroutine(close_result):
+                        await close_result
+                    
                     s3_url = url.replace('dbtnllz9fcr1z.cloudfront.net', 'cheeko-audio-files.s3.us-east-1.amazonaws.com')
                     logger.warning("Trying S3 fallback URL for streaming")
                     response = await session.get(s3_url, headers=headers)
+                    
+                    # Check fallback response
+                    if response is None:
+                        logger.error("Failed to get S3 fallback response")
+                        await session.close()
+                        return None
 
                 if response.status != 200:
                     logger.error(f"Streaming failed: HTTP {response.status}")
-                    await response.close()
+                    close_result = response.close()
+                    if close_result is not None and asyncio.iscoroutine(close_result):
+                        await close_result
                     await session.close()
                     return None
 
@@ -188,12 +214,26 @@ class UnifiedAudioPlayer:
                     return StreamingAudioIterator(response, session, self.stop_event, title)
                 else:
                     logger.error("Required libraries not available for audio conversion")
-                    await response.close()
+                    close_result = response.close()
+                    if close_result is not None and asyncio.iscoroutine(close_result):
+                        await close_result
                     await session.close()
                     return None
 
             except Exception as e:
-                await session.close()
+                # Clean up on error
+                if response is not None:
+                    try:
+                        close_result = response.close()
+                        if close_result is not None and asyncio.iscoroutine(close_result):
+                            await close_result
+                    except Exception:
+                        pass
+                        
+                try:
+                    await session.close()
+                except Exception:
+                    pass
                 raise e
 
         except Exception as e:
@@ -543,12 +583,13 @@ class StreamingAudioIterator:
             try:
                 if self.response and hasattr(self.response, 'close'):
                     close_result = self.response.close()
-                    # Check if close() returns a coroutine before awaiting
+                    # Only await if it's actually a coroutine
                     if close_result is not None and asyncio.iscoroutine(close_result):
                         await close_result
+                    
                 if self.session and hasattr(self.session, 'close'):
                     close_result = self.session.close()
-                    # Check if close() returns a coroutine before awaiting
+                    # Only await if it's actually a coroutine
                     if close_result is not None and asyncio.iscoroutine(close_result):
                         await close_result
             except Exception as e:

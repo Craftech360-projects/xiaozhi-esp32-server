@@ -212,8 +212,23 @@ class ModelCache:
         model_key = f"embedding_{model_name}"
 
         def load_embedding():
-            from sentence_transformers import SentenceTransformer
-            return SentenceTransformer(model_name)
+            try:
+                from sentence_transformers import SentenceTransformer
+                logger.info(f"[CACHE] Loading SentenceTransformer model: {model_name}")
+                model = SentenceTransformer(model_name)
+                
+                # Test the model to ensure it works
+                test_embedding = model.encode("test")
+                logger.info(f"[CACHE] SentenceTransformer model loaded successfully: {model_name}")
+                return model
+            except AttributeError as e:
+                if "model_forward_params" in str(e):
+                    logger.error(f"[CACHE] SentenceTransformer version incompatibility: {e}")
+                    logger.error("[CACHE] Please update: pip install sentence-transformers>=2.2.2 transformers>=4.21.0")
+                raise e
+            except Exception as e:
+                logger.error(f"[CACHE] Failed to load SentenceTransformer model {model_name}: {e}")
+                raise e
 
         return self.get_model(model_key, load_embedding)
 

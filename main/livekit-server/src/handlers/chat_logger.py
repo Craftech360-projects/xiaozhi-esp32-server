@@ -283,7 +283,7 @@ class ChatEventHandler:
 
             payload = json.dumps({
                 "type": "agent_state_changed",
-                "data": ev.dict()
+                "data": ev.model_dump()
             })
             asyncio.create_task(ctx.room.local_participant.publish_data(
                 payload.encode("utf-8"), reliable=True))
