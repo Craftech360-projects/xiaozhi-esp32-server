@@ -27,11 +27,11 @@ management:
 spring:
   datasource:
     druid:
-      # Local Azure database (same as Azure VM configuration)
+      # Local Docker database configuration
       driver-class-name: com.mysql.cj.jdbc.Driver
-      url: jdbc:mysql://centerbeam.proxy.rlwy.net:11592/railway
+      url: jdbc:mysql://localhost:3307/manager_api
       username: root
-      password: livbAddcEsRSaqNSPgvBJpbzBQHOxest
+      password: rootpassword
 
       initial-size: 5
       max-active: 20
@@ -57,11 +57,11 @@ spring:
 
   data:
     redis:
-      # Local Azure Redis (same as Azure VM configuration)
-      url: redis://default:HUWlOebkEFahegpfkksWJSTuOBuSfEaT@hopper.proxy.rlwy.net:36680
-      host: maglev.proxy.rlwy.net
-      port: 36680
-      password: HUWlOebkEFahegpfkksWJSTuOBuSfEaT
+      # Local Docker Redis configuration
+      url: redis://default:redispassword@localhost:6380
+      host: localhost
+      port: 6380
+      password: redispassword
       username: default
       database: 0
       timeout: 10000ms
@@ -71,9 +71,3 @@ spring:
           max-idle: 8
           min-idle: 0
         shutdown-timeout: 100ms
-
-  # Liquibase configuration for migrations
-  liquibase:
-    change-log: classpath:db/changelog/db.changelog-master.yaml
-    enabled: true
-    drop-first: false
