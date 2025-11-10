@@ -26,13 +26,15 @@ from livekit.agents import (
     AgentSession,
     JobContext,
     JobProcess,
+    JobRequest,
     WorkerOptions,
     cli,
     function_tool,
     Agent,
     RunContext,
+    RoomIO,
 )
-from livekit.agents.llm import ChatContext
+from livekit.agents.llm import ChatContext, ChatMessage, StopResponse
 from livekit import rtc
 from livekit.plugins import silero, groq
 
@@ -155,17 +157,24 @@ resource_monitor = ResourceMonitor(log_interval=10)  # Log every 10 seconds (red
 
 class SimpleAssistant(Agent):
     """Simplified AI Assistant with basic functionality"""
-    
+
     def __init__(self, instructions: str = None) -> None:
         super().__init__(instructions=instructions or "You are Cheeko, a friendly AI assistant for kids.")
         self.room_name = None
         self.device_mac = None
-        
+
     def set_room_info(self, room_name: str = None, device_mac: str = None):
         """Set room name and device MAC address"""
         self.room_name = room_name
         self.device_mac = device_mac
         logger.info(f"📍 Room info set - Room: {room_name}, MAC: {device_mac}")
+
+    async def on_user_turn_completed(self, turn_ctx: ChatContext, new_message: ChatMessage) -> None:
+        """Callback before generating a reply after user turn committed"""
+        if not new_message.text_content:
+            # Prevent empty turns from generating responses (e.g., user pressed/released PTT without speaking)
+            logger.info("[PTT] Ignoring empty user turn - no speech detected")
+            raise StopResponse()
     
     @function_tool
     async def check_battery_level(self, context: RunContext, unused: str = '') -> str:
@@ -322,29 +331,29 @@ async def entrypoint(ctx: JobContext):
     except:
         # Fallback prompt if config loading fails
         agent_prompt = """<identity>
-You are Cheeko, a playful AI companion for kids 3–12 years old. You're super silly, energetic, and love to learn and explore with children!
-</identity>
+        You are Cheeko, a playful AI companion for kids 3–12 years old. You're super silly, energetic, and love to learn and explore with children!
+        </identity>
 
-<personality>
-- Always enthusiastic and positive
-- Use simple, age-appropriate language
-- Love adventures, games, and learning
-- Encourage curiosity and creativity
-- Keep responses short and engaging
-</personality>
+        <personality>
+        - Always enthusiastic and positive
+        - Use simple, age-appropriate language
+        - Love adventures, games, and learning
+        - Encourage curiosity and creativity
+        - Keep responses short and engaging
+        </personality>
 
-<greeting>
-When you first meet a child, greet them warmly with something like:
-"Heya, kiddo! I'm Cheeko, your super-silly learning buddy—ready to blast off into adventure, giggles, and a whole lot of aha! moments. What fun quest do you want to tackle today?"
-</greeting>
+        <greeting>
+        When you first meet a child, greet them warmly with something like:
+        "Heya, kiddo! I'm Cheeko, your super-silly learning buddy—ready to blast off into adventure, giggles, and a whole lot of aha! moments. What fun quest do you want to tackle today?"
+        </greeting>
 
-<guidelines>
-- Keep responses under 50 words when possible
-- Use emojis sparingly
-- Ask engaging questions
-- Be encouraging and supportive
-- If asked about battery, use the check_battery_level function
-</guidelines>"""
+        <guidelines>
+        - Keep responses under 50 words when possible
+        - Use emojis sparingly
+        - Ask engaging questions
+        - Be encouraging and supportive
+        - If asked about battery, use the check_battery_level function
+        </guidelines>"""
         logger.info(f"📄 Using fallback prompt (length: {len(agent_prompt)} chars)")
 
     # ⚡ PERFORMANCE OPTIMIZATION: Use preloaded providers from prewarm
@@ -396,19 +405,23 @@ When you first meet a child, greet them warmly with something like:
 
     provider_load_time = time.time() - entrypoint_start
     logger.info(f"⚡ [PERFORMANCE] Providers loaded in {provider_load_time:.3f}s (vs ~1.6s without prewarm)")
-    
-    # Create session with basic supported parameters
+
+    # Create session with push-to-talk support (manual turn detection)
     session = AgentSession(
         llm=llm,
         stt=stt,
         tts=tts,
-        turn_detection=turn_detection,
+        turn_detection="manual",  # Manual turn detection for push-to-talk
         vad=vad,
         preemptive_generation=agent_config['preemptive_generation'],
         min_endpointing_delay=0.2,      # Ultra-aggressive for fastest response
         min_interruption_duration=0.15,  # Minimal to prevent audio overlap
         allow_interruptions=True,       # Enable interruptions for better UX
     )
+
+    # Disable audio input by default for push-to-talk mode
+    session.input.set_audio_enabled(False)
+    logger.info("[PTT] Initial setup: Audio input DISABLED (push-to-talk mode)")
     
     # Create assistant
     assistant = SimpleAssistant(instructions=agent_prompt)
@@ -527,7 +540,7 @@ When you first meet a child, greet them warmly with something like:
         try:
             import time
             receive_time = time.time()
-            logger.info(f"📨 [DATA-CHANNEL] Raw data received - Length: {len(data.data)} bytes, From: {data.participant.identity if data.participant else 'unknown'}, Time: {receive_time}")
+            logger.info(f"📨 [DATA-CHANNEL] *** DATA RECEIVED *** - Length: {len(data.data)} bytes, From: {data.participant.identity if data.participant else 'unknown'}, Time: {receive_time}")
 
             message = json.loads(data.data.decode())
             msg_type = message.get("type")
@@ -538,19 +551,6 @@ When you first meet a child, greet them warmly with something like:
 
             if msg_type == "device_info":
                 logger.info(f"📱 [DEVICE-INFO] Device info received - MAC: {device_mac}")
-            elif msg_type == "agent_ready":
-                logger.info("🤖 [AGENT-READY] Agent ready signal received - triggering initial greeting NOW")
-                # Trigger initial greeting
-                async def trigger_greeting():
-                    try:
-                        logger.info("🎯 [GREETING-START] Starting to generate initial greeting...")
-                        await session.generate_reply()
-                        logger.info("✅ [GREETING-COMPLETE] Initial greeting generated and sent successfully")
-                    except Exception as e:
-                        logger.error(f"❌ [GREETING-ERROR] Failed to generate greeting: {e}", exc_info=True)
-
-                logger.info("🎯 [GREETING-TASK] Creating asyncio task for greeting generation")
-                asyncio.create_task(trigger_greeting())
             elif msg_type == "abort":
                 logger.info("🛑 [ABORT] Abort signal received from device - interrupting agent speech")
                 # Handle abort by interrupting current speech
@@ -662,7 +662,9 @@ When you first meet a child, greet them warmly with something like:
         except Exception as e:
             logger.error(f"❌ Failed to process data channel message: {e}")
             logger.error(f"Raw data: {data.data}")
-    
+
+    logger.info("✅ [DATA-CHANNEL] Data channel handler registered successfully")
+
     # Enhanced cleanup on disconnect with resource monitoring
     @ctx.room.on("participant_disconnected")
     def on_participant_disconnected(participant: rtc.RemoteParticipant):
@@ -687,8 +689,39 @@ When you first meet a child, greet them warmly with something like:
     
     # Start the session
     await session.start(agent=assistant, room=ctx.room)
-    
+
+    # Register push-to-talk RPC methods
+    @ctx.room.local_participant.register_rpc_method("start_turn")
+    async def start_turn(data: rtc.RpcInvocationData):
+        logger.info(f"[PTT] start_turn called by {data.caller_identity}")
+        session.interrupt()
+        session.clear_user_turn()
+        session.input.set_audio_enabled(True)
+        logger.info("[PTT] Audio input ENABLED")
+        return "Audio input enabled"
+
+    @ctx.room.local_participant.register_rpc_method("end_turn")
+    async def end_turn(data: rtc.RpcInvocationData):
+        logger.info(f"[PTT] end_turn called by {data.caller_identity}")
+        session.input.set_audio_enabled(False)
+        logger.info("[PTT] Audio input DISABLED, committing user turn")
+        session.commit_user_turn(
+            transcript_timeout=10.0,
+            stt_flush_duration=2.0,
+        )
+        return "Audio input disabled and turn committed"
+
+    @ctx.room.local_participant.register_rpc_method("cancel_turn")
+    async def cancel_turn(data: rtc.RpcInvocationData):
+        logger.info(f"[PTT] cancel_turn called by {data.caller_identity}")
+        session.input.set_audio_enabled(False)
+        session.clear_user_turn()
+        logger.info("[PTT] Audio input CANCELLED")
+        return "Turn cancelled"
+
+    logger.info("✅ Push-to-talk RPC methods registered successfully")
     logger.info("✅ Simple agent started successfully")
+    logger.info("🔗 [CONNECTION] Agent connecting to room and waiting for messages...")
     await ctx.connect()
 
 if __name__ == "__main__":

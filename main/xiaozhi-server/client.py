@@ -19,9 +19,9 @@ import opuslib
 
 # --- Configuration ---
 
-SERVER_IP = "192.168.1.98"
+SERVER_IP = "192.168.1.102"
 OTA_PORT = 8002
-MQTT_BROKER_HOST = "192.168.1.98"
+MQTT_BROKER_HOST = "192.168.1.102"
 
 
 MQTT_BROKER_PORT = 1883
@@ -778,10 +778,11 @@ class TestClient:
         # The server's initial TTS will then trigger the client's recording.
         # Note: We no longer send "listen" message here - waiting for 's' key press
         logger.info(
-            "[WAIT] Test running. Press 's' to deploy agent, 'x'/Space to abort, 'c' to clear history (brand new conversation), or Ctrl+C to stop.")
+            "[WAIT] Test running. Press 's' to deploy agent, 'p' for push-to-talk, 'x'/Space to abort, 'c' to clear history, or Ctrl+C to stop.")
 
         # Start a thread to monitor keyboard presses
         last_greeting_time = [0]  # Use list to make it mutable in nested function
+        ptt_active = [False]  # Track push-to-talk state
 
         def monitor_keyboard():
             while not stop_threads.is_set() and self.session_active:
@@ -857,6 +858,33 @@ class TestClient:
                     # Wait for the key to be released to avoid multiple sends
                     while keyboard.is_pressed('c') and not stop_threads.is_set():
                         time.sleep(0.01)
+
+                # Monitor 'p' key for push-to-talk
+                if keyboard.is_pressed('p'):
+                    if not ptt_active[0]:
+                        # Start push-to-talk
+                        ptt_active[0] = True
+                        logger.info("[PTT] 'p' key pressed - PUSH-TO-TALK STARTED")
+                        start_ptt_payload = {
+                            "type": "start_greeting",
+                            "session_id": udp_session_details["session_id"]
+                        }
+                        self.mqtt_client.publish(
+                            "device-server", json.dumps(start_ptt_payload))
+                        logger.info(f"[PTT] Sent PTT start: {start_ptt_payload}")
+                else:
+                    if ptt_active[0]:
+                        # End push-to-talk when key is released
+                        ptt_active[0] = False
+                        logger.info("[PTT] 'p' key released - PUSH-TO-TALK ENDED")
+                        end_ptt_payload = {
+                            "type": "listen",
+                            "state": "stop",
+                            "session_id": udp_session_details["session_id"]
+                        }
+                        self.mqtt_client.publish(
+                            "device-server", json.dumps(end_ptt_payload))
+                        logger.info(f"[PTT] Sent PTT end: {end_ptt_payload}")
 
                 time.sleep(0.01)
 

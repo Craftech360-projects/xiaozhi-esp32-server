@@ -924,7 +924,7 @@ class LiveKitBridge extends Emitter {
     console.log(`✅ [PHASE-2] Worker pool initialized for ${this.macAddress}`);
 
     // Start periodic metrics logging (every 30 seconds)
-    this.workerPool.startMetricsLogging(30);
+    // this.workerPool.startMetricsLogging(30);
 
     // Initialize workers with encoder/decoder settings
     this.workerPool.initializeWorker('init_encoder', {
@@ -2298,6 +2298,13 @@ class LiveKitBridge extends Emitter {
     if (!this.connection) return;
 
     try {
+      // Add delay to ensure agent has fully initialized its data channel handlers
+      // Agent joins room immediately after accepting job, but handlers are registered
+      // during entrypoint() execution which takes some time
+      console.log(`⏳ [GREETING-DELAY] Waiting 1000ms for agent to fully initialize handlers...`);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      console.log(`✅ [GREETING-DELAY] Delay complete, agent handlers should be ready`);
+
       // First send device information for prompt loading
       const deviceInfoMessage = {
         type: "device_info",
@@ -2318,25 +2325,6 @@ class LiveKitBridge extends Emitter {
 
         console.log(
           `📱 [DEVICE INFO] Sent device MAC (${this.macAddress}) to agent via data channel`
-        );
-
-        // Then send greeting trigger
-        const initialMessage = {
-          type: "agent_ready",
-          message: "Say hello to the user",
-          timestamp: Date.now(),
-          source: "mqtt_gateway"
-        };
-
-        const messageString = JSON.stringify(initialMessage);
-        const messageData = new Uint8Array(Buffer.from(messageString, 'utf8'));
-        await this.room.localParticipant.publishData(
-          messageData,
-          { reliable: true }
-        );
-
-        console.log(
-          `🤖 [AGENT READY] Sent initial greeting trigger to agent for device: ${this.macAddress}`
         );
       } else {
         console.warn(
@@ -2572,641 +2560,8 @@ class LiveKitBridge extends Emitter {
 const MacAddressRegex = /^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/;
 
 /**
- * MQTT connection class
- * Responsible for application layer logic processing
- */
-class MQTTConnection {
-  constructor(socket, connectionId, server) {
-    this.server = server;
-    this.connectionId = connectionId;
-    this.clientId = null;
-    this.username = null;
-    this.password = null;
-    this.bridge = null;
-    this.udp = {
-      remoteAddress: null,
-      cookie: null,
-      localSequence: 0,
-      remoteSequence: 0,
-    };
-    this.headerBuffer = Buffer.alloc(16);
-
-    // Add inactivity timeout tracking
-    this.lastActivityTime = Date.now();
-    this.inactivityTimeoutMs = 60 * 1000; // 1 minute in milliseconds
-    this.isEnding = false; // Track if end prompt has been sent
-    this.endPromptSentTime = null; // Track when end prompt was sent
-
-    // Create protocol handler and pass in socket
-    this.protocol = new MQTTProtocol(socket);
-    this.setupProtocolHandlers();
-  }
-
-  setupProtocolHandlers() {
-    // Set protocol event handlers
-    this.protocol.on("connect", (connectData) => {
-      // console.log("Received CONNECT packet");
-      this.handleConnect(connectData);
-    });
-
-    this.protocol.on("publish", (publishData) => {
-      this.handlePublish(publishData);
-    });
-
-    this.protocol.on("subscribe", (subscribeData) => {
-      this.handleSubscribe(subscribeData);
-    });
-
-    this.protocol.on("disconnect", () => {
-      this.handleDisconnect();
-    });
-
-    this.protocol.on("close", () => {
-      debug(`${this.clientId} client disconnected`);
-      this.server.removeConnection(this);
-    });
-
-    this.protocol.on("error", (err) => {
-      debug(`${this.clientId} connection error:`, err);
-      this.close();
-    });
-
-    this.protocol.on("protocolError", (err) => {
-      debug(`${this.clientId} protocol error:`, err);
-      this.close();
-    });
-  }
-
-  handleConnect(connectData) {
-    this.clientId = connectData.clientId;
-    this.username = connectData.username;
-    this.password = connectData.password;
-
-    debug("Client connected:", {
-      clientId: this.clientId,
-      username: this.username,
-      password: this.password,
-      protocol: connectData.protocol,
-      protocolLevel: connectData.protocolLevel,
-      keepAlive: connectData.keepAlive,
-    });
-
-    const parts = this.clientId.split("@@@");
-    if (parts.length === 3) {
-      // GID_test@@@mac_address@@@uuid
-      try {
-        const validated = validateMqttCredentials(
-          this.clientId,
-          this.username,
-          this.password
-        );
-        this.groupId = validated.groupId;
-        this.macAddress = validated.macAddress;
-        this.uuid = validated.uuid;
-        this.userData = validated.userData;
-      } catch (error) {
-        debug("MQTT credentials validation failed:", error.message);
-        this.close();
-        return;
-      }
-    } else if (parts.length === 2) {
-      // GID_test@@@mac_address
-      this.groupId = parts[0];
-      this.macAddress = parts[1].replace(/_/g, ":");
-      if (!MacAddressRegex.test(this.macAddress)) {
-        debug("Invalid macAddress:", this.macAddress);
-        this.close();
-        return;
-      }
-    } else {
-      debug("Invalid clientId:", this.clientId);
-      this.close();
-      return;
-    }
-
-    this.replyTo = `devices/p2p/${parts[1]}`;
-    this.server.addConnection(this);
-  }
-
-  handleSubscribe(subscribeData) {
-    debug("Client subscribed to topic:", {
-      clientId: this.clientId,
-      topic: subscribeData.topic,
-      packetId: subscribeData.packetId,
-    });
-    // Send SUBACK
-    this.protocol.sendSuback(subscribeData.packetId, 0);
-  }
-
-  handleDisconnect() {
-    debug("Received disconnect request:", { clientId: this.clientId });
-    // Clean up connection
-    this.server.removeConnection(this);
-  }
-
-  close() {
-    this.closing = true;
-
-    // CRITICAL: Clear audio playing flag to prevent stuck state
-    if (this.bridge) {
-      this.bridge.isAudioPlaying = false;
-      console.log(`🎵 [CLEANUP] Cleared audio flag on close for device: ${this.clientId}`);
-      this.bridge.close();
-      this.bridge = null;
-    } else {
-      this.protocol.close();
-    }
-  }
-
-  updateActivityTime() {
-    this.lastActivityTime = Date.now();
-
-    // Don't reset ending state during goodbye sequence
-    if (this.isEnding) {
-      console.log(`📱 [ENDING-IGNORE] Activity during goodbye sequence ignored for device: ${this.clientId}`);
-      return; // Don't log timer reset during ending
-    }
-
-    console.log(`⏱️ [TIMER-RESET] Activity timer reset for device: ${this.clientId} at ${new Date().toISOString()}`);
-  }
-
-  async checkKeepAlive() {
-    // Don't check keepalive if connection is closing
-    if (this.closing) {
-      return;
-    }
-
-    const now = Date.now();
-
-    // If we're in ending phase, check for final timeout
-    if (this.isEnding && this.endPromptSentTime) {
-      const timeSinceEndPrompt = now - this.endPromptSentTime;
-      const maxEndWaitTime = 30 * 1000; // 30 seconds max wait for end prompt audio
-
-      if (timeSinceEndPrompt > maxEndWaitTime) {
-        console.log(`🕒 [END-TIMEOUT] End prompt timeout reached, force closing connection: ${this.clientId} (waited ${Math.round(timeSinceEndPrompt / 1000)}s)`);
-
-        // Send goodbye MQTT message before force closing
-        try {
-          this.sendMqttMessage(
-            JSON.stringify({
-              type: "goodbye",
-              session_id: this.udp ? this.udp.session_id : null,
-              reason: "end_prompt_timeout",
-              timestamp: Date.now()
-            })
-          );
-          console.log(`👋 [GOODBYE-MQTT] Sent goodbye MQTT message to device on timeout: ${this.clientId}`);
-        } catch (error) {
-          console.error(`Failed to send goodbye MQTT message: ${error.message}`);
-        }
-
-        this.close();
-        return;
-      }
-
-      // Show countdown for end prompt completion
-      if (timeSinceEndPrompt % 5000 < 1000) {
-        const remainingSeconds = Math.round((maxEndWaitTime - timeSinceEndPrompt) / 1000);
-        console.log(`⏳ [END-WAIT] Device ${this.clientId}: ${remainingSeconds}s until force disconnect`);
-      }
-      return; // Don't do normal timeout check while ending
-    }
-
-    // Check for inactivity timeout (1 minute of no communication)
-    const timeSinceLastActivity = now - this.lastActivityTime;
-
-    // Skip timeout check if audio is actively playing
-    if (this.bridge && this.bridge.isAudioPlaying) {
-      // Reset the timer while audio is playing to prevent timeout
-      this.lastActivityTime = now;
-      console.log(`🎵 [AUDIO-ACTIVE] Resetting timer - audio is playing for device: ${this.clientId}`);
-      return;
-    }
-
-    if (timeSinceLastActivity > this.inactivityTimeoutMs) {
-      // Send end prompt instead of immediate close
-      if (!this.isEnding && this.bridge) {
-        this.isEnding = true;
-        this.endPromptSentTime = now;
-        console.log(`👋 [END-PROMPT] Sending goodbye message before timeout: ${this.clientId} (inactive for ${Math.round(timeSinceLastActivity / 1000)}s) - Last activity: ${new Date(this.lastActivityTime).toISOString()}, Now: ${new Date(now).toISOString()}`);
-
-        try {
-          // Send end prompt to agent for voice goodbye (TTS "Time flies fast...")
-          // Note: Goodbye MQTT will be sent AFTER TTS finishes (in agent_state_changed handler)
-          this.goodbyeSent = false; // Flag to track if goodbye MQTT was sent
-          await this.bridge.sendEndPrompt(this.udp.session_id);
-          console.log(`👋 [END-PROMPT-SENT] Waiting for TTS goodbye to complete before sending goodbye MQTT: ${this.clientId}`);
-        } catch (error) {
-          console.error(`Failed to send end prompt: ${error.message}`);
-          // If end prompt fails, close immediately
-          this.close();
-        }
-        return;
-      } else {
-        // No bridge available, send goodbye message and close immediately
-        console.log(`🕒 [TIMEOUT] Closing connection due to 1-minute inactivity: ${this.clientId} (inactive for ${Math.round(timeSinceLastActivity / 1000)}s)`);
-
-        // Send goodbye MQTT message before closing
-        try {
-          this.sendMqttMessage(
-            JSON.stringify({
-              type: "goodbye",
-              session_id: this.udp ? this.udp.session_id : null,
-              reason: "inactivity_timeout",
-              timestamp: Date.now()
-            })
-          );
-          console.log(`👋 [GOODBYE-MQTT] Sent goodbye MQTT message to device: ${this.clientId}`);
-        } catch (error) {
-          console.error(`Failed to send goodbye MQTT message: ${error.message}`);
-        }
-
-        this.close();
-        return;
-      }
-    }
-
-    // Log remaining time until timeout (only show every 30 seconds to avoid spam)
-    if (timeSinceLastActivity % 30000 < 1000) {
-      const remainingSeconds = Math.round((this.inactivityTimeoutMs - timeSinceLastActivity) / 1000);
-      console.log(`⏰ [TIMER-CHECK] Device ${this.clientId}: ${remainingSeconds}s until timeout`);
-    }
-
-    // Original keep-alive check
-    const keepAliveInterval = this.protocol.getKeepAliveInterval();
-    // If keepAliveInterval is 0, heartbeat check is not needed
-    if (keepAliveInterval === 0 || !this.protocol.isConnected) return;
-
-    const protocolLastActivity = this.protocol.getLastActivity();
-    const timeSinceProtocolActivity = now - protocolLastActivity;
-
-    // If heartbeat interval is exceeded, close connection
-    if (timeSinceProtocolActivity > keepAliveInterval) {
-      debug("Heartbeat timeout, closing connection:", this.clientId);
-      this.close();
-    }
-  }
-
-  handlePublish(publishData) {
-    // Update activity timestamp on any MQTT message receipt
-    console.log(`📨 [ACTIVITY] MQTT message received from ${this.clientId}, resetting inactivity timer`);
-    this.updateActivityTime();
-
-    debug("Received publish message:", {
-      clientId: this.clientId,
-      topic: publishData.topic,
-      payload: publishData.payload,
-      qos: publishData.qos,
-    });
-
-    if (publishData.qos !== 0) {
-      debug("Unsupported QoS level:", publishData.qos, "closing connection");
-      this.close();
-      return;
-    }
-
-    const json = JSON.parse(publishData.payload);
-    if (json.type === "hello") {
-      if (json.version !== 3) {
-        debug(
-          "Unsupported protocol version:",
-          json.version,
-          "closing connection"
-        );
-        this.close();
-        return;
-      }
-
-      this.parseHelloMessage(json).catch((error) => {
-        console.error(`❌ [HELLO-ERROR] Failed to process hello message for ${this.clientId}:`, error);
-        console.error(`❌ [HELLO-ERROR] Error stack:`, error.stack);
-        debug("Failed to process hello message:", error);
-        this.close();
-      });
-    } else {
-      this.parseOtherMessage(json).catch((error) => {
-        debug("Failed to process other message:", error);
-        this.close();
-      });
-    }
-  }
-
-  sendMqttMessage(payload) {
-    debug(`Sending message to ${this.replyTo}: ${payload}`);
-    this.protocol.sendPublish(this.replyTo, payload, 0, false, false);
-  }
-
-  sendUdpMessage(payload, timestamp) {
-    if (!this.udp.remoteAddress) {
-      debug(`Device ${this.clientId} not connected, cannot send UDP message`);
-      return;
-    }
-
-    this.udp.localSequence++;
-    const header = this.generateUdpHeader(
-      payload.length,
-      timestamp,
-      this.udp.localSequence
-    );
-    // console.log(
-    //   `📡 [UDP SEND] To ${this.udp.remoteAddress.address}:${this.udp.remoteAddress.port} - payload=${payload.length}B, ts=${timestamp}, seq=${this.udp.localSequence}`
-    // );
-    // console.log(
-    //   `🔐 Encrypting: payload=${payload.length}B, timestamp=${timestamp}, seq=${this.udp.localSequence}`
-    // );
-    // console.log(`🔐 Header: ${header.toString("hex")}`);
-    // console.log(`🔐 Key: ${this.udp.key.toString("hex")}`);
-    // console.log(
-    //   `🔐 Payload first 8 bytes: ${payload.subarray(0, 8).toString("hex")}`
-    // );
-
-    // PHASE 1 OPTIMIZATION: Use StreamingCrypto for cipher caching
-    const encryptedPayload = streamingCrypto.encrypt(
-      payload,
-      this.udp.encryption,
-      this.udp.key,
-      header
-    );
-    // console.log(
-    //   `🔐 Encrypted first 8 bytes: ${encryptedPayload
-    //     .subarray(0, 8)
-    //     .toString("hex")}`
-    // );
-    const message = Buffer.concat([header, encryptedPayload]);
-    this.server.sendUdpMessage(message, this.udp.remoteAddress);
-  }
-
-  generateUdpHeader(length, timestamp, sequence) {
-    // Reuse pre-allocated buffer
-    this.headerBuffer.writeUInt8(1, 0); // packet_type
-    this.headerBuffer.writeUInt8(0, 1); // flags
-    this.headerBuffer.writeUInt16BE(length, 2); // payload_len
-    this.headerBuffer.writeUInt32BE(this.connectionId, 4); // ssrc/connection_id
-    this.headerBuffer.writeUInt32BE(timestamp, 8); // timestamp
-    this.headerBuffer.writeUInt32BE(sequence, 12); // sequence
-    return Buffer.from(this.headerBuffer); // Return copy to avoid concurrency issues
-  }
-
-  async parseHelloMessage(json) {
-    console.log(`🔍 [PARSE-HELLO] Starting parseHelloMessage for ${this.clientId}`);
-    console.log(`🔍 [PARSE-HELLO] JSON version: ${json.version}, has bridge: ${!!this.bridge}`);
-
-    this.udp = {
-      ...this.udp,
-      key: crypto.randomBytes(16),
-      nonce: this.generateUdpHeader(0, 0, 0),
-      encryption: "aes-128-ctr",
-      remoteSequence: 0,
-      localSequence: 0,
-      startTime: Date.now(),
-    };
-
-    if (this.bridge) {
-      debug(
-        `${this.clientId} received duplicate hello message, closing previous bridge`
-      );
-      this.bridge.close();
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      this.bridge = null;
-    }
-
-    // Generate new UUID for session
-    const newSessionUuid = crypto.randomUUID();
-    console.log(`🔄 [NEW-SESSION] Generated UUID: ${newSessionUuid}`);
-
-    // Generate session_id for room
-    const macForRoom = this.macAddress.replace(/:/g, '');
-    const futureSessionId = `${newSessionUuid}_${macForRoom}`;
-    this.udp.session_id = futureSessionId;
-
-    console.log(`🏗️ [HELLO] Creating LiveKit room and connecting gateway (NO agent deployment yet)`);
-
-    // Clean up old sessions
-    if (this.server.roomService) {
-      const newRoomName = `${newSessionUuid}_${macForRoom}`;
-      console.log(`🧹 [CLEANUP] Cleaning up old sessions for device: ${this.macAddress}`);
-      LiveKitBridge.cleanupOldSessionsForDevice(this.macAddress, this.server.roomService, newRoomName).then(() => {
-        console.log(`✅ [CLEANUP] Old sessions cleaned up`);
-      }).catch((err) => {
-        console.warn(`⚠️ [CLEANUP] Cleanup error (non-fatal):`, err);
-      });
-    }
-
-    // Create bridge immediately (this creates room and gateway joins)
-    this.bridge = new LiveKitBridge(
-      this,
-      json.version,
-      this.macAddress,
-      newSessionUuid,
-      {} // No userData for real ESP32
-    );
-
-    // Mark bridge as waiting for agent deployment
-    this.bridge.agentDeployed = false;
-
-    // Setup bridge close handler
-    this.bridge.on("close", () => {
-      const seconds = (Date.now() - this.udp.startTime) / 1000;
-      console.log(`Call ended: ${this.macAddress} Duration: ${seconds}s`);
-      this.sendMqttMessage(
-        JSON.stringify({ type: "goodbye", session_id: this.udp.session_id })
-      );
-      this.bridge = null;
-    });
-
-    // Reset activity timer
-    this.lastActivityTime = Date.now();
-
-    try {
-      // Connect to LiveKit room (gateway joins, but agent doesn't deploy yet)
-      const roomCreationStart = Date.now();
-      await this.bridge.connect(json.audio_params, json.features, this.server?.roomService || this.gateway?.roomService);
-      const roomCreationTime = Date.now() - roomCreationStart;
-      console.log(`✅ [HELLO] Room created and gateway connected in ${roomCreationTime}ms`);
-      console.log(`⏳ [HELLO] Agent will deploy when user presses 's' key`);
-      console.log(`⏰ [HELLO] Room will auto-close if no participants join within 60 seconds (LiveKit emptyTimeout)`);
-
-      // Send hello response with UDP session details
-      this.sendMqttMessage(
-        JSON.stringify({
-          type: "hello",
-          version: json.version,
-          session_id: this.udp.session_id,
-          transport: "udp",
-          udp: {
-            server: this.server.publicIp,
-            port: this.server.udpPort,
-            encryption: this.udp.encryption,
-            key: this.udp.key.toString("hex"),
-            nonce: this.udp.nonce.toString("hex"),
-          },
-          audio_params: {
-            sample_rate: 24000,
-            channels: 1,
-            frame_duration: 60,
-            format: "opus"
-          },
-        })
-      );
-
-      // Send ready_for_greeting (room created, waiting for agent deployment)
-      this.sendMqttMessage(
-        JSON.stringify({
-          type: "ready_for_greeting",
-          session_id: this.udp.session_id,
-          timestamp: Date.now()
-        })
-      );
-      console.log(`✅ [READY] Room ready. Press 's' to deploy agent.`);
-
-    } catch (error) {
-      this.sendMqttMessage(
-        JSON.stringify({
-          type: "error",
-          message: "Failed to create room",
-        })
-      );
-      console.error(
-        `${this.clientId} failed to create room: ${error}`
-      );
-    }
-  }
-
-  async parseOtherMessage(json) {
-    if (!this.bridge) {
-      if (json.type !== "goodbye") {
-        this.sendMqttMessage(
-          JSON.stringify({ type: "goodbye", session_id: json.session_id })
-        );
-      }
-      return;
-    }
-
-    if (json.type === "goodbye") {
-      console.log(`🔌 [DISCONNECT-AGENT] Received goodbye from device: ${this.macAddress} - disconnecting agent but keeping room alive`);
-
-      // Disconnect agent participant but keep room alive
-      if (this.bridge && this.bridge.room && this.bridge.room.localParticipant) {
-        try {
-          // Send disconnect message to agent via data channel
-          const disconnectMessage = {
-            type: "disconnect_agent",
-            session_id: json.session_id,
-            timestamp: Date.now(),
-            source: "mqtt_gateway"
-          };
-
-          const messageString = JSON.stringify(disconnectMessage);
-          const messageData = new Uint8Array(Buffer.from(messageString, 'utf8'));
-
-          await this.bridge.room.localParticipant.publishData(
-            messageData,
-            { reliable: true }
-          );
-
-          console.log(`✅ [DISCONNECT-AGENT] Sent disconnect signal to agent`);
-
-          // Mark agent as not joined so it can rejoin
-          this.bridge.agentJoined = false;
-          this.bridge.agentDeployed = false;
-
-          // Reset agent join promise for next join
-          this.bridge.agentJoinPromise = new Promise((resolve) => {
-            this.bridge.agentJoinResolve = resolve;
-          });
-
-          console.log(`🏠 [DISCONNECT-AGENT] Room remains alive, agent can rejoin on 's' press`);
-        } catch (error) {
-          console.error(`❌ [DISCONNECT-AGENT] Failed to disconnect agent:`, error);
-        }
-      } else {
-        console.log(`⚠️ [DISCONNECT-AGENT] No active bridge/room to disconnect agent from`);
-      }
-
-      // Keep bridge and room alive - agent can rejoin with 's'
-      return;
-    }
-
-    // Handle abort message - forward to LiveKit agent via data channel
-    if (json.type === "abort") {
-      try {
-        console.log(`🛑 [ABORT] Received abort signal from device: ${this.macAddress}`);
-        await this.bridge.sendAbortSignal(json.session_id);
-        debug("Successfully forwarded abort signal to LiveKit agent");
-      } catch (error) {
-        debug("Failed to forward abort signal to LiveKit:", error);
-      }
-      return;
-    }
-
-    // Not sending other messages to LiveKit for now
-    debug("Received other message, not forwarding to LiveKit:", json);
-  }
-
-  onUdpMessage(rinfo, message, payloadLength, timestamp, sequence) {
-    // UDP messages do not reset inactivity timer - only MQTT messages do
-
-    if (!this.bridge) {
-      // console.log(
-      //   `📡 [UDP RECV] No bridge available for ${this.clientId}, dropping message`
-      // );
-      return;
-    }
-
-    if (this.udp.remoteAddress !== rinfo) {
-      // console.log(
-      //   `📡 [UDP RECV] New remote address: ${rinfo.address}:${rinfo.port} for ${this.clientId}`
-      // );
-      this.udp.remoteAddress = rinfo;
-    }
-
-    if (sequence < this.udp.remoteSequence) {
-      // console.log(
-      //   `📡 [UDP RECV] Out of order packet: seq=${sequence}, expected>=${this.udp.remoteSequence}, dropping`
-      // );
-      return;
-    }
-
-    // console.log(
-    //   `📡 [UDP RECV] From ${rinfo.address}:${rinfo.port} - payload=${payloadLength}B, ts=${timestamp}, seq=${sequence}`
-    // );
-
-    // Process encrypted data - PHASE 1 OPTIMIZATION: Use StreamingCrypto
-    const header = message.slice(0, 16);
-    const encryptedPayload = message.slice(16, 16 + payloadLength);
-    const payload = streamingCrypto.decrypt(
-      encryptedPayload,
-      this.udp.encryption,
-      this.udp.key,
-      header
-    );
-
-    // Check if this is a ping message
-    const payloadStr = payload.toString();
-    if (payloadStr.startsWith("ping:")) {
-      console.log(
-        `🏓 [UDP PING] Received ping: ${payloadStr} from ${rinfo.address}:${rinfo.port}`
-      );
-      // Ping message received, connection is now established
-      return;
-    }
-
-    //console.log(
-    // `🔊 [AUDIO RECV] Decrypted ${payload.length}B audio data, forwarding to LiveKit`
-    //);
-    this.bridge.sendAudio(payload, timestamp);
-    this.udp.remoteSequence = sequence;
-  }
-
-  isAlive() {
-    return this.bridge && this.bridge.isAlive();
-  }
-}
-
-/**
- * Virtual MQTT connection class for EMQX broker connections
- * Simulates the original MQTTConnection interface but works through EMQX
+ * MQTT connection class for devices connecting through EMQX broker
+ * Handles all device connections (ESP32 hardware and Python test clients)
  */
 class VirtualMQTTConnection {
   constructor(deviceId, connectionId, gateway, helloPayload) {
@@ -3440,31 +2795,14 @@ class VirtualMQTTConnection {
   }
 
   findRealToyConnection(macAddress) {
-    // Search through all gateway connections for the real toy with UDP
-    for (const [connectionId, connection] of this.gateway.connections) {
-      // Check if this is a real MQTTConnection (not VirtualMQTTConnection)
-      // and matches the MAC address and has UDP endpoint
-      if (connection &&
-          connection.macAddress === macAddress &&
-          connection.udp &&
-          connection.udp.remoteAddress &&
-          connection.constructor.name === 'MQTTConnection') {
-        console.log(`✅ [FIND-TOY] Found real toy connection for MAC ${macAddress}`);
-        return connection;
-      }
-    }
-
-    // Also check deviceConnections map
+    // Find device connection (all devices now use VirtualMQTTConnection)
     const deviceInfo = this.gateway.deviceConnections.get(macAddress);
     if (deviceInfo && deviceInfo.connection) {
-      const conn = deviceInfo.connection;
-      if (conn.udp && conn.udp.remoteAddress && conn.constructor.name === 'MQTTConnection') {
-        console.log(`✅ [FIND-TOY] Found real toy in deviceConnections for MAC ${macAddress}`);
-        return conn;
-      }
+      console.log(`✅ [FIND-TOY] Found device connection for MAC ${macAddress}`);
+      return deviceInfo.connection;
     }
 
-    console.log(`❌ [FIND-TOY] No real toy connection found for MAC ${macAddress}`);
+    console.log(`❌ [FIND-TOY] No device connection found for MAC ${macAddress}`);
     return null;
   }
 
@@ -3539,13 +2877,50 @@ class VirtualMQTTConnection {
     this.lastActivityTime = Date.now();
 
     try {
-      // Connect to LiveKit room (gateway joins, but agent doesn't deploy yet)
+      // Connect to LiveKit room (gateway joins, and agent will deploy immediately)
       const roomCreationStart = Date.now();
       await this.bridge.connect(json.audio_params, json.features, this.server?.roomService || this.gateway?.roomService);
       const roomCreationTime = Date.now() - roomCreationStart;
       console.log(`✅ [HELLO] Room created and gateway connected in ${roomCreationTime}ms`);
-      console.log(`⏳ [HELLO] Agent will deploy when user presses 's' key`);
-      console.log(`⏰ [HELLO] Room will auto-close if no participants join within 60 seconds (LiveKit emptyTimeout)`);
+      console.log(`🤖 [HELLO] Deploying agent immediately and will send initial greeting`);
+
+      // Get the room name for agent dispatch
+      const roomName = this.bridge.room ? this.bridge.room.name : null;
+
+      // Dispatch agent immediately on hello
+      if (roomName && this.gateway?.agentDispatchClient) {
+        try {
+          await this.gateway.agentDispatchClient.createDispatch(roomName, 'cheeko-agent', {
+            metadata: JSON.stringify({
+              device_mac: this.macAddress,
+              device_uuid: this.deviceId,
+              timestamp: Date.now()
+            })
+          });
+          console.log(`✅ [HELLO] Agent dispatched to room: ${roomName}`);
+          this.bridge.agentDeployed = true;
+
+          // Wait for agent to join and then trigger initial greeting
+          console.log(`⏳ [HELLO] Waiting for agent to join before sending initial greeting...`);
+          this.bridge.waitForAgentJoin(4000).then((agentReady) => {
+            if (agentReady) {
+              console.log(`✅ [HELLO] Agent joined, sending initial greeting...`);
+              return this.bridge.sendInitialGreeting();
+            } else {
+              console.warn(`⚠️ [HELLO] Agent join timeout, trying to send greeting anyway...`);
+              return this.bridge.sendInitialGreeting();
+            }
+          }).then(() => {
+            console.log(`✅ [HELLO] Initial greeting sent successfully`);
+          }).catch((error) => {
+            console.error(`❌ [HELLO] Error sending initial greeting:`, error);
+          });
+        } catch (error) {
+          console.error(`❌ [HELLO] Failed to dispatch agent:`, error.message);
+        }
+      } else {
+        console.warn(`⚠️ [HELLO] Cannot dispatch agent - roomName: ${roomName}, agentDispatchClient: ${!!this.gateway?.agentDispatchClient}`);
+      }
 
       // Send hello response with UDP session details
       this.sendMqttMessage(
@@ -3570,15 +2945,7 @@ class VirtualMQTTConnection {
         })
       );
 
-      // Send ready_for_greeting (room created, waiting for agent deployment)
-      this.sendMqttMessage(
-        JSON.stringify({
-          type: "ready_for_greeting",
-          session_id: this.udp.session_id,
-          timestamp: Date.now()
-        })
-      );
-      console.log(`✅ [READY] Room ready. Press 's' to deploy agent.`);
+      console.log(`✅ [READY] Room ready. Agent will send initial greeting then use PTT for further interaction.`);
 
     } catch (error) {
       this.sendMqttMessage(
@@ -3771,6 +3138,85 @@ class VirtualMQTTConnection {
       return;
     }
 
+    // Handle push-to-talk messages (support both ESP32 and client formats)
+    if (json.type === "listen" || json.type === "start_ptt" || json.type === "end_ptt") {
+      try {
+        let isPttStart = false;
+        let isPttEnd = false;
+
+        // Determine PTT action based on message format
+        if (json.type === "listen") {
+          // ESP32 format: {"type":"listen","state":"start/stop","mode":"manual/auto"}
+          const state = json.state;
+          const mode = json.mode;
+          console.log(`🎤 [PTT] Received listen message - State: ${state}, Mode: ${mode}, Full JSON: ${JSON.stringify(json)}`);
+          // Support both manual and auto modes for PTT start
+          isPttStart = (state === "start" && (mode === "manual" || mode === "auto"));
+          // PTT end works regardless of mode - just check if state is "stop"
+          isPttEnd = (state === "stop");
+          console.log(`🎤 [PTT] Decision - isPttStart: ${isPttStart}, isPttEnd: ${isPttEnd}`);
+        } else if (json.type === "start_ptt") {
+          // Client format: {"type":"start_ptt"}
+          console.log(`🎤 [PTT] Received start_ptt message`);
+          isPttStart = true;
+        } else if (json.type === "end_ptt") {
+          // Client format: {"type":"end_ptt"}
+          console.log(`🎤 [PTT] Received end_ptt message`);
+          isPttEnd = true;
+        }
+
+        console.log(`🎤 [PTT] Final decision - isPttStart: ${isPttStart}, isPttEnd: ${isPttEnd}`);
+
+        // Check if bridge and room are available
+        if (!this.bridge || !this.bridge.room || !this.bridge.room.localParticipant) {
+          console.error(`❌ [PTT] No bridge/room available for PTT control`);
+          return;
+        }
+
+        // Find the agent participant
+        const participants = Array.from(this.bridge.room.remoteParticipants.values());
+        const agentParticipant = participants.find(p => p.identity.includes('agent'));
+
+        if (!agentParticipant) {
+          console.error(`❌ [PTT] No agent participant found in room`);
+          return;
+        }
+
+        console.log(`🎤 [PTT] Agent participant found: ${agentParticipant.identity}`);
+
+        if (isPttStart) {
+          // PTT started - enable audio input
+          console.log(`🎤 [PTT] Starting push-to-talk - calling start_turn RPC`);
+
+          const result = await this.bridge.room.localParticipant.performRpc({
+            destinationIdentity: agentParticipant.identity,
+            method: "start_turn",
+            payload: ""
+          });
+
+          console.log(`✅ [PTT] start_turn RPC completed: ${result}`);
+
+        } else if (isPttEnd) {
+          // PTT ended - disable audio input and commit turn
+          console.log(`🎤 [PTT] Stopping push-to-talk - calling end_turn RPC`);
+
+          const result = await this.bridge.room.localParticipant.performRpc({
+            destinationIdentity: agentParticipant.identity,
+            method: "end_turn",
+            payload: ""
+          });
+
+          console.log(`✅ [PTT] end_turn RPC completed: ${result}`);
+        } else {
+          console.log(`⚠️ [PTT] Neither start nor end condition met - ignoring message`);
+        }
+
+      } catch (error) {
+        console.error(`❌ [PTT] Failed to handle PTT message:`, error);
+      }
+      return;
+    }
+
     debug("Received other message, not forwarding to LiveKit:", json);
   }
 
@@ -3937,7 +3383,7 @@ class MQTTGateway {
   constructor() {
     this.udpPort = parseInt(process.env.UDP_PORT) || 1883;
     this.publicIp = process.env.PUBLIC_IP || "127.0.0.1";
-    this.connections = new Map(); // clientId -> MQTTConnection
+    this.connections = new Map(); // clientId -> VirtualMQTTConnection
     this.keepAliveTimer = null;
     this.keepAliveCheckInterval = 15000; // Check every 15 seconds
     this.headerBuffer = Buffer.alloc(16);
@@ -4071,8 +3517,11 @@ class MQTTGateway {
 
   async handleMqttMessage(topic, message) {
     // Add detailed logging for all incoming MQTT messages
-    console.log(`📨 [MQTT IN] Received message on topic: ${topic}`);
+    console.log(`\n${'='.repeat(80)}`);
+    console.log(`📨 [MQTT IN] *** NEW MESSAGE RECEIVED ***`);
+    console.log(`📨 [MQTT IN] Topic: ${topic}`);
     console.log(`📨 [MQTT IN] Message length: ${message.length} bytes`);
+    console.log(`📨 [MQTT IN] Raw message: ${message.toString()}`);
 
     try {
       const payload = JSON.parse(message.toString());
@@ -4080,6 +3529,7 @@ class MQTTGateway {
 
       console.log(`📨 [MQTT IN] Parsed payload:`, JSON.stringify(payload, null, 2));
       console.log(`📨 [MQTT IN] Topic parts:`, topicParts);
+      console.log(`${'='.repeat(80)}\n`);
 
       if (topic === 'internal/server-ingest') {
         // Handle messages republished by EMQX with client ID info
@@ -4167,111 +3617,37 @@ class MQTTGateway {
             console.log(`⚠️ [ABORT] No connections found for device: ${deviceId}, abort cannot be processed`);
           }
         } else if (originalPayload.type === 'start_greeting') {
-          // Special handling for start_greeting - CREATE ROOM and deploy agent, then trigger greeting
-          console.log(`👋 [START-GREETING] Processing start_greeting from internal/server-ingest: ${deviceId}`);
-
-          let greetingSent = false;
+          // start_greeting message = ONLY enable PTT (call start_turn RPC)
+          console.log(`🎤 [START-GREETING] Processing start_greeting - enabling PTT for device: ${deviceId}`);
 
           // Check for virtual device connection
           const deviceInfo = this.deviceConnections.get(deviceId);
-          if (deviceInfo && deviceInfo.connection) {
-            const connection = deviceInfo.connection;
+          if (deviceInfo && deviceInfo.connection && deviceInfo.connection.bridge) {
+            const bridge = deviceInfo.connection.bridge;
 
-            // Room should already exist from parseHelloMessage, explicitly dispatch agent
-            if (connection.bridge) {
-              console.log(`👋 [START-GREETING] Room exists, explicitly dispatching agent...`);
+            try {
+              // Find the agent participant
+              const participants = Array.from(bridge.room.remoteParticipants.values());
+              const agentParticipant = participants.find(p => p.identity.includes('agent'));
 
-              const bridge = connection.bridge;
-              const startTime = Date.now();
-              const roomName = bridge.room ? bridge.room.name : null;
+              if (agentParticipant) {
+                console.log(`🎤 [START-GREETING] Agent participant found, calling start_turn RPC...`);
 
-              if (!roomName) {
-                console.error(`❌ [START-GREETING] Cannot dispatch agent - room name not available`);
-                return;
-              }
-
-              // Explicitly dispatch agent using AgentDispatchClient
-              if (this.agentDispatchClient) {
-                this.agentDispatchClient.createDispatch(roomName, 'cheeko-agent', {
-                  metadata: JSON.stringify({
-                    device_mac: connection.macAddress,
-                    device_uuid: deviceId,
-                    timestamp: Date.now()
-                  })
-                }).then((dispatch) => {
-                  console.log(`✅ [START-GREETING] Agent dispatch created:`, dispatch.id);
-                  console.log(`📤 [START-GREETING] Agent 'cheeko-agent' dispatched to room: ${roomName}`);
-                }).catch((error) => {
-                  console.error(`❌ [START-GREETING] Failed to dispatch agent:`, error.message);
+                const result = await bridge.room.localParticipant.performRpc({
+                  destinationIdentity: agentParticipant.identity,
+                  method: "start_turn",
+                  payload: ""
                 });
+
+                console.log(`✅ [START-GREETING] PTT enabled: ${result}`);
               } else {
-                console.warn(`⚠️ [START-GREETING] AgentDispatchClient not initialized, agent may not join`);
+                console.error(`❌ [START-GREETING] No agent participant found in room`);
               }
-
-              // Wait for agent to join the room
-              bridge.waitForAgentJoin(4000).then((agentReady) => {
-                const waitTime = Date.now() - startTime;
-                console.log(`⏱️ [START-GREETING] Agent join wait took ${waitTime}ms`);
-
-                if (agentReady) {
-                  console.log(`✅ [START-GREETING] Agent ready, sending initial greeting...`);
-                  // Mark agent as deployed
-                  bridge.agentDeployed = true;
-                  return bridge.sendInitialGreeting();
-                } else {
-                  console.warn(`⚠️ [START-GREETING] Agent join timeout, trying to send greeting anyway...`);
-                  bridge.agentDeployed = true;
-                  return bridge.sendInitialGreeting();
-                }
-              }).then(() => {
-                console.log(`✅ [START-GREETING] Successfully triggered initial greeting for device: ${deviceId}`);
-              }).catch((error) => {
-                console.error(`❌ [START-GREETING] Error triggering greeting for ${deviceId}:`, error);
-              });
-
-              greetingSent = true;
-            } else {
-              console.error(`❌ [START-GREETING] No bridge found for device ${deviceId} - room should have been created during hello!`);
-              console.log(`⚠️ [START-GREETING] This shouldn't happen. Client may need to reconnect.`);
+            } catch (pttError) {
+              console.error(`❌ [START-GREETING] Failed to enable PTT:`, pttError);
             }
-          }
-
-          // Fallback: Check for real ESP32 connection
-          if (!greetingSent) {
-            const realConnection = this.findRealDeviceConnection(deviceId);
-            if (realConnection && realConnection.bridge) {
-              console.log(`👋 [START-GREETING] Found real ESP32 device with bridge for: ${deviceId}`);
-
-              const bridge = realConnection.bridge;
-              const roomName = bridge.room ? bridge.room.name : null;
-
-              // Explicitly dispatch agent for real device
-              if (roomName && this.agentDispatchClient) {
-                this.agentDispatchClient.createDispatch(roomName, 'cheeko-agent', {
-                  metadata: JSON.stringify({
-                    device_mac: realConnection.macAddress,
-                    device_uuid: deviceId,
-                    timestamp: Date.now()
-                  })
-                }).then((dispatch) => {
-                  console.log(`✅ [START-GREETING] Agent dispatch created for real device:`, dispatch.id);
-                }).catch((error) => {
-                  console.error(`❌ [START-GREETING] Failed to dispatch agent for real device:`, error.message);
-                });
-              }
-
-              bridge.sendInitialGreeting().then(() => {
-                console.log(`✅ [START-GREETING] Successfully triggered greeting for real device: ${deviceId}`);
-              }).catch((error) => {
-                console.error(`❌ [START-GREETING] Error triggering greeting for real device ${deviceId}:`, error);
-              });
-              greetingSent = true;
-            }
-          }
-
-          if (!greetingSent) {
-            console.log(`⚠️ [START-GREETING] No bridge found for device: ${deviceId}, greeting cannot be triggered`);
-            console.log(`⚠️ [START-GREETING] DeviceInfo exists: ${!!deviceInfo}, Connection exists: ${!!(deviceInfo && deviceInfo.connection)}, Bridge exists: ${!!(deviceInfo && deviceInfo.connection && deviceInfo.connection.bridge)}`);
+          } else {
+            console.error(`❌ [START-GREETING] No bridge found for device ${deviceId}`);
           }
         } else {
           // ALWAYS check for real ESP32 connection FIRST (prioritize over virtual)
@@ -4391,31 +3767,14 @@ class MQTTGateway {
   }
 
   findRealDeviceConnection(deviceId) {
-    // Search through all gateway connections for the real device with UDP
-    for (const [connectionId, connection] of this.connections) {
-      // Check if this is a real MQTTConnection (not VirtualMQTTConnection)
-      // and matches the device ID and has UDP endpoint
-      if (connection &&
-          (connection.macAddress === deviceId || connection.deviceId === deviceId) &&
-          connection.udp &&
-          connection.udp.remoteAddress &&
-          connection.constructor.name === 'MQTTConnection') {
-        console.log(`✅ [FIND-DEVICE] Found real device connection for ${deviceId}`);
-        return connection;
-      }
-    }
-
-    // Also check deviceConnections map
+    // Find device connection (all devices now use VirtualMQTTConnection)
     const deviceInfo = this.deviceConnections.get(deviceId);
     if (deviceInfo && deviceInfo.connection) {
-      const conn = deviceInfo.connection;
-      if (conn.udp && conn.udp.remoteAddress && conn.constructor.name === 'MQTTConnection') {
-        console.log(`✅ [FIND-DEVICE] Found real device in deviceConnections for ${deviceId}`);
-        return conn;
-      }
+      console.log(`✅ [FIND-DEVICE] Found device connection for ${deviceId}`);
+      return deviceInfo.connection;
     }
 
-    console.log(`❌ [FIND-DEVICE] No real device connection found for ${deviceId}`);
+    console.log(`❌ [FIND-DEVICE] No device connection found for ${deviceId}`);
     return null;
   }
 

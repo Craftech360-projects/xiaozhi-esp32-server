@@ -747,35 +747,59 @@ class TestClient:
         ), self.audio_recording_thread.start()
 
         logger.info(
-            "[STEP] STEP 5: Sending 'listen' message to trigger initial TTS from server...")
-        # The server's initial TTS will then trigger the client's recording.
-        listen_payload = {
-            "type": "listen", "session_id": udp_session_details["session_id"], "state": "detect", "text": "hello baby"}
-        self.mqtt_client.publish("device-server", json.dumps(listen_payload))
+            "[STEP] STEP 5: Ready for interaction...")
+        # Note: We no longer send "listen" message here - waiting for PTT press
         logger.info(
-            "[WAIT] Test running. Press Spacebar to abort TTS or Ctrl+C to stop.")
+            "[WAIT] Test running. Press 'p' for push-to-talk, Spacebar to abort, or Ctrl+C to stop.")
 
-        # Start a thread to monitor spacebar press
-        def monitor_spacebar():
+        # Start a thread to monitor keyboard presses
+        ptt_active = [False]  # Track push-to-talk state
+
+        def monitor_keyboard():
             while not stop_threads.is_set() and self.session_active:
+                # Monitor spacebar for abort
                 if keyboard.is_pressed('space'):
-                    logger.info(
-                        "[EMOJI] Spacebar pressed. Sending abort message to server...")
+                    logger.info("[ABORT] Spacebar pressed - Sending abort message...")
                     abort_payload = {
                         "type": "abort",
                         "session_id": udp_session_details["session_id"]
                     }
-                    self.mqtt_client.publish(
-                        "device-server", json.dumps(abort_payload))
-                    logger.info(f"[EMOJI] Sent abort message: {abort_payload}")
+                    self.mqtt_client.publish("device-server", json.dumps(abort_payload))
+                    logger.info(f"[ABORT] Sent abort: {abort_payload}")
                     # Wait for the key to be released to avoid multiple sends
                     while keyboard.is_pressed('space') and not stop_threads.is_set():
                         time.sleep(0.01)
+
+                # Monitor 'p' key for push-to-talk
+                if keyboard.is_pressed('p'):
+                    if not ptt_active[0]:
+                        # Start push-to-talk
+                        ptt_active[0] = True
+                        logger.info("[PTT] 'p' key pressed - PUSH-TO-TALK STARTED")
+
+                        start_ptt_payload = {
+                            "type": "start_greeting",
+                            "session_id": udp_session_details["session_id"]
+                        }
+                        self.mqtt_client.publish("device-server", json.dumps(start_ptt_payload))
+                        logger.info(f"[PTT] Sent PTT start: {start_ptt_payload}")
+                else:
+                    if ptt_active[0]:
+                        # End push-to-talk when key is released
+                        ptt_active[0] = False
+                        logger.info("[PTT] 'p' key released - PUSH-TO-TALK ENDED")
+                        end_ptt_payload = {
+                            "type": "listen",
+                            "state": "stop",
+                            "session_id": udp_session_details["session_id"]
+                        }
+                        self.mqtt_client.publish("device-server", json.dumps(end_ptt_payload))
+                        logger.info(f"[PTT] Sent PTT end: {end_ptt_payload}")
+
                 time.sleep(0.01)
 
-        spacebar_thread = threading.Thread(
-            target=monitor_spacebar, daemon=True)
-        spacebar_thread.start()
+        keyboard_thread = threading.Thread(target=monitor_keyboard, daemon=True)
+        keyboard_thread.start()
 
         try:
             # Keep running with better timeout handling
