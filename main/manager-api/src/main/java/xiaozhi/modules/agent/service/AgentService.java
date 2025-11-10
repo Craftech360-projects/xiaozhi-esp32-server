@@ -125,4 +125,14 @@ public interface AgentService extends BaseService<AgentEntity> {
      * @return 模式切换响应信息
      */
     AgentModeCycleResponse cycleAgentModeByMac(String macAddress);
+
+    /**
+     * 根据设备MAC地址设置指定的Agent角色
+     * 用于直接切换到特定角色
+     *
+     * @param macAddress 设备MAC地址
+     * @param characterName 角色名称
+     * @return 角色切换响应信息
+     */
+    AgentModeCycleResponse setAgentCharacterByMac(String macAddress, String characterName);
 }

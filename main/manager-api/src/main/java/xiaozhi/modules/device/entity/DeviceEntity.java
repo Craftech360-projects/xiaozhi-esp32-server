@@ -46,6 +46,9 @@ public class DeviceEntity {
     @Schema(description = "关联的孩子ID")
     private Long kidId;
 
+    @Schema(description = "设备模式(conversation/music/story)")
+    private String mode;
+
     @Schema(description = "固件版本号")
     private String appVersion;
 

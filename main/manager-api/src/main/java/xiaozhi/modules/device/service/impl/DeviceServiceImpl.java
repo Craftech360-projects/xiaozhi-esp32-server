@@ -16,6 +16,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.aop.framework.AopContext;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
@@ -40,6 +41,7 @@ import xiaozhi.modules.device.dao.DeviceDao;
 import xiaozhi.modules.device.dto.DevicePageUserDTO;
 import xiaozhi.modules.device.dto.DeviceReportReqDTO;
 import xiaozhi.modules.device.dto.DeviceReportRespDTO;
+import xiaozhi.modules.device.dto.ModeCycleResponse;
 import xiaozhi.modules.device.entity.DeviceEntity;
 import xiaozhi.modules.device.entity.OtaEntity;
 import xiaozhi.modules.device.service.DeviceService;
@@ -607,5 +609,60 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         entity.setUpdater(userId);
         entity.setAutoUpdate(1);
         baseDao.insert(entity);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ModeCycleResponse cycleDeviceMode(String macAddress) {
+        // 1. Get device by MAC address
+        DeviceEntity device = this.getDeviceByMacAddress(macAddress);
+        if (device == null) {
+            throw new RenException("Device not found for MAC address: " + macAddress);
+        }
+
+        String currentMode = device.getMode();
+        if (currentMode == null || currentMode.isEmpty()) {
+            currentMode = "conversation"; // Default if null
+        }
+
+        // 2. Cycle through modes: conversation → music → story → conversation
+        String newMode;
+        switch (currentMode.toLowerCase()) {
+            case "conversation":
+                newMode = "music";
+                break;
+            case "music":
+                newMode = "story";
+                break;
+            case "story":
+                newMode = "conversation";
+                break;
+            default:
+                newMode = "conversation"; // Reset to default if invalid
+                break;
+        }
+
+        // 3. Update device mode
+        device.setMode(newMode);
+        device.setUpdateDate(new Date());
+        this.updateById(device);
+
+        // 4. Build response
+        ModeCycleResponse response = new ModeCycleResponse();
+        response.setSuccess(true);
+        response.setDeviceId(device.getId());
+        response.setOldMode(currentMode);
+        response.setNewMode(newMode);
+        response.setMessage("Mode changed successfully from " + currentMode + " to " + newMode);
+
+        // 5. Log the change
+        System.out.println("🔄 ===== DEVICE MODE CYCLE =====");
+        System.out.println("Device MAC: " + macAddress);
+        System.out.println("Device ID: " + device.getId());
+        System.out.println("Mode Change: " + currentMode + " → " + newMode);
+        System.out.println("Database Updated: YES ✅");
+        System.out.println("================================");
+
+        return response;
     }
 }

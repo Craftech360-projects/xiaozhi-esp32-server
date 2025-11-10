@@ -9,6 +9,7 @@ import xiaozhi.modules.device.dto.DevicePageUserDTO;
 import xiaozhi.modules.device.dto.DeviceReportReqDTO;
 import xiaozhi.modules.device.dto.DeviceReportRespDTO;
 import xiaozhi.modules.device.dto.DeviceManualAddDTO;
+import xiaozhi.modules.device.dto.ModeCycleResponse;
 import xiaozhi.modules.device.entity.DeviceEntity;
 import xiaozhi.modules.device.vo.UserShowDeviceListVO;
 
@@ -102,5 +103,14 @@ public interface DeviceService extends BaseService<DeviceEntity> {
      * 更新设备连接信息
      */
     void updateDeviceConnectionInfo(String agentId, String deviceId, String appVersion);
+
+    /**
+     * 根据设备MAC地址循环切换设备模式
+     * 用于设备按钮触发的模式切换
+     *
+     * @param macAddress 设备MAC地址
+     * @return 模式切换响应信息
+     */
+    ModeCycleResponse cycleDeviceMode(String macAddress);
 
 }

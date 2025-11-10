@@ -348,15 +348,15 @@ public class AgentController {
         }
     }
 
-    @PostMapping("/device/{macAddress}/cycle-mode")
-    @Operation(summary = "Cycle agent mode by device MAC address (triggered by button)")
-    public Result<AgentModeCycleSimpleResponse> cycleAgentModeByMacButton(
+    @PostMapping("/device/{macAddress}/cycle-character")
+    @Operation(summary = "Cycle agent character by device MAC address (triggered by button)")
+    public Result<AgentModeCycleSimpleResponse> cycleAgentCharacterByMacButton(
             @PathVariable("macAddress") String macAddress) {
         try {
             // Clean MAC address
             String cleanMac = macAddress.replace(":", "").replace("-", "").toLowerCase();
 
-            log.info("🔘 Mode cycle requested for device MAC: {}", cleanMac);
+            log.info("🎭 Character cycle requested for device MAC: {}", cleanMac);
 
             // Call service to cycle mode
             AgentModeCycleResponse fullResponse = agentService.cycleAgentModeByMac(cleanMac);
@@ -371,7 +371,42 @@ public class AgentController {
             return new Result<AgentModeCycleSimpleResponse>().ok(simpleResponse);
 
         } catch (Exception e) {
-            log.error("❌ Error cycling mode for MAC {}: {}", macAddress, e.getMessage());
+            log.error("❌ Error cycling character for MAC {}: {}", macAddress, e.getMessage());
+            return new Result<AgentModeCycleSimpleResponse>().error(e.getMessage());
+        }
+    }
+
+    @PostMapping("/device/{macAddress}/set-character")
+    @Operation(summary = "Set specific agent character by device MAC address and character name")
+    public Result<AgentModeCycleSimpleResponse> setAgentCharacterByMac(
+            @PathVariable("macAddress") String macAddress,
+            @RequestBody Map<String, String> requestBody) {
+        try {
+            // Clean MAC address
+            String cleanMac = macAddress.replace(":", "").replace("-", "").toLowerCase();
+            String characterName = requestBody.get("characterName");
+
+            if (characterName == null || characterName.trim().isEmpty()) {
+                log.error("❌ Character name is required");
+                return new Result<AgentModeCycleSimpleResponse>().error("Character name is required");
+            }
+
+            log.info("🎭 Set character '{}' requested for device MAC: {}", characterName, cleanMac);
+
+            // Call service to set specific character
+            AgentModeCycleResponse fullResponse = agentService.setAgentCharacterByMac(cleanMac, characterName);
+
+            // Create simplified response with only essential fields
+            AgentModeCycleSimpleResponse simpleResponse = new AgentModeCycleSimpleResponse();
+            simpleResponse.setSuccess(fullResponse.isSuccess());
+            simpleResponse.setAgentId(fullResponse.getAgentId());
+            simpleResponse.setOldModeName(fullResponse.getOldModeName());
+            simpleResponse.setNewModeName(fullResponse.getNewModeName());
+
+            return new Result<AgentModeCycleSimpleResponse>().ok(simpleResponse);
+
+        } catch (Exception e) {
+            log.error("❌ Error setting character for MAC {}: {}", macAddress, e.getMessage());
             return new Result<AgentModeCycleSimpleResponse>().error(e.getMessage());
         }
     }

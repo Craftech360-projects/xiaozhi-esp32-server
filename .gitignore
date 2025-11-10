@@ -187,6 +187,10 @@ uploadfile
 # Spring Boot configuration files (contain sensitive data)
 main/manager-api/src/main/resources/application.yml
 main/manager-api/src/main/resources/application-dev.yml
+main/manager-api/src/main/resources/application-prod.yml
+
+# MQTT Gateway configuration (contains broker credentials)
+main/mqtt-gateway/config/mqtt.json
 
 # LiveKit server configuration (contains API keys)
 main/livekit-server/config.yaml

@@ -29,14 +29,17 @@ import xiaozhi.modules.device.dto.DeviceManualAddDTO;
 import xiaozhi.modules.device.dto.AssignKidToDeviceDTO;
 import xiaozhi.modules.device.dto.AssignKidByMacDTO;
 import xiaozhi.modules.device.dto.DeviceResponseDTO;
+import xiaozhi.modules.device.dto.ModeCycleResponse;
 import xiaozhi.modules.device.entity.DeviceEntity;
 import xiaozhi.modules.device.service.DeviceService;
 import xiaozhi.modules.security.user.SecurityUser;
+import lombok.extern.slf4j.Slf4j;
 
 @Tag(name = "Device Management")
 @AllArgsConstructor
 @RestController
 @RequestMapping("/device")
+@Slf4j
 public class DeviceController {
     private final DeviceService deviceService;
 
@@ -212,5 +215,53 @@ public class DeviceController {
         response.setAppVersion(device.getAppVersion());
 
         return new Result<DeviceResponseDTO>().ok(response);
+    }
+
+    @PostMapping("/{macAddress}/cycle-mode")
+    @Operation(summary = "Cycle device mode by MAC address (conversation → music → story)")
+    public Result<ModeCycleResponse> cycleDeviceMode(@PathVariable("macAddress") String macAddress) {
+        try {
+            // Clean MAC address
+            String cleanMac = macAddress.replace(":", "").replace("-", "").toLowerCase();
+
+            log.info("🔄 [MODE-CYCLE] Mode cycle requested for device MAC: {}", cleanMac);
+
+            // Call service to cycle mode
+            ModeCycleResponse response = deviceService.cycleDeviceMode(cleanMac);
+
+            return new Result<ModeCycleResponse>().ok(response);
+
+        } catch (Exception e) {
+            log.error("❌ [MODE-CYCLE] Error cycling mode for MAC {}: {}", macAddress, e.getMessage());
+            return new Result<ModeCycleResponse>().error(e.getMessage());
+        }
+    }
+
+    @GetMapping("/{macAddress}/mode")
+    @Operation(summary = "Get device mode by MAC address")
+    public Result<String> getDeviceMode(@PathVariable("macAddress") String macAddress) {
+        try {
+            // Clean MAC address
+            String cleanMac = macAddress.replace(":", "").replace("-", "").toLowerCase();
+
+            log.info("📋 [GET-MODE] Mode query requested for device MAC: {}", cleanMac);
+
+            // Get device
+            DeviceEntity device = deviceService.getDeviceByMacAddress(cleanMac);
+            if (device == null) {
+                log.warn("⚠️ [GET-MODE] Device not found for MAC: {}", cleanMac);
+                return new Result<String>().error("Device not found");
+            }
+
+            // Get mode, default to conversation if null
+            String mode = device.getMode() != null ? device.getMode() : "conversation";
+            log.info("✅ [GET-MODE] Device {} mode: {}", cleanMac, mode);
+
+            return new Result<String>().ok(mode);
+
+        } catch (Exception e) {
+            log.error("❌ [GET-MODE] Error getting mode for MAC {}: {}", macAddress, e.getMessage());
+            return new Result<String>().error(e.getMessage());
+        }
     }
 }

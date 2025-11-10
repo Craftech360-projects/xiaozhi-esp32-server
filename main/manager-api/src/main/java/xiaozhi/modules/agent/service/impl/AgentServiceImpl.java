@@ -702,4 +702,115 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
 
         return response;
     }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public AgentModeCycleResponse setAgentCharacterByMac(String macAddress, String characterName) {
+        // 1. Get device by MAC address
+        DeviceEntity device = deviceService.getDeviceByMacAddress(macAddress);
+        if (device == null) {
+            throw new RenException("Device not found for MAC address: " + macAddress);
+        }
+
+        // 2. Get current agent
+        AgentEntity agent = this.selectById(device.getAgentId());
+        if (agent == null) {
+            throw new RenException("No agent associated with device");
+        }
+
+        String oldModeName = agent.getAgentName();
+
+        // 3. Find template by character name (case-insensitive)
+        AgentTemplateEntity targetTemplate = agentTemplateService.getOne(
+            new QueryWrapper<AgentTemplateEntity>()
+                .eq("is_visible", 1)
+                .eq("agent_name", characterName)
+        );
+
+        if (targetTemplate == null) {
+            // Try case-insensitive search
+            List<AgentTemplateEntity> allTemplates = agentTemplateService.list(
+                new QueryWrapper<AgentTemplateEntity>()
+                    .eq("is_visible", 1)
+            );
+
+            for (AgentTemplateEntity template : allTemplates) {
+                if (template.getAgentName().equalsIgnoreCase(characterName)) {
+                    targetTemplate = template;
+                    break;
+                }
+            }
+        }
+
+        if (targetTemplate == null) {
+            AgentModeCycleResponse response = new AgentModeCycleResponse();
+            response.setSuccess(false);
+            response.setAgentId(agent.getId());
+            response.setOldModeName(oldModeName);
+            response.setNewModeName(oldModeName);
+            response.setMessage("Character not found: " + characterName);
+            return response;
+        }
+
+        // 4. Check if already on this character
+        if (oldModeName.equalsIgnoreCase(characterName)) {
+            AgentModeCycleResponse response = new AgentModeCycleResponse();
+            response.setSuccess(true);
+            response.setAgentId(agent.getId());
+            response.setOldModeName(oldModeName);
+            response.setNewModeName(oldModeName);
+            response.setMessage("Already on character: " + characterName);
+            return response;
+        }
+
+        // 5. Update agent with template configuration
+        agent.setAgentName(targetTemplate.getAgentName());
+        agent.setAsrModelId(targetTemplate.getAsrModelId());
+        agent.setVadModelId(targetTemplate.getVadModelId());
+        agent.setLlmModelId(targetTemplate.getLlmModelId());
+        agent.setVllmModelId(targetTemplate.getVllmModelId());
+        agent.setTtsModelId(targetTemplate.getTtsModelId());
+        agent.setTtsVoiceId(targetTemplate.getTtsVoiceId());
+        agent.setMemModelId(targetTemplate.getMemModelId());
+        agent.setIntentModelId(targetTemplate.getIntentModelId());
+        agent.setSystemPrompt(targetTemplate.getSystemPrompt());
+        agent.setChatHistoryConf(targetTemplate.getChatHistoryConf());
+        agent.setLangCode(targetTemplate.getLangCode());
+        agent.setLanguage(targetTemplate.getLanguage());
+
+        // 6. Update audit info
+        try {
+            UserDetail user = SecurityUser.getUser();
+            if (user != null) {
+                agent.setUpdater(user.getId());
+            }
+        } catch (Exception e) {
+            // Server secret filter - no user context, skip updater
+        }
+        agent.setUpdatedAt(new Date());
+
+        // 7. Save to database
+        this.updateById(agent);
+
+        // 8. Build response
+        AgentModeCycleResponse response = new AgentModeCycleResponse();
+        response.setSuccess(true);
+        response.setAgentId(agent.getId());
+        response.setOldModeName(oldModeName);
+        response.setNewModeName(targetTemplate.getAgentName());
+        response.setMessage("Character changed successfully from " + oldModeName + " to " + targetTemplate.getAgentName());
+        response.setNewSystemPrompt(targetTemplate.getSystemPrompt());
+
+        // 9. Log the change
+        System.out.println("🎭 ===== SET AGENT CHARACTER =====");
+        System.out.println("Device MAC: " + macAddress);
+        System.out.println("Agent ID: " + agent.getId());
+        System.out.println("Character Change: " + oldModeName + " → " + targetTemplate.getAgentName());
+        System.out.println("New LLM Model: " + targetTemplate.getLlmModelId());
+        System.out.println("New TTS Model: " + targetTemplate.getTtsModelId());
+        System.out.println("Database Updated: YES ✅");
+        System.out.println("==================================");
+
+        return response;
+    }
 }

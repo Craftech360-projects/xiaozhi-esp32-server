@@ -4,14 +4,17 @@ pydub
 aiohttp
 google-api-python-client>=2.100.0
 
+# Media API server dependencies
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+
 # # Local AI Models (for offline operation)
 # faster-whisper  # Local STT using Whisper
 # TTS  # Coqui TTS for local text-to-speech
 
 # Optional dependencies for enhanced semantic search
-qdrant-client>=1.7.0
-sentence-transformers>=2.2.2
-transformers>=4.21.0
+qdrant-client
+sentence-transformers
 
 # EdgeTTS support (uses Microsoft servers but can work offline)
 edge-tts
