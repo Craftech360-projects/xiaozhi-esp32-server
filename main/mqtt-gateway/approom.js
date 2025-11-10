@@ -645,18 +645,18 @@ class WorkerPoolManager {
       const avgPendingPerWorker = this.workerPendingCount.reduce((a, b) => a + b, 0) / this.workers.length;
       const loadPercent = Math.min(100, (avgPendingPerWorker / 5 * 100)).toFixed(1);
 
-      console.log('\n📊 [WORKER-POOL METRICS] ================');
-      console.log(`   Workers: ${stats.activeWorkers}/${stats.workers} active (min: ${this.minWorkers}, max: ${this.maxWorkers})`);
-      console.log(`   Load: ${loadPercent}% (${avgPendingPerWorker.toFixed(2)} pending/worker)`);
-      console.log(`   Pending Requests: ${stats.pendingRequests}`);
-      console.log(`   Frames Processed: ${stats.performance.framesProcessed}`);
-      console.log(`   Throughput: ${stats.performance.framesPerSecond} fps`);
-      console.log(`   Avg Latency: ${stats.performance.avgLatency}`);
-      console.log(`   Max Latency: ${stats.performance.maxLatency}`);
-      console.log(`   CPU Usage: ${stats.performance.avgCpuUsage} (max: ${stats.performance.maxCpuUsage})`);
-      console.log(`   Memory: ${stats.performance.currentMemory.heapUsed} / ${stats.performance.currentMemory.heapTotal}`);
-      console.log(`   Errors: ${stats.performance.errors}`);
-      console.log('==========================================\n');
+      // console.log('\n📊 [WORKER-POOL METRICS] ================');
+      // console.log(`   Workers: ${stats.activeWorkers}/${stats.workers} active (min: ${this.minWorkers}, max: ${this.maxWorkers})`);
+      // console.log(`   Load: ${loadPercent}% (${avgPendingPerWorker.toFixed(2)} pending/worker)`);
+      // console.log(`   Pending Requests: ${stats.pendingRequests}`);
+      // console.log(`   Frames Processed: ${stats.performance.framesProcessed}`);
+      // console.log(`   Throughput: ${stats.performance.framesPerSecond} fps`);
+      // console.log(`   Avg Latency: ${stats.performance.avgLatency}`);
+      // console.log(`   Max Latency: ${stats.performance.maxLatency}`);
+      // console.log(`   CPU Usage: ${stats.performance.avgCpuUsage} (max: ${stats.performance.maxCpuUsage})`);
+      // console.log(`   Memory: ${stats.performance.currentMemory.heapUsed} / ${stats.performance.currentMemory.heapTotal}`);
+      // console.log(`   Errors: ${stats.performance.errors}`);
+      // console.log('==========================================\n');
     }, intervalSeconds * 1000);
   }
 
@@ -926,7 +926,7 @@ class LiveKitBridge extends Emitter {
     console.log(`✅ [PHASE-2] Worker pool initialized for ${this.macAddress}`);
 
     // Start periodic metrics logging (every 30 seconds)
-    this.workerPool.startMetricsLogging(30);
+    // this.workerPool.startMetricsLogging(30);
 
     // Initialize workers with encoder/decoder settings
     this.workerPool.initializeWorker('init_encoder', {
@@ -2716,7 +2716,7 @@ class MQTTConnection {
       const roomName = this.bridge.room.name;
       try {
         console.log(`🛑 [CLEANUP] Stopping ${this.roomType} bot for room: ${roomName}`);
-        await axios.post('http://localhost:8001/stop-bot', {
+        await axios.post('http://localhost:8003/stop-bot', {
           room_name: roomName
         }, {
           timeout: 3000
@@ -2920,6 +2920,7 @@ class MQTTConnection {
   sendUdpMessage(payload, timestamp) {
     if (!this.udp.remoteAddress) {
       debug(`Device ${this.clientId} not connected, cannot send UDP message`);
+      // console.log(`⚠️ [UDP-DROP] Device ${this.clientId} not connected, cannot send UDP message (${payload.length} bytes dropped)`);
       return;
     }
 
@@ -3147,7 +3148,7 @@ class MQTTConnection {
     try {
       console.log(`🎵 [MUSIC-BOT] Calling Python API to spawn music bot for room: ${roomName}`);
 
-      const response = await axios.post('http://localhost:8001/start-music-bot', {
+      const response = await axios.post('http://localhost:8003/start-music-bot', {
         room_name: roomName,
         device_mac: this.macAddress,
         language: this.language
@@ -3175,7 +3176,7 @@ class MQTTConnection {
     try {
       console.log(`📖 [STORY-BOT] Calling Python API to spawn story bot for room: ${roomName}`);
 
-      const response = await axios.post('http://localhost:8001/start-story-bot', {
+      const response = await axios.post('http://localhost:8003/start-story-bot', {
         room_name: roomName,
         device_mac: this.macAddress,
         age_group: this.userData?.ageGroup || null
@@ -3773,7 +3774,7 @@ class VirtualMQTTConnection {
     try {
       console.log(`🎵 [MUSIC-BOT] Calling Python API: ${roomName}`);
 
-      const response = await axios.post('http://localhost:8001/start-music-bot', {
+      const response = await axios.post('http://localhost:8003/start-music-bot', {
         room_name: roomName,
         device_mac: this.deviceId,
         language: this.language
@@ -3792,7 +3793,7 @@ class VirtualMQTTConnection {
     try {
       console.log(`📖 [STORY-BOT] Calling Python API: ${roomName}`);
 
-      const response = await axios.post('http://localhost:8001/start-story-bot', {
+      const response = await axios.post('http://localhost:8003/start-story-bot', {
         room_name: roomName,
         device_mac: this.deviceId,
         age_group: this.userData?.ageGroup || null
@@ -4139,7 +4140,7 @@ class VirtualMQTTConnection {
       const roomName = this.bridge.room.name;
       try {
         console.log(`🛑 [CLEANUP] Stopping ${this.roomType} bot for room: ${roomName}`);
-        await axios.post('http://localhost:8001/stop-bot', {
+        await axios.post('http://localhost:8003/stop-bot', {
           room_name: roomName
         }, { timeout: 3000 });
         console.log(`✅ [CLEANUP] ${this.roomType} bot stopped`);
@@ -4425,6 +4426,17 @@ class MQTTGateway {
               // ADD: ONLY dispatch agent for conversation rooms
               if (connection.roomType !== 'conversation') {
                 console.log(`ℹ️ [AGENT-DISPATCH] Skipping agent dispatch for ${connection.roomType} room`);
+
+                // For music/story rooms, send TTS start message to trigger UDP connection
+                console.log(`🎵 [${connection.roomType.toUpperCase()}] Sending TTS start message to establish UDP connection`);
+
+                connection.sendMqttMessage(JSON.stringify({
+                  type: "tts",
+                  state: "start",
+                  session_id: connection.udp.session_id
+                }));
+
+                console.log(`✅ [${connection.roomType.toUpperCase()}] TTS start sent, device should now send UDP packet`);
                 return;  // Don't dispatch agent for music/story rooms
               }
 
