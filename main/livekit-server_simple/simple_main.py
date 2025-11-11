@@ -173,9 +173,16 @@ class SimpleAssistant(Agent):
     async def on_user_turn_completed(self, turn_ctx: ChatContext, new_message: ChatMessage) -> None:
         """Callback before generating a reply after user turn committed"""
         if not new_message.text_content:
-            # Prevent empty turns from generating responses (e.g., user pressed/released PTT without speaking)
-            logger.info("[PTT] Ignoring empty user turn - no speech detected")
-            raise StopResponse()
+            # Handle empty turns by adding a simulated user message
+            logger.info("[PTT] Empty user turn detected - adding fallback message")
+
+            # Add a user message that instructs the LLM to respond helpfully
+            turn_ctx.add_message(
+                role="user",
+                content="[The child pressed the button but didn't speak - say something short and friendly like 'I'm here! What's up?' or 'Did you want to ask me something?']"
+            )
+
+            logger.info("[PTT] Fallback user message added - agent will respond")
     
     @function_tool
     async def check_battery_level(self, context: RunContext, unused: str = '') -> str:
@@ -765,8 +772,8 @@ When you first meet a child, greet them warmly with something like:
             # Try to commit user turn, but don't fail if session isn't running
             try:
                 session.commit_user_turn(
-                    transcript_timeout=10.0,
-                    stt_flush_duration=2.0,
+                    transcript_timeout=2.0,  # Reduced from 10.0 for faster empty turn detection
+                    stt_flush_duration=0.5,  # Reduced from 2.0 for faster STT flush
                 )
                 logger.info("[PTT] User turn committed")
             except RuntimeError as e:
