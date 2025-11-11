@@ -33,10 +33,11 @@ from livekit.agents import (
     Agent,
     RunContext,
     RoomIO,
+    RoomInputOptions,
 )
 from livekit.agents.llm import ChatContext, ChatMessage, StopResponse
 from livekit import rtc
-from livekit.plugins import silero, groq
+from livekit.plugins import silero, groq, noise_cancellation
 
 # Import essential components only
 from src.providers.provider_factory import ProviderFactory
@@ -714,37 +715,86 @@ When you first meet a child, greet them warmly with something like:
         gc.collect()
         logger.info("🧹 Final cleanup completed")
     
-    # Start the session
-    await session.start(agent=assistant, room=ctx.room)
+    # Start the session with noise cancellation for cleaner audio input
+    logger.info("🎙️ Starting session with noise cancellation enabled (BVC filter)")
+    await session.start(
+        agent=assistant,
+        room=ctx.room,
+        room_input_options=RoomInputOptions(
+            noise_cancellation=noise_cancellation.NC()  # BVC = Background Voice Cancellation
+            # Alternative options: noise_cancellation.NC() or noise_cancellation.BVCTelephony()
+        )
+    )
+    logger.info("✅ Session started with noise cancellation - audio will be cleaned before STT")
 
     # Register push-to-talk RPC methods
     @ctx.room.local_participant.register_rpc_method("start_turn")
     async def start_turn(data: rtc.RpcInvocationData):
-        logger.info(f"[PTT] start_turn called by {data.caller_identity}")
-        session.interrupt()
-        session.clear_user_turn()
-        session.input.set_audio_enabled(True)
-        logger.info("[PTT] Audio input ENABLED")
-        return "Audio input enabled"
+        try:
+            logger.info(f"[PTT] start_turn called by {data.caller_identity}")
+
+            # Try to interrupt if agent is speaking, but don't fail if session isn't running
+            try:
+                session.interrupt()
+                logger.info("[PTT] Session interrupted (agent was speaking)")
+            except RuntimeError as e:
+                if "isn't running" in str(e):
+                    logger.info("[PTT] Session not running (agent idle) - skipping interrupt")
+                else:
+                    raise
+
+            session.clear_user_turn()
+            logger.info("[PTT] User turn cleared")
+
+            session.input.set_audio_enabled(True)
+            logger.info("[PTT] Audio input ENABLED")
+
+            return "Audio input enabled"
+        except Exception as e:
+            logger.error(f"[PTT] ❌ Error in start_turn: {e}", exc_info=True)
+            raise  # Re-raise to send error back to caller
 
     @ctx.room.local_participant.register_rpc_method("end_turn")
     async def end_turn(data: rtc.RpcInvocationData):
-        logger.info(f"[PTT] end_turn called by {data.caller_identity}")
-        session.input.set_audio_enabled(False)
-        logger.info("[PTT] Audio input DISABLED, committing user turn")
-        session.commit_user_turn(
-            transcript_timeout=10.0,
-            stt_flush_duration=2.0,
-        )
-        return "Audio input disabled and turn committed"
+        try:
+            logger.info(f"[PTT] end_turn called by {data.caller_identity}")
+
+            session.input.set_audio_enabled(False)
+            logger.info("[PTT] Audio input DISABLED, committing user turn")
+
+            # Try to commit user turn, but don't fail if session isn't running
+            try:
+                session.commit_user_turn(
+                    transcript_timeout=10.0,
+                    stt_flush_duration=2.0,
+                )
+                logger.info("[PTT] User turn committed")
+            except RuntimeError as e:
+                if "isn't running" in str(e):
+                    logger.warning("[PTT] Session not running - unable to commit turn (no audio was captured)")
+                else:
+                    raise
+
+            return "Audio input disabled and turn committed"
+        except Exception as e:
+            logger.error(f"[PTT] ❌ Error in end_turn: {e}", exc_info=True)
+            raise  # Re-raise to send error back to caller
 
     @ctx.room.local_participant.register_rpc_method("cancel_turn")
     async def cancel_turn(data: rtc.RpcInvocationData):
-        logger.info(f"[PTT] cancel_turn called by {data.caller_identity}")
-        session.input.set_audio_enabled(False)
-        session.clear_user_turn()
-        logger.info("[PTT] Audio input CANCELLED")
-        return "Turn cancelled"
+        try:
+            logger.info(f"[PTT] cancel_turn called by {data.caller_identity}")
+
+            session.input.set_audio_enabled(False)
+            logger.info("[PTT] Audio input disabled")
+
+            session.clear_user_turn()
+            logger.info("[PTT] User turn cleared")
+
+            return "Turn cancelled"
+        except Exception as e:
+            logger.error(f"[PTT] ❌ Error in cancel_turn: {e}", exc_info=True)
+            raise  # Re-raise to send error back to caller
 
     logger.info("✅ Push-to-talk RPC methods registered successfully")
     logger.info("✅ Simple agent started successfully")

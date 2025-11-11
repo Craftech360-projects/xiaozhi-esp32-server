@@ -19,9 +19,9 @@ import opuslib
 
 # --- Configuration ---
 
-SERVER_IP = "192.168.1.102"
+SERVER_IP = "192.168.1.4"
 OTA_PORT = 8002
-MQTT_BROKER_HOST = "192.168.1.102"
+MQTT_BROKER_HOST = "192.168.1.4"
 
 
 MQTT_BROKER_PORT = 1883
