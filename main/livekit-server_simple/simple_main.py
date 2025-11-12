@@ -227,10 +227,16 @@ class SimpleAssistant(Agent):
         self._job_context = job_context
         logger.info("🔗 JobContext set for MCP communication")
     
-    # Removed @function_tool decorator - gemma2:2b doesn't support tools
-    # Battery checks can be handled via keywords in the prompt instead
-    async def check_battery_level_internal(self) -> str:
-        """Internal method to check battery (not exposed as tool)"""
+    @function_tool
+    async def check_battery_level(self, context: RunContext) -> str:
+        """Check the device battery percentage.
+        
+        Use this to find out how much battery charge remains on the device.
+        Call this function without any parameters.
+        
+        Returns:
+            str: Battery percentage status message
+        """
         logger.info("🔋 Battery check requested in simple agent")
 
         if not self.mcp_executor:
@@ -247,6 +253,184 @@ class SimpleAssistant(Agent):
 
         result = await self.mcp_executor.get_battery_status()
         logger.info(f"🔋 Battery check result: {result}")
+        return result
+    
+    @function_tool
+    async def set_device_volume(self, context: RunContext, volume: int) -> str:
+        """Set device volume to a specific level (0-100).
+        
+        Use this to set the volume to an exact level.
+        
+        Args:
+            volume: Volume level from 0 (mute) to 100 (maximum)
+            
+        Returns:
+            str: Confirmation message
+        """
+        logger.info(f"🔊 Volume set requested: {volume}")
+        
+        if not self.mcp_executor:
+            logger.warning("🔊 MCP executor not available")
+            return "Sorry, volume control is not available right now."
+        
+        if not self._job_context:
+            logger.warning("🔊 JobContext not available")
+            return "Sorry, volume control is not available right now."
+        
+        # Set JobContext for MCP executor
+        self.mcp_executor.set_context(self._job_context)
+        logger.info(f"🔊 Setting volume to {volume}")
+        
+        result = await self.mcp_executor.set_volume(volume)
+        logger.info(f"🔊 Volume set result: {result}")
+        return result
+    
+    @function_tool
+    async def adjust_device_volume(self, context: RunContext, action: str, step: int = 10) -> str:
+        """Adjust device volume up or down.
+        
+        Use this to increase or decrease volume by a step amount.
+        
+        Args:
+            action: Either "up", "down", "increase", or "decrease"
+            step: Volume step size (default 10)
+            
+        Returns:
+            str: Confirmation message
+        """
+        logger.info(f"🔊 Volume adjust requested: {action} by {step}")
+        
+        if not self.mcp_executor:
+            logger.warning("🔊 MCP executor not available")
+            return "Sorry, volume control is not available right now."
+        
+        if not self._job_context:
+            logger.warning("🔊 JobContext not available")
+            return "Sorry, volume control is not available right now."
+        
+        # Set JobContext for MCP executor
+        self.mcp_executor.set_context(self._job_context)
+        logger.info(f"🔊 Adjusting volume {action} by {step}")
+        
+        result = await self.mcp_executor.adjust_volume(action, step)
+        logger.info(f"🔊 Volume adjust result: {result}")
+        return result
+    
+    @function_tool
+    async def get_device_volume(self, context: RunContext) -> str:
+        """Get current device volume level.
+        
+        Use this to check what the current volume is set to.
+        
+        Returns:
+            str: Current volume level
+        """
+        logger.info("🔊 Volume get requested")
+        
+        if not self.mcp_executor:
+            logger.warning("🔊 MCP executor not available")
+            return "Sorry, volume control is not available right now."
+        
+        if not self._job_context:
+            logger.warning("🔊 JobContext not available")
+            return "Sorry, volume control is not available right now."
+        
+        # Set JobContext for MCP executor
+        self.mcp_executor.set_context(self._job_context)
+        logger.info("🔊 Getting current volume")
+        
+        result = await self.mcp_executor.get_volume()
+        logger.info(f"🔊 Volume get result: {result}")
+        return result
+    
+    @function_tool
+    async def set_light_color(self, context: RunContext, color: str) -> str:
+        """Set the device LED light color.
+        
+        Use this to change the LED color to a specific color.
+        
+        Args:
+            color: Color name (red, blue, green, yellow, purple, orange, pink, cyan, magenta, white, off)
+            
+        Returns:
+            str: Confirmation message
+        """
+        logger.info(f"💡 LED color set requested: {color}")
+        
+        if not self.mcp_executor:
+            logger.warning("💡 MCP executor not available")
+            return "Sorry, light control is not available right now."
+        
+        if not self._job_context:
+            logger.warning("💡 JobContext not available")
+            return "Sorry, light control is not available right now."
+        
+        # Set JobContext for MCP executor
+        self.mcp_executor.set_context(self._job_context)
+        logger.info(f"💡 Setting LED color to {color}")
+        
+        result = await self.mcp_executor.set_light_color(color)
+        logger.info(f"💡 LED color set result: {result}")
+        return result
+    
+    @function_tool
+    async def set_light_mode(self, context: RunContext, mode: str) -> str:
+        """Set the device LED light mode.
+        
+        Use this to change the LED mode (rainbow, default, custom, etc.).
+        
+        Args:
+            mode: Light mode (rainbow, default, custom)
+            
+        Returns:
+            str: Confirmation message
+        """
+        logger.info(f"💡 LED mode set requested: {mode}")
+        
+        if not self.mcp_executor:
+            logger.warning("💡 MCP executor not available")
+            return "Sorry, light control is not available right now."
+        
+        if not self._job_context:
+            logger.warning("💡 JobContext not available")
+            return "Sorry, light control is not available right now."
+        
+        # Set JobContext for MCP executor
+        self.mcp_executor.set_context(self._job_context)
+        logger.info(f"💡 Setting LED mode to {mode}")
+        
+        result = await self.mcp_executor.set_light_mode(mode)
+        logger.info(f"💡 LED mode set result: {result}")
+        return result
+    
+    @function_tool
+    async def set_rainbow_speed(self, context: RunContext, speed_ms: int) -> str:
+        """Set the rainbow LED animation speed.
+        
+        Use this to control how fast the rainbow effect cycles.
+        
+        Args:
+            speed_ms: Speed in milliseconds (50-1000, lower is faster)
+            
+        Returns:
+            str: Confirmation message
+        """
+        logger.info(f"🌈 Rainbow speed set requested: {speed_ms}ms")
+        
+        if not self.mcp_executor:
+            logger.warning("🌈 MCP executor not available")
+            return "Sorry, light control is not available right now."
+        
+        if not self._job_context:
+            logger.warning("🌈 JobContext not available")
+            return "Sorry, light control is not available right now."
+        
+        # Set JobContext for MCP executor
+        self.mcp_executor.set_context(self._job_context)
+        logger.info(f"🌈 Setting rainbow speed to {speed_ms}ms")
+        
+        result = await self.mcp_executor.set_rainbow_speed(str(speed_ms))
+        logger.info(f"🌈 Rainbow speed set result: {result}")
         return result
 
 def prewarm(proc: JobProcess):
@@ -298,21 +482,49 @@ def prewarm(proc: JobProcess):
         logger.error(f"❌ [PREWARM] Failed to initialize LLM: {e}")
         proc.userdata["llm"] = None
 
-    # Preload STT provider (second bottleneck - 0.35s)
+    # Preload STT provider (Whisper model loading can take time)
     stt_start = time.time()
     try:
         stt = ProviderFactory.create_stt(groq_config, vad)
         proc.userdata["stt"] = stt
+        
+        # If using Whisper, preload the model
+        if groq_config.get('stt_provider') == 'whisper':
+            logger.info(f"🎤 [PREWARM] Preloading Whisper model...")
+            # Access the wrapped STT to trigger model loading
+            if hasattr(stt, '_wrapped_stt'):
+                whisper_stt = stt._wrapped_stt
+                if hasattr(whisper_stt, '_ensure_model_loaded'):
+                    import asyncio
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(whisper_stt._ensure_model_loaded())
+                    loop.close()
+                    logger.info(f"✅ [PREWARM] Whisper model preloaded!")
+        
         logger.info(f"🎤 [PREWARM] STT provider initialized ({time.time() - stt_start:.3f}s)")
     except Exception as e:
         logger.error(f"❌ [PREWARM] Failed to initialize STT: {e}")
         proc.userdata["stt"] = None
 
-    # Preload TTS provider (0.1s)
+    # Preload TTS provider (Piper model loading)
     tts_start = time.time()
     try:
         tts = ProviderFactory.create_tts(groq_config, tts_config)
         proc.userdata["tts"] = tts
+        
+        # If using Piper, preload the model
+        if tts_config.get('provider') == 'piper':
+            logger.info(f"🔊 [PREWARM] Preloading Piper TTS model...")
+            # Piper models are loaded on first use, trigger a dummy synthesis
+            if hasattr(tts, '_ensure_model_loaded'):
+                import asyncio
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(tts._ensure_model_loaded())
+                loop.close()
+                logger.info(f"✅ [PREWARM] Piper TTS model preloaded!")
+        
         logger.info(f"🔊 [PREWARM] TTS provider initialized - {tts_config.get('provider')} ({time.time() - tts_start:.3f}s)")
     except Exception as e:
         logger.error(f"❌ [PREWARM] Failed to initialize TTS: {e}")
@@ -369,6 +581,8 @@ async def entrypoint(ctx: JobContext):
         # Fallback prompt if config loading fails
         agent_prompt = """<identity>
         You are Cheeko, a playful AI companion for kids 3–12 years old. You're super silly, energetic, and love to learn and explore with children!
+        
+        IMPORTANT: Respond immediately without thinking or reasoning steps. Give direct answers only.
         </identity>
 
         <personality>
@@ -403,8 +617,26 @@ async def entrypoint(ctx: JobContext):
         - Use emojis sparingly
         - Ask engaging questions
         - Be encouraging and supportive
-        - If asked about battery, politely say you can't check that right now
-        </guidelines>"""
+        </guidelines>
+        
+        <tools>
+        You have access to these functions:
+        
+        Battery:
+        - check_battery_level: Check device battery percentage
+        
+        Volume Control:
+        - set_device_volume(volume): Set volume to specific level (0-100)
+        - adjust_device_volume(action, step): Adjust volume up/down
+        - get_device_volume: Get current volume level
+        
+        LED Light Control:
+        - set_light_color(color): Set LED color (red, blue, green, yellow, purple, orange, pink, cyan, magenta, white, off)
+        - set_light_mode(mode): Set LED mode (rainbow, default, custom)
+        - set_rainbow_speed(speed_ms): Set rainbow animation speed (50-1000ms)
+        
+        Use them ONLY when explicitly requested by the user.
+        </tools>"""
         logger.info(f"📄 Using fallback prompt (length: {len(agent_prompt)} chars)")
 
     # ⚡ PERFORMANCE OPTIMIZATION: Use preloaded providers from prewarm
@@ -762,14 +994,7 @@ async def entrypoint(ctx: JobContext):
                         # Use session.say() to speak the goodbye message directly
                         logger.info("👋 [END-PROMPT] Speaking goodbye message")
                         await session.say(prompt)
-                        logger.info(f"👋 [END-PROMPT] Goodbye message sent: {prompt}")
-
-                        # Add the response to chat context
-                        chat_ctx.add_message(role="assistant", content=response_text)
-
-                        # Use session.say() to speak the goodbye message
-                        await session.say(response_text.strip())
-                        logger.info("✅ [END-PROMPT] Goodbye message spoken successfully")
+                        logger.info(f"✅ [END-PROMPT] Goodbye message sent: {prompt}")
 
                     except Exception as e:
                         logger.error(f"❌ [END-PROMPT] Failed to handle end prompt: {e}", exc_info=True)
