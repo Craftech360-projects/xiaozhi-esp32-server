@@ -100,6 +100,8 @@ public class ShiroConfig {
         filterMap.put("/agent/device/*/agent-id", "server");
         filterMap.put("/agent/update-mode", "server");
         filterMap.put("/agent/play/**", "anon");
+        filterMap.put("/content/items/**", "anon");
+        filterMap.put("/device/**/playlist/**", "anon");  // Allow anonymous access to playlist APIs
         filterMap.put("/**", "oauth2");
         shiroFilter.setFilterChainDefinitionMap(filterMap);
 

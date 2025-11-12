@@ -4,7 +4,7 @@ from datetime import datetime
 import shutil
 
 # === CONFIGURATION ===
-old_ip = "10.92.50.132"
+old_ip = "192.168.1.168"
 new_ip = "192.168.1.168"
 
 # List of files you want to modify

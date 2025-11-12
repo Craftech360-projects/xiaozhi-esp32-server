@@ -3081,6 +3081,16 @@ class MQTTConnection {
       const roomCreationTime = Date.now() - roomCreationStart;
       console.log(`✅ [HELLO] Room created and gateway connected in ${roomCreationTime}ms`);
 
+      // Send mode_update to device firmware
+      console.log(`📤 [HELLO] Sending mode_update to device...`);
+      this.sendMqttMessage(JSON.stringify({
+        type: "mode_update",
+        mode: this.roomType,
+        session_id: futureSessionId,
+        timestamp: Date.now()
+      }));
+      console.log(`✅ [HELLO] Sent mode_update (${this.roomType}) to device`);
+
       // ADD: Room type-specific initialization
       if (this.roomType === 'conversation') {
         console.log(`🗣️ [CONVERSATION] Waiting for agent dispatch (will be done via EMQX webhook or 's' key)`);
@@ -3144,21 +3154,49 @@ class MQTTConnection {
     }
   }
 
-  async spawnMusicBot(roomName) {
+  async fetchPlaylist(mode) {
+    try {
+      const baseUrl = process.env.MANAGER_API_URL.replace('/toy', '');
+      const playlistUrl = `${baseUrl}/toy/device/${this.macAddress}/playlist/${mode}`;
+
+      console.log(`📋 [PLAYLIST] Fetching ${mode} playlist from: ${playlistUrl}`);
+      const response = await axios.get(playlistUrl, { timeout: 5000 });
+
+      if (response.data && response.data.code === 0 && response.data.data) {
+        const playlist = response.data.data;
+        console.log(`✅ [PLAYLIST] Fetched ${playlist.length} ${mode} items for device ${this.macAddress}`);
+        return playlist;
+      } else {
+        console.log(`ℹ️ [PLAYLIST] No ${mode} playlist found for device ${this.macAddress}`);
+        return [];
+      }
+    } catch (error) {
+      console.error(`❌ [PLAYLIST] Failed to fetch ${mode} playlist: ${error.message}`);
+      return []; // Return empty playlist on error
+    }
+  }
+
+  async spawnMusicBot(roomName, playlist = null) {
     try {
       console.log(`🎵 [MUSIC-BOT] Calling Python API to spawn music bot for room: ${roomName}`);
+
+      // If no playlist provided, fetch it
+      if (!playlist) {
+        playlist = await this.fetchPlaylist('music');
+      }
 
       const response = await axios.post('http://localhost:8003/start-music-bot', {
         room_name: roomName,
         device_mac: this.macAddress,
-        language: this.language
+        language: this.language,
+        playlist: playlist  // Pass playlist to bot
       }, {
         timeout: 5000  // 5 second timeout
       });
 
       if (response.data && response.data.status === 'started') {
         console.log(`✅ [MUSIC-BOT] Music bot spawned successfully for room: ${roomName}`);
-        console.log(`🎵 [MUSIC-BOT] Language: ${response.data.language}`);
+        console.log(`🎵 [MUSIC-BOT] Language: ${response.data.language}, Playlist items: ${playlist?.length || 0}`);
       } else if (response.data && response.data.status === 'already_active') {
         console.log(`ℹ️ [MUSIC-BOT] Music bot already active for room: ${roomName}`);
       }
@@ -3172,20 +3210,27 @@ class MQTTConnection {
     }
   }
 
-  async spawnStoryBot(roomName) {
+  async spawnStoryBot(roomName, playlist = null) {
     try {
       console.log(`📖 [STORY-BOT] Calling Python API to spawn story bot for room: ${roomName}`);
+
+      // If no playlist provided, fetch it
+      if (!playlist) {
+        playlist = await this.fetchPlaylist('story');
+      }
 
       const response = await axios.post('http://localhost:8003/start-story-bot', {
         room_name: roomName,
         device_mac: this.macAddress,
-        age_group: this.userData?.ageGroup || null
+        age_group: this.userData?.ageGroup || null,
+        playlist: playlist  // Pass playlist to bot
       }, {
         timeout: 5000  // 5 second timeout
       });
 
       if (response.data && response.data.status === 'started') {
         console.log(`✅ [STORY-BOT] Story bot spawned successfully for room: ${roomName}`);
+        console.log(`📖 [STORY-BOT] Playlist items: ${playlist?.length || 0}`);
       } else if (response.data && response.data.status === 'already_active') {
         console.log(`ℹ️ [STORY-BOT] Story bot already active for room: ${roomName}`);
       }
@@ -3663,6 +3708,16 @@ class VirtualMQTTConnection {
       const roomCreationTime = Date.now() - roomCreationStart;
       console.log(`✅ [HELLO] Room created and gateway connected in ${roomCreationTime}ms`);
 
+      // Send mode_update to device firmware
+      console.log(`📤 [HELLO] Sending mode_update to device...`);
+      this.sendMqttMessage(JSON.stringify({
+        type: "mode_update",
+        mode: this.roomType,
+        session_id: futureSessionId,
+        timestamp: Date.now()
+      }));
+      console.log(`✅ [HELLO] Sent mode_update (${this.roomType}) to device`);
+
       // ADD: Room type-specific initialization
       if (this.roomType === 'conversation') {
         console.log(`🗣️ [CONVERSATION] Waiting for agent dispatch...`);
@@ -3725,37 +3780,72 @@ class VirtualMQTTConnection {
     }
   }
 
-  async spawnMusicBot(roomName) {
+  async fetchPlaylist(mode) {
+    try {
+      const baseUrl = process.env.MANAGER_API_URL.replace('/toy', '');
+      const playlistUrl = `${baseUrl}/toy/device/${this.deviceId}/playlist/${mode}`;
+
+      console.log(`📋 [PLAYLIST] Fetching ${mode} playlist from: ${playlistUrl}`);
+      const response = await axios.get(playlistUrl, { timeout: 5000 });
+
+      if (response.data && response.data.code === 0 && response.data.data) {
+        const playlist = response.data.data;
+        console.log(`✅ [PLAYLIST] Fetched ${playlist.length} ${mode} items for device ${this.deviceId}`);
+        return playlist;
+      } else {
+        console.log(`ℹ️ [PLAYLIST] No ${mode} playlist found for device ${this.deviceId}`);
+        return [];
+      }
+    } catch (error) {
+      console.error(`❌ [PLAYLIST] Failed to fetch ${mode} playlist: ${error.message}`);
+      return []; // Return empty playlist on error
+    }
+  }
+
+  async spawnMusicBot(roomName, playlist = null) {
     try {
       console.log(`🎵 [MUSIC-BOT] Calling Python API: ${roomName}`);
+
+      // If no playlist provided, fetch it
+      if (!playlist) {
+        playlist = await this.fetchPlaylist('music');
+      }
 
       const response = await axios.post('http://localhost:8003/start-music-bot', {
         room_name: roomName,
         device_mac: this.deviceId,
-        language: this.language
+        language: this.language,
+        playlist: playlist  // Pass playlist to bot
       }, { timeout: 5000 });
 
       if (response.data && response.data.status === 'started') {
         console.log(`✅ [MUSIC-BOT] Music bot spawned successfully`);
-        console.log(`🎵 [MUSIC-BOT] Language: ${response.data.language}`);
+        console.log(`🎵 [MUSIC-BOT] Language: ${response.data.language}, Playlist items: ${playlist?.length || 0}`);
       }
     } catch (error) {
       console.error(`❌ [MUSIC-BOT] Failed: ${error.message}`);
     }
   }
 
-  async spawnStoryBot(roomName) {
+  async spawnStoryBot(roomName, playlist = null) {
     try {
       console.log(`📖 [STORY-BOT] Calling Python API: ${roomName}`);
+
+      // If no playlist provided, fetch it
+      if (!playlist) {
+        playlist = await this.fetchPlaylist('story');
+      }
 
       const response = await axios.post('http://localhost:8003/start-story-bot', {
         room_name: roomName,
         device_mac: this.deviceId,
-        age_group: this.userData?.ageGroup || null
+        age_group: this.userData?.ageGroup || null,
+        playlist: playlist  // Pass playlist to bot
       }, { timeout: 5000 });
 
       if (response.data && response.data.status === 'started') {
         console.log(`✅ [STORY-BOT] Story bot spawned successfully`);
+        console.log(`📖 [STORY-BOT] Playlist items: ${playlist?.length || 0}`);
       }
     } catch (error) {
       console.error(`❌ [STORY-BOT] Failed: ${error.message}`);
@@ -4931,6 +5021,16 @@ class MQTTGateway {
         );
 
         console.log(`✅ [MODE-CHANGE] New room created and gateway connected: ${newRoomName}`);
+
+        // Send mode_update to device firmware
+        console.log(`📤 [MODE-CHANGE] Sending mode_update to device...`);
+        connection.sendMqttMessage(JSON.stringify({
+          type: "mode_update",
+          mode: newMode,
+          session_id: newRoomName,
+          timestamp: Date.now()
+        }));
+        console.log(`✅ [MODE-CHANGE] Sent mode_update (${newMode}) to device`);
 
         // STEP 4: Handle mode-specific startup
         console.log(`🎬 [MODE-CHANGE] Step 4: Starting ${newMode} flow...`);

@@ -5,7 +5,7 @@ Similar to livekit-media/server.py but integrated with existing services
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 import logging
 import asyncio
 import os
@@ -73,12 +73,14 @@ class StartMusicBotRequest(BaseModel):
     room_name: str       # LiveKit room name (e.g., "uuid_mac_music")
     device_mac: str      # Device MAC address
     language: Optional[str] = None
+    playlist: Optional[List[dict]] = None  # Playlist with filename + language
 
 
 class StartStoryBotRequest(BaseModel):
     room_name: str
     device_mac: str
     age_group: Optional[str] = None
+    playlist: Optional[List[dict]] = None  # Playlist with filename + category
 
 
 class StopBotRequest(BaseModel):
@@ -400,9 +402,10 @@ class StreamingAudioIterator:
 class MusicBot(MediaBot):
     """Music streaming bot"""
 
-    def __init__(self, room_name: str, token: str, language: Optional[str] = None):
+    def __init__(self, room_name: str, token: str, language: Optional[str] = None, playlist: Optional[List[dict]] = None):
         super().__init__(room_name, token, "music")
         self.language = language
+        self.playlist = playlist  # List of {filename, category/language, title, etc.}
 
     async def run(self):
         """Main entry point - connect and stream music with progressive streaming"""
@@ -412,40 +415,50 @@ class MusicBot(MediaBot):
                 logger.error("Failed to connect to room")
                 return
 
-            # Get random song from MusicService
-            song = await music_service.get_random_song(language=self.language)
+            # Check if playlist is provided
+            if self.playlist and len(self.playlist) > 0:
+                logger.info(f"🎵 Using playlist with {len(self.playlist)} songs")
 
-            if not song:
-                logger.error("No music available")
-                return
+                # Loop through playlist and stream each song
+                for idx, playlist_item in enumerate(self.playlist):
+                    if self.should_stop:
+                        logger.info("⏹️ Stopping playlist...")
+                        break
 
-            logger.info(f"🎵 Selected: '{song['title']}' ({song['language']})")
+                    # Extract metadata from playlist item
+                    filename = playlist_item.get('filename')
+                    category = playlist_item.get('category')  # For music, this is language (English, Hindi, etc.)
+                    title = playlist_item.get('title', filename)
 
-            # Create streaming iterator for progressive download & conversion
-            stream_iterator = StreamingAudioIterator(
-                cdn_url=song['url'],
-                stop_event=self.should_stop,
-                title=song['title']
-            )
+                    if not filename or not category:
+                        logger.warning(f"⚠️ Skipping invalid playlist item: {playlist_item}")
+                        continue
 
-            # Stream frames as they become available (audio starts immediately!)
-            logger.info(f"🎵 Starting progressive stream to LiveKit...")
-            frame_count = 0
+                    # Construct URL using music_service
+                    song_url = music_service.get_song_url(filename, category)
+                    logger.info(f"🎵 [{idx + 1}/{len(self.playlist)}] Playing: '{title}' ({category})")
 
-            async for frame in stream_iterator:
-                if self.should_stop:
-                    logger.info("⏹️ Stopping music stream...")
-                    break
+                    # Stream this song using progressive streaming
+                    await self._stream_song(song_url, title)
 
-                # Send frame to LiveKit room
-                await self.audio_source.capture_frame(frame)
-                frame_count += 1
+                    if self.should_stop:
+                        break
 
-                # Progress indicator every 500 frames (~10 seconds)
-                if frame_count % 500 == 0:
-                    logger.info(f"   🎵 Streamed {frame_count} frames...")
+                    # Small gap between songs
+                    await asyncio.sleep(1)
 
-            logger.info(f"✅ Finished streaming '{song['title']}' ({frame_count} frames)")
+                logger.info(f"✅ Finished playing playlist ({len(self.playlist)} songs)")
+            else:
+                # No playlist - fall back to random song
+                logger.info("🎵 No playlist provided, playing random song")
+                song = await music_service.get_random_song(language=self.language)
+
+                if not song:
+                    logger.error("No music available")
+                    return
+
+                logger.info(f"🎵 Selected: '{song['title']}' ({song['language']})")
+                await self._stream_song(song['url'], song['title'])
 
             # Keep bot alive for a moment to ensure audio finishes
             await asyncio.sleep(2)
@@ -460,13 +473,42 @@ class MusicBot(MediaBot):
             if self.room_name in active_bots:
                 del active_bots[self.room_name]
 
+    async def _stream_song(self, song_url: str, title: str):
+        """Stream a single song using progressive streaming"""
+        # Create streaming iterator for progressive download & conversion
+        stream_iterator = StreamingAudioIterator(
+            cdn_url=song_url,
+            stop_event=self.should_stop,
+            title=title
+        )
+
+        # Stream frames as they become available (audio starts immediately!)
+        logger.info(f"🎵 Starting progressive stream to LiveKit...")
+        frame_count = 0
+
+        async for frame in stream_iterator:
+            if self.should_stop:
+                logger.info("⏹️ Stopping music stream...")
+                break
+
+            # Send frame to LiveKit room
+            await self.audio_source.capture_frame(frame)
+            frame_count += 1
+
+            # Progress indicator every 500 frames (~10 seconds)
+            if frame_count % 500 == 0:
+                logger.info(f"   🎵 Streamed {frame_count} frames...")
+
+        logger.info(f"✅ Finished streaming '{title}' ({frame_count} frames)")
+
 
 class StoryBot(MediaBot):
     """Story streaming bot"""
 
-    def __init__(self, room_name: str, token: str, age_group: Optional[str] = None):
+    def __init__(self, room_name: str, token: str, age_group: Optional[str] = None, playlist: Optional[List[dict]] = None):
         super().__init__(room_name, token, "story")
         self.age_group = age_group
+        self.playlist = playlist  # List of {filename, category, title, etc.}
 
     async def run(self):
         """Main entry point - connect and stream story with progressive streaming"""
@@ -475,41 +517,51 @@ class StoryBot(MediaBot):
                 logger.error("Failed to connect to room")
                 return
 
-            # Get random story from StoryService
-            # Note: age_group is treated as category (e.g., "Adventure", "Bedtime", "Fantasy")
-            story = await story_service.get_random_story(category=self.age_group)
+            # Check if playlist is provided
+            if self.playlist and len(self.playlist) > 0:
+                logger.info(f"📖 Using playlist with {len(self.playlist)} stories")
 
-            if not story:
-                logger.error("No story available")
-                return
+                # Loop through playlist and stream each story
+                for idx, playlist_item in enumerate(self.playlist):
+                    if self.should_stop:
+                        logger.info("⏹️ Stopping playlist...")
+                        break
 
-            logger.info(f"📖 Selected: '{story['title']}'")
+                    # Extract metadata from playlist item
+                    filename = playlist_item.get('filename')
+                    category = playlist_item.get('category')  # Adventure, Bedtime, Fantasy, etc.
+                    title = playlist_item.get('title', filename)
 
-            # Create streaming iterator for progressive download & conversion
-            stream_iterator = StreamingAudioIterator(
-                cdn_url=story['url'],
-                stop_event=self.should_stop,
-                title=story['title']
-            )
+                    if not filename or not category:
+                        logger.warning(f"⚠️ Skipping invalid playlist item: {playlist_item}")
+                        continue
 
-            # Stream frames as they become available (audio starts immediately!)
-            logger.info(f"📖 Starting progressive stream to LiveKit...")
-            frame_count = 0
+                    # Construct URL using story_service
+                    story_url = story_service.get_story_url(filename, category)
+                    logger.info(f"📖 [{idx + 1}/{len(self.playlist)}] Playing: '{title}' ({category})")
 
-            async for frame in stream_iterator:
-                if self.should_stop:
-                    logger.info("⏹️ Stopping story stream...")
-                    break
+                    # Stream this story using progressive streaming
+                    await self._stream_story(story_url, title)
 
-                # Send frame to LiveKit room
-                await self.audio_source.capture_frame(frame)
-                frame_count += 1
+                    if self.should_stop:
+                        break
 
-                # Progress indicator every 500 frames (~10 seconds)
-                if frame_count % 500 == 0:
-                    logger.info(f"   📖 Streamed {frame_count} frames...")
+                    # Small gap between stories
+                    await asyncio.sleep(1)
 
-            logger.info(f"✅ Finished streaming '{story['title']}' ({frame_count} frames)")
+                logger.info(f"✅ Finished playing playlist ({len(self.playlist)} stories)")
+            else:
+                # No playlist - fall back to random story
+                logger.info("📖 No playlist provided, playing random story")
+                # Note: age_group is treated as category (e.g., "Adventure", "Bedtime", "Fantasy")
+                story = await story_service.get_random_story(category=self.age_group)
+
+                if not story:
+                    logger.error("No story available")
+                    return
+
+                logger.info(f"📖 Selected: '{story['title']}'")
+                await self._stream_story(story['url'], story['title'])
 
             await asyncio.sleep(2)
 
@@ -522,12 +574,41 @@ class StoryBot(MediaBot):
             if self.room_name in active_bots:
                 del active_bots[self.room_name]
 
+    async def _stream_story(self, story_url: str, title: str):
+        """Stream a single story using progressive streaming"""
+        # Create streaming iterator for progressive download & conversion
+        stream_iterator = StreamingAudioIterator(
+            cdn_url=story_url,
+            stop_event=self.should_stop,
+            title=title
+        )
+
+        # Stream frames as they become available (audio starts immediately!)
+        logger.info(f"📖 Starting progressive stream to LiveKit...")
+        frame_count = 0
+
+        async for frame in stream_iterator:
+            if self.should_stop:
+                logger.info("⏹️ Stopping story stream...")
+                break
+
+            # Send frame to LiveKit room
+            await self.audio_source.capture_frame(frame)
+            frame_count += 1
+
+            # Progress indicator every 500 frames (~10 seconds)
+            if frame_count % 500 == 0:
+                logger.info(f"   📖 Streamed {frame_count} frames...")
+
+        logger.info(f"✅ Finished streaming '{title}' ({frame_count} frames)")
+
 
 @app.post("/start-music-bot")
 async def start_music_bot(req: StartMusicBotRequest):
     """Start music bot that joins LiveKit room and streams music"""
     try:
-        logger.info(f"🎵 Starting music bot for room: {req.room_name}, language: {req.language or 'all'}")
+        playlist_info = f", playlist: {len(req.playlist)} songs" if req.playlist else ""
+        logger.info(f"🎵 Starting music bot for room: {req.room_name}, language: {req.language or 'all'}{playlist_info}")
 
         # Check if bot already exists for this room
         if req.room_name in active_bots:
@@ -537,8 +618,8 @@ async def start_music_bot(req: StartMusicBotRequest):
         # Create token for bot
         token = create_bot_token(req.room_name, "music-bot")
 
-        # Create and start music bot
-        bot = MusicBot(req.room_name, token, req.language)
+        # Create and start music bot with playlist
+        bot = MusicBot(req.room_name, token, req.language, req.playlist)
 
         # Store bot reference
         active_bots[req.room_name] = bot
@@ -552,7 +633,8 @@ async def start_music_bot(req: StartMusicBotRequest):
             "status": "started",
             "room_name": req.room_name,
             "bot_type": "music",
-            "language": req.language or "all"
+            "language": req.language or "all",
+            "playlist_size": len(req.playlist) if req.playlist else 0
         }
 
     except Exception as e:
@@ -564,7 +646,8 @@ async def start_music_bot(req: StartMusicBotRequest):
 async def start_story_bot(req: StartStoryBotRequest):
     """Start story bot that joins LiveKit room and streams story"""
     try:
-        logger.info(f"📖 Starting story bot for room: {req.room_name}")
+        playlist_info = f", playlist: {len(req.playlist)} stories" if req.playlist else ""
+        logger.info(f"📖 Starting story bot for room: {req.room_name}{playlist_info}")
 
         if req.room_name in active_bots:
             logger.warning(f"Bot already active for room: {req.room_name}")
@@ -572,7 +655,8 @@ async def start_story_bot(req: StartStoryBotRequest):
 
         token = create_bot_token(req.room_name, "story-bot")
 
-        bot = StoryBot(req.room_name, token, req.age_group)
+        # Create and start story bot with playlist
+        bot = StoryBot(req.room_name, token, req.age_group, req.playlist)
         active_bots[req.room_name] = bot
 
         asyncio.create_task(bot.run())
@@ -582,7 +666,8 @@ async def start_story_bot(req: StartStoryBotRequest):
         return {
             "status": "started",
             "room_name": req.room_name,
-            "bot_type": "story"
+            "bot_type": "story",
+            "playlist_size": len(req.playlist) if req.playlist else 0
         }
 
     except Exception as e:

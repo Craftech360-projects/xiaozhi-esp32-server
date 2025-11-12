@@ -582,3 +582,17 @@ databaseChangeLog:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202511101500_add_device_mode.sql
+  - changeSet:
+      id: 202511121300
+      author: claude
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202511121300_create_content_items_table.sql
+  - changeSet:
+      id: 202511121400
+      author: claude
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202511121400_create_playlist_tables.sql
