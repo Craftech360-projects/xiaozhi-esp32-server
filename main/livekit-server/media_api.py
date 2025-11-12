@@ -234,6 +234,169 @@ class MediaBot:
             logger.error(f"Error during disconnect: {e}")
 
 
+class StreamingAudioIterator:
+    """
+    Async iterator that downloads MP3 chunks from CDN and converts to LiveKit frames on-the-fly.
+    This enables progressive streaming - audio starts playing immediately instead of waiting for full download.
+    """
+
+    def __init__(self, cdn_url: str, stop_event, title: str):
+        self.cdn_url = cdn_url
+        self.stop_event = stop_event
+        self.title = title
+        self.chunk_size = 64 * 1024  # 64KB chunks
+        self.frame_queue = asyncio.Queue(maxsize=100)  # Buffer up to 100 frames
+        self.producer_task = None
+        self.session = None
+
+    async def _produce_frames(self):
+        """Background task: Download MP3 chunks, convert to PCM, create LiveKit frames"""
+        try:
+            logger.info(f"🎵 Starting progressive download: {self.title}")
+
+            # Start streaming download from CDN
+            self.session = aiohttp.ClientSession()
+            async with self.session.get(self.cdn_url, timeout=aiohttp.ClientTimeout(total=300)) as response:
+                if response.status != 200:
+                    raise Exception(f"CDN returned status {response.status}")
+
+                # MP3 decoding state
+                mp3_buffer = bytearray()
+                chunk_count = 0
+                total_bytes = 0
+
+                # LiveKit audio parameters
+                sample_rate = 48000
+                frame_duration_ms = 20
+                samples_per_frame = sample_rate * frame_duration_ms // 1000  # 960 samples
+
+                # Download and process chunks
+                async for chunk in response.content.iter_chunked(self.chunk_size):
+                    if self.stop_event:
+                        logger.info("⏹️ Stop event triggered, halting download")
+                        break
+
+                    chunk_count += 1
+                    total_bytes += len(chunk)
+                    mp3_buffer.extend(chunk)
+
+                    # Try to decode accumulated MP3 data
+                    try:
+                        # Attempt to decode the buffer as MP3
+                        audio_segment = AudioSegment.from_mp3(io.BytesIO(bytes(mp3_buffer)))
+
+                        # Convert to LiveKit format: 48kHz, mono, 16-bit
+                        audio_segment = audio_segment.set_frame_rate(sample_rate)
+                        audio_segment = audio_segment.set_channels(1)
+                        audio_segment = audio_segment.set_sample_width(2)  # 16-bit
+
+                        # Get raw PCM data
+                        raw_pcm = audio_segment.raw_data
+
+                        # Clear buffer since we successfully decoded
+                        mp3_buffer.clear()
+
+                        # Split PCM into LiveKit frames (20ms each = 960 samples)
+                        total_samples = len(raw_pcm) // 2  # 16-bit = 2 bytes per sample
+                        total_frames = total_samples // samples_per_frame
+
+                        for frame_num in range(total_frames):
+                            if self.stop_event:
+                                break
+
+                            # Extract frame data
+                            start_byte = frame_num * samples_per_frame * 2
+                            end_byte = start_byte + (samples_per_frame * 2)
+                            frame_data = raw_pcm[start_byte:end_byte]
+
+                            # Pad if necessary
+                            if len(frame_data) < samples_per_frame * 2:
+                                frame_data += b'\x00' * (samples_per_frame * 2 - len(frame_data))
+
+                            # Create LiveKit AudioFrame
+                            livekit_frame = rtc.AudioFrame(
+                                data=frame_data,
+                                sample_rate=sample_rate,
+                                num_channels=1,
+                                samples_per_channel=samples_per_frame
+                            )
+
+                            # Add to queue (blocks if queue is full - provides backpressure)
+                            await self.frame_queue.put(livekit_frame)
+
+                        # Log progress periodically
+                        if chunk_count % 10 == 0:
+                            mb_downloaded = total_bytes / (1024 * 1024)
+                            logger.info(f"   📥 Downloaded {mb_downloaded:.2f} MB ({chunk_count} chunks)")
+
+                    except Exception as decode_error:
+                        # Incomplete MP3 frame - need more data
+                        # Keep accumulating in mp3_buffer
+                        if len(mp3_buffer) > 10 * 1024 * 1024:  # Safety: clear if buffer > 10MB
+                            logger.warning(f"⚠️ MP3 buffer too large ({len(mp3_buffer)} bytes), clearing")
+                            mp3_buffer.clear()
+                        continue
+
+                # Process any remaining buffered data
+                if len(mp3_buffer) > 0 and not self.stop_event:
+                    try:
+                        audio_segment = AudioSegment.from_mp3(io.BytesIO(bytes(mp3_buffer)))
+                        audio_segment = audio_segment.set_frame_rate(sample_rate).set_channels(1).set_sample_width(2)
+                        raw_pcm = audio_segment.raw_data
+
+                        # Convert remaining PCM to frames
+                        total_samples = len(raw_pcm) // 2
+                        total_frames = total_samples // samples_per_frame
+
+                        for frame_num in range(total_frames):
+                            start_byte = frame_num * samples_per_frame * 2
+                            end_byte = start_byte + (samples_per_frame * 2)
+                            frame_data = raw_pcm[start_byte:end_byte]
+
+                            if len(frame_data) < samples_per_frame * 2:
+                                frame_data += b'\x00' * (samples_per_frame * 2 - len(frame_data))
+
+                            livekit_frame = rtc.AudioFrame(
+                                data=frame_data,
+                                sample_rate=sample_rate,
+                                num_channels=1,
+                                samples_per_channel=samples_per_frame
+                            )
+                            await self.frame_queue.put(livekit_frame)
+                    except:
+                        pass  # Ignore final incomplete data
+
+                logger.info(f"✅ Download complete: {total_bytes / (1024 * 1024):.2f} MB")
+
+        except Exception as e:
+            logger.error(f"❌ Error in streaming producer: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            # Signal end of stream
+            await self.frame_queue.put(None)
+            if self.session:
+                await self.session.close()
+
+    async def __anext__(self):
+        """Return next audio frame when ready"""
+        if self.producer_task is None:
+            # Start background download/conversion task
+            self.producer_task = asyncio.create_task(self._produce_frames())
+
+        # Get next frame from queue (blocks until available)
+        frame = await self.frame_queue.get()
+
+        if frame is None:
+            # End of stream
+            raise StopAsyncIteration
+
+        return frame
+
+    def __aiter__(self):
+        return self
+
+
 class MusicBot(MediaBot):
     """Music streaming bot"""
 
@@ -242,7 +405,7 @@ class MusicBot(MediaBot):
         self.language = language
 
     async def run(self):
-        """Main entry point - connect and stream music"""
+        """Main entry point - connect and stream music with progressive streaming"""
         try:
             # Connect to LiveKit
             if not await self.connect_to_room():
@@ -258,14 +421,31 @@ class MusicBot(MediaBot):
 
             logger.info(f"🎵 Selected: '{song['title']}' ({song['language']})")
 
-            # Download from CDN
-            audio_data = await self.download_from_cdn(song['url'])
+            # Create streaming iterator for progressive download & conversion
+            stream_iterator = StreamingAudioIterator(
+                cdn_url=song['url'],
+                stop_event=self.should_stop,
+                title=song['title']
+            )
 
-            # Convert to PCM
-            raw_audio = await self.convert_to_pcm(audio_data)
+            # Stream frames as they become available (audio starts immediately!)
+            logger.info(f"🎵 Starting progressive stream to LiveKit...")
+            frame_count = 0
 
-            # Stream to LiveKit room
-            await self.stream_audio_to_livekit(raw_audio, song['title'])
+            async for frame in stream_iterator:
+                if self.should_stop:
+                    logger.info("⏹️ Stopping music stream...")
+                    break
+
+                # Send frame to LiveKit room
+                await self.audio_source.capture_frame(frame)
+                frame_count += 1
+
+                # Progress indicator every 500 frames (~10 seconds)
+                if frame_count % 500 == 0:
+                    logger.info(f"   🎵 Streamed {frame_count} frames...")
+
+            logger.info(f"✅ Finished streaming '{song['title']}' ({frame_count} frames)")
 
             # Keep bot alive for a moment to ensure audio finishes
             await asyncio.sleep(2)
@@ -289,7 +469,7 @@ class StoryBot(MediaBot):
         self.age_group = age_group
 
     async def run(self):
-        """Main entry point - connect and stream story"""
+        """Main entry point - connect and stream story with progressive streaming"""
         try:
             if not await self.connect_to_room():
                 logger.error("Failed to connect to room")
@@ -305,14 +485,31 @@ class StoryBot(MediaBot):
 
             logger.info(f"📖 Selected: '{story['title']}'")
 
-            # Download from CDN
-            audio_data = await self.download_from_cdn(story['url'])
+            # Create streaming iterator for progressive download & conversion
+            stream_iterator = StreamingAudioIterator(
+                cdn_url=story['url'],
+                stop_event=self.should_stop,
+                title=story['title']
+            )
 
-            # Convert to PCM
-            raw_audio = await self.convert_to_pcm(audio_data)
+            # Stream frames as they become available (audio starts immediately!)
+            logger.info(f"📖 Starting progressive stream to LiveKit...")
+            frame_count = 0
 
-            # Stream to LiveKit room
-            await self.stream_audio_to_livekit(raw_audio, story['title'])
+            async for frame in stream_iterator:
+                if self.should_stop:
+                    logger.info("⏹️ Stopping story stream...")
+                    break
+
+                # Send frame to LiveKit room
+                await self.audio_source.capture_frame(frame)
+                frame_count += 1
+
+                # Progress indicator every 500 frames (~10 seconds)
+                if frame_count % 500 == 0:
+                    logger.info(f"   📖 Streamed {frame_count} frames...")
+
+            logger.info(f"✅ Finished streaming '{story['title']}' ({frame_count} frames)")
 
             await asyncio.sleep(2)
 

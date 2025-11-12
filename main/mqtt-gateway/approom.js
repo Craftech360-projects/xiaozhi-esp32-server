@@ -3517,23 +3517,7 @@ class VirtualMQTTConnection {
   }
 
   sendUdpMessage(payload, timestamp) {
-    // Check if this is a mobile-initiated connection that needs routing to a physical toy
-    if (!this.udp.remoteAddress && this.isMobileConnection && this.macAddress) {
-      // Find the real toy connection with UDP endpoint
-      const toyConnection = this.findRealToyConnection(this.macAddress);
-      if (toyConnection && toyConnection.udp && toyConnection.udp.remoteAddress) {
-        console.log(`🎯 [MOBILE->TOY] Routing audio from mobile to toy: ${this.macAddress}`);
-        // Route audio through the real toy's UDP connection
-        toyConnection.sendUdpMessage(payload, timestamp);
-        return;
-      } else {
-        // Log but don't fail - toy might not be connected yet
-        console.log(`⚠️ [MOBILE->TOY] No active toy connection found for MAC: ${this.macAddress}`);
-        return;
-      }
-    }
-
-    // Original implementation for direct UDP connections
+    // Direct UDP implementation for virtual devices
     if (!this.udp.remoteAddress) {
       debug(`Device ${this.deviceId} not connected, cannot send UDP message`);
       return;
@@ -3565,35 +3549,6 @@ class VirtualMQTTConnection {
     this.headerBuffer.writeUInt32BE(timestamp, 8);
     this.headerBuffer.writeUInt32BE(sequence, 12);
     return Buffer.from(this.headerBuffer);
-  }
-
-  findRealToyConnection(macAddress) {
-    // Search through all gateway connections for the real toy with UDP
-    for (const [connectionId, connection] of this.gateway.connections) {
-      // Check if this is a real MQTTConnection (not VirtualMQTTConnection)
-      // and matches the MAC address and has UDP endpoint
-      if (connection &&
-          connection.macAddress === macAddress &&
-          connection.udp &&
-          connection.udp.remoteAddress &&
-          connection.constructor.name === 'MQTTConnection') {
-        console.log(`✅ [FIND-TOY] Found real toy connection for MAC ${macAddress}`);
-        return connection;
-      }
-    }
-
-    // Also check deviceConnections map
-    const deviceInfo = this.gateway.deviceConnections.get(macAddress);
-    if (deviceInfo && deviceInfo.connection) {
-      const conn = deviceInfo.connection;
-      if (conn.udp && conn.udp.remoteAddress && conn.constructor.name === 'MQTTConnection') {
-        console.log(`✅ [FIND-TOY] Found real toy in deviceConnections for MAC ${macAddress}`);
-        return conn;
-      }
-    }
-
-    console.log(`❌ [FIND-TOY] No real toy connection found for MAC ${macAddress}`);
-    return null;
   }
 
   async parseHelloMessage(json) {
@@ -4374,30 +4329,16 @@ class MQTTGateway {
           console.log(`🔄 [MODE-CHANGE] Processing mode change from internal/server-ingest: ${deviceId}`);
           this.handleDeviceModeChange(deviceId, enhancedPayload);
         } else if (originalPayload.type === 'abort') {
-          // Special handling for abort messages - send to BOTH real and virtual devices
+          // Special handling for abort messages - send to virtual device
           console.log(`🛑 [ABORT] Processing abort message from internal/server-ingest: ${deviceId}`);
 
-          let abortSent = false;
-
-          // Send abort to real ESP32 connection if exists
-          const realConnection = this.findRealDeviceConnection(deviceId);
-          if (realConnection) {
-            console.log(`🛑 [ABORT] Routing abort to real ESP32 device: ${deviceId}`);
-            realConnection.handlePublish({ payload: JSON.stringify(originalPayload) });
-            abortSent = true;
-          }
-
-          // ALSO send abort to virtual device connection if exists
+          // Send abort to virtual device connection
           const deviceInfo = this.deviceConnections.get(deviceId);
           if (deviceInfo && deviceInfo.connection) {
-            console.log(`🛑 [ABORT] Routing abort to virtual device (LiveKit): ${deviceId}`);
-            // Forward abort to the virtual device's handlePublish
+            console.log(`🛑 [ABORT] Routing abort to virtual device: ${deviceId}`);
             deviceInfo.connection.handlePublish({ payload: JSON.stringify(originalPayload) });
-            abortSent = true;
-          }
-
-          if (!abortSent) {
-            console.log(`⚠️ [ABORT] No connections found for device: ${deviceId}, abort cannot be processed`);
+          } else {
+            console.log(`⚠️ [ABORT] No connection found for device: ${deviceId}, abort cannot be processed`);
           }
         } else if (originalPayload.type === 'start_greeting') {
           // Special handling for start_greeting - CREATE ROOM and deploy agent, then trigger greeting
@@ -4487,114 +4428,65 @@ class MQTTGateway {
             }
           }
 
-          // Fallback: Check for real ESP32 connection
-          if (!greetingSent) {
-            const realConnection = this.findRealDeviceConnection(deviceId);
-            if (realConnection && realConnection.bridge) {
-              console.log(`👋 [START-GREETING] Found real ESP32 device with bridge for: ${deviceId}`);
-
-              const bridge = realConnection.bridge;
-              const roomName = bridge.room ? bridge.room.name : null;
-
-              // ADD: ONLY dispatch agent for conversation rooms
-              if (realConnection.roomType !== 'conversation') {
-                console.log(`ℹ️ [AGENT-DISPATCH] Skipping agent dispatch for ${realConnection.roomType} room (real device)`);
-                return;  // Don't dispatch agent for music/story rooms
-              }
-
-              // Explicitly dispatch agent for real device
-              console.log(`🤖 [AGENT-DISPATCH] Dispatching AI agent for conversation room (real device)...`);
-              if (roomName && this.agentDispatchClient) {
-                this.agentDispatchClient.createDispatch(roomName, 'cheeko-agent', {
-                  metadata: JSON.stringify({
-                    device_mac: realConnection.macAddress,
-                    device_uuid: deviceId,
-                    timestamp: Date.now()
-                  })
-                }).then((dispatch) => {
-                  console.log(`✅ [START-GREETING] Agent dispatch created for real device:`, dispatch.id);
-                }).catch((error) => {
-                  console.error(`❌ [START-GREETING] Failed to dispatch agent for real device:`, error.message);
-                });
-              }
-
-              bridge.sendInitialGreeting().then(() => {
-                console.log(`✅ [START-GREETING] Successfully triggered greeting for real device: ${deviceId}`);
-              }).catch((error) => {
-                console.error(`❌ [START-GREETING] Error triggering greeting for real device ${deviceId}:`, error);
-              });
-              greetingSent = true;
-            }
-          }
-
           if (!greetingSent) {
             console.log(`⚠️ [START-GREETING] No bridge found for device: ${deviceId}, greeting cannot be triggered`);
             console.log(`⚠️ [START-GREETING] DeviceInfo exists: ${!!deviceInfo}, Connection exists: ${!!(deviceInfo && deviceInfo.connection)}, Bridge exists: ${!!(deviceInfo && deviceInfo.connection && deviceInfo.connection.bridge)}`);
           }
         } else {
-          // ALWAYS check for real ESP32 connection FIRST (prioritize over virtual)
-          const realConnection = this.findRealDeviceConnection(deviceId);
+          // Route to virtual device connection
+          const deviceInfo = this.deviceConnections.get(deviceId);
 
-          if (realConnection) {
-            console.log(`🎯 [ROUTE] Routing message from mobile to existing ESP32: ${deviceId}`);
-            // Route the message to the existing ESP32 connection
-            realConnection.handlePublish({ payload: JSON.stringify(originalPayload) });
+          if (deviceInfo && deviceInfo.connection) {
+            console.log(`📊 [DATA] Routing to virtual device connection: ${deviceId}`);
+
+            // Send success message to mobile app
+            const successMessage = {
+              type: 'device_status',
+              status: 'connected',
+              message: 'song is playing',
+              deviceId: deviceId,
+              timestamp: Date.now()
+            };
+
+            // Publish to app/p2p/{macAddress}
+            const appTopic = `app/p2p/${deviceId}`;
+            console.log(`✅ [MOBILE-RESPONSE] Sending device connected status to ${appTopic}`);
+
+            if (this.mqttClient && this.mqttClient.connected) {
+              this.mqttClient.publish(appTopic, JSON.stringify(successMessage), (err) => {
+                if (err) {
+                  console.error(`❌ [MOBILE-RESPONSE] Failed to send success to mobile app:`, err);
+                } else {
+                  console.log(`✅ [MOBILE-RESPONSE] Device connected status sent to mobile app`);
+                }
+              });
+            }
+
+            this.handleDeviceData(deviceId, enhancedPayload);
           } else {
-            // No real ESP32 connection - check if there's a virtual connection
-            const deviceInfo = this.deviceConnections.get(deviceId);
+            console.log(`⚠️ [DATA] No connection found for device: ${deviceId}, message type: ${originalPayload.type}`);
 
-            if (deviceInfo && deviceInfo.connection) {
-              console.log(`📊 [DATA] Routing to virtual device connection: ${deviceId}`);
+            // Send device not connected message to mobile app
+            const errorMessage = {
+              type: 'device_status',
+              status: 'not_connected',
+              message: 'Device is not connected',
+              deviceId: deviceId,
+              timestamp: Date.now()
+            };
 
-              // Send success message to mobile app
-              const successMessage = {
-                type: 'device_status',
-                status: 'connected',
-                message: 'song is playing',
-                deviceId: deviceId,
-                timestamp: Date.now()
-              };
+            // Publish to app/p2p/{macAddress}
+            const appTopic = `app/p2p/${deviceId}`;
+            console.log(`❌ [MOBILE-RESPONSE] Sending device not connected status to ${appTopic}`);
 
-              // Publish to app/p2p/{macAddress}
-              const appTopic = `app/p2p/${deviceId}`;
-              console.log(`✅ [MOBILE-RESPONSE] Sending device connected status to ${appTopic}`);
-
-              if (this.mqttClient && this.mqttClient.connected) {
-                this.mqttClient.publish(appTopic, JSON.stringify(successMessage), (err) => {
-                  if (err) {
-                    console.error(`❌ [MOBILE-RESPONSE] Failed to send success to mobile app:`, err);
-                  } else {
-                    console.log(`✅ [MOBILE-RESPONSE] Device connected status sent to mobile app`);
-                  }
-                });
-              }
-
-              this.handleDeviceData(deviceId, enhancedPayload);
-            } else {
-              console.log(`⚠️ [DATA] No connection found for device: ${deviceId}, message type: ${originalPayload.type}`);
-
-              // Send device not connected message to mobile app
-              const errorMessage = {
-                type: 'device_status',
-                status: 'not_connected',
-                message: 'Device is not connected',
-                deviceId: deviceId,
-                timestamp: Date.now()
-              };
-
-              // Publish to app/p2p/{macAddress}
-              const appTopic = `app/p2p/${deviceId}`;
-              console.log(`❌ [MOBILE-RESPONSE] Sending device not connected status to ${appTopic}`);
-
-              if (this.mqttClient && this.mqttClient.connected) {
-                this.mqttClient.publish(appTopic, JSON.stringify(errorMessage), (err) => {
-                  if (err) {
-                    console.error(`❌ [MOBILE-RESPONSE] Failed to send error to mobile app:`, err);
-                  } else {
-                    console.log(`✅ [MOBILE-RESPONSE] Device not connected status sent to mobile app`);
-                  }
-                });
-              }
+            if (this.mqttClient && this.mqttClient.connected) {
+              this.mqttClient.publish(appTopic, JSON.stringify(errorMessage), (err) => {
+                if (err) {
+                  console.error(`❌ [MOBILE-RESPONSE] Failed to send error to mobile app:`, err);
+                } else {
+                  console.log(`✅ [MOBILE-RESPONSE] Device not connected status sent to mobile app`);
+                }
+              });
             }
           }
         }
@@ -4646,35 +4538,6 @@ class MQTTGateway {
     } catch (error) {
       console.error(`❌ [HELLO] Error in handlePublish for device ${deviceId}:`, error);
     }
-  }
-
-  findRealDeviceConnection(deviceId) {
-    // Search through all gateway connections for the real device with UDP
-    for (const [connectionId, connection] of this.connections) {
-      // Check if this is a real MQTTConnection (not VirtualMQTTConnection)
-      // and matches the device ID and has UDP endpoint
-      if (connection &&
-          (connection.macAddress === deviceId || connection.deviceId === deviceId) &&
-          connection.udp &&
-          connection.udp.remoteAddress &&
-          connection.constructor.name === 'MQTTConnection') {
-        console.log(`✅ [FIND-DEVICE] Found real device connection for ${deviceId}`);
-        return connection;
-      }
-    }
-
-    // Also check deviceConnections map
-    const deviceInfo = this.deviceConnections.get(deviceId);
-    if (deviceInfo && deviceInfo.connection) {
-      const conn = deviceInfo.connection;
-      if (conn.udp && conn.udp.remoteAddress && conn.constructor.name === 'MQTTConnection') {
-        console.log(`✅ [FIND-DEVICE] Found real device in deviceConnections for ${deviceId}`);
-        return conn;
-      }
-    }
-
-    console.log(`❌ [FIND-DEVICE] No real device connection found for ${deviceId}`);
-    return null;
   }
 
   handleDeviceData(deviceId, payload) {
@@ -4739,8 +4602,8 @@ class MQTTGateway {
 
         console.log(`🎵 [CHARACTER-CHANGE] Streaming audio: ${pcmFileName}`);
 
-        // Stream audio via UDP
-        await this.streamAudioViaUdp(deviceId, audioFilePath, newModeName);
+        // Stream audio via UDP and send goodbye after
+        await this.streamAudioViaUdp(deviceId, audioFilePath, newModeName, true);
 
       } else {
         console.error(`❌ [CHARACTER-CHANGE] API error:`, response.data);
@@ -4751,21 +4614,21 @@ class MQTTGateway {
     }
   }
 
-  async streamAudioViaUdp(deviceId, audioFilePath, modeName) {
+  async streamAudioViaUdp(deviceId, audioFilePath, modeName, sendGoodbye = false) {
     try {
       const fs = require('fs');
       const path = require('path');
       const connection = this.deviceConnections.get(deviceId)?.connection;
 
       if (!connection) {
-        console.error(`❌ [CHARACTER-CHANGE] No active connection for device: ${deviceId}`);
+        console.error(`❌ [AUDIO-STREAM] No active connection for device: ${deviceId}`);
         return;
       }
 
       // Get client ID for publishing MQTT messages
       const clientId = connection.clientId;
       if (!clientId) {
-        console.error(`❌ [CHARACTER-CHANGE] No client ID found for device: ${deviceId}`);
+        console.error(`❌ [AUDIO-STREAM] No client ID found for device: ${deviceId}`);
         return;
       }
 
@@ -4879,24 +4742,28 @@ class MQTTGateway {
       // Wait a bit to ensure TTS stop is processed
       await new Promise(resolve => setTimeout(resolve, 200));
 
-      // Send goodbye message to close the LiveKit session after character change
-      const goodbyeMsg = {
-        type: "goodbye",
-        session_id: connection.udp?.session_id || null,
-        reason: "character_change",
-        timestamp: Date.now()
-      };
+      // Send goodbye message ONLY if requested (for character-change, not mode-change)
+      if (sendGoodbye) {
+        const goodbyeMsg = {
+          type: "goodbye",
+          session_id: connection.udp?.session_id || null,
+          reason: "character_change",
+          timestamp: Date.now()
+        };
 
-      this.mqttClient.publish(controlTopic, JSON.stringify(goodbyeMsg), (err) => {
-        if (err) {
-          console.error(`❌ [CHARACTER-CHANGE] Failed to publish goodbye:`, err);
-        } else {
-          console.log(`👋 [CHARACTER-CHANGE] Goodbye sent to ${deviceId} - LiveKit session will close`);
-        }
-      });
+        this.mqttClient.publish(controlTopic, JSON.stringify(goodbyeMsg), (err) => {
+          if (err) {
+            console.error(`❌ [CHARACTER-CHANGE] Failed to publish goodbye:`, err);
+          } else {
+            console.log(`👋 [CHARACTER-CHANGE] Goodbye sent to ${deviceId} - LiveKit session will close`);
+          }
+        });
+      } else {
+        console.log(`ℹ️ [AUDIO-STREAM] Goodbye NOT sent (sendGoodbye=false)`);
+      }
 
     } catch (error) {
-      console.error(`❌ [CHARACTER-CHANGE] Audio streaming error:`, error.message);
+      console.error(`❌ [AUDIO-STREAM] Audio streaming error:`, error.message);
       console.error(error.stack);
     }
   }
@@ -4907,39 +4774,199 @@ class MQTTGateway {
 
       // Extract MAC address (remove colons for API call)
       const macAddress = deviceId.replace(/:/g, '').toLowerCase();
+      const crypto = require('crypto');
 
-      // Call Manager API
+      // Check for existing virtual connection
+      const deviceInfo = this.deviceConnections.get(deviceId);
+      let existingConnection = null;
+      if (deviceInfo && deviceInfo.connection) {
+        existingConnection = deviceInfo.connection;
+      }
+
+      // STEP 0: Stop old bot (if music/story mode)
+      console.log(`🛑 [MODE-CHANGE] Step 0: Checking for old bot to stop...`);
+      if (existingConnection && existingConnection.roomType && existingConnection.bridge) {
+        const oldMode = existingConnection.roomType;
+        const oldRoomName = existingConnection.bridge.room ? existingConnection.bridge.room.name : null;
+
+        if ((oldMode === 'music' || oldMode === 'story') && oldRoomName) {
+          console.log(`🛑 [MODE-CHANGE] Stopping old ${oldMode} bot for room: ${oldRoomName}...`);
+
+          try {
+            const axios = require('axios');
+            const stopResponse = await axios.post('http://localhost:8003/stop-bot', {
+              room_name: oldRoomName
+            }, { timeout: 5000 });
+
+            if (stopResponse.data && stopResponse.data.status === 'stopped') {
+              console.log(`✅ [MODE-CHANGE] Old ${oldMode} bot stopped successfully`);
+            } else if (stopResponse.data && stopResponse.data.status === 'not_found') {
+              console.log(`ℹ️ [MODE-CHANGE] Old ${oldMode} bot was not running`);
+            }
+
+            // Wait a moment for bot to fully stop
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+          } catch (error) {
+            console.error(`⚠️ [MODE-CHANGE] Failed to stop old ${oldMode} bot: ${error.message}`);
+            console.log(`⚠️ [MODE-CHANGE] Continuing with mode change anyway...`);
+            // Continue anyway - room deletion will disconnect bot
+          }
+        } else {
+          console.log(`ℹ️ [MODE-CHANGE] Old mode is '${oldMode}', no bot to stop`);
+        }
+      } else {
+        console.log(`ℹ️ [MODE-CHANGE] No existing connection or bridge found, skipping bot stop`);
+      }
+
+      // STEP 1: Delete existing room
+      console.log(`🗑️ [MODE-CHANGE] Step 1: Deleting existing room...`);
+
+      if (existingConnection && existingConnection.bridge) {
+        const oldBridge = existingConnection.bridge;
+        const oldRoomName = oldBridge.room ? oldBridge.room.name : null;
+
+        if (oldRoomName && this.roomService) {
+          try {
+            await this.roomService.deleteRoom(oldRoomName);
+            console.log(`✅ [MODE-CHANGE] Deleted old room: ${oldRoomName}`);
+          } catch (error) {
+            console.error(`❌ [MODE-CHANGE] Failed to delete old room: ${error.message}`);
+          }
+        }
+
+        // Close old bridge
+        if (oldBridge) {
+          oldBridge.close();
+          existingConnection.bridge = null;
+          console.log(`✅ [MODE-CHANGE] Closed old bridge`);
+        }
+      } else {
+        console.log(`ℹ️ [MODE-CHANGE] No existing room to delete`);
+      }
+
+      // STEP 2: Update mode in DB
+      console.log(`📡 [MODE-CHANGE] Step 2: Updating mode in DB...`);
       const axios = require('axios');
-      const baseUrl = process.env.MANAGER_API_URL.replace('/toy', ''); // Remove /toy from base
+      const baseUrl = process.env.MANAGER_API_URL.replace('/toy', '');
       const apiUrl = `${baseUrl}/toy/device/${macAddress}/cycle-mode`;
 
-      console.log(`📡 [MODE-CHANGE] Calling API: ${apiUrl}`);
       const response = await axios.post(apiUrl, {}, { timeout: 10000 });
 
       if (response.data.code === 0 && response.data.data.success) {
-        const { newMode, oldMode, deviceId: devId } = response.data.data;
-        console.log(`✅ [MODE-CHANGE] Mode updated: ${oldMode} → ${newMode}`);
+        const { newMode, oldMode } = response.data.data;
+        console.log(`✅ [MODE-CHANGE] Mode updated in DB: ${oldMode} → ${newMode}`);
 
-        // Load audio map
-        const fs = require('fs');
-        const path = require('path');
-        const audioMapPath = path.join(__dirname, 'audio', 'mode_change', 'audio_map.json');
-        const audioMap = JSON.parse(fs.readFileSync(audioMapPath, 'utf8'));
+        // STEP 3: Handle mode-specific flow
+        console.log(`🏗️ [MODE-CHANGE] Step 3: Preparing for mode: ${newMode}...`);
 
-        // Get audio file for mode (use PCM extension instead of Opus)
-        const audioFileName = audioMap.modes[newMode] || audioMap.default;
-        const pcmFileName = audioFileName.replace('.opus', '.pcm');
-        const audioFilePath = path.join(__dirname, 'audio', 'mode_change', pcmFileName);
+        // Find virtual connection
+        let connection = null;
 
-        if (!fs.existsSync(audioFilePath)) {
-          console.error(`❌ [MODE-CHANGE] Audio file not found: ${audioFilePath}`);
+        // Check virtual connections (mobile app)
+        if (deviceInfo && deviceInfo.connection) {
+          connection = deviceInfo.connection;
+          console.log(`✅ [MODE-CHANGE] Found virtual connection for device: ${deviceId}`);
+        }
+
+        if (!connection) {
+          console.error(`❌ [MODE-CHANGE] No connection found for device: ${deviceId}`);
+          console.error(`❌ [MODE-CHANGE] Device must send 'hello' message first before mode-change`);
+
+          // Send error response to device via MQTT (if we can find the client ID)
+          const senderClientId = payload.clientId;  // clientId is added to enhancedPayload from sender_client_id
+          if (senderClientId) {
+            const errorMsg = {
+              type: "error",
+              code: "NO_SESSION",
+              message: "Please send 'hello' message first to establish session",
+              timestamp: Date.now()
+            };
+            this.publishToDevice(senderClientId, errorMsg);
+            console.log(`📤 [MODE-CHANGE] Sent error message to device: ${senderClientId}`);
+          }
+
           return;
         }
 
-        console.log(`🎵 [MODE-CHANGE] Streaming audio: ${pcmFileName}`);
+        // Create room for all modes (conversation/music/story)
+        console.log(`🏠 [MODE-CHANGE] Creating room for ${newMode} mode...`);
 
-        // Stream audio via UDP (reuse the same function)
-        await this.streamAudioViaUdp(deviceId, audioFilePath, newMode);
+        // Update connection room type
+        connection.roomType = newMode;
+        console.log(`✅ [MODE-CHANGE] Updated connection.roomType to: ${newMode}`);
+
+        // Generate new UUID and session
+        const newSessionUuid = crypto.randomUUID();
+        const macForRoom = deviceId.replace(/:/g, '');
+        const newRoomName = `${newSessionUuid}_${macForRoom}_${newMode}`;
+
+        console.log(`🏠 [MODE-CHANGE] New room name: ${newRoomName}`);
+
+        // Update connection session
+        connection.udp.session_id = newRoomName;
+
+        // Create new LiveKitBridge
+        const newBridge = new LiveKitBridge(
+          connection,
+          connection.protocolVersion || 1,
+          deviceId,
+          newSessionUuid,
+          connection.userData || {}
+        );
+
+        connection.bridge = newBridge;
+
+        // Setup bridge close handler
+        newBridge.on("close", () => {
+          console.log(`🔒 [MODE-CHANGE] Bridge closed for: ${deviceId}`);
+          connection.bridge = null;
+        });
+
+        // Connect to LiveKit room
+        await newBridge.connect(
+          connection.audio_params || { sample_rate: 24000, channels: 1 },
+          connection.features || {},
+          this.roomService
+        );
+
+        console.log(`✅ [MODE-CHANGE] New room created and gateway connected: ${newRoomName}`);
+
+        // STEP 4: Handle mode-specific startup
+        console.log(`🎬 [MODE-CHANGE] Step 4: Starting ${newMode} flow...`);
+
+        if (newMode === 'music') {
+          console.log(`🎵 [MODE-CHANGE] Spawning music bot...`);
+          await connection.spawnMusicBot(newRoomName);
+          console.log(`✅ [MODE-CHANGE] Music bot spawned`);
+
+          // Send TTS start for music mode
+          console.log(`📤 [MODE-CHANGE] Sending TTS start message...`);
+          connection.sendMqttMessage(JSON.stringify({
+            type: "tts",
+            state: "start",
+            session_id: newRoomName
+          }));
+
+        } else if (newMode === 'story') {
+          console.log(`📖 [MODE-CHANGE] Spawning story bot...`);
+          await connection.spawnStoryBot(newRoomName);
+          console.log(`✅ [MODE-CHANGE] Story bot spawned`);
+
+          // Send TTS start for story mode
+          console.log(`📤 [MODE-CHANGE] Sending TTS start message...`);
+          connection.sendMqttMessage(JSON.stringify({
+            type: "tts",
+            state: "start",
+            session_id: newRoomName
+          }));
+
+        } else if (newMode === 'conversation') {
+          console.log(`🗣️ [MODE-CHANGE] Conversation mode - room created, waiting for user to start...`);
+          console.log(`ℹ️ [MODE-CHANGE] Agent will be dispatched when user clicks start button (start_greeting)`);
+        }
+
+        console.log(`✅ [MODE-CHANGE] Mode change complete! ${oldMode} → ${newMode}`);
 
       } else {
         console.error(`❌ [MODE-CHANGE] API error:`, response.data);
@@ -4947,6 +4974,7 @@ class MQTTGateway {
 
     } catch (error) {
       console.error(`❌ [MODE-CHANGE] Error:`, error.message);
+      console.error(error.stack);
     }
   }
 
