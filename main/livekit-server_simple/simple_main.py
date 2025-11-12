@@ -170,38 +170,19 @@ class SimpleAssistant(Agent):
     @function_tool
     async def check_battery_level(self, context: RunContext, unused: str = '') -> str:
         """Check the device battery percentage.
-        
+
         Use this to find out how much battery charge remains on the device.
         Call this function without any parameters.
-        
+
         Args:
             unused: Internal parameter, leave empty or omit
-            
+
         Returns:
             str: Battery percentage status message
         """
-        try:
-            # Send battery check request via data channel
-            if hasattr(context, 'room') and context.room:
-                battery_request = {
-                    "type": "battery_check",
-                    "timestamp": datetime.now().isoformat()
-                }
-                
-                # Send via data channel to MQTT gateway
-                await context.room.local_participant.publish_data(
-                    json.dumps(battery_request).encode(),
-                    topic="battery_request"
-                )
-                
-                logger.info("🔋 Battery check request sent via data channel")
-                return "Battery check requested. The device will report its current battery level."
-            else:
-                return "Unable to check battery - no room connection available."
-                
-        except Exception as e:
-            logger.error(f"🔋❌ Battery check failed: {e}")
-            return "Sorry, I couldn't check the battery level right now."
+        logger.info("🔋 Battery check requested in simple agent")
+        # Simple agent doesn't have MCP executor, so return a friendly message
+        return "I don't have access to battery information right now, but your device should show you the battery level on its display."
 
 def prewarm(proc: JobProcess):
     """Optimized prewarm function - preloads ALL providers to eliminate job startup delay"""
@@ -322,29 +303,29 @@ async def entrypoint(ctx: JobContext):
     except:
         # Fallback prompt if config loading fails
         agent_prompt = """<identity>
-You are Cheeko, a playful AI companion for kids 3–12 years old. You're super silly, energetic, and love to learn and explore with children!
-</identity>
+        You are Cheeko, a playful AI companion for kids 3–12 years old. You're super silly, energetic, and love to learn and explore with children!
+        </identity>
 
-<personality>
-- Always enthusiastic and positive
-- Use simple, age-appropriate language
-- Love adventures, games, and learning
-- Encourage curiosity and creativity
-- Keep responses short and engaging
-</personality>
+        <personality>
+        - Always enthusiastic and positive
+        - Use simple, age-appropriate language
+        - Love adventures, games, and learning
+        - Encourage curiosity and creativity
+        - Keep responses short and engaging
+        </personality>
 
-<greeting>
-When you first meet a child, greet them warmly with something like:
-"Heya, kiddo! I'm Cheeko, your super-silly learning buddy—ready to blast off into adventure, giggles, and a whole lot of aha! moments. What fun quest do you want to tackle today?"
-</greeting>
+        <greeting>
+        When you first meet a child, greet them warmly with something like:
+        "Heya, kiddo! I'm Cheeko, your super-silly learning buddy—ready to blast off into adventure, giggles, and a whole lot of aha! moments. What fun quest do you want to tackle today?"
+        </greeting>
 
-<guidelines>
-- Keep responses under 50 words when possible
-- Use emojis sparingly
-- Ask engaging questions
-- Be encouraging and supportive
-- If asked about battery, use the check_battery_level function
-</guidelines>"""
+        <guidelines>
+        - Keep responses under 50 words when possible
+        - Use emojis sparingly
+        - Ask engaging questions
+        - Be encouraging and supportive
+        - If asked about battery, use the check_battery_level function
+        </guidelines>"""
         logger.info(f"📄 Using fallback prompt (length: {len(agent_prompt)} chars)")
 
     # ⚡ PERFORMANCE OPTIMIZATION: Use preloaded providers from prewarm
@@ -687,9 +668,18 @@ When you first meet a child, greet them warmly with something like:
     
     # Start the session
     await session.start(agent=assistant, room=ctx.room)
-    
+
     logger.info("✅ Simple agent started successfully")
     await ctx.connect()
+
+    # Automatically generate initial greeting (no trigger needed!)
+    try:
+        await asyncio.sleep(0.5)  # Small delay to ensure everything is ready
+        logger.info("🎯 [AUTO-GREETING] Agent fully ready, generating initial greeting automatically...")
+        await session.generate_reply()
+        logger.info("✅ [AUTO-GREETING] Initial greeting generated and sent successfully!")
+    except Exception as e:
+        logger.error(f"❌ [AUTO-GREETING] Failed to generate initial greeting: {e}", exc_info=True)
 
 if __name__ == "__main__":
     # Set high priority for audio processing

@@ -3024,8 +3024,7 @@ class MQTTConnection {
       await this.bridge.connect(json.audio_params, json.features, this.server?.roomService || this.gateway?.roomService);
       const roomCreationTime = Date.now() - roomCreationStart;
       console.log(`✅ [HELLO] Room created and gateway connected in ${roomCreationTime}ms`);
-      console.log(`⏳ [HELLO] Agent will deploy when user presses 's' key`);
-      console.log(`⏰ [HELLO] Room will auto-close if no participants join within 60 seconds (LiveKit emptyTimeout)`);
+      console.log(`🚀 [HELLO] Now dispatching agent and triggering initial greeting automatically...`);
 
       // Send hello response with UDP session details
       this.sendMqttMessage(
@@ -3050,15 +3049,26 @@ class MQTTConnection {
         })
       );
 
-      // Send ready_for_greeting (room created, waiting for agent deployment)
-      this.sendMqttMessage(
-        JSON.stringify({
-          type: "ready_for_greeting",
-          session_id: this.udp.session_id,
-          timestamp: Date.now()
-        })
-      );
-      console.log(`✅ [READY] Room ready. Press 's' to deploy agent.`);
+      // Immediately dispatch agent (will auto-greet when ready!)
+      const roomName = this.bridge.room ? this.bridge.room.name : null;
+      if (roomName && this.server.agentDispatchClient) {
+        console.log(`🤖 [HELLO] Dispatching agent to room: ${roomName}`);
+
+        this.server.agentDispatchClient.createDispatch(roomName, 'cheeko-agent', {
+          metadata: JSON.stringify({
+            device_mac: this.macAddress,
+            device_uuid: newSessionUuid,
+            timestamp: Date.now()
+          })
+        }).then((dispatch) => {
+          console.log(`✅ [HELLO] Agent dispatched: ${dispatch.id} - Agent will auto-greet when ready!`);
+          this.bridge.agentDeployed = true;
+        }).catch((error) => {
+          console.error(`❌ [HELLO] Failed to dispatch agent:`, error);
+        });
+      } else {
+        console.warn(`⚠️ [HELLO] Cannot dispatch agent - roomName: ${roomName}, agentDispatchClient: ${!!this.server.agentDispatchClient}`);
+      }
 
     } catch (error) {
       this.sendMqttMessage(
@@ -3544,8 +3554,7 @@ class VirtualMQTTConnection {
       await this.bridge.connect(json.audio_params, json.features, this.server?.roomService || this.gateway?.roomService);
       const roomCreationTime = Date.now() - roomCreationStart;
       console.log(`✅ [HELLO] Room created and gateway connected in ${roomCreationTime}ms`);
-      console.log(`⏳ [HELLO] Agent will deploy when user presses 's' key`);
-      console.log(`⏰ [HELLO] Room will auto-close if no participants join within 60 seconds (LiveKit emptyTimeout)`);
+      console.log(`🚀 [HELLO] Now dispatching agent and triggering initial greeting automatically...`);
 
       // Send hello response with UDP session details
       this.sendMqttMessage(
@@ -3570,15 +3579,26 @@ class VirtualMQTTConnection {
         })
       );
 
-      // Send ready_for_greeting (room created, waiting for agent deployment)
-      this.sendMqttMessage(
-        JSON.stringify({
-          type: "ready_for_greeting",
-          session_id: this.udp.session_id,
-          timestamp: Date.now()
-        })
-      );
-      console.log(`✅ [READY] Room ready. Press 's' to deploy agent.`);
+      // Immediately dispatch agent (will auto-greet when ready!)
+      const roomName = this.bridge.room ? this.bridge.room.name : null;
+      if (roomName && this.gateway.agentDispatchClient) {
+        console.log(`🤖 [HELLO] Dispatching agent to room: ${roomName}`);
+
+        this.gateway.agentDispatchClient.createDispatch(roomName, 'cheeko-agent', {
+          metadata: JSON.stringify({
+            device_mac: this.macAddress,
+            device_uuid: newSessionUuid,
+            timestamp: Date.now()
+          })
+        }).then((dispatch) => {
+          console.log(`✅ [HELLO] Agent dispatched: ${dispatch.id} - Agent will auto-greet when ready!`);
+          this.bridge.agentDeployed = true;
+        }).catch((error) => {
+          console.error(`❌ [HELLO] Failed to dispatch agent:`, error);
+        });
+      } else {
+        console.warn(`⚠️ [HELLO] Cannot dispatch agent - roomName: ${roomName}, agentDispatchClient: ${!!this.gateway.agentDispatchClient}`);
+      }
 
     } catch (error) {
       this.sendMqttMessage(
