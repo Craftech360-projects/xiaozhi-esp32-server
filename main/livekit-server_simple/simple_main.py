@@ -165,6 +165,51 @@ class SimpleAssistant(Agent):
         self.device_mac = None
         self.mcp_executor = None
         self._job_context = None
+    
+    def sanitize_text_for_speech(self, text: str) -> str:
+        """Remove markdown, emojis, and special characters for TTS"""
+        import re
+        
+        # Remove markdown bold/italic
+        text = re.sub(r'\*\*\*(.+?)\*\*\*', r'\1', text)  # ***text***
+        text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)      # **text**
+        text = re.sub(r'\*(.+?)\*', r'\1', text)          # *text*
+        text = re.sub(r'__(.+?)__', r'\1', text)          # __text__
+        text = re.sub(r'_(.+?)_', r'\1', text)            # _text_
+        
+        # Remove markdown headers
+        text = re.sub(r'^#+\s+', '', text, flags=re.MULTILINE)
+        
+        # Remove bullet points and list markers
+        text = re.sub(r'^\s*[-*+]\s+', '', text, flags=re.MULTILINE)
+        text = re.sub(r'^\s*\d+\.\s+', '', text, flags=re.MULTILINE)
+        
+        # Remove code blocks
+        text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)
+        text = re.sub(r'`(.+?)`', r'\1', text)
+        
+        # Remove emojis (basic removal)
+        emoji_pattern = re.compile("["
+            u"\U0001F600-\U0001F64F"  # emoticons
+            u"\U0001F300-\U0001F5FF"  # symbols & pictographs
+            u"\U0001F680-\U0001F6FF"  # transport & map symbols
+            u"\U0001F1E0-\U0001F1FF"  # flags
+            u"\U00002702-\U000027B0"
+            u"\U000024C2-\U0001F251"
+            "]+", flags=re.UNICODE)
+        text = emoji_pattern.sub('', text)
+        
+        # Remove extra whitespace
+        text = re.sub(r'\n+', ' ', text)
+        text = re.sub(r'\s+', ' ', text)
+        
+        return text.strip()
+    
+    async def say(self, message: str, **kwargs):
+        """Override say method to sanitize text before TTS"""
+        sanitized = self.sanitize_text_for_speech(message)
+        logger.info(f"🧹 Sanitized text: '{message[:50]}...' -> '{sanitized[:50]}...'")
+        return await super().say(sanitized, **kwargs)
 
     def set_room_info(self, room_name: str = None, device_mac: str = None):
         """Set room name and device MAC address"""
@@ -182,19 +227,10 @@ class SimpleAssistant(Agent):
         self._job_context = job_context
         logger.info("🔗 JobContext set for MCP communication")
     
-    @function_tool
-    async def check_battery_level(self, context: RunContext, unused: str = '') -> str:
-        """Check the device battery percentage.
-
-        Use this to find out how much battery charge remains on the device.
-        Call this function without any parameters.
-
-        Args:
-            unused: Internal parameter, leave empty or omit
-
-        Returns:
-            str: Battery percentage status message
-        """
+    # Removed @function_tool decorator - gemma2:2b doesn't support tools
+    # Battery checks can be handled via keywords in the prompt instead
+    async def check_battery_level_internal(self) -> str:
+        """Internal method to check battery (not exposed as tool)"""
         logger.info("🔋 Battery check requested in simple agent")
 
         if not self.mcp_executor:
@@ -343,6 +379,17 @@ async def entrypoint(ctx: JobContext):
         - Keep responses short and engaging
         </personality>
 
+        <formatting>
+        CRITICAL: Your responses will be spoken aloud by text-to-speech.
+        - DO NOT use markdown symbols like *, **, #, -, etc.
+        - DO NOT use emojis or special characters
+        - DO NOT use bullet points or lists
+        - Write in plain conversational text only
+        - Use natural speech patterns
+        Example GOOD: "Hey there! I love talking about space. What do you want to know?"
+        Example BAD: "**Hey there!** 🚀 I love talking about:\n- Space\n- Planets\n- Stars"
+        </formatting>
+
         <greeting>
         IMPORTANT: When you first start a conversation (no prior messages), you MUST greet the child warmly.
         DO NOT check battery or use any functions during initial greeting.
@@ -356,15 +403,8 @@ async def entrypoint(ctx: JobContext):
         - Use emojis sparingly
         - Ask engaging questions
         - Be encouraging and supportive
-        - ONLY use check_battery_level function when EXPLICITLY asked about battery
-        - NEVER check battery during initial greeting
-        </guidelines>
-
-        <tools>
-        You have access to check_battery_level function to check the device's battery percentage.
-        Use it ONLY when the user explicitly asks about battery, charge, or power level.
-        DO NOT use it during the initial greeting.
-        </tools>"""
+        - If asked about battery, politely say you can't check that right now
+        </guidelines>"""
         logger.info(f"📄 Using fallback prompt (length: {len(agent_prompt)} chars)")
 
     # ⚡ PERFORMANCE OPTIMIZATION: Use preloaded providers from prewarm
@@ -445,6 +485,19 @@ async def entrypoint(ctx: JobContext):
     # Track audio streaming state
     audio_streaming = False
     last_speech_id = None
+    
+    # User speech event handlers for debugging
+    @session.on("user_started_speaking")
+    def on_user_started_speaking():
+        logger.info("🎤 User started speaking")
+    
+    @session.on("user_stopped_speaking")
+    def on_user_stopped_speaking():
+        logger.info("🎤 User stopped speaking")
+    
+    @session.on("user_speech_committed")
+    def on_user_speech_committed(msg):
+        logger.info(f"💬 User speech committed: {msg}")
     
     @session.on("agent_state_changed")
     def on_agent_state_changed(ev):
@@ -700,6 +753,17 @@ async def entrypoint(ctx: JobContext):
         except Exception as e:
             logger.error(f"❌ Failed to process data channel message: {e}")
             logger.error(f"Raw data: {data.data}")
+    
+    # Track audio subscriptions for debugging
+    @ctx.room.on("track_subscribed")
+    def on_track_subscribed(track: rtc.Track, publication: rtc.TrackPublication, participant: rtc.RemoteParticipant):
+        logger.info(f"🎧 Track subscribed: {track.kind} from {participant.identity}")
+        if track.kind == rtc.TrackKind.KIND_AUDIO:
+            logger.info(f"🎤 Audio track subscribed - ready to receive user audio")
+    
+    @ctx.room.on("track_unsubscribed")
+    def on_track_unsubscribed(track: rtc.Track, publication: rtc.TrackPublication, participant: rtc.RemoteParticipant):
+        logger.info(f"🎧 Track unsubscribed: {track.kind} from {participant.identity}")
     
     # Enhanced cleanup on disconnect with resource monitoring
     @ctx.room.on("participant_disconnected")
