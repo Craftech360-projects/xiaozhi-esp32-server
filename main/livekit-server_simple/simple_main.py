@@ -15,8 +15,6 @@ import threading
 from datetime import datetime
 from dotenv import load_dotenv
 
-OLLAMA_API = os.environ.get("OLLAMA_API_URL", "http://localhost:11434/api")
-MODEL = os.environ.get("OLLAMA_MODEL", "gemma2:2b")
 # Resource monitoring imports
 try:
     import psutil

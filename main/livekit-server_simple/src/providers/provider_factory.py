@@ -4,9 +4,11 @@ import livekit.plugins.deepgram as deepgram
 import livekit.plugins.cartesia as cartesia
 from livekit.plugins import openai, silero
 from livekit.agents import stt, llm, tts
+import os
 
 # Import our custom providers
 from .edge_tts_provider import EdgeTTS
+from .fastwhisper_stt_provider import FastWhisperSTT
 
 
 class ProviderFactory:
@@ -16,17 +18,43 @@ class ProviderFactory:
     def create_llm(config):
         """Create LLM provider with fallback based on configuration"""
         fallback_enabled = config.get('fallback_enabled', False)
+        provider = config.get('llm_provider', 'groq').lower()
 
         if fallback_enabled:
-            # Create primary and fallback LLM providers (both Groq)
-            providers = [
-                groq.LLM(model=config['llm_model']),
-                groq.LLM(model=config.get('fallback_llm_model', 'llama-3.1-8b-instant'))
-            ]
+            # Create primary and fallback LLM providers
+            providers = []
+
+            if provider == 'ollama':
+                # Use OpenAI plugin with Ollama's compatible API
+                ollama_api = os.environ.get("OLLAMA_API_URL", "http://localhost:11434/v1")
+                ollama_model = config.get('llm_model', os.environ.get("OLLAMA_MODEL", "gemma2:2b"))
+                providers.append(openai.LLM(
+                    model=ollama_model,
+                    base_url=ollama_api,
+                    api_key="ollama"  # Ollama doesn't need a real API key
+                ))
+            else:
+                # Default to Groq
+                providers.append(groq.LLM(model=config['llm_model']))
+
+            # Add fallback
+            providers.append(groq.LLM(model=config.get('fallback_llm_model', 'llama-3.1-8b-instant')))
+
             return llm.FallbackAdapter(providers)
         else:
-            # Single Groq provider
-            return groq.LLM(model=config['llm_model'])
+            # Single provider
+            if provider == 'ollama':
+                # Use OpenAI plugin with Ollama's compatible API
+                ollama_api = os.environ.get("OLLAMA_API_URL", "http://localhost:11434/v1")
+                ollama_model = config.get('llm_model', os.environ.get("OLLAMA_MODEL", "gemma2:2b"))
+                return openai.LLM(
+                    model=ollama_model,
+                    base_url=ollama_api,
+                    api_key="ollama"  # Ollama doesn't need a real API key
+                )
+            else:
+                # Default to Groq provider
+                return groq.LLM(model=config['llm_model'])
 
     @staticmethod
     def create_stt(config, vad=None):
@@ -38,8 +66,16 @@ class ProviderFactory:
             # Create primary and fallback STT providers with StreamAdapter
             providers = []
 
-            if provider == 'deepgram':
-                import os
+            if provider == 'fastwhisper':
+                # Use our custom FastWhisper STT provider
+                providers.append(stt.StreamAdapter(
+                    stt=FastWhisperSTT(
+                        model=config.get('stt_model', 'base'),
+                        language=config.get('stt_language', 'en')
+                    ),
+                    vad=vad
+                ))
+            elif provider == 'deepgram':
                 api_key = os.getenv('DEEPGRAM_API_KEY')
                 if not api_key:
                     raise ValueError("DEEPGRAM_API_KEY environment variable is not set")
@@ -72,8 +108,16 @@ class ProviderFactory:
             return stt.FallbackAdapter(providers)
         else:
             # Single provider with StreamAdapter and VAD
-            if provider == 'deepgram':
-                import os
+            if provider == 'fastwhisper':
+                # Use our custom FastWhisper STT provider
+                return stt.StreamAdapter(
+                    stt=FastWhisperSTT(
+                        model=config.get('stt_model', 'base'),
+                        language=config.get('stt_language', 'en')
+                    ),
+                    vad=vad
+                )
+            elif provider == 'deepgram':
                 api_key = os.getenv('DEEPGRAM_API_KEY')
                 if not api_key:
                     raise ValueError("DEEPGRAM_API_KEY environment variable is not set")

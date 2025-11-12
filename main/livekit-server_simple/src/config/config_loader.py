@@ -16,14 +16,15 @@ class ConfigLoader:
 
     @staticmethod
     def get_groq_config():
-        """Get Groq configuration from environment variables"""
+        """Get AI provider configuration from environment variables"""
         return {
+            'llm_provider': os.getenv('LLM_PROVIDER', 'groq'),  # groq or ollama
             'llm_model': os.getenv('LLM_MODEL', 'openai/gpt-oss-20b'),
             'stt_model': os.getenv('STT_MODEL', 'whisper-large-v3-turbo'),
             'tts_model': os.getenv('TTS_MODEL', 'playai-tts'),
             'tts_voice': os.getenv('TTS_VOICE', 'Aaliyah-PlayAI'),
             'stt_language': os.getenv('STT_LANGUAGE', 'en'),
-            'stt_provider': os.getenv('STT_PROVIDER', 'groq'),  # groq or deepgram
+            'stt_provider': os.getenv('STT_PROVIDER', 'groq'),  # groq, deepgram, or fastwhisper
             'deepgram_model': os.getenv('DEEPGRAM_MODEL', 'nova-3'),
             # Fallback configuration
             'fallback_enabled': os.getenv('FALLBACK_ENABLED', 'false').lower() == 'true',
