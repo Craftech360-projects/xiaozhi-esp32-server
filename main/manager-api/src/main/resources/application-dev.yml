@@ -70,3 +70,9 @@ spring:
           max-idle: 8
           min-idle: 0
         shutdown-timeout: 100ms
+
+# Supabase configuration
+supabase:
+  url: https://popppjirsdedxhetcphs.supabase.co
+  anon-key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBvcHBwamlyc2RlZHhoZXRjcGhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM3NjMxMDAsImV4cCI6MjA1OTMzOTEwMH0.Ihv60cbfUSeDN5dPDsOZRz4y79ek3D5YZZgKwBsMkSc
+  service-key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBvcHBwamlyc2RlZHhoZXRjcGhzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0Mzc2MzEwMCwiZXhwIjoyMDU5MzM5MTAwfQ.13kDy1Tyrs29-b7Zo-hbjLZXNOt6zMMn9733h3yGQQE

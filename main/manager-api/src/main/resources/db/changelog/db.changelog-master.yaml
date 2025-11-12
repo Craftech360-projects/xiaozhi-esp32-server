@@ -512,6 +512,22 @@ databaseChangeLog:
             encoding: utf8
             path: classpath:db/changelog/202510162000_update_edgetts_to_english.sql
   - changeSet:
+      id: 202510241400
+      author: claude
+      validCheckSum: ANY
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202510241400_add_template_based_prompt_system.sql
+  - changeSet:
+      id: 202510241430
+      author: claude
+      validCheckSum: ANY
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202510241430_update_template_personalities.sql
+  - changeSet:
       id: 202510301400
       author: claude
       changes:
@@ -540,7 +556,14 @@ databaseChangeLog:
             encoding: utf8
             path: classpath:db/changelog/202511041600_update_math_tutor_tool.sql
   - changeSet:
-      id: 202511052130
+      id: 202511041630
+      author: claude
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202511041630_create_favorites_table.sql
+  - changeSet:
+      id: 202511041700
       author: claude
       validCheckSum: ANY
       changes:
@@ -582,3 +605,4 @@ databaseChangeLog:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202511101500_add_device_mode.sql
+            path: classpath:db/changelog/202511041700_create_content_library_table.sql
