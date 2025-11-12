@@ -1,69 +1,62 @@
 """
-FastWhisper STT Provider for LiveKit
-Uses faster-whisper for local speech-to-text
+Local Whisper STT Provider for LiveKit
+Uses openai-whisper for local speech-to-text
 """
 import asyncio
 import logging
 import numpy as np
+import tempfile
+import os
 from typing import Optional, Union
 from livekit.agents import stt, utils
+import soundfile as sf
 
 logger = logging.getLogger(__name__)
 
 try:
-    from faster_whisper import WhisperModel
-    FASTER_WHISPER_AVAILABLE = True
+    import whisper
+    WHISPER_AVAILABLE = True
 except ImportError:
-    FASTER_WHISPER_AVAILABLE = False
-    logger.warning("faster-whisper not installed. Install with: pip install faster-whisper")
+    WHISPER_AVAILABLE = False
+    logger.warning("openai-whisper not installed. Install with: pip install openai-whisper")
 
 
-class FastWhisperSTT(stt.STT):
-    """FastWhisper STT implementation using faster-whisper"""
+class WhisperSTT(stt.STT):
+    """OpenAI Whisper STT implementation for local inference"""
 
     def __init__(
         self,
         *,
         model: str = "base",
         device: str = "cpu",
-        compute_type: str = "int8",
         language: str = "en",
-        beam_size: int = 5,
-        vad_filter: bool = True,
     ):
         """
-        Initialize FastWhisper STT provider
+        Initialize Whisper STT provider
 
         Args:
-            model: Model size ('tiny', 'base', 'small', 'medium', 'large', 'large-v2', 'large-v3')
-            device: Device to use ('cpu', 'cuda', 'auto')
-            compute_type: Compute type for quantization ('int8', 'int8_float16', 'float16', 'float32')
+            model: Model size ('tiny', 'base', 'small', 'medium', 'large')
+            device: Device to use ('cpu', 'cuda')
             language: Language code (e.g., 'en', 'es', 'fr')
-            beam_size: Beam size for decoding
-            vad_filter: Apply voice activity detection filter
         """
         super().__init__(
             capabilities=stt.STTCapabilities(streaming=False, interim_results=False)
         )
 
-        if not FASTER_WHISPER_AVAILABLE:
+        if not WHISPER_AVAILABLE:
             raise ImportError(
-                "faster-whisper is not installed. "
-                "Install with: pip install faster-whisper"
+                "openai-whisper is not installed. "
+                "Install with: pip install openai-whisper"
             )
 
         self._model_size = model
         self._device = device
-        self._compute_type = compute_type
-        self._language = language if language else None  # None for auto-detection
-        self._beam_size = beam_size
-        self._vad_filter = vad_filter
-        self._model: Optional[WhisperModel] = None
+        self._language = language if language else None
+        self._model = None
 
         logger.info(
-            f"Initialized FastWhisperSTT with model={model}, "
-            f"device={device}, compute_type={compute_type}, "
-            f"language={language}"
+            f"Initialized WhisperSTT with model={model}, "
+            f"device={device}, language={language}"
         )
 
     async def _ensure_model_loaded(self):
@@ -75,11 +68,7 @@ class FastWhisperSTT(stt.STT):
             # Load model in thread pool to avoid blocking
             self._model = await loop.run_in_executor(
                 None,
-                lambda: WhisperModel(
-                    self._model_size,
-                    device=self._device,
-                    compute_type=self._compute_type,
-                )
+                lambda: whisper.load_model(self._model_size, device=self._device)
             )
 
             logger.info(f"Whisper model loaded: {self._model_size}")
@@ -92,12 +81,12 @@ class FastWhisperSTT(stt.STT):
         conn_options: Optional[any] = None,
     ) -> stt.SpeechEvent:
         """
-        Implementation of speech recognition (required by STT base class)
+        Implementation of speech recognition
 
         Args:
             buffer: Audio data to transcribe
             language: Override language (optional)
-            conn_options: Connection options (ignored for local Whisper)
+            conn_options: Connection options (ignored)
 
         Returns:
             SpeechEvent with transcription
@@ -109,54 +98,49 @@ class FastWhisperSTT(stt.STT):
 
         # Run transcription in thread pool
         loop = asyncio.get_event_loop()
-        segments = await loop.run_in_executor(
+        result = await loop.run_in_executor(
             None,
             self._transcribe_sync,
             audio_data,
             language or self._language,
         )
 
-        # Combine segments into full transcription
-        text = " ".join([segment.text for segment in segments])
+        # Extract text from result
+        text = result.get("text", "").strip()
 
         # Create speech event
         return stt.SpeechEvent(
             type=stt.SpeechEventType.FINAL_TRANSCRIPT,
             alternatives=[
                 stt.SpeechData(
-                    text=text.strip(),
+                    text=text,
                     language=language or self._language or "en",
-                    confidence=1.0,  # faster-whisper doesn't provide confidence per transcript
+                    confidence=1.0,
                 )
             ],
         )
 
     def _transcribe_sync(self, audio_data: np.ndarray, language: Optional[str]):
         """Synchronous transcription (run in thread pool)"""
-        segments, info = self._model.transcribe(
+        # Whisper expects audio at 16kHz
+        result = self._model.transcribe(
             audio_data,
             language=language,
-            beam_size=self._beam_size,
-            vad_filter=self._vad_filter,
+            fp16=False,  # Use FP32 for CPU
         )
-
-        # Convert generator to list
-        return list(segments)
+        return result
 
     def _prepare_audio(self, buffer: Union[utils.AudioBuffer, "rtc.AudioFrame"]) -> np.ndarray:
         """Convert audio buffer to numpy array for Whisper"""
         try:
-            # Check if it's an AudioBuffer by checking for the class name
+            # Check if it's an AudioBuffer
             if hasattr(buffer, '__class__') and buffer.__class__.__name__ == 'AudioBuffer':
-                # Get raw audio data
                 audio_data = buffer.data
 
                 # Convert to numpy array
                 if isinstance(audio_data, bytes):
-                    # Assume 16-bit PCM
                     audio_np = np.frombuffer(audio_data, dtype=np.int16)
                 elif isinstance(audio_data, memoryview):
-                    # Convert memoryview to bytes first
                     audio_np = np.frombuffer(bytes(audio_data), dtype=np.int16)
                 else:
                     audio_np = np.array(audio_data, dtype=np.float32)
@@ -167,12 +151,10 @@ class FastWhisperSTT(stt.STT):
 
                 return audio_np
 
-            # Handle rtc.AudioFrame or any other buffer type
+            # Handle rtc.AudioFrame
             else:
-                # Get frame data
                 frame_data = buffer.data if hasattr(buffer, 'data') else buffer
 
-                # Convert to numpy array
                 if isinstance(frame_data, memoryview):
                     audio_np = np.frombuffer(bytes(frame_data), dtype=np.int16)
                 else:
@@ -185,12 +167,10 @@ class FastWhisperSTT(stt.STT):
 
         except Exception as e:
             logger.error(f"Error preparing audio: {e}")
-            # Return empty array as fallback
             return np.array([], dtype=np.float32)
 
     async def aclose(self):
         """Cleanup resources"""
         if self._model is not None:
-            # faster-whisper models don't need explicit cleanup
             self._model = None
-            logger.info("FastWhisperSTT closed")
+            logger.info("WhisperSTT closed")

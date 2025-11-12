@@ -47,6 +47,9 @@ class OllamaLLM(llm.LLM):
         *,
         chat_ctx: llm.ChatContext,
         conn_options: Optional[any] = None,  # noqa: ARG002
+        tools: Optional[list] = None,  # Accept tools parameter
+        parallel_tool_calls: bool = True,  # Accept parallel_tool_calls parameter
+        tool_choice: Optional[str] = None,  # Accept tool_choice parameter
     ) -> "llm.LLMStream":
         """
         Generate chat completion stream
@@ -54,6 +57,7 @@ class OllamaLLM(llm.LLM):
         Args:
             chat_ctx: Chat context with messages
             conn_options: Connection options (not used for Ollama)
+            tools: Function tools (optional, for function calling support)
 
         Returns:
             LLMStream for streaming responses
@@ -71,6 +75,11 @@ class OllamaLLM(llm.LLM):
                 "num_predict": self._max_tokens,
             }
         }
+
+        # Add tools if provided and model supports them
+        if tools:
+            payload["tools"] = tools
+            logger.info(f"Added {len(tools)} tools to Ollama request")
 
         return OllamaLLMStream(
             base_url=self._base_url,
@@ -124,6 +133,15 @@ class OllamaLLMStream(llm.LLMStream):
         self._payload = payload
         self._session: Optional[aiohttp.ClientSession] = None
         self._response: Optional[aiohttp.ClientResponse] = None
+
+    async def __aenter__(self):
+        """Async context manager entry"""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit"""
+        await self._close()
+        return False
 
     async def __anext__(self) -> llm.ChatChunk:
         """Stream next chunk from Ollama"""

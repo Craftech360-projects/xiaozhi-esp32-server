@@ -44,9 +44,15 @@ class ConfigLoader:
         """
         # Start with .env defaults
         config = {
-            'provider': os.getenv('TTS_PROVIDER', 'edge'),  # groq, elevenlabs, edge, or cartesia
+            'provider': os.getenv('TTS_PROVIDER', 'edge'),  # piper, groq, elevenlabs, edge, or cartesia
             'model': os.getenv('TTS_MODEL', 'playai-tts'),
             'voice': os.getenv('TTS_VOICE', 'Aaliyah-PlayAI'),
+            # Piper TTS configuration
+            'piper_voice': os.getenv('PIPER_VOICE', 'en_US-amy-medium'),
+            'piper_model_path': os.getenv('PIPER_MODEL_PATH'),
+            'piper_sample_rate': int(os.getenv('PIPER_SAMPLE_RATE', '22050')),
+            'piper_speaker': int(os.getenv('PIPER_SPEAKER')) if os.getenv('PIPER_SPEAKER') else None,
+            'piper_binary': os.getenv('PIPER_BINARY', 'piper'),
             # ElevenLabs configuration
             'elevenlabs_voice_id': os.getenv('ELEVENLABS_VOICE_ID', ''),
             'elevenlabs_model': os.getenv('ELEVENLABS_MODEL_ID', 'eleven_turbo_v2_5'),
@@ -106,6 +112,17 @@ class ConfigLoader:
                 if 'language' in api_config:
                     config['cartesia_language'] = api_config['language']
                 logger.info(f"✅ Cartesia TTS - Model: {config.get('cartesia_model')}, Voice: {config.get('cartesia_voice')}")
+
+            elif api_config.get('provider') == 'piper':
+                if 'voice' in api_config:
+                    config['piper_voice'] = api_config['voice']
+                if 'model_path' in api_config:
+                    config['piper_model_path'] = api_config['model_path']
+                if 'sample_rate' in api_config:
+                    config['piper_sample_rate'] = api_config['sample_rate']
+                if 'speaker' in api_config:
+                    config['piper_speaker'] = api_config['speaker']
+                logger.info(f"✅ Piper TTS - Voice: {config.get('piper_voice')}, Sample Rate: {config.get('piper_sample_rate')}")
         else:
             logger.info(f"📝 Using TTS config from .env: Provider={config['provider']}")
 

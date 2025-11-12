@@ -8,7 +8,9 @@ import os
 
 # Import our custom providers
 from .edge_tts_provider import EdgeTTS
+from .piper_tts_provider import PiperTTS
 from .fastwhisper_stt_provider import FastWhisperSTT
+from .whisper_stt_provider import WhisperSTT
 
 
 class ProviderFactory:
@@ -25,13 +27,12 @@ class ProviderFactory:
             providers = []
 
             if provider == 'ollama':
-                # Use OpenAI plugin with Ollama's compatible API
-                ollama_api = os.environ.get("OLLAMA_API_URL", "http://localhost:11434/v1")
+                # Use official LiveKit Ollama integration via OpenAI plugin
+                ollama_api = os.environ.get("OLLAMA_API_URL", "http://localhost:11434")
                 ollama_model = config.get('llm_model', os.environ.get("OLLAMA_MODEL", "gemma2:2b"))
-                providers.append(openai.LLM(
+                providers.append(openai.LLM.with_ollama(
                     model=ollama_model,
-                    base_url=ollama_api,
-                    api_key="ollama"  # Ollama doesn't need a real API key
+                    base_url=f"{ollama_api}/v1"
                 ))
             else:
                 # Default to Groq
@@ -44,13 +45,12 @@ class ProviderFactory:
         else:
             # Single provider
             if provider == 'ollama':
-                # Use OpenAI plugin with Ollama's compatible API
-                ollama_api = os.environ.get("OLLAMA_API_URL", "http://localhost:11434/v1")
+                # Use official LiveKit Ollama integration via OpenAI plugin
+                ollama_api = os.environ.get("OLLAMA_API_URL", "http://localhost:11434")
                 ollama_model = config.get('llm_model', os.environ.get("OLLAMA_MODEL", "gemma2:2b"))
-                return openai.LLM(
+                return openai.LLM.with_ollama(
                     model=ollama_model,
-                    base_url=ollama_api,
-                    api_key="ollama"  # Ollama doesn't need a real API key
+                    base_url=f"{ollama_api}/v1"
                 )
             else:
                 # Default to Groq provider
@@ -66,12 +66,22 @@ class ProviderFactory:
             # Create primary and fallback STT providers with StreamAdapter
             providers = []
 
-            if provider == 'fastwhisper':
+            if provider == 'whisper':
+                # Use local OpenAI Whisper STT provider
+                providers.append(stt.StreamAdapter(
+                    stt=WhisperSTT(
+                        model=config.get('stt_model', 'base'),
+                        language=config.get('stt_language', 'en')
+                    ),
+                    vad=vad
+                ))
+            elif provider == 'fastwhisper':
                 # Use our custom FastWhisper STT provider
                 providers.append(stt.StreamAdapter(
                     stt=FastWhisperSTT(
                         model=config.get('stt_model', 'base'),
-                        language=config.get('stt_language', 'en')
+                        language=config.get('stt_language', 'en'),
+                        vad_filter=False  # Disable internal VAD - using Silero VAD instead
                     ),
                     vad=vad
                 ))
@@ -108,12 +118,22 @@ class ProviderFactory:
             return stt.FallbackAdapter(providers)
         else:
             # Single provider with StreamAdapter and VAD
-            if provider == 'fastwhisper':
+            if provider == 'whisper':
+                # Use local OpenAI Whisper STT provider
+                return stt.StreamAdapter(
+                    stt=WhisperSTT(
+                        model=config.get('stt_model', 'base'),
+                        language=config.get('stt_language', 'en')
+                    ),
+                    vad=vad
+                )
+            elif provider == 'fastwhisper':
                 # Use our custom FastWhisper STT provider
                 return stt.StreamAdapter(
                     stt=FastWhisperSTT(
                         model=config.get('stt_model', 'base'),
-                        language=config.get('stt_language', 'en')
+                        language=config.get('stt_language', 'en'),
+                        vad_filter=False  # Disable internal VAD - using Silero VAD instead
                     ),
                     vad=vad
                 )
@@ -150,7 +170,15 @@ class ProviderFactory:
 
             # Primary provider based on configuration
             primary_provider = tts_config.get('provider', 'edge').lower()
-            if primary_provider == 'edge':
+            if primary_provider == 'piper':
+                providers.append(PiperTTS(
+                    voice=tts_config.get('piper_voice', 'en_US-amy-medium'),
+                    model_path=tts_config.get('piper_model_path'),
+                    sample_rate=tts_config.get('piper_sample_rate', 22050),
+                    speaker=tts_config.get('piper_speaker'),
+                    piper_binary=tts_config.get('piper_binary', 'piper')
+                ))
+            elif primary_provider == 'edge':
                 providers.append(EdgeTTS(
                     voice=tts_config.get('edge_voice', 'en-US-AnaNeural'),
                     rate=tts_config.get('edge_rate', '+0%'),
@@ -201,7 +229,15 @@ class ProviderFactory:
             # Single provider (current behavior)
             provider = tts_config.get('provider', 'groq').lower()
 
-            if provider == 'elevenlabs':
+            if provider == 'piper':
+                return PiperTTS(
+                    voice=tts_config.get('piper_voice', 'en_US-amy-medium'),
+                    model_path=tts_config.get('piper_model_path'),
+                    sample_rate=tts_config.get('piper_sample_rate', 22050),
+                    speaker=tts_config.get('piper_speaker'),
+                    piper_binary=tts_config.get('piper_binary', 'piper')
+                )
+            elif provider == 'elevenlabs':
                 return elevenlabs.TTS(
                     voice_id=tts_config['elevenlabs_voice_id'],
                     model=tts_config['elevenlabs_model']
@@ -242,15 +278,20 @@ class ProviderFactory:
         except Exception:
             pass  # Fall back to direct loading
 
-        # ULTRA-FAST VAD for multi-client performance - prioritize speed over accuracy
-        # Optimized for 5+ concurrent clients to prevent "slower than realtime" errors
+        # Get VAD settings from environment or use defaults optimized for kids
+        min_speech_duration = float(os.getenv('VAD_MIN_SPEECH_DURATION', '0.1'))
+        min_silence_duration = float(os.getenv('VAD_MIN_SILENCE_DURATION', '0.5'))
+        activation_threshold = float(os.getenv('VAD_ACTIVATION_THRESHOLD', '0.3'))
+        max_buffered_speech = float(os.getenv('VAD_MAX_BUFFERED_SPEECH', '60.0'))
+        prefix_padding = float(os.getenv('VAD_PREFIX_PADDING_DURATION', '0.3'))
+        
         return silero.VAD.load(
-            min_speech_duration=0.02,      # ULTRA-fast detection (20ms minimum)
-            min_silence_duration=0.15,     # AGGRESSIVE silence detection (150ms)
-            activation_threshold=0.15,     # VERY low threshold for children's voices
+            min_speech_duration=min_speech_duration,
+            min_silence_duration=min_silence_duration,
+            activation_threshold=activation_threshold,
+            prefix_padding_duration=prefix_padding,
             sample_rate=16000,
-            max_buffered_speech=15.0,      # MINIMAL buffer (15s max) for speed
-            window_size_samples=256,       # SMALLEST window for fastest processing
+            max_buffered_speech=max_buffered_speech,
         )
 
     @staticmethod
