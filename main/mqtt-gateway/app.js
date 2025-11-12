@@ -644,18 +644,18 @@ class WorkerPoolManager {
       const avgPendingPerWorker = this.workerPendingCount.reduce((a, b) => a + b, 0) / this.workers.length;
       const loadPercent = Math.min(100, (avgPendingPerWorker / 5 * 100)).toFixed(1);
 
-      console.log('\n📊 [WORKER-POOL METRICS] ================');
-      console.log(`   Workers: ${stats.activeWorkers}/${stats.workers} active (min: ${this.minWorkers}, max: ${this.maxWorkers})`);
-      console.log(`   Load: ${loadPercent}% (${avgPendingPerWorker.toFixed(2)} pending/worker)`);
-      console.log(`   Pending Requests: ${stats.pendingRequests}`);
-      console.log(`   Frames Processed: ${stats.performance.framesProcessed}`);
-      console.log(`   Throughput: ${stats.performance.framesPerSecond} fps`);
-      console.log(`   Avg Latency: ${stats.performance.avgLatency}`);
-      console.log(`   Max Latency: ${stats.performance.maxLatency}`);
-      console.log(`   CPU Usage: ${stats.performance.avgCpuUsage} (max: ${stats.performance.maxCpuUsage})`);
-      console.log(`   Memory: ${stats.performance.currentMemory.heapUsed} / ${stats.performance.currentMemory.heapTotal}`);
-      console.log(`   Errors: ${stats.performance.errors}`);
-      console.log('==========================================\n');
+      // console.log('\n📊 [WORKER-POOL METRICS] ================');
+      // console.log(`   Workers: ${stats.activeWorkers}/${stats.workers} active (min: ${this.minWorkers}, max: ${this.maxWorkers})`);
+      // console.log(`   Load: ${loadPercent}% (${avgPendingPerWorker.toFixed(2)} pending/worker)`);
+      // console.log(`   Pending Requests: ${stats.pendingRequests}`);
+      // console.log(`   Frames Processed: ${stats.performance.framesProcessed}`);
+      // console.log(`   Throughput: ${stats.performance.framesPerSecond} fps`);
+      // console.log(`   Avg Latency: ${stats.performance.avgLatency}`);
+      // console.log(`   Max Latency: ${stats.performance.maxLatency}`);
+      // console.log(`   CPU Usage: ${stats.performance.avgCpuUsage} (max: ${stats.performance.maxCpuUsage})`);
+      // console.log(`   Memory: ${stats.performance.currentMemory.heapUsed} / ${stats.performance.currentMemory.heapTotal}`);
+      // console.log(`   Errors: ${stats.performance.errors}`);
+      // console.log('==========================================\n');
     }, intervalSeconds * 1000);
   }
 
