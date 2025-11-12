@@ -65,13 +65,17 @@ class WhisperSTT(stt.STT):
             logger.info(f"Loading Whisper model: {self._model_size}")
             loop = asyncio.get_event_loop()
 
-            # Load model in thread pool to avoid blocking
-            self._model = await loop.run_in_executor(
-                None,
-                lambda: whisper.load_model(self._model_size, device=self._device)
-            )
-
-            logger.info(f"Whisper model loaded: {self._model_size}")
+            try:
+                # Load model in thread pool to avoid blocking
+                self._model = await loop.run_in_executor(
+                    None,
+                    lambda: whisper.load_model(self._model_size, device=self._device)
+                )
+                logger.info(f"✅ Whisper model loaded successfully: {self._model_size}")
+            except Exception as e:
+                logger.error(f"❌ Failed to load Whisper model '{self._model_size}': {e}")
+                logger.error(f"Available models: tiny, base, small, medium, large, tiny.en, base.en, small.en, medium.en")
+                raise
 
     async def _recognize_impl(
         self,

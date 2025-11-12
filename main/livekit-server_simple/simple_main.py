@@ -744,6 +744,37 @@ async def entrypoint(ctx: JobContext):
                         logger.error(f"❌ [CLEAR-HISTORY] Failed to clear history: {e}", exc_info=True)
 
                 asyncio.create_task(handle_clear_history())
+            elif msg_type == "end_prompt":
+                logger.info("👋 [END-PROMPT] End prompt received - generating goodbye message")
+                # Handle end_prompt to say goodbye
+                async def handle_end_prompt():
+                    try:
+                        # Extract the prompt from the message
+                        prompt = message.get("prompt", "")
+                        logger.info(f"👋 [END-PROMPT] Prompt: {prompt}")
+
+                        # Get the current agent from the session
+                        agent = session._agent
+                        if not agent:
+                            logger.error("❌ [END-PROMPT] No agent found in session")
+                            return
+
+                        # Use session.say() to speak the goodbye message directly
+                        logger.info("👋 [END-PROMPT] Speaking goodbye message")
+                        await session.say(prompt)
+                        logger.info(f"👋 [END-PROMPT] Goodbye message sent: {prompt}")
+
+                        # Add the response to chat context
+                        chat_ctx.add_message(role="assistant", content=response_text)
+
+                        # Use session.say() to speak the goodbye message
+                        await session.say(response_text.strip())
+                        logger.info("✅ [END-PROMPT] Goodbye message spoken successfully")
+
+                    except Exception as e:
+                        logger.error(f"❌ [END-PROMPT] Failed to handle end prompt: {e}", exc_info=True)
+
+                asyncio.create_task(handle_end_prompt())
             else:
                 logger.info(f"📨 Unknown message type received: {msg_type}")
                 
