@@ -8,12 +8,15 @@ Uses preloading and prewarming but removes unnecessary services
 import logging
 import asyncio
 import os
+
 import json
 import time
 import threading
 from datetime import datetime
 from dotenv import load_dotenv
 
+OLLAMA_API = os.environ.get("OLLAMA_API_URL", "http://localhost:11434/api")
+MODEL = os.environ.get("OLLAMA_MODEL", "gemma2:2b")
 # Resource monitoring imports
 try:
     import psutil
@@ -41,6 +44,8 @@ from src.providers.provider_factory import ProviderFactory
 from src.config.config_loader import ConfigLoader
 from src.utils.model_preloader import model_preloader
 from src.utils.model_cache import model_cache
+from src.mcp.device_control_service import DeviceControlService
+from src.mcp.mcp_executor import LiveKitMCPExecutor
 
 # Load environment variables
 load_dotenv(".env")
@@ -155,17 +160,29 @@ resource_monitor = ResourceMonitor(log_interval=10)  # Log every 10 seconds (red
 
 class SimpleAssistant(Agent):
     """Simplified AI Assistant with basic functionality"""
-    
+
     def __init__(self, instructions: str = None) -> None:
         super().__init__(instructions=instructions or "You are Cheeko, a friendly AI assistant for kids.")
         self.room_name = None
         self.device_mac = None
-        
+        self.mcp_executor = None
+        self._job_context = None
+
     def set_room_info(self, room_name: str = None, device_mac: str = None):
         """Set room name and device MAC address"""
         self.room_name = room_name
         self.device_mac = device_mac
         logger.info(f"📍 Room info set - Room: {room_name}, MAC: {device_mac}")
+
+    def set_mcp_executor(self, mcp_executor):
+        """Set MCP executor for device control"""
+        self.mcp_executor = mcp_executor
+        logger.info("🎛️ MCP executor set for device control")
+
+    def set_job_context(self, job_context):
+        """Set JobContext for room access"""
+        self._job_context = job_context
+        logger.info("🔗 JobContext set for MCP communication")
     
     @function_tool
     async def check_battery_level(self, context: RunContext, unused: str = '') -> str:
@@ -181,8 +198,22 @@ class SimpleAssistant(Agent):
             str: Battery percentage status message
         """
         logger.info("🔋 Battery check requested in simple agent")
-        # Simple agent doesn't have MCP executor, so return a friendly message
-        return "I don't have access to battery information right now, but your device should show you the battery level on its display."
+
+        if not self.mcp_executor:
+            logger.warning("🔋 MCP executor not available")
+            return "Battery status is not available right now."
+
+        if not self._job_context:
+            logger.warning("🔋 JobContext not available for room access")
+            return "Battery status is not available right now."
+
+        # Set JobContext for MCP executor (has room access)
+        self.mcp_executor.set_context(self._job_context)
+        logger.info("🔋 JobContext set on mcp_executor, calling get_battery_status")
+
+        result = await self.mcp_executor.get_battery_status()
+        logger.info(f"🔋 Battery check result: {result}")
+        return result
 
 def prewarm(proc: JobProcess):
     """Optimized prewarm function - preloads ALL providers to eliminate job startup delay"""
@@ -315,7 +346,10 @@ async def entrypoint(ctx: JobContext):
         </personality>
 
         <greeting>
-        When you first meet a child, greet them warmly with something like:
+        IMPORTANT: When you first start a conversation (no prior messages), you MUST greet the child warmly.
+        DO NOT check battery or use any functions during initial greeting.
+
+        Example greeting:
         "Heya, kiddo! I'm Cheeko, your super-silly learning buddy—ready to blast off into adventure, giggles, and a whole lot of aha! moments. What fun quest do you want to tackle today?"
         </greeting>
 
@@ -324,8 +358,15 @@ async def entrypoint(ctx: JobContext):
         - Use emojis sparingly
         - Ask engaging questions
         - Be encouraging and supportive
-        - If asked about battery, use the check_battery_level function
-        </guidelines>"""
+        - ONLY use check_battery_level function when EXPLICITLY asked about battery
+        - NEVER check battery during initial greeting
+        </guidelines>
+
+        <tools>
+        You have access to check_battery_level function to check the device's battery percentage.
+        Use it ONLY when the user explicitly asks about battery, charge, or power level.
+        DO NOT use it during the initial greeting.
+        </tools>"""
         logger.info(f"📄 Using fallback prompt (length: {len(agent_prompt)} chars)")
 
     # ⚡ PERFORMANCE OPTIMIZATION: Use preloaded providers from prewarm
@@ -394,7 +435,14 @@ async def entrypoint(ctx: JobContext):
     # Create assistant
     assistant = SimpleAssistant(instructions=agent_prompt)
     assistant.set_room_info(room_name=room_name, device_mac=device_mac)
-    
+
+    # Create and set MCP executor for battery checking and device control
+    device_control_service = DeviceControlService()
+    mcp_executor = LiveKitMCPExecutor()
+    assistant.set_mcp_executor(mcp_executor)
+    assistant.set_job_context(ctx)  # Pass JobContext for room access
+    logger.info("🎛️ Device control service and MCP executor initialized")
+
     # Simple event handlers for logging
     # Track audio streaming state
     audio_streaming = False
@@ -519,6 +567,17 @@ async def entrypoint(ctx: JobContext):
 
             if msg_type == "device_info":
                 logger.info(f"📱 [DEVICE-INFO] Device info received - MAC: {device_mac}")
+            elif msg_type == "mcp":
+                logger.info(f"🔌 [MCP-RESPONSE] Received MCP response from gateway")
+                # Forward to MCP client to resolve pending futures
+                request_id = message.get("request_id")
+                # The response contains payload with the actual result
+                response_data = {
+                    "result": message.get("payload", {}),
+                    "request_id": request_id
+                }
+                mcp_executor.mcp_client.handle_response(request_id, response_data)
+                logger.info(f"✅ [MCP-RESPONSE] Response forwarded to MCP client for request {request_id}")
             elif msg_type == "agent_ready":
                 logger.info("🤖 [AGENT-READY] Agent ready signal received - triggering initial greeting NOW")
                 # Trigger initial greeting
@@ -675,11 +734,15 @@ async def entrypoint(ctx: JobContext):
     # Automatically generate initial greeting (no trigger needed!)
     try:
         await asyncio.sleep(0.5)  # Small delay to ensure everything is ready
-        logger.info("🎯 [AUTO-GREETING] Agent fully ready, generating initial greeting automatically...")
-        await session.generate_reply()
-        logger.info("✅ [AUTO-GREETING] Initial greeting generated and sent successfully!")
+        logger.info("🎯 [AUTO-GREETING] Agent fully ready, sending predefined greeting...")
+
+        # Use session.say() instead of generate_reply() to speak a predefined greeting
+        # This prevents the LLM from deciding to check battery during initial greeting
+        greeting_text = "Heya, kiddo! I'm Cheeko, your super-silly learning buddy—ready to blast off into adventure, giggles, and a whole lot of aha! moments. What fun quest do you want to tackle today?"
+        await session.say(greeting_text)
+        logger.info("✅ [AUTO-GREETING] Initial greeting sent successfully!")
     except Exception as e:
-        logger.error(f"❌ [AUTO-GREETING] Failed to generate initial greeting: {e}", exc_info=True)
+        logger.error(f"❌ [AUTO-GREETING] Failed to send initial greeting: {e}", exc_info=True)
 
 if __name__ == "__main__":
     # Set high priority for audio processing
