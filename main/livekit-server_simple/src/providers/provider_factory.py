@@ -5,12 +5,24 @@ import livekit.plugins.cartesia as cartesia
 from livekit.plugins import openai, silero
 from livekit.agents import stt, llm, tts
 import os
+import logging
 
 # Import our custom providers
 from .edge_tts_provider import EdgeTTS
 from .piper_tts_provider import PiperTTS
 from .fastwhisper_stt_provider import FastWhisperSTT
 from .whisper_stt_provider import WhisperSTT
+from .remote_whisper_stt_provider import RemoteWhisperSTT
+from .remote_piper_tts_provider import RemotePiperTTS
+
+logger = logging.getLogger(__name__)
+
+# ========================================
+# INSTANCE CACHING FOR HEAVY MODELS
+# ========================================
+# Cache STT instances to avoid reloading models (Whisper takes 19s to load!)
+_whisper_stt_cache = {}
+_fastwhisper_stt_cache = {}
 
 
 class ProviderFactory:
@@ -28,11 +40,26 @@ class ProviderFactory:
 
             if provider == 'ollama':
                 # Use official LiveKit Ollama integration via OpenAI plugin
+                import httpx
+                import openai as openai_sdk
+                
                 ollama_api = os.environ.get("OLLAMA_API_URL", "http://localhost:11434")
                 ollama_model = config.get('llm_model', os.environ.get("OLLAMA_MODEL", "gemma2:2b"))
-                providers.append(openai.LLM.with_ollama(
+                ollama_timeout = int(os.environ.get("OLLAMA_TIMEOUT", "60"))  # Default 60s
+                
+                # Create custom client with timeout
+                custom_client = openai_sdk.AsyncOpenAI(
+                    base_url=f"{ollama_api}/v1",
+                    api_key="ollama",  # Ollama doesn't need real API key
+                    timeout=httpx.Timeout(timeout=ollama_timeout, connect=10.0)
+                )
+                
+                # Speed optimization: Disable thinking mode, increase temperature for faster responses
+                providers.append(openai.LLM(
                     model=ollama_model,
-                    base_url=f"{ollama_api}/v1"
+                    client=custom_client,
+                    temperature=0.8,  # Higher temp = faster, more creative responses
+                    # Note: reasoning_effort not supported by Ollama
                 ))
             else:
                 # Default to Groq
@@ -46,11 +73,26 @@ class ProviderFactory:
             # Single provider
             if provider == 'ollama':
                 # Use official LiveKit Ollama integration via OpenAI plugin
+                import httpx
+                import openai as openai_sdk
+                
                 ollama_api = os.environ.get("OLLAMA_API_URL", "http://localhost:11434")
                 ollama_model = config.get('llm_model', os.environ.get("OLLAMA_MODEL", "gemma2:2b"))
-                return openai.LLM.with_ollama(
+                ollama_timeout = int(os.environ.get("OLLAMA_TIMEOUT", "60"))  # Default 60s
+                
+                # Create custom client with timeout
+                custom_client = openai_sdk.AsyncOpenAI(
+                    base_url=f"{ollama_api}/v1",
+                    api_key="ollama",  # Ollama doesn't need real API key
+                    timeout=httpx.Timeout(timeout=ollama_timeout, connect=10.0)
+                )
+                
+                # Speed optimization: Disable thinking mode, increase temperature for faster responses
+                return openai.LLM(
                     model=ollama_model,
-                    base_url=f"{ollama_api}/v1"
+                    client=custom_client,
+                    temperature=0.8,  # Higher temp = faster, more creative responses
+                    # Note: reasoning_effort not supported by Ollama
                 )
             else:
                 # Default to Groq provider
@@ -59,6 +101,8 @@ class ProviderFactory:
     @staticmethod
     def create_stt(config, vad=None):
         """Create Speech-to-Text provider with fallback based on configuration"""
+        global _whisper_stt_cache, _fastwhisper_stt_cache
+        
         fallback_enabled = config.get('fallback_enabled', False)
         provider = config.get('stt_provider', 'groq').lower()
 
@@ -66,23 +110,50 @@ class ProviderFactory:
             # Create primary and fallback STT providers with StreamAdapter
             providers = []
 
-            if provider == 'whisper':
-                # Use local OpenAI Whisper STT provider
+            if provider == 'remote_whisper':
+                # Use remote Whisper server
+                remote_url = os.environ.get('REMOTE_WHISPER_URL', 'http://localhost:8000')
                 providers.append(stt.StreamAdapter(
-                    stt=WhisperSTT(
-                        model=config.get('stt_model', 'base'),
+                    stt=RemoteWhisperSTT(
+                        base_url=remote_url,
+                        timeout=30.0,
                         language=config.get('stt_language', 'en')
                     ),
                     vad=vad
                 ))
-            elif provider == 'fastwhisper':
-                # Use our custom FastWhisper STT provider
+            elif provider == 'whisper':
+                # Use cached Whisper instance to avoid reloading model (19s!)
+                cache_key = f"{config.get('stt_model', 'base')}_{config.get('stt_language', 'en')}"
+                
+                if cache_key not in _whisper_stt_cache:
+                    logger.info(f"🆕 [STT-CACHE] Creating new WhisperSTT instance: {cache_key}")
+                    _whisper_stt_cache[cache_key] = WhisperSTT(
+                        model=config.get('stt_model', 'base'),
+                        language=config.get('stt_language', 'en')
+                    )
+                else:
+                    logger.info(f"♻️ [STT-CACHE] Reusing cached WhisperSTT instance: {cache_key}")
+                
                 providers.append(stt.StreamAdapter(
-                    stt=FastWhisperSTT(
+                    stt=_whisper_stt_cache[cache_key],
+                    vad=vad
+                ))
+            elif provider == 'fastwhisper':
+                # Use cached FastWhisper instance to avoid reloading model
+                cache_key = f"{config.get('stt_model', 'base')}_{config.get('stt_language', 'en')}"
+                
+                if cache_key not in _fastwhisper_stt_cache:
+                    logger.info(f"🆕 [STT-CACHE] Creating new FastWhisperSTT instance: {cache_key}")
+                    _fastwhisper_stt_cache[cache_key] = FastWhisperSTT(
                         model=config.get('stt_model', 'base'),
                         language=config.get('stt_language', 'en'),
                         vad_filter=False  # Disable internal VAD - using Silero VAD instead
-                    ),
+                    )
+                else:
+                    logger.info(f"♻️ [STT-CACHE] Reusing cached FastWhisperSTT instance: {cache_key}")
+                
+                providers.append(stt.StreamAdapter(
+                    stt=_fastwhisper_stt_cache[cache_key],
                     vad=vad
                 ))
             elif provider == 'deepgram':
@@ -118,23 +189,50 @@ class ProviderFactory:
             return stt.FallbackAdapter(providers)
         else:
             # Single provider with StreamAdapter and VAD
-            if provider == 'whisper':
-                # Use local OpenAI Whisper STT provider
+            if provider == 'remote_whisper':
+                # Use remote Whisper server
+                remote_url = os.environ.get('REMOTE_WHISPER_URL', 'http://localhost:8000')
                 return stt.StreamAdapter(
-                    stt=WhisperSTT(
-                        model=config.get('stt_model', 'base'),
+                    stt=RemoteWhisperSTT(
+                        base_url=remote_url,
+                        timeout=30.0,
                         language=config.get('stt_language', 'en')
                     ),
                     vad=vad
                 )
-            elif provider == 'fastwhisper':
-                # Use our custom FastWhisper STT provider
+            elif provider == 'whisper':
+                # Use cached Whisper instance to avoid reloading model (19s!)
+                cache_key = f"{config.get('stt_model', 'base')}_{config.get('stt_language', 'en')}"
+                
+                if cache_key not in _whisper_stt_cache:
+                    logger.info(f"🆕 [STT-CACHE] Creating new WhisperSTT instance: {cache_key}")
+                    _whisper_stt_cache[cache_key] = WhisperSTT(
+                        model=config.get('stt_model', 'base'),
+                        language=config.get('stt_language', 'en')
+                    )
+                else:
+                    logger.info(f"♻️ [STT-CACHE] Reusing cached WhisperSTT instance: {cache_key}")
+                
                 return stt.StreamAdapter(
-                    stt=FastWhisperSTT(
+                    stt=_whisper_stt_cache[cache_key],
+                    vad=vad
+                )
+            elif provider == 'fastwhisper':
+                # Use cached FastWhisper instance to avoid reloading model
+                cache_key = f"{config.get('stt_model', 'base')}_{config.get('stt_language', 'en')}"
+                
+                if cache_key not in _fastwhisper_stt_cache:
+                    logger.info(f"🆕 [STT-CACHE] Creating new FastWhisperSTT instance: {cache_key}")
+                    _fastwhisper_stt_cache[cache_key] = FastWhisperSTT(
                         model=config.get('stt_model', 'base'),
                         language=config.get('stt_language', 'en'),
                         vad_filter=False  # Disable internal VAD - using Silero VAD instead
-                    ),
+                    )
+                else:
+                    logger.info(f"♻️ [STT-CACHE] Reusing cached FastWhisperSTT instance: {cache_key}")
+                
+                return stt.StreamAdapter(
+                    stt=_fastwhisper_stt_cache[cache_key],
                     vad=vad
                 )
             elif provider == 'deepgram':
@@ -170,7 +268,15 @@ class ProviderFactory:
 
             # Primary provider based on configuration
             primary_provider = tts_config.get('provider', 'edge').lower()
-            if primary_provider == 'piper':
+            if primary_provider == 'remote_piper':
+                # Use remote Piper server
+                remote_url = os.environ.get('REMOTE_PIPER_URL', 'http://localhost:8001')
+                providers.append(RemotePiperTTS(
+                    base_url=remote_url,
+                    timeout=30.0,
+                    sample_rate=tts_config.get('tts_sample_rate', 22050)
+                ))
+            elif primary_provider == 'piper':
                 providers.append(PiperTTS(
                     voice=tts_config.get('piper_voice', 'en_US-amy-medium'),
                     model_path=tts_config.get('piper_model_path'),
@@ -229,7 +335,15 @@ class ProviderFactory:
             # Single provider (current behavior)
             provider = tts_config.get('provider', 'groq').lower()
 
-            if provider == 'piper':
+            if provider == 'remote_piper':
+                # Use remote Piper server
+                remote_url = os.environ.get('REMOTE_PIPER_URL', 'http://localhost:8001')
+                return RemotePiperTTS(
+                    base_url=remote_url,
+                    timeout=30.0,
+                    sample_rate=tts_config.get('tts_sample_rate', 22050)
+                )
+            elif provider == 'piper':
                 return PiperTTS(
                     voice=tts_config.get('piper_voice', 'en_US-amy-medium'),
                     model_path=tts_config.get('piper_model_path'),

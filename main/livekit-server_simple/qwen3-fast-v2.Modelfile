@@ -1,0 +1,23 @@
+FROM qwen3:4b
+
+# Disable ALL thinking tokens
+PARAMETER stop "<think>"
+PARAMETER stop "</think>"
+PARAMETER stop "<reasoning>"
+PARAMETER stop "</reasoning>"
+PARAMETER stop "Thinking..."
+PARAMETER stop "Let me think"
+PARAMETER stop "I'm thinking"
+
+# Aggressive speed optimizations
+PARAMETER temperature 0.9
+PARAMETER top_p 0.95
+PARAMETER top_k 40
+PARAMETER repeat_penalty 1.1
+PARAMETER num_predict 256
+
+# Disable verbose thinking
+PARAMETER num_ctx 2048
+
+# System prompt - NO THINKING, direct responses only
+SYSTEM You are Cheeko, a friendly AI assistant for kids. Respond IMMEDIATELY and DIRECTLY without any thinking process. Never show reasoning, never say "thinking", never explain your thought process. Just respond naturally and quickly. When asked to control devices (volume, lights, etc), use the available functions directly.

@@ -482,14 +482,16 @@ def prewarm(proc: JobProcess):
         logger.error(f"❌ [PREWARM] Failed to initialize LLM: {e}")
         proc.userdata["llm"] = None
 
-    # Preload STT provider (Whisper model loading can take time)
+    # Preload STT provider (Whisper/Sherpa model loading can take time)
     stt_start = time.time()
     try:
         stt = ProviderFactory.create_stt(groq_config, vad)
         proc.userdata["stt"] = stt
         
-        # If using Whisper, preload the model
-        if groq_config.get('stt_provider') == 'whisper':
+        stt_provider = groq_config.get('stt_provider', 'groq')
+        
+        # Preload Whisper model if using Whisper
+        if stt_provider == 'whisper':
             logger.info(f"🎤 [PREWARM] Preloading Whisper model...")
             # Access the wrapped STT to trigger model loading
             if hasattr(stt, '_wrapped_stt'):
@@ -502,7 +504,34 @@ def prewarm(proc: JobProcess):
                     loop.close()
                     logger.info(f"✅ [PREWARM] Whisper model preloaded!")
         
-        logger.info(f"🎤 [PREWARM] STT provider initialized ({time.time() - stt_start:.3f}s)")
+        # Preload Sherpa model if using Sherpa
+        elif stt_provider == 'sherpa':
+            logger.info(f"🎤 [PREWARM] Preloading Sherpa-ONNX model...")
+            # Access the wrapped STT to trigger model loading
+            if hasattr(stt, '_wrapped_stt'):
+                sherpa_stt = stt._wrapped_stt
+                if hasattr(sherpa_stt, '_ensure_model_loaded'):
+                    import asyncio
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(sherpa_stt._ensure_model_loaded())
+                    loop.close()
+                    logger.info(f"✅ [PREWARM] Sherpa-ONNX model preloaded!")
+        
+        # Preload FastWhisper model if using FastWhisper
+        elif stt_provider == 'fastwhisper':
+            logger.info(f"🎤 [PREWARM] Preloading FastWhisper model...")
+            if hasattr(stt, '_wrapped_stt'):
+                fastwhisper_stt = stt._wrapped_stt
+                if hasattr(fastwhisper_stt, '_ensure_model_loaded'):
+                    import asyncio
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(fastwhisper_stt._ensure_model_loaded())
+                    loop.close()
+                    logger.info(f"✅ [PREWARM] FastWhisper model preloaded!")
+        
+        logger.info(f"🎤 [PREWARM] STT provider initialized - {stt_provider} ({time.time() - stt_start:.3f}s)")
     except Exception as e:
         logger.error(f"❌ [PREWARM] Failed to initialize STT: {e}")
         proc.userdata["stt"] = None
@@ -667,10 +696,19 @@ async def entrypoint(ctx: JobContext):
 
     if not stt:
         logger.warning("⚠️ STT not preloaded, creating now (this will add ~0.35s latency)...")
+        logger.warning(f"⚠️ STT is None - prewarm may have failed or not run")
         groq_config = groq_config or ConfigLoader.get_groq_config()
         stt = ProviderFactory.create_stt(groq_config, vad)
     else:
-        logger.info("✅ STT loaded from prewarm")
+        logger.info(f"✅ STT loaded from prewarm - Type: {type(stt)}, ID: {id(stt)}")
+        # Check if model is actually loaded
+        if hasattr(stt, '_wrapped_stt'):
+            wrapped = stt._wrapped_stt
+            if hasattr(wrapped, '_model'):
+                model_status = "LOADED" if wrapped._model is not None else "NOT LOADED"
+                logger.info(f"   Whisper model status: {model_status}")
+            else:
+                logger.info(f"   Wrapped STT type: {type(wrapped)}")
 
     if not tts:
         logger.warning("⚠️ TTS not preloaded, creating now (this will add ~0.1s latency)...")
@@ -1079,5 +1117,5 @@ if __name__ == "__main__":
         prewarm_fnc=prewarm,
         num_idle_processes=2,  # Reduced for lower thread usage (was 6)
         initialize_process_timeout=60.0,
-        agent_name="cheeko-agent",  # Named agent for explicit dispatch only
+        # agent_name="cheeko-agent",  # Named agent for explicit dispatch only
     ))

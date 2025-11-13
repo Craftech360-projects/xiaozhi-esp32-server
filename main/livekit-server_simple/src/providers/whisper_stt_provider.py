@@ -55,14 +55,14 @@ class WhisperSTT(stt.STT):
         self._model = None
 
         logger.info(
-            f"Initialized WhisperSTT with model={model}, "
-            f"device={device}, language={language}"
+            f"🆕 [WHISPER-INIT] Creating NEW WhisperSTT instance (ID: {id(self)}) "
+            f"with model={model}, device={device}, language={language}"
         )
 
     async def _ensure_model_loaded(self):
         """Lazy load the Whisper model"""
         if self._model is None:
-            logger.info(f"Loading Whisper model: {self._model_size}")
+            logger.info(f"⏳ [WHISPER-LOAD] Loading Whisper model: {self._model_size} (Instance ID: {id(self)})")
             loop = asyncio.get_event_loop()
 
             try:
@@ -71,11 +71,13 @@ class WhisperSTT(stt.STT):
                     None,
                     lambda: whisper.load_model(self._model_size, device=self._device)
                 )
-                logger.info(f"✅ Whisper model loaded successfully: {self._model_size}")
+                logger.info(f"✅ [WHISPER-LOAD] Whisper model loaded successfully: {self._model_size} (Instance ID: {id(self)})")
             except Exception as e:
                 logger.error(f"❌ Failed to load Whisper model '{self._model_size}': {e}")
                 logger.error(f"Available models: tiny, base, small, medium, large, tiny.en, base.en, small.en, medium.en")
                 raise
+        else:
+            logger.debug(f"✅ [WHISPER-REUSE] Model already loaded for instance {id(self)}")
 
     async def _recognize_impl(
         self,
