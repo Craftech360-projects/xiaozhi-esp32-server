@@ -19,6 +19,7 @@ if (isMainThread) {
 }
 
 // Import Opus encoder (native @discordjs/opus)
+// Note: @discordjs/opus uses OpusEncoder for both encoding and decoding
 const { OpusEncoder } = require('@discordjs/opus');
 
 /**
@@ -54,7 +55,7 @@ class AudioProcessor {
    */
   initIncomingDecoder(sampleRate, channels) {
     if (!this.incomingDecoder) {
-      this.incomingDecoder = new OpusEncoder(sampleRate, channels); // OpusEncoder class handles both
+      this.incomingDecoder = new OpusEncoder(sampleRate, channels); // OpusEncoder handles both encode/decode
       console.log(`🧵 [WORKER] Incoming decoder initialized: ${sampleRate}Hz ${channels}ch`);
     }
   }

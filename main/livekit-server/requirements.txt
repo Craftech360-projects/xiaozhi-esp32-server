@@ -1,4 +1,6 @@
 livekit-plugins-groq
+livekit-plugins-elevenlabs
+livekit-plugins-deepgram
 python-dotenv
 pydub
 aiohttp

@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   livekit-server:
     image: livekit/livekit-server:latest
@@ -58,7 +56,7 @@ services:
     container_name: media-server
     restart: unless-stopped
     ports:
-      - "8080:80"
+      - "8082:80"
     volumes:
       - ./local_media:/usr/share/nginx/html:ro
     networks:

@@ -10,7 +10,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@discordjs/opus": "^0.10.0",
+    "@discordjs/opus": "github:discordjs/opus",
     "@livekit/rtc-node": "^0.13.18",
     "@voicehype/audify-plus": "^2.0.9",
     "axios": "^1.6.0",

@@ -988,18 +988,19 @@ class LiveKitBridge extends Emitter {
           continue;
         }
 
-        // PHASE 2: Encode using worker thread (non-blocking)
+        // TEMPORARY: Use synchronous encoding to avoid worker thread issues
         try {
-          const opusBuffer = await this.workerPool.encodeOpus(frameData, this.targetFrameSize);
+          // Use the main thread encoder directly
+          const opusBuffer = opusEncoder.encode(frameData, this.targetFrameSize);
 
           if (frameCount <= 3 || frameCount % 100 === 0) {
-            console.log(`🎵 [WORKER] Frame ${frameCount}: PCM ${frameData.length}B → Opus ${opusBuffer.length}B`);
+            console.log(`🎵 [SYNC] Frame ${frameCount}: PCM ${frameData.length}B → Opus ${opusBuffer.length}B`);
           }
 
           this.connection.sendUdpMessage(opusBuffer, timestamp);
         } catch (err) {
-          console.error(`❌ [WORKER] Encode error: ${err.message}`);
-          // Fallback to PCM if worker encoding fails
+          console.error(`❌ [SYNC] Encode error: ${err.message}`);
+          // Fallback to PCM if encoding fails
           this.connection.sendUdpMessage(frameData, timestamp);
         }
       }
@@ -1299,16 +1300,35 @@ class LiveKitBridge extends Emitter {
                     frameCount++;
 
                     // value is an AudioFrame from LiveKit (48kHz)
-                    // Push the frame to resampler and get resampled frames back (16kHz)
-                    const resampledFrames = this.audioResampler.push(value);
+                    // Add safety checks for AudioFrame processing
+                    try {
+                      if (!value || !value.data) {
+                        console.warn(`⚠️ [AUDIO] Invalid AudioFrame received, skipping`);
+                        continue;
+                      }
 
-                    // Add resampled frames to buffer instead of processing directly
-                    for (const resampledFrame of resampledFrames) {
-                      const resampledBuffer = Buffer.from(
-                        resampledFrame.data.buffer,
-                        resampledFrame.data.byteOffset,
-                        resampledFrame.data.byteLength
-                      );
+                      // Push the frame to resampler and get resampled frames back (24kHz)
+                      const resampledFrames = this.audioResampler.push(value);
+
+                      // Add resampled frames to buffer instead of processing directly
+                      for (const resampledFrame of resampledFrames) {
+                        if (!resampledFrame || !resampledFrame.data) {
+                          console.warn(`⚠️ [AUDIO] Invalid resampled frame, skipping`);
+                          continue;
+                        }
+
+                        // Safer buffer creation with validation
+                        let resampledBuffer;
+                        try {
+                          resampledBuffer = Buffer.from(
+                            resampledFrame.data.buffer,
+                            resampledFrame.data.byteOffset,
+                            resampledFrame.data.byteLength
+                          );
+                        } catch (bufferError) {
+                          console.error(`❌ [AUDIO] Buffer creation failed:`, bufferError.message);
+                          continue;
+                        }
 
                       // Append to frame buffer
                       this.frameBuffer = Buffer.concat([this.frameBuffer, resampledBuffer]);
@@ -1317,17 +1337,22 @@ class LiveKitBridge extends Emitter {
 
                     const timestamp = (Date.now() - this.connection.udp.startTime) & 0xffffffff;
 
-                    // Process any complete frames from the buffer
-                    this.processBufferedFrames(timestamp, frameCount, participant.identity);
+                      // Process any complete frames from the buffer
+                      this.processBufferedFrames(timestamp, frameCount, participant.identity);
 
-                    // Log every 50 frames or every 5 seconds
-                    // const now = Date.now();
-                    // if (frameCount % 50 === 0 || now - lastLogTime > 5000) {
-                    //   console.log(
-                    //     `🎵 [AUDIO FRAMES] Received ${frameCount} frames, ${totalBytes} total bytes from ${participant.identity}, buffer: ${this.frameBuffer.length}B`
-                    //   );
-                    //   lastLogTime = now;
-                    // }
+                      // Log every 50 frames or every 5 seconds
+                      // const now = Date.now();
+                      // if (frameCount % 50 === 0 || now - lastLogTime > 5000) {
+                      //   console.log(
+                      //     `🎵 [AUDIO FRAMES] Received ${frameCount} frames, ${totalBytes} total bytes from ${participant.identity}, buffer: ${this.frameBuffer.length}B`
+                      //   );
+                      //   lastLogTime = now;
+                      // }
+
+                    } catch (audioProcessError) {
+                      console.error(`❌ [AUDIO] Frame processing error:`, audioProcessError.message);
+                      // Continue processing other frames
+                    }
 
                   }
                 } catch (error) {
