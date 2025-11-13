@@ -95,6 +95,7 @@ public class ShiroConfig {
         filterMap.put("/agent/device/**/cycle-mode", "anon");  // Allow firmware direct access (legacy)
         filterMap.put("/agent/device/**/cycle-character", "anon");  // Allow firmware direct access (cycle)
         filterMap.put("/agent/device/**/set-character", "anon");  // Allow firmware direct access (set specific)
+        filterMap.put("/agent/device/**/current-character", "anon");  // Allow firmware direct access (get current)
         filterMap.put("/device/**/cycle-mode", "anon");  // Allow firmware direct access (device mode cycle)
         filterMap.put("/device/**/mode", "anon");  // Allow anonymous access to query device mode
         filterMap.put("/agent/device/*/agent-id", "server");

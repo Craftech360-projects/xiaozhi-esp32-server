@@ -411,4 +411,34 @@ public class AgentController {
         }
     }
 
+    @GetMapping("/device/{macAddress}/current-character")
+    @Operation(summary = "Get current agent character by device MAC address")
+    public Result<String> getCurrentCharacterByMac(@PathVariable("macAddress") String macAddress) {
+        try {
+            // Clean MAC address
+            String cleanMac = macAddress.replace(":", "").replace("-", "").toLowerCase();
+            
+            log.info("🔍 Getting current character for device MAC: {}", cleanMac);
+            
+            // Get agent by MAC address
+            AgentEntity agent = agentService.getDefaultAgentByMacAddress(cleanMac);
+            
+            if (agent == null) {
+                log.warn("⚠️ No agent found for MAC address: {}", cleanMac);
+                return new Result<String>().ok("Cheeko"); // Default fallback
+            }
+            
+            String currentCharacter = agent.getAgentName();
+            if (currentCharacter == null || currentCharacter.trim().isEmpty()) {
+                currentCharacter = "Cheeko"; // Default fallback
+            }
+            
+            log.info("✅ Current character for MAC {}: {}", cleanMac, currentCharacter);
+            return new Result<String>().ok(currentCharacter);
+            
+        } catch (Exception e) {
+            log.error("❌ Error getting current character for MAC {}: {}", macAddress, e.getMessage());
+            return new Result<String>().ok("Cheeko"); // Default fallback on error
+        }
+    }
 }
