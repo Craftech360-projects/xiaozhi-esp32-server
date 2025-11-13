@@ -20,6 +20,19 @@ class DatabaseHelper:
         self.secret = secret
         self.retry_attempts = 3
 
+    def _normalize_mac_address(self, mac_address: str) -> str:
+        """
+        Normalize MAC address by removing colons/dashes and converting to lowercase
+        This matches the normalization used in the Java device controller methods
+        
+        Args:
+            mac_address: Original MAC address (e.g., "68:25:dd:bb:f3:a0")
+            
+        Returns:
+            str: Normalized MAC address (e.g., "6825ddbbf3a0")
+        """
+        return mac_address.replace(":", "").replace("-", "").lower()
+
     async def get_agent_id(self, device_mac: str) -> Optional[str]:
         """
         Get agent_id from database using device MAC address
@@ -30,7 +43,11 @@ class DatabaseHelper:
         Returns:
             str: Agent ID if found, None if not found or on error
         """
-        url = f"{self.manager_api_url}/agent/device/{device_mac}/agent-id"
+        # Normalize MAC address to match Java controller expectations
+        normalized_mac = self._normalize_mac_address(device_mac)
+        logger.info(f"🔍 [DB HELPER] get_agent_id - MAC: {device_mac} -> normalized: {normalized_mac}")
+        
+        url = f"{self.manager_api_url}/agent/device/{normalized_mac}/agent-id"
         headers = {
             "Authorization": f"Bearer {self.secret}",
             "Content-Type": "application/json"
@@ -46,18 +63,18 @@ class DatabaseHelper:
                             # Check for Result<String> format: {code: 0, data: "agent_id"}
                             if data.get('code') == 0 and data.get('data'):
                                 agent_id = data.get('data')
-                                logger.info(f"🆔✅ Retrieved agent_id: {agent_id} for MAC: {device_mac}")
+                                logger.info(f"🆔✅ Retrieved agent_id: {agent_id} for MAC: {device_mac} (normalized: {normalized_mac})")
                                 return str(agent_id)
                             # Fallback to direct fields
                             agent_id = data.get('agentId') or data.get('agent_id')
                             if agent_id:
-                                logger.info(f"🆔✅ Retrieved agent_id: {agent_id} for MAC: {device_mac}")
+                                logger.info(f"🆔✅ Retrieved agent_id: {agent_id} for MAC: {device_mac} (normalized: {normalized_mac})")
                                 return str(agent_id)
                             else:
-                                logger.warning(f"🆔⚠️ No agent_id found in response for MAC: {device_mac}. Response: {data}")
+                                logger.warning(f"🆔⚠️ No agent_id found in response for MAC: {device_mac} (normalized: {normalized_mac}). Response: {data}")
                                 return None
                         elif response.status == 404:
-                            logger.warning(f"No agent found for MAC: {device_mac}")
+                            logger.warning(f"No agent found for MAC: {device_mac} (normalized: {normalized_mac})")
                             return None
                         else:
                             error_text = await response.text()
@@ -80,7 +97,7 @@ class DatabaseHelper:
                 wait_time = 2 ** attempt  # 1s, 2s, 4s
                 await asyncio.sleep(wait_time)
 
-        logger.error(f"Failed to get agent_id after {self.retry_attempts} attempts for MAC: {device_mac}")
+        logger.error(f"Failed to get agent_id after {self.retry_attempts} attempts for MAC: {device_mac} (normalized: {normalized_mac})")
         return None
 
     async def get_child_profile_by_mac(self, device_mac: str) -> Optional[dict]:
@@ -93,12 +110,16 @@ class DatabaseHelper:
         Returns:
             dict: Child profile with name, age, ageGroup, gender, interests
         """
+        # Normalize MAC address to match Java controller expectations
+        normalized_mac = self._normalize_mac_address(device_mac)
+        logger.info(f"🔍 [DB HELPER] get_child_profile_by_mac - MAC: {device_mac} -> normalized: {normalized_mac}")
+        
         url = f"{self.manager_api_url}/config/child-profile-by-mac"
         headers = {
             "Authorization": f"Bearer {self.secret}",
             "Content-Type": "application/json"
         }
-        payload = {"macAddress": device_mac}
+        payload = {"macAddress": normalized_mac}
 
         for attempt in range(self.retry_attempts):
             try:
@@ -110,13 +131,13 @@ class DatabaseHelper:
                             # Check for Result<ChildProfileDTO> format: {code: 0, data: {...}}
                             if data.get('code') == 0 and data.get('data'):
                                 child_profile = data.get('data')
-                                logger.info(f"👶✅ Retrieved child profile for MAC: {device_mac} - {child_profile.get('name')}, age {child_profile.get('age')}")
+                                logger.info(f"👶✅ Retrieved child profile for MAC: {device_mac} (normalized: {normalized_mac}) - {child_profile.get('name')}, age {child_profile.get('age')}")
                                 return child_profile
                             else:
                                 logger.warning(f"👶⚠️ API returned error: {data}")
                                 return None
                         elif response.status == 404:
-                            logger.warning(f"No child profile found for MAC: {device_mac}")
+                            logger.warning(f"No child profile found for MAC: {device_mac} (normalized: {normalized_mac})")
                             return None
                         else:
                             error_text = await response.text()
@@ -139,7 +160,7 @@ class DatabaseHelper:
                 wait_time = 2 ** attempt  # 1s, 2s, 4s
                 await asyncio.sleep(wait_time)
 
-        logger.error(f"Failed to get child profile after {self.retry_attempts} attempts for MAC: {device_mac}")
+        logger.error(f"Failed to get child profile after {self.retry_attempts} attempts for MAC: {device_mac} (normalized: {normalized_mac})")
         return None
 
     async def verify_manager_api_connection(self) -> bool:
@@ -179,12 +200,16 @@ class DatabaseHelper:
         Returns:
             str: Template ID if found, None if not found or on error
         """
+        # Normalize MAC address to match Java controller expectations
+        normalized_mac = self._normalize_mac_address(device_mac)
+        logger.info(f"🔍 [DB HELPER] get_agent_template_id - MAC: {device_mac} -> normalized: {normalized_mac}")
+        
         url = f"{self.manager_api_url}/config/agent-template-id"
         headers = {
             "Authorization": f"Bearer {self.secret}",
             "Content-Type": "application/json"
         }
-        payload = {"macAddress": device_mac.lower()}
+        payload = {"macAddress": normalized_mac}
 
         for attempt in range(self.retry_attempts):
             try:
@@ -196,13 +221,13 @@ class DatabaseHelper:
                             # Check for Result<String> format: {code: 0, data: "template_id"}
                             if data.get('code') == 0 and data.get('data'):
                                 template_id = data.get('data')
-                                logger.info(f"📄✅ Retrieved template_id: {template_id} for MAC: {device_mac}")
+                                logger.info(f"📄✅ Retrieved template_id: {template_id} for MAC: {device_mac} (normalized: {normalized_mac})")
                                 return str(template_id)
                             else:
-                                logger.warning(f"📄⚠️ No template_id in response for MAC: {device_mac}. Response: {data}")
+                                logger.warning(f"📄⚠️ No template_id in response for MAC: {device_mac} (normalized: {normalized_mac}). Response: {data}")
                                 return None
                         elif response.status == 404:
-                            logger.warning(f"No template found for MAC: {device_mac}")
+                            logger.warning(f"No template found for MAC: {device_mac} (normalized: {normalized_mac})")
                             return None
                         else:
                             error_text = await response.text()
@@ -225,7 +250,7 @@ class DatabaseHelper:
                 wait_time = 2 ** attempt  # 1s, 2s, 4s
                 await asyncio.sleep(wait_time)
 
-        logger.error(f"Failed to get template_id after {self.retry_attempts} attempts for MAC: {device_mac}")
+        logger.error(f"Failed to get template_id after {self.retry_attempts} attempts for MAC: {device_mac} (normalized: {normalized_mac})")
         return None
 
     async def fetch_template_content(self, template_id: str) -> Optional[str]:
@@ -296,12 +321,16 @@ class DatabaseHelper:
         Returns:
             str: Location (city name)
         """
+        # Normalize MAC address to match Java controller expectations
+        normalized_mac = self._normalize_mac_address(device_mac)
+        logger.info(f"🔍 [DB HELPER] get_device_location - MAC: {device_mac} -> normalized: {normalized_mac}")
+        
         url = f"{self.manager_api_url}/config/device-location"
         headers = {
             "Authorization": f"Bearer {self.secret}",
             "Content-Type": "application/json"
         }
-        payload = {"macAddress": device_mac.lower()}
+        payload = {"macAddress": normalized_mac}
 
         for attempt in range(self.retry_attempts):
             try:
@@ -313,13 +342,13 @@ class DatabaseHelper:
                             # Check for Result<String> format: {code: 0, data: "city_name"}
                             if data.get('code') == 0 and data.get('data'):
                                 location = data.get('data')
-                                logger.info(f"📍✅ Retrieved location: {location} for MAC: {device_mac}")
+                                logger.info(f"📍✅ Retrieved location: {location} for MAC: {device_mac} (normalized: {normalized_mac})")
                                 return location
                             else:
-                                logger.warning(f"📍⚠️ No location in response for MAC: {device_mac}")
+                                logger.warning(f"📍⚠️ No location in response for MAC: {device_mac} (normalized: {normalized_mac})")
                                 return None
                         elif response.status == 404:
-                            logger.warning(f"No location found for MAC: {device_mac}")
+                            logger.warning(f"No location found for MAC: {device_mac} (normalized: {normalized_mac})")
                             return None
                         else:
                             error_text = await response.text()
@@ -339,7 +368,7 @@ class DatabaseHelper:
                 wait_time = 2 ** attempt
                 await asyncio.sleep(wait_time)
 
-        logger.error(f"Failed to get location after {self.retry_attempts} attempts for MAC: {device_mac}")
+        logger.error(f"Failed to get location after {self.retry_attempts} attempts for MAC: {device_mac} (normalized: {normalized_mac})")
         return None
 
     async def get_weather_forecast(self, location: str) -> Optional[str]:
