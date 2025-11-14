@@ -121,11 +121,15 @@ class RemoteWhisperSTT(stt.STT):
         """Convert audio buffer to numpy array"""
         import numpy as np
         
-        if isinstance(buffer, utils.AudioBuffer):
-            # Convert AudioBuffer to numpy array
-            data = np.frombuffer(buffer.data, dtype=np.int16)
+        # Check if buffer has 'data' attribute (works for both AudioBuffer and AudioFrame)
+        if hasattr(buffer, 'data'):
+            # Convert buffer data to numpy array
+            if isinstance(buffer.data, (bytes, bytearray)):
+                data = np.frombuffer(buffer.data, dtype=np.int16)
+            else:
+                data = np.array(buffer.data, dtype=np.int16)
         else:
-            # AudioFrame
-            data = np.array(buffer.data, dtype=np.int16)
+            # Fallback: treat as raw data
+            data = np.array(buffer, dtype=np.int16)
         
         return data

@@ -664,7 +664,17 @@ async def entrypoint(ctx: JobContext):
         - set_light_mode(mode): Set LED mode (rainbow, default, custom)
         - set_rainbow_speed(speed_ms): Set rainbow animation speed (50-1000ms)
         
-        Use them ONLY when explicitly requested by the user.
+        IMPORTANT: Use these functions ONLY when the user EXPLICITLY asks you to:
+        - "turn on the light" → use set_light_color
+        - "change volume" → use set_device_volume
+        - "check battery" → use check_battery_level
+        
+        DO NOT use these functions for:
+        - Storytelling (just tell the story directly)
+        - General conversation (just respond normally)
+        - Setting mood/ambiance (unless explicitly requested)
+        
+        If unsure whether to use a function, DON'T use it - just respond with text.
         </tools>"""
         logger.info(f"📄 Using fallback prompt (length: {len(agent_prompt)} chars)")
 
