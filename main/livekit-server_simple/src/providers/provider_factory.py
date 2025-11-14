@@ -314,7 +314,16 @@ class ProviderFactory:
                 ))
 
             # Fallback providers (in order of preference)
-            if primary_provider != 'edge':
+            # If primary is remote_piper, fall back to local Piper first (not Edge).
+            if primary_provider == 'remote_piper':
+                providers.append(PiperTTS(
+                    voice=tts_config.get('piper_voice', 'en_US-amy-medium'),
+                    model_path=tts_config.get('piper_model_path'),
+                    sample_rate=tts_config.get('piper_sample_rate', 22050),
+                    speaker=tts_config.get('piper_speaker'),
+                    piper_binary=tts_config.get('piper_binary', 'piper')
+                ))
+            elif primary_provider != 'edge':
                 providers.append(EdgeTTS(
                     voice=tts_config.get('edge_voice', 'en-US-AnaNeural'),
                     rate=tts_config.get('edge_rate', '+0%'),

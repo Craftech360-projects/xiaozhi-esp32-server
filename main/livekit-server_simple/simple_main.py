@@ -165,6 +165,9 @@ class SimpleAssistant(Agent):
         self.device_mac = None
         self.mcp_executor = None
         self._job_context = None
+        # Track the most recent robot action so we can keep the spoken
+        # confirmation short and simple right after the gesture.
+        self._last_robot_action: str | None = None
     
     def sanitize_text_for_speech(self, text: str) -> str:
         """Remove markdown, emojis, and special characters for TTS"""
@@ -206,7 +209,28 @@ class SimpleAssistant(Agent):
         return text.strip()
     
     async def say(self, message: str, **kwargs):
-        """Override say method to sanitize text before TTS"""
+        """Override say method to sanitize text before TTS.
+        
+        If a robot control action was just triggered, replace the next
+        spoken reply with a very short confirmation line so the robot
+        doesn't talk too much about its own gestures.
+        """
+        if self._last_robot_action:
+            action = self._last_robot_action
+            self._last_robot_action = None
+
+            # Use very short, simple confirmations for robot actions
+            if action == "raise_hand":
+                message = "Okay, I will raise my hand."
+            elif action == "lower_hand":
+                message = "Okay, I will lower my hand."
+            elif action == "wave_hand":
+                message = "Waving hello."
+            elif action == "nod_head":
+                message = "Nodding yes."
+            elif action == "shake_head":
+                message = "Shaking my head no."
+
         sanitized = self.sanitize_text_for_speech(message)
         logger.info(f"🧹 Sanitized text: '{message[:50]}...' -> '{sanitized[:50]}...'")
         return await super().say(sanitized, **kwargs)
@@ -462,6 +486,9 @@ class SimpleAssistant(Agent):
         
         result = await self.mcp_executor.robot_control("raise_hand")
         logger.info(f"🤖 Raise hand result: {result}")
+        # Mark that a robot action just happened so the next spoken
+        # response can be kept short and simple.
+        self._last_robot_action = "raise_hand"
         return result
     
     @function_tool
@@ -488,6 +515,7 @@ class SimpleAssistant(Agent):
         
         result = await self.mcp_executor.robot_control("lower_hand")
         logger.info(f"🤖 Lower hand result: {result}")
+        self._last_robot_action = "lower_hand"
         return result
     
     @function_tool
@@ -514,6 +542,7 @@ class SimpleAssistant(Agent):
         
         result = await self.mcp_executor.robot_control("wave_hand")
         logger.info(f"🤖 Wave hand result: {result}")
+        self._last_robot_action = "wave_hand"
         return result
     
     @function_tool
@@ -540,6 +569,7 @@ class SimpleAssistant(Agent):
         
         result = await self.mcp_executor.robot_control("nod_head")
         logger.info(f"🤖 Nod head result: {result}")
+        self._last_robot_action = "nod_head"
         return result
     
     @function_tool
@@ -566,6 +596,7 @@ class SimpleAssistant(Agent):
         
         result = await self.mcp_executor.robot_control("shake_head")
         logger.info(f"🤖 Shake head result: {result}")
+        self._last_robot_action = "shake_head"
         return result
 
 def prewarm(proc: JobProcess):
@@ -813,13 +844,18 @@ async def entrypoint(ctx: JobContext):
         - "raise your hand" → use raise_hand
         - "wave hello" → use wave_hand
         - "nod your head" → use nod_head
+        - "shake your head" → use shake_head
         
         DO NOT use these functions for:
         - Storytelling (just tell the story directly)
         - General conversation (just respond normally)
+        - Greetings or polite phrases like "hi", "hello", "good morning", "good evening", "thank you", or "thanks"
         - Setting mood/ambiance (unless explicitly requested)
         
         If unsure whether to use a function, DON'T use it - just respond with text.
+        In particular, NEVER call nod_head or shake_head just to react to polite
+        phrases such as "thank you", "hi", "hello", or "good evening"—simply
+        answer with a short spoken sentence instead.
         </tools>"""
         logger.info(f"📄 Using fallback prompt (length: {len(agent_prompt)} chars)")
 
