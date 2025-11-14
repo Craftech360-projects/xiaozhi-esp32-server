@@ -888,7 +888,7 @@ configManager.on("configChanged", (config) => {
 setDebugEnabled(configManager.get("debug"));
 
 class LiveKitBridge extends Emitter {
-  constructor(connection, protocolVersion, macAddress, uuid, userData) {
+  constructor(connection, protocolVersion, macAddress, uuid, userData, mqttClient) {
     super();
     this.connection = connection;
     this.macAddress = macAddress;
@@ -898,6 +898,9 @@ class LiveKitBridge extends Emitter {
     this.audioSource = new AudioSource(16000, 1);
     this.protocolVersion = protocolVersion;
     this.isAudioPlaying = false; // Track if audio is actively playing
+
+    // MQTT client comes from the gateway; used for robot/control publishing
+    this.mqttClient = mqttClient || null;
 
     // Add agent join tracking
     this.agentJoined = false;
@@ -1862,7 +1865,8 @@ class LiveKitBridge extends Emitter {
       'set_light_color': 'self_set_light_color',
       'get_battery_status': 'self_get_battery_status',
       'set_light_mode': 'self_set_light_mode',
-      'set_rainbow_speed': 'self_set_rainbow_speed'
+      'set_rainbow_speed': 'self_set_rainbow_speed',
+      'robot_control': 'self_robot_control'
     };
 
     const functionName = actionToFunctionMap[action];
@@ -1877,6 +1881,8 @@ class LiveKitBridge extends Emitter {
       functionArguments.volume = controlData.volume || controlData.value;
     } else if (action === "volume_up" || action === "volume_down") {
       functionArguments.step = controlData.step || controlData.value || 10;
+    } else if (action === "robot_control") {
+      functionArguments.action = controlData.action;
     }
 
     // Create function call data in the same format as handleFunctionCall expects
@@ -1918,10 +1924,40 @@ class LiveKitBridge extends Emitter {
       'self_set_light_color': 'self.led.set_color',
       'self_get_battery_status': 'self.battery.get_status',
       'self_set_light_mode': 'self.led.set_mode',
-      'self_set_rainbow_speed': 'self.led.set_rainbow_speed'
+      'self_set_rainbow_speed': 'self.led.set_rainbow_speed',
+      'self_robot_control': 'self.robot.control'
       
     };
 
+    // Special handling: Robot control - ONLY publish to robot/control topic, NOT to ESP32
+    if (functionCall.name === 'self_robot_control') {
+      // NOTE: we intentionally do NOT block on `this.mqttClient.connected` here.
+      // mqtt.js will queue QoS 0 messages until the broker connection is ready,
+      // and the robot itself maintains its own subscription to `robot/control`.
+      if (this.mqttClient) {
+        const requestId = parseInt(functionData.request_id?.replace('req_', '') || Date.now());
+        const robotMessage = {
+          action: functionCall.arguments?.action || 'unknown',
+          timestamp: new Date().toISOString(),
+          request_id: `req_${requestId}`,
+          source: 'livekit_agent',
+          device_mac: this.macAddress
+        };
+
+        console.log(`🤖 [ROBOT] Publishing to robot/control topic: ${JSON.stringify(robotMessage)}`);
+        this.mqttClient.publish('robot/control', JSON.stringify(robotMessage), (err) => {
+          if (err) {
+            console.error(`❌ [ROBOT] Failed to publish to robot/control:`, err);
+          } else {
+            console.log(`✅ [ROBOT] Published to robot/control successfully`);
+          }
+        });
+      } else {
+        console.error(`❌ [ROBOT] MQTT client instance missing, cannot publish robot control`);
+      }
+      return; // Don't send to ESP32 device
+    }
+    
     const mcpToolName = functionToMcpToolMap[functionCall.name];
     if (!mcpToolName) {
       console.log(`⚠️ [FUNCTION CALL] Unknown function: ${functionCall.name}, forwarding as MCP message`);
@@ -1949,7 +1985,7 @@ class LiveKitBridge extends Emitter {
     };
 
     console.log(
-      `🔧 [MCP] Sending to device: ${this.macAddress} - Tool: ${mcpToolName}, Args: ${JSON.stringify(functionCall.arguments)}`
+      `🔧 [MCP] Sending to ESP32 device: ${this.macAddress} - Tool: ${mcpToolName}, Args: ${JSON.stringify(functionCall.arguments)}`
     );
     this.connection.sendMqttMessage(JSON.stringify(message));
 
@@ -2832,7 +2868,8 @@ class VirtualMQTTConnection {
       json.version,
       this.macAddress,
       newSessionUuid,  // Use fresh UUID instead of this.uuid
-      this.userData
+      this.userData,
+      this.gateway.mqttClient // pass shared MQTT client from gateway
     );
     this.bridge.on("close", () => {
       const seconds = (Date.now() - this.udp.startTime) / 1000;

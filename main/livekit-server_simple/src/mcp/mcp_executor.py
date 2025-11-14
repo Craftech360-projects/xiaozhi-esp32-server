@@ -13,6 +13,7 @@ from .mcp_handler import (
     handle_battery_status_get,
     handle_light_mode_set,
     handle_rainbow_speed_set,
+    handle_robot_control,
 )
 
 logger = logging.getLogger("mcp_executor")
@@ -312,6 +313,40 @@ class LiveKitMCPExecutor:
       except Exception as e:
           logger.error(f"Error setting rainbow speed: {e}")
           return "Sorry, I couldn't change the rainbow speed right now."
+    
+    # Robot Control Method
+    async def robot_control(self, action: str) -> str:
+        """
+        Send robot control command
+        
+        Args:
+            action: Robot action (raise_hand, lower_hand, wave_hand, nod_head, shake_head)
+            
+        Returns:
+            Confirmation message
+        """
+        try:
+            logger.info(f"🤖 Sending robot control command: {action}")
+            
+            # Send robot control message via MQTT
+            await handle_robot_control(self.mcp_client, action)
+            
+            # Return user-friendly message
+            action_messages = {
+                "raise_hand": "Raising hand",
+                "lower_hand": "Lowering hand",
+                "wave_hand": "Waving hand",
+                "nod_head": "Nodding head",
+                "shake_head": "Shaking head"
+            }
+            
+            message = action_messages.get(action, f"Executing {action}")
+            return f"{message}."
+            
+        except Exception as e:
+            logger.error(f"Error sending robot control command: {e}")
+            return "Sorry, I couldn't control the robot right now."
+    
     # Generic Tool Execution
     async def execute_tool(self, tool_name: str, arguments: Dict[str, Any] = None) -> str:
         """

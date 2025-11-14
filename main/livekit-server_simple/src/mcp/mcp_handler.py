@@ -180,4 +180,36 @@ async def handle_rainbow_speed_set(mcp_client, speed_ms: int):
 
       await mcp_client.send_function_call("set_rainbow_speed", arguments)
       logger.info(f"Sent rainbow speed command: {speed_ms}ms")
+
+
+# Robot control handler
+async def handle_robot_control(mcp_client: LiveKitMCPClient, action: str) -> Dict:
+    """Handle robot control command.
+
+    This uses the `self_robot_control` function name so that the MQTT gateway
+    maps it to the `self.robot.control` MCP tool and publishes a clean
+    robot-only MQTT message to the `robot/control` topic instead of sending
+    it to the ESP32 device.
+
+    Args:
+        mcp_client: The MCP client instance
+        action: Robot action (raise_hand, lower_hand, wave_hand, nod_head, shake_head)
+
+    Returns:
+        Dict with the message that was sent
+    """
+    logger.info(f"🤖 Handling robot control: {action}")
+
+    # Validate action
+    valid_actions = ["raise_hand", "lower_hand", "wave_hand", "nod_head", "shake_head"]
+    if action not in valid_actions:
+        logger.error(f"Invalid robot action: {action}")
+        raise ValueError(f"Invalid action. Must be one of: {', '.join(valid_actions)}")
+
+    arguments = {"action": action}
+
+    # IMPORTANT: use `self_robot_control` so gateway routes to robot/control
+    result = await mcp_client.send_function_call("self_robot_control", arguments)
+    logger.info(f"🤖 Sent robot control command via self_robot_control: {action}")
+    return result
     

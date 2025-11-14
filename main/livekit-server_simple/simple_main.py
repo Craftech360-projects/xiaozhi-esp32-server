@@ -432,6 +432,141 @@ class SimpleAssistant(Agent):
         result = await self.mcp_executor.set_rainbow_speed(str(speed_ms))
         logger.info(f"🌈 Rainbow speed set result: {result}")
         return result
+    
+    # ========================================
+    # ROBOT CONTROL FUNCTIONS
+    # ========================================
+    
+    @function_tool
+    async def raise_hand(self, context: RunContext) -> str:
+        """Make the robot raise its hand.
+        
+        Use this when the user asks the robot to raise hand, wave hello, or similar gestures.
+        
+        Returns:
+            str: Confirmation message
+        """
+        logger.info(f"🤖 Robot raise hand requested")
+        
+        if not self.mcp_executor:
+            logger.warning("🤖 MCP executor not available")
+            return "Sorry, robot control is not available right now."
+        
+        if not self._job_context:
+            logger.warning("🤖 JobContext not available")
+            return "Sorry, robot control is not available right now."
+        
+        # Set JobContext for MCP executor
+        self.mcp_executor.set_context(self._job_context)
+        logger.info(f"🤖 Sending raise hand command")
+        
+        result = await self.mcp_executor.robot_control("raise_hand")
+        logger.info(f"🤖 Raise hand result: {result}")
+        return result
+    
+    @function_tool
+    async def lower_hand(self, context: RunContext) -> str:
+        """Make the robot lower its hand.
+        
+        Use this when the user asks the robot to lower hand or return to rest position.
+        
+        Returns:
+            str: Confirmation message
+        """
+        logger.info(f"🤖 Robot lower hand requested")
+        
+        if not self.mcp_executor:
+            logger.warning("🤖 MCP executor not available")
+            return "Sorry, robot control is not available right now."
+        
+        if not self._job_context:
+            logger.warning("🤖 JobContext not available")
+            return "Sorry, robot control is not available right now."
+        
+        self.mcp_executor.set_context(self._job_context)
+        logger.info(f"🤖 Sending lower hand command")
+        
+        result = await self.mcp_executor.robot_control("lower_hand")
+        logger.info(f"🤖 Lower hand result: {result}")
+        return result
+    
+    @function_tool
+    async def wave_hand(self, context: RunContext) -> str:
+        """Make the robot wave its hand.
+        
+        Use this when the user asks the robot to wave, say hello with a wave, or greet.
+        
+        Returns:
+            str: Confirmation message
+        """
+        logger.info(f"🤖 Robot wave hand requested")
+        
+        if not self.mcp_executor:
+            logger.warning("🤖 MCP executor not available")
+            return "Sorry, robot control is not available right now."
+        
+        if not self._job_context:
+            logger.warning("🤖 JobContext not available")
+            return "Sorry, robot control is not available right now."
+        
+        self.mcp_executor.set_context(self._job_context)
+        logger.info(f"🤖 Sending wave hand command")
+        
+        result = await self.mcp_executor.robot_control("wave_hand")
+        logger.info(f"🤖 Wave hand result: {result}")
+        return result
+    
+    @function_tool
+    async def nod_head(self, context: RunContext) -> str:
+        """Make the robot nod its head (yes gesture).
+        
+        Use this when the user asks the robot to nod, agree, or say yes with a gesture.
+        
+        Returns:
+            str: Confirmation message
+        """
+        logger.info(f"🤖 Robot nod head requested")
+        
+        if not self.mcp_executor:
+            logger.warning("🤖 MCP executor not available")
+            return "Sorry, robot control is not available right now."
+        
+        if not self._job_context:
+            logger.warning("🤖 JobContext not available")
+            return "Sorry, robot control is not available right now."
+        
+        self.mcp_executor.set_context(self._job_context)
+        logger.info(f"🤖 Sending nod head command")
+        
+        result = await self.mcp_executor.robot_control("nod_head")
+        logger.info(f"🤖 Nod head result: {result}")
+        return result
+    
+    @function_tool
+    async def shake_head(self, context: RunContext) -> str:
+        """Make the robot shake its head (no gesture).
+        
+        Use this when the user asks the robot to shake head, disagree, or say no with a gesture.
+        
+        Returns:
+            str: Confirmation message
+        """
+        logger.info(f"🤖 Robot shake head requested")
+        
+        if not self.mcp_executor:
+            logger.warning("🤖 MCP executor not available")
+            return "Sorry, robot control is not available right now."
+        
+        if not self._job_context:
+            logger.warning("🤖 JobContext not available")
+            return "Sorry, robot control is not available right now."
+        
+        self.mcp_executor.set_context(self._job_context)
+        logger.info(f"🤖 Sending shake head command")
+        
+        result = await self.mcp_executor.robot_control("shake_head")
+        logger.info(f"🤖 Shake head result: {result}")
+        return result
 
 def prewarm(proc: JobProcess):
     """Optimized prewarm function - preloads ALL providers to eliminate job startup delay"""
@@ -664,10 +799,20 @@ async def entrypoint(ctx: JobContext):
         - set_light_mode(mode): Set LED mode (rainbow, default, custom)
         - set_rainbow_speed(speed_ms): Set rainbow animation speed (50-1000ms)
         
+        Robot Control:
+        - raise_hand: Make robot raise its hand
+        - lower_hand: Make robot lower its hand
+        - wave_hand: Make robot wave (greeting gesture)
+        - nod_head: Make robot nod head (yes gesture)
+        - shake_head: Make robot shake head (no gesture)
+        
         IMPORTANT: Use these functions ONLY when the user EXPLICITLY asks you to:
         - "turn on the light" → use set_light_color
         - "change volume" → use set_device_volume
         - "check battery" → use check_battery_level
+        - "raise your hand" → use raise_hand
+        - "wave hello" → use wave_hand
+        - "nod your head" → use nod_head
         
         DO NOT use these functions for:
         - Storytelling (just tell the story directly)
@@ -1025,13 +1170,13 @@ async def entrypoint(ctx: JobContext):
 
                 asyncio.create_task(handle_clear_history())
             elif msg_type == "end_prompt":
-                logger.info("👋 [END-PROMPT] End prompt received - generating goodbye message")
-                # Handle end_prompt to say goodbye
+                logger.info("👋 [END-PROMPT] End prompt received - generating goodbye message via LLM")
+                # Handle end_prompt by steering the LLM, not by speaking the raw prompt text
                 async def handle_end_prompt():
                     try:
-                        # Extract the prompt from the message
+                        # Extract the prompt instruction from the message
                         prompt = message.get("prompt", "")
-                        logger.info(f"👋 [END-PROMPT] Prompt: {prompt}")
+                        logger.info(f"👋 [END-PROMPT] Instruction prompt: {prompt}")
 
                         # Get the current agent from the session
                         agent = session._agent
@@ -1039,10 +1184,23 @@ async def entrypoint(ctx: JobContext):
                             logger.error("❌ [END-PROMPT] No agent found in session")
                             return
 
-                        # Use session.say() to speak the goodbye message directly
-                        logger.info("👋 [END-PROMPT] Speaking goodbye message")
-                        await session.say(prompt)
-                        logger.info(f"✅ [END-PROMPT] Goodbye message sent: {prompt}")
+                        # Build a temporary system prompt that appends the end-of-conversation instruction
+                        base_system_prompt = getattr(agent, "_instructions", "You are Cheeko, a friendly AI assistant for kids.")
+                        combined_system_prompt = (
+                            f"{base_system_prompt}\n\n"
+                            f"<end_conversation_instruction>\n{prompt}\n</end_conversation_instruction>"
+                        )
+
+                        # Reset chat context to a minimal one with the combined system prompt
+                        new_ctx = ChatContext.empty()
+                        new_ctx.add_message(role="system", content=combined_system_prompt)
+                        logger.info("👋 [END-PROMPT] Updating chat context with end-of-conversation instruction")
+                        await agent.update_chat_ctx(new_ctx)
+
+                        # Ask the LLM to generate a final goodbye reply based on the new system prompt
+                        logger.info("👋 [END-PROMPT] Generating goodbye reply via LLM")
+                        await session.generate_reply()
+                        logger.info("✅ [END-PROMPT] Goodbye reply generated and sent")
 
                     except Exception as e:
                         logger.error(f"❌ [END-PROMPT] Failed to handle end prompt: {e}", exc_info=True)
