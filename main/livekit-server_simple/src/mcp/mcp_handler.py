@@ -200,8 +200,8 @@ async def handle_robot_control(mcp_client: LiveKitMCPClient, action: str) -> Dic
     """
     logger.info(f"🤖 Handling robot control: {action}")
 
-    # Validate action
-    valid_actions = ["raise_hand", "lower_hand", "wave_hand", "nod_head", "shake_head"]
+    # Validate action (only raise_hand and lower_hand are supported now)
+    valid_actions = ["raise_hand", "lower_hand"]
     if action not in valid_actions:
         logger.error(f"Invalid robot action: {action}")
         raise ValueError(f"Invalid action. Must be one of: {', '.join(valid_actions)}")

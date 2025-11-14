@@ -13,7 +13,7 @@ require('dotenv').config();
 const mqtt = require('mqtt');
 
 // MQTT Configuration from .env
-const MQTT_HOST = process.env.MQTT_HOST || 'localhost';
+const MQTT_HOST ='192.168.1.105';
 const MQTT_PORT = process.env.MQTT_PORT || 1883;
 const MQTT_USERNAME = process.env.MQTT_USERNAME || '';
 const MQTT_PASSWORD = process.env.MQTT_PASSWORD || '';
@@ -35,7 +35,7 @@ const client = mqtt.connect(`mqtt://${MQTT_HOST}:${MQTT_PORT}`, {
 
 // Topics to subscribe to (simple topics without device ID)
 const topics = [
-  'robot/control',    // Main robot control topic
+  'esp32/led_control',    // Main robot control topic
   'robot/status',     // Robot status updates
   'robot/#',          // All robot topics
 ];
@@ -65,26 +65,36 @@ client.on('connect', () => {
 
 client.on('message', (topic, message) => {
   const timestamp = new Date().toISOString();
+  const raw = message.toString();
+
+  // First, handle the simple ON/OFF format for esp32/led_control
+  if (topic === 'esp32/led_control' && (raw === 'ON' || raw === 'OFF')) {
+    const humanState = raw === 'ON' ? 'RAISE HAND (ON)' : 'LOWER HAND (OFF)';
+
+    console.log(`🤖 [${timestamp}] ROBOT LED CONTROL`);
+    console.log(`   Topic: ${topic}`);
+    console.log(`   Raw payload: ${raw}`);
+    console.log(`   Interpreted: ${humanState}`);
+    console.log('');
+    console.log('─'.repeat(80));
+    console.log('');
+    return;
+  }
   
   try {
-    // Try to parse as JSON
-    const data = JSON.parse(message.toString());
-    
-    // Check if it's a robot control message
-    const isRobotControl = 
-      topic.includes('robot') ||
-      (data.function_call && data.function_call.name === 'self_robot_control') ||
-      (data.tool && data.tool.includes('robot'));
-    
-    if (isRobotControl) {
-      console.log(`🤖 [${timestamp}] ROBOT CONTROL MESSAGE`);
-      console.log(`   Topic: ${topic}`);
+    // Try to parse as JSON for other topics/formats
+    const data = JSON.parse(raw);
+
+    // Legacy robot topics (if still used)
+    const isRobotTopic = topic.startsWith('robot/');
+
+    if (isRobotTopic) {
+      // Other robot-related messages (status, etc.)
+      console.log(`📨 [${timestamp}] ${topic}`);
       console.log(`   Data:`, JSON.stringify(data, null, 2));
       console.log('');
-      console.log('─'.repeat(80));
-      console.log('');
     } else {
-      // Log other messages briefly
+      // Non-robot messages
       console.log(`📨 [${timestamp}] ${topic}`);
       if (data.function_call) {
         console.log(`   Function: ${data.function_call.name}`);
@@ -93,7 +103,7 @@ client.on('message', (topic, message) => {
   } catch (e) {
     // Not JSON, log as raw message
     console.log(`📨 [${timestamp}] ${topic}`);
-    console.log(`   Raw: ${message.toString().substring(0, 100)}...`);
+    console.log(`   Raw: ${raw.substring(0, 100)}...`);
   }
 });
 

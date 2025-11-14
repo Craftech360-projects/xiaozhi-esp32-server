@@ -167,6 +167,7 @@ class SimpleAssistant(Agent):
         self._job_context = None
         # Track the most recent robot action so we can keep the spoken
         # confirmation short and simple right after the gesture.
+        # Only raise_hand / lower_hand are supported now.
         self._last_robot_action: str | None = None
     
     def sanitize_text_for_speech(self, text: str) -> str:
@@ -224,12 +225,6 @@ class SimpleAssistant(Agent):
                 message = "Okay, I will raise my hand."
             elif action == "lower_hand":
                 message = "Okay, I will lower my hand."
-            elif action == "wave_hand":
-                message = "Waving hello."
-            elif action == "nod_head":
-                message = "Nodding yes."
-            elif action == "shake_head":
-                message = "Shaking my head no."
 
         sanitized = self.sanitize_text_for_speech(message)
         logger.info(f"🧹 Sanitized text: '{message[:50]}...' -> '{sanitized[:50]}...'")
@@ -518,86 +513,6 @@ class SimpleAssistant(Agent):
         self._last_robot_action = "lower_hand"
         return result
     
-    @function_tool
-    async def wave_hand(self, context: RunContext) -> str:
-        """Make the robot wave its hand.
-        
-        Use this when the user asks the robot to wave, say hello with a wave, or greet.
-        
-        Returns:
-            str: Confirmation message
-        """
-        logger.info(f"🤖 Robot wave hand requested")
-        
-        if not self.mcp_executor:
-            logger.warning("🤖 MCP executor not available")
-            return "Sorry, robot control is not available right now."
-        
-        if not self._job_context:
-            logger.warning("🤖 JobContext not available")
-            return "Sorry, robot control is not available right now."
-        
-        self.mcp_executor.set_context(self._job_context)
-        logger.info(f"🤖 Sending wave hand command")
-        
-        result = await self.mcp_executor.robot_control("wave_hand")
-        logger.info(f"🤖 Wave hand result: {result}")
-        self._last_robot_action = "wave_hand"
-        return result
-    
-    @function_tool
-    async def nod_head(self, context: RunContext) -> str:
-        """Make the robot nod its head (yes gesture).
-        
-        Use this when the user asks the robot to nod, agree, or say yes with a gesture.
-        
-        Returns:
-            str: Confirmation message
-        """
-        logger.info(f"🤖 Robot nod head requested")
-        
-        if not self.mcp_executor:
-            logger.warning("🤖 MCP executor not available")
-            return "Sorry, robot control is not available right now."
-        
-        if not self._job_context:
-            logger.warning("🤖 JobContext not available")
-            return "Sorry, robot control is not available right now."
-        
-        self.mcp_executor.set_context(self._job_context)
-        logger.info(f"🤖 Sending nod head command")
-        
-        result = await self.mcp_executor.robot_control("nod_head")
-        logger.info(f"🤖 Nod head result: {result}")
-        self._last_robot_action = "nod_head"
-        return result
-    
-    @function_tool
-    async def shake_head(self, context: RunContext) -> str:
-        """Make the robot shake its head (no gesture).
-        
-        Use this when the user asks the robot to shake head, disagree, or say no with a gesture.
-        
-        Returns:
-            str: Confirmation message
-        """
-        logger.info(f"🤖 Robot shake head requested")
-        
-        if not self.mcp_executor:
-            logger.warning("🤖 MCP executor not available")
-            return "Sorry, robot control is not available right now."
-        
-        if not self._job_context:
-            logger.warning("🤖 JobContext not available")
-            return "Sorry, robot control is not available right now."
-        
-        self.mcp_executor.set_context(self._job_context)
-        logger.info(f"🤖 Sending shake head command")
-        
-        result = await self.mcp_executor.robot_control("shake_head")
-        logger.info(f"🤖 Shake head result: {result}")
-        self._last_robot_action = "shake_head"
-        return result
 
 def prewarm(proc: JobProcess):
     """Optimized prewarm function - preloads ALL providers to eliminate job startup delay"""
@@ -833,18 +748,13 @@ async def entrypoint(ctx: JobContext):
         Robot Control:
         - raise_hand: Make robot raise its hand
         - lower_hand: Make robot lower its hand
-        - wave_hand: Make robot wave (greeting gesture)
-        - nod_head: Make robot nod head (yes gesture)
-        - shake_head: Make robot shake head (no gesture)
         
         IMPORTANT: Use these functions ONLY when the user EXPLICITLY asks you to:
         - "turn on the light" → use set_light_color
         - "change volume" → use set_device_volume
         - "check battery" → use check_battery_level
         - "raise your hand" → use raise_hand
-        - "wave hello" → use wave_hand
-        - "nod your head" → use nod_head
-        - "shake your head" → use shake_head
+        - "lower your hand" → use lower_hand
         
         DO NOT use these functions for:
         - Storytelling (just tell the story directly)
@@ -853,9 +763,6 @@ async def entrypoint(ctx: JobContext):
         - Setting mood/ambiance (unless explicitly requested)
         
         If unsure whether to use a function, DON'T use it - just respond with text.
-        In particular, NEVER call nod_head or shake_head just to react to polite
-        phrases such as "thank you", "hi", "hello", or "good evening"—simply
-        answer with a short spoken sentence instead.
         </tools>"""
         logger.info(f"📄 Using fallback prompt (length: {len(agent_prompt)} chars)")
 

@@ -1929,27 +1929,30 @@ class LiveKitBridge extends Emitter {
       
     };
 
-    // Special handling: Robot control - ONLY publish to robot/control topic, NOT to ESP32
+    // Special handling: Robot control - ONLY publish to esp32/led_control topic, NOT to ESP32
     if (functionCall.name === 'self_robot_control') {
       // NOTE: we intentionally do NOT block on `this.mqttClient.connected` here.
-      // mqtt.js will queue QoS 0 messages until the broker connection is ready,
-      // and the robot itself maintains its own subscription to `robot/control`.
+      // mqtt.js will queue QoS 0 messages until the broker connection is ready.
       if (this.mqttClient) {
-        const requestId = parseInt(functionData.request_id?.replace('req_', '') || Date.now());
-        const robotMessage = {
-          action: functionCall.arguments?.action || 'unknown',
-          timestamp: new Date().toISOString(),
-          request_id: `req_${requestId}`,
-          source: 'livekit_agent',
-          device_mac: this.macAddress
-        };
+        const action = functionCall.arguments?.action || 'unknown';
 
-        console.log(`🤖 [ROBOT] Publishing to robot/control topic: ${JSON.stringify(robotMessage)}`);
-        this.mqttClient.publish('robot/control', JSON.stringify(robotMessage), (err) => {
+        // Map robot actions directly to ON/OFF payloads for the ESP32 topic.
+        // Only two actions are supported:
+        //   - raise_hand  -> "ON"
+        //   - lower_hand  -> "OFF"
+        if (action !== 'raise_hand' && action !== 'lower_hand') {
+          console.warn(`⚠️ [ROBOT] Ignoring unsupported robot action: ${action}`);
+          return;
+        }
+
+        const payloadValue = action === 'lower_hand' ? 'OFF' : 'ON';
+
+        console.log(`🤖 [ROBOT] Publishing to esp32/led_control topic: ${payloadValue}`);
+        this.mqttClient.publish('esp32/led_control', payloadValue, (err) => {
           if (err) {
-            console.error(`❌ [ROBOT] Failed to publish to robot/control:`, err);
+            console.error(`❌ [ROBOT] Failed to publish to esp32/led_control:`, err);
           } else {
-            console.log(`✅ [ROBOT] Published to robot/control successfully`);
+            console.log(`✅ [ROBOT] Published to esp32/led_control successfully`);
           }
         });
       } else {
