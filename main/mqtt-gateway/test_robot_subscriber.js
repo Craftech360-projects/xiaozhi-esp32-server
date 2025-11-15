@@ -13,7 +13,7 @@ require('dotenv').config();
 const mqtt = require('mqtt');
 
 // MQTT Configuration from .env
-const MQTT_HOST ='192.168.1.105';
+const MQTT_HOST ='192.168.1.114';
 const MQTT_PORT = process.env.MQTT_PORT || 1883;
 const MQTT_USERNAME = process.env.MQTT_USERNAME || '';
 const MQTT_PASSWORD = process.env.MQTT_PASSWORD || '';
@@ -35,7 +35,7 @@ const client = mqtt.connect(`mqtt://${MQTT_HOST}:${MQTT_PORT}`, {
 
 // Topics to subscribe to (simple topics without device ID)
 const topics = [
-  'esp32/led_control',    // Main robot control topic
+  'esp32/robot_control',    // Main robot control topic
   'robot/status',     // Robot status updates
   'robot/#',          // All robot topics
 ];

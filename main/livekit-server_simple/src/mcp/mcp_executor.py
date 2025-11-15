@@ -320,7 +320,7 @@ class LiveKitMCPExecutor:
         Send robot control command
         
         Args:
-            action: Robot action (raise_hand, lower_hand, wave_hand, nod_head, shake_head)
+            action: Robot action (wave, nod, dance)
             
         Returns:
             Confirmation message
@@ -333,11 +333,9 @@ class LiveKitMCPExecutor:
             
             # Return user-friendly message
             action_messages = {
-                "raise_hand": "Raising hand",
-                "lower_hand": "Lowering hand",
-                "wave_hand": "Waving hand",
-                "nod_head": "Nodding head",
-                "shake_head": "Shaking head"
+                "wave": "Waving",
+                "nod": "Nodding",
+                "dance": "Dancing"
             }
             
             message = action_messages.get(action, f"Executing {action}")

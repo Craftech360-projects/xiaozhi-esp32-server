@@ -221,10 +221,12 @@ class SimpleAssistant(Agent):
             self._last_robot_action = None
 
             # Use very short, simple confirmations for robot actions
-            if action == "raise_hand":
-                message = "Okay, I will raise my hand."
-            elif action == "lower_hand":
-                message = "Okay, I will lower my hand."
+            if action == "wave":
+                message = "Okay, I will wave."
+            elif action == "nod":
+                message = "Okay, I will nod."
+            elif action == "dance":
+                message = "Okay, I will dance."
 
         sanitized = self.sanitize_text_for_speech(message)
         logger.info(f"🧹 Sanitized text: '{message[:50]}...' -> '{sanitized[:50]}...'")
@@ -457,15 +459,15 @@ class SimpleAssistant(Agent):
     # ========================================
     
     @function_tool
-    async def raise_hand(self, context: RunContext) -> str:
-        """Make the robot raise its hand.
+    async def wave(self, context: RunContext) -> str:
+        """Make the robot wave.
         
-        Use this when the user asks the robot to raise hand, wave hello, or similar gestures.
+        Use this when the user asks the robot to wave, say hello, greet, or similar gestures.
         
         Returns:
             str: Confirmation message
         """
-        logger.info(f"🤖 Robot raise hand requested")
+        logger.info(f"🤖 Robot wave requested")
         
         if not self.mcp_executor:
             logger.warning("🤖 MCP executor not available")
@@ -477,25 +479,25 @@ class SimpleAssistant(Agent):
         
         # Set JobContext for MCP executor
         self.mcp_executor.set_context(self._job_context)
-        logger.info(f"🤖 Sending raise hand command")
+        logger.info(f"🤖 Sending wave command")
         
-        result = await self.mcp_executor.robot_control("raise_hand")
-        logger.info(f"🤖 Raise hand result: {result}")
+        result = await self.mcp_executor.robot_control("wave")
+        logger.info(f"🤖 Wave result: {result}")
         # Mark that a robot action just happened so the next spoken
         # response can be kept short and simple.
-        self._last_robot_action = "raise_hand"
+        self._last_robot_action = "wave"
         return result
     
     @function_tool
-    async def lower_hand(self, context: RunContext) -> str:
-        """Make the robot lower its hand.
+    async def nod(self, context: RunContext) -> str:
+        """Make the robot nod its head.
         
-        Use this when the user asks the robot to lower hand or return to rest position.
+        Use this when the user asks the robot to nod, agree, or show yes.
         
         Returns:
             str: Confirmation message
         """
-        logger.info(f"🤖 Robot lower hand requested")
+        logger.info(f"🤖 Robot nod requested")
         
         if not self.mcp_executor:
             logger.warning("🤖 MCP executor not available")
@@ -506,11 +508,38 @@ class SimpleAssistant(Agent):
             return "Sorry, robot control is not available right now."
         
         self.mcp_executor.set_context(self._job_context)
-        logger.info(f"🤖 Sending lower hand command")
+        logger.info(f"🤖 Sending nod command")
         
-        result = await self.mcp_executor.robot_control("lower_hand")
-        logger.info(f"🤖 Lower hand result: {result}")
-        self._last_robot_action = "lower_hand"
+        result = await self.mcp_executor.robot_control("nod")
+        logger.info(f"🤖 Nod result: {result}")
+        self._last_robot_action = "nod"
+        return result
+    
+    @function_tool
+    async def dance(self, context: RunContext) -> str:
+        """Make the robot dance.
+        
+        Use this when the user asks the robot to dance, move, or perform a fun movement.
+        
+        Returns:
+            str: Confirmation message
+        """
+        logger.info(f"🤖 Robot dance requested")
+        
+        if not self.mcp_executor:
+            logger.warning("🤖 MCP executor not available")
+            return "Sorry, robot control is not available right now."
+        
+        if not self._job_context:
+            logger.warning("🤖 JobContext not available")
+            return "Sorry, robot control is not available right now."
+        
+        self.mcp_executor.set_context(self._job_context)
+        logger.info(f"🤖 Sending dance command")
+        
+        result = await self.mcp_executor.robot_control("dance")
+        logger.info(f"🤖 Dance result: {result}")
+        self._last_robot_action = "dance"
         return result
     
 
@@ -746,15 +775,17 @@ async def entrypoint(ctx: JobContext):
         - set_rainbow_speed(speed_ms): Set rainbow animation speed (50-1000ms)
         
         Robot Control:
-        - raise_hand: Make robot raise its hand
-        - lower_hand: Make robot lower its hand
+        - wave: Make robot wave (for greetings, hello, hi)
+        - nod: Make robot nod its head (for yes, agreement)
+        - dance: Make robot dance (for fun movements)
         
         IMPORTANT: Use these functions ONLY when the user EXPLICITLY asks you to:
         - "turn on the light" → use set_light_color
         - "change volume" → use set_device_volume
         - "check battery" → use check_battery_level
-        - "raise your hand" → use raise_hand
-        - "lower your hand" → use lower_hand
+        - "wave", "say hello", "greet" → use wave
+        - "nod", "agree", "say yes" → use nod
+        - "dance", "move around" → use dance
         
         DO NOT use these functions for:
         - Storytelling (just tell the story directly)

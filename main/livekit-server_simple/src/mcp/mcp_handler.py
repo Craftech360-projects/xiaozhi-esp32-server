@@ -187,21 +187,20 @@ async def handle_robot_control(mcp_client: LiveKitMCPClient, action: str) -> Dic
     """Handle robot control command.
 
     This uses the `self_robot_control` function name so that the MQTT gateway
-    maps it to the `self.robot.control` MCP tool and publishes a clean
-    robot-only MQTT message to the `robot/control` topic instead of sending
-    it to the ESP32 device.
+    maps it to the `self.robot.control` MCP tool and publishes a JSON payload
+    to the `esp32/robot_control` topic instead of sending it to the ESP32 device.
 
     Args:
         mcp_client: The MCP client instance
-        action: Robot action (raise_hand, lower_hand, wave_hand, nod_head, shake_head)
+        action: Robot action (wave, nod, dance)
 
     Returns:
         Dict with the message that was sent
     """
     logger.info(f"🤖 Handling robot control: {action}")
 
-    # Validate action (only raise_hand and lower_hand are supported now)
-    valid_actions = ["raise_hand", "lower_hand"]
+    # Validate action (wave, nod, dance are supported)
+    valid_actions = ["wave", "nod", "dance"]
     if action not in valid_actions:
         logger.error(f"Invalid robot action: {action}")
         raise ValueError(f"Invalid action. Must be one of: {', '.join(valid_actions)}")
