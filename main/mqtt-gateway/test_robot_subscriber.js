@@ -19,8 +19,8 @@ const MQTT_USERNAME = process.env.MQTT_USERNAME || '';
 const MQTT_PASSWORD = process.env.MQTT_PASSWORD || '';
 const MQTT_CLIENT_ID = process.env.MQTT_CLIENT_ID || 'test_robot_subscriber';
 
-console.log('🤖 Robot Control Test Subscriber');
-console.log('================================');
+console.log('🤖 Robot & Car Control Test Subscriber');
+console.log('======================================');
 console.log(`MQTT Broker: ${MQTT_HOST}:${MQTT_PORT}`);
 console.log('');
 
@@ -35,9 +35,10 @@ const client = mqtt.connect(`mqtt://${MQTT_HOST}:${MQTT_PORT}`, {
 
 // Topics to subscribe to (simple topics without device ID)
 const topics = [
-  'esp32/robot_control',    // Main robot control topic
-  'robot/status',     // Robot status updates
-  'robot/#',          // All robot topics
+  'esp32/robot_control', // Main robot control topic
+  'esp32/car_control',   // Car control topic
+  'robot/status',        // Robot status updates
+  'robot/#',             // All robot topics
 ];
 
 client.on('connect', () => {
@@ -56,7 +57,7 @@ client.on('connect', () => {
   });
   
   console.log('');
-  console.log('🎧 Listening for robot control messages...');
+  console.log('🎧 Listening for robot & car control messages...');
   console.log('   (Press Ctrl+C to exit)');
   console.log('');
   console.log('─'.repeat(80));
@@ -67,7 +68,7 @@ client.on('message', (topic, message) => {
   const timestamp = new Date().toISOString();
   const raw = message.toString();
 
-  // First, handle the simple ON/OFF format for esp32/led_control
+  // First, handle the simple ON/OFF format for esp32/led_control (legacy)
   if (topic === 'esp32/led_control' && (raw === 'ON' || raw === 'OFF')) {
     const humanState = raw === 'ON' ? 'RAISE HAND (ON)' : 'LOWER HAND (OFF)';
 
@@ -85,10 +86,31 @@ client.on('message', (topic, message) => {
     // Try to parse as JSON for other topics/formats
     const data = JSON.parse(raw);
 
-    // Legacy robot topics (if still used)
     const isRobotTopic = topic.startsWith('robot/');
+    const isRobotControl = topic === 'esp32/robot_control';
+    const isCarControl = topic === 'esp32/car_control';
 
-    if (isRobotTopic) {
+    if (isRobotControl) {
+      console.log(`🤖 [${timestamp}] ROBOT CONTROL`);
+      console.log(`   Topic: ${topic}`);
+      console.log(`   Payload:`, JSON.stringify(data, null, 2));
+      if (data.cmd) {
+        console.log(`   Command: ${data.cmd}`);
+      }
+      console.log('');
+      console.log('─'.repeat(80));
+      console.log('');
+    } else if (isCarControl) {
+      console.log(`🚗 [${timestamp}] CAR CONTROL`);
+      console.log(`   Topic: ${topic}`);
+      console.log(`   Payload:`, JSON.stringify(data, null, 2));
+      if (data.cmd) {
+        console.log(`   Command: ${data.cmd}`);
+      }
+      console.log('');
+      console.log('─'.repeat(80));
+      console.log('');
+    } else if (isRobotTopic) {
       // Other robot-related messages (status, etc.)
       console.log(`📨 [${timestamp}] ${topic}`);
       console.log(`   Data:`, JSON.stringify(data, null, 2));
@@ -96,9 +118,11 @@ client.on('message', (topic, message) => {
     } else {
       // Non-robot messages
       console.log(`📨 [${timestamp}] ${topic}`);
+      console.log(`   Payload:`, JSON.stringify(data, null, 2));
       if (data.function_call) {
         console.log(`   Function: ${data.function_call.name}`);
       }
+      console.log('');
     }
   } catch (e) {
     // Not JSON, log as raw message

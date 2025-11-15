@@ -108,7 +108,18 @@ class RemoteWhisperSTT(stt.STT):
         
         except Exception as e:
             logger.error(f"Remote Whisper error: {e}")
-            raise
+            
+            # Return a fallback message instead of crashing the session
+            logger.warning("Returning fallback transcription due to Whisper timeout/error")
+            return stt.SpeechEvent(
+                type=stt.SpeechEventType.FINAL_TRANSCRIPT,
+                alternatives=[
+                    stt.SpeechData(
+                        text="Sorry, I didn't catch that. Could you please repeat?",
+                        language=language or self._language,
+                    )
+                ],
+            )
         
         finally:
             # Cleanup temp file

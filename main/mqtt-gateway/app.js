@@ -1866,7 +1866,8 @@ class LiveKitBridge extends Emitter {
       'get_battery_status': 'self_get_battery_status',
       'set_light_mode': 'self_set_light_mode',
       'set_rainbow_speed': 'self_set_rainbow_speed',
-      'robot_control': 'self_robot_control'
+      'robot_control': 'self_robot_control',
+      'car_control': 'self_car_control'
     };
 
     const functionName = actionToFunctionMap[action];
@@ -1881,7 +1882,7 @@ class LiveKitBridge extends Emitter {
       functionArguments.volume = controlData.volume || controlData.value;
     } else if (action === "volume_up" || action === "volume_down") {
       functionArguments.step = controlData.step || controlData.value || 10;
-    } else if (action === "robot_control") {
+    } else if (action === "robot_control" || action === "car_control") {
       functionArguments.action = controlData.action;
     }
 
@@ -1925,7 +1926,8 @@ class LiveKitBridge extends Emitter {
       'self_get_battery_status': 'self.battery.get_status',
       'self_set_light_mode': 'self.led.set_mode',
       'self_set_rainbow_speed': 'self.led.set_rainbow_speed',
-      'self_robot_control': 'self.robot.control'
+      'self_robot_control': 'self.robot.control',
+      'self_car_control': 'self.car.control'
       
     };
 
@@ -1965,6 +1967,49 @@ class LiveKitBridge extends Emitter {
         });
       } else {
         console.error(`❌ [ROBOT] MQTT client instance missing, cannot publish robot control`);
+      }
+      return; // Don't send to ESP32 device
+    }
+
+    // Special handling: Car control - publish to esp32/car_control topic with JSON payload
+    if (functionCall.name === 'self_car_control') {
+      // Same behavior as robot control: publish only to MQTT topic, not to ESP32 MCP
+      if (this.mqttClient) {
+        const action = functionCall.arguments?.action || 'unknown';
+
+        // Map car actions to JSON command payloads for the esp32/car_control topic.
+        // Supported actions:
+        //   - forward   -> {"cmd":"forward"}
+        //   - backward  -> {"cmd":"backward"}
+        //   - left      -> {"cmd":"left"}
+        //   - right     -> {"cmd":"right"}
+        //   - stop      -> {"cmd":"stop"}
+        const actionToCommandMap = {
+          'forward': 'forward',
+          'backward': 'backward',
+          'left': 'left',
+          'right': 'right',
+          'stop': 'stop'
+        };
+
+        const cmd = actionToCommandMap[action];
+        if (!cmd) {
+          console.warn(`⚠️ [CAR] Ignoring unsupported car action: ${action}`);
+          return;
+        }
+
+        const payload = JSON.stringify({ cmd: cmd });
+
+        console.log(`🚗 [CAR] Publishing to esp32/car_control topic: ${payload}`);
+        this.mqttClient.publish('esp32/car_control', payload, (err) => {
+          if (err) {
+            console.error(`❌ [CAR] Failed to publish to esp32/car_control:`, err);
+          } else {
+            console.log(`✅ [CAR] Published to esp32/car_control successfully`);
+          }
+        });
+      } else {
+        console.error(`❌ [CAR] MQTT client instance missing, cannot publish car control`);
       }
       return; // Don't send to ESP32 device
     }

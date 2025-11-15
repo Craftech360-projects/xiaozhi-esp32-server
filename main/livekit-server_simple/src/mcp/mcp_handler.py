@@ -211,4 +211,35 @@ async def handle_robot_control(mcp_client: LiveKitMCPClient, action: str) -> Dic
     result = await mcp_client.send_function_call("self_robot_control", arguments)
     logger.info(f"🤖 Sent robot control command via self_robot_control: {action}")
     return result
+
+
+# Car control handler
+async def handle_car_control(mcp_client: LiveKitMCPClient, action: str) -> Dict:
+    """Handle car control command.
+
+    This uses the `self_car_control` function name so that the MQTT gateway
+    maps it to the `self.car.control` MCP tool and publishes a JSON payload
+    to the `esp32/car_control` topic instead of sending it directly to the ESP32 device.
+
+    Args:
+        mcp_client: The MCP client instance
+        action: Car action (forward, backward, left, right, stop)
+
+    Returns:
+        Dict with the message that was sent
+    """
+    logger.info(f"🚗 Handling car control: {action}")
+
+    # Validate action
+    valid_actions = ["forward", "backward", "left", "right", "stop"]
+    if action not in valid_actions:
+        logger.error(f"Invalid car action: {action}")
+        raise ValueError(f"Invalid action. Must be one of: {', '.join(valid_actions)}")
+
+    arguments = {"action": action}
+
+    # IMPORTANT: use `self_car_control` so gateway routes to car_control topic
+    result = await mcp_client.send_function_call("self_car_control", arguments)
+    logger.info(f"🚗 Sent car control command via self_car_control: {action}")
+    return result
     

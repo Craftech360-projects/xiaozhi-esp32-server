@@ -167,8 +167,9 @@ class SimpleAssistant(Agent):
         self._job_context = None
         # Track the most recent robot action so we can keep the spoken
         # confirmation short and simple right after the gesture.
-        # Only raise_hand / lower_hand are supported now.
         self._last_robot_action: str | None = None
+        # Track the most recent car action so we can keep confirmations short
+        self._last_car_action: str | None = None
     
     def sanitize_text_for_speech(self, text: str) -> str:
         """Remove markdown, emojis, and special characters for TTS"""
@@ -227,6 +228,21 @@ class SimpleAssistant(Agent):
                 message = "Okay, I will nod."
             elif action == "dance":
                 message = "Okay, I will dance."
+        elif self._last_car_action:
+            action = self._last_car_action
+            self._last_car_action = None
+
+            # Short confirmations for car actions
+            if action == "forward":
+                message = "Okay, I will move forward."
+            elif action == "backward":
+                message = "Okay, I will move backward."
+            elif action == "left":
+                message = "Okay, I will turn left."
+            elif action == "right":
+                message = "Okay, I will turn right."
+            elif action == "stop":
+                message = "Okay, I will stop."
 
         sanitized = self.sanitize_text_for_speech(message)
         logger.info(f"🧹 Sanitized text: '{message[:50]}...' -> '{sanitized[:50]}...'")
@@ -542,6 +558,130 @@ class SimpleAssistant(Agent):
         self._last_robot_action = "dance"
         return result
     
+    # ========================================
+    # CAR CONTROL FUNCTIONS
+    # ========================================
+
+    @function_tool
+    async def car_forward(self, context: RunContext) -> str:
+        """Drive the car forward.
+
+        Use this when the user asks the car to go forward or move ahead.
+        """
+        logger.info("🚗 Car forward requested")
+
+        if not self.mcp_executor:
+            logger.warning("🚗 MCP executor not available")
+            return "Sorry, car control is not available right now."
+
+        if not self._job_context:
+            logger.warning("🚗 JobContext not available")
+            return "Sorry, car control is not available right now."
+
+        self.mcp_executor.set_context(self._job_context)
+        logger.info("🚗 Sending forward command")
+
+        result = await self.mcp_executor.car_control("forward")
+        logger.info(f"🚗 Forward result: {result}")
+        self._last_car_action = "forward"
+        return result
+
+    @function_tool
+    async def car_backward(self, context: RunContext) -> str:
+        """Drive the car backward.
+
+        Use this when the user asks the car to go back or reverse.
+        """
+        logger.info("🚗 Car backward requested")
+
+        if not self.mcp_executor:
+            logger.warning("🚗 MCP executor not available")
+            return "Sorry, car control is not available right now."
+
+        if not self._job_context:
+            logger.warning("🚗 JobContext not available")
+            return "Sorry, car control is not available right now."
+
+        self.mcp_executor.set_context(self._job_context)
+        logger.info("🚗 Sending backward command")
+
+        result = await self.mcp_executor.car_control("backward")
+        logger.info(f"🚗 Backward result: {result}")
+        self._last_car_action = "backward"
+        return result
+
+    @function_tool
+    async def car_left(self, context: RunContext) -> str:
+        """Turn the car left.
+
+        Use this when the user asks the car to turn left.
+        """
+        logger.info("🚗 Car left requested")
+
+        if not self.mcp_executor:
+            logger.warning("🚗 MCP executor not available")
+            return "Sorry, car control is not available right now."
+
+        if not self._job_context:
+            logger.warning("🚗 JobContext not available")
+            return "Sorry, car control is not available right now."
+
+        self.mcp_executor.set_context(self._job_context)
+        logger.info("🚗 Sending left command")
+
+        result = await self.mcp_executor.car_control("left")
+        logger.info(f"🚗 Left result: {result}")
+        self._last_car_action = "left"
+        return result
+
+    @function_tool
+    async def car_right(self, context: RunContext) -> str:
+        """Turn the car right.
+
+        Use this when the user asks the car to turn right.
+        """
+        logger.info("🚗 Car right requested")
+
+        if not self.mcp_executor:
+            logger.warning("🚗 MCP executor not available")
+            return "Sorry, car control is not available right now."
+
+        if not self._job_context:
+            logger.warning("🚗 JobContext not available")
+            return "Sorry, car control is not available right now."
+
+        self.mcp_executor.set_context(self._job_context)
+        logger.info("🚗 Sending right command")
+
+        result = await self.mcp_executor.car_control("right")
+        logger.info(f"🚗 Right result: {result}")
+        self._last_car_action = "right"
+        return result
+
+    @function_tool
+    async def car_stop(self, context: RunContext) -> str:
+        """Stop the car.
+
+        Use this when the user asks the car to stop.
+        """
+        logger.info("🚗 Car stop requested")
+
+        if not self.mcp_executor:
+            logger.warning("🚗 MCP executor not available")
+            return "Sorry, car control is not available right now."
+
+        if not self._job_context:
+            logger.warning("🚗 JobContext not available")
+            return "Sorry, car control is not available right now."
+
+        self.mcp_executor.set_context(self._job_context)
+        logger.info("🚗 Sending stop command")
+
+        result = await self.mcp_executor.car_control("stop")
+        logger.info(f"🚗 Stop result: {result}")
+        self._last_car_action = "stop"
+        return result
+    
 
 def prewarm(proc: JobProcess):
     """Optimized prewarm function - preloads ALL providers to eliminate job startup delay"""
@@ -549,8 +689,11 @@ def prewarm(proc: JobProcess):
     prewarm_start = time.time()
     logger.info("🚀 [PREWARM] Starting optimized prewarm - loading all providers...")
 
-    # Start background model preloading (but only essential models)
-    model_preloader.start_background_loading()
+    try:
+        # Start background model preloading (but only essential models)
+        model_preloader.start_background_loading()
+    except Exception as e:
+        logger.error(f"❌ [PREWARM] Failed to start model preloader: {e}")
 
     # Load VAD model on main thread (required)
     vad_start = time.time()
@@ -600,46 +743,9 @@ def prewarm(proc: JobProcess):
         
         stt_provider = groq_config.get('stt_provider', 'groq')
         
-        # Preload Whisper model if using Whisper
-        if stt_provider == 'whisper':
-            logger.info(f"🎤 [PREWARM] Preloading Whisper model...")
-            # Access the wrapped STT to trigger model loading
-            if hasattr(stt, '_wrapped_stt'):
-                whisper_stt = stt._wrapped_stt
-                if hasattr(whisper_stt, '_ensure_model_loaded'):
-                    import asyncio
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    loop.run_until_complete(whisper_stt._ensure_model_loaded())
-                    loop.close()
-                    logger.info(f"✅ [PREWARM] Whisper model preloaded!")
-        
-        # Preload Sherpa model if using Sherpa
-        elif stt_provider == 'sherpa':
-            logger.info(f"🎤 [PREWARM] Preloading Sherpa-ONNX model...")
-            # Access the wrapped STT to trigger model loading
-            if hasattr(stt, '_wrapped_stt'):
-                sherpa_stt = stt._wrapped_stt
-                if hasattr(sherpa_stt, '_ensure_model_loaded'):
-                    import asyncio
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    loop.run_until_complete(sherpa_stt._ensure_model_loaded())
-                    loop.close()
-                    logger.info(f"✅ [PREWARM] Sherpa-ONNX model preloaded!")
-        
-        # Preload FastWhisper model if using FastWhisper
-        elif stt_provider == 'fastwhisper':
-            logger.info(f"🎤 [PREWARM] Preloading FastWhisper model...")
-            if hasattr(stt, '_wrapped_stt'):
-                fastwhisper_stt = stt._wrapped_stt
-                if hasattr(fastwhisper_stt, '_ensure_model_loaded'):
-                    import asyncio
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    loop.run_until_complete(fastwhisper_stt._ensure_model_loaded())
-                    loop.close()
-                    logger.info(f"✅ [PREWARM] FastWhisper model preloaded!")
+        # SKIP heavy model preloading to avoid initialization timeout
+        # Models will load on first use instead
+        logger.info(f"🎤 [PREWARM] Skipping {stt_provider} model preload (load on-demand to avoid timeout)")
         
         logger.info(f"🎤 [PREWARM] STT provider initialized - {stt_provider} ({time.time() - stt_start:.3f}s)")
     except Exception as e:
@@ -652,17 +758,10 @@ def prewarm(proc: JobProcess):
         tts = ProviderFactory.create_tts(groq_config, tts_config)
         proc.userdata["tts"] = tts
         
-        # If using Piper, preload the model
+        # SKIP Piper model preloading to avoid initialization timeout
+        # Model will load on first use instead
         if tts_config.get('provider') == 'piper':
-            logger.info(f"🔊 [PREWARM] Preloading Piper TTS model...")
-            # Piper models are loaded on first use, trigger a dummy synthesis
-            if hasattr(tts, '_ensure_model_loaded'):
-                import asyncio
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                loop.run_until_complete(tts._ensure_model_loaded())
-                loop.close()
-                logger.info(f"✅ [PREWARM] Piper TTS model preloaded!")
+            logger.info(f"🔊 [PREWARM] Skipping Piper TTS model preload (load on-demand to avoid timeout)")
         
         logger.info(f"🔊 [PREWARM] TTS provider initialized - {tts_config.get('provider')} ({time.time() - tts_start:.3f}s)")
     except Exception as e:
@@ -684,6 +783,10 @@ def prewarm(proc: JobProcess):
 
     total_time = time.time() - prewarm_start
     logger.info(f"✅ [PREWARM] Complete! Total time: {total_time:.3f}s - Job startup will now be near-instant!")
+    
+    # Safety check: if prewarm took too long, warn
+    if total_time > 25:
+        logger.warning(f"⚠️ [PREWARM] Prewarm took {total_time:.3f}s (>25s), may cause initialization timeout")
 
 async def entrypoint(ctx: JobContext):
     """Optimized entrypoint - uses preloaded providers for near-instant startup"""
@@ -778,6 +881,13 @@ async def entrypoint(ctx: JobContext):
         - wave: Make robot wave (for greetings, hello, hi)
         - nod: Make robot nod its head (for yes, agreement)
         - dance: Make robot dance (for fun movements)
+
+        Car Control:
+        - car_forward: Drive the car forward
+        - car_backward: Drive the car backward
+        - car_left: Turn the car left
+        - car_right: Turn the car right
+        - car_stop: Stop the car
         
         IMPORTANT: Use these functions ONLY when the user EXPLICITLY asks you to:
         - "turn on the light" → use set_light_color
@@ -786,6 +896,11 @@ async def entrypoint(ctx: JobContext):
         - "wave", "say hello", "greet" → use wave
         - "nod", "agree", "say yes" → use nod
         - "dance", "move around" → use dance
+        - "drive forward", "go forward" → use car_forward
+        - "go back", "reverse" → use car_backward
+        - "turn left" → use car_left
+        - "turn right" → use car_right
+        - "stop", "stop the car" → use car_stop
         
         DO NOT use these functions for:
         - Storytelling (just tell the story directly)

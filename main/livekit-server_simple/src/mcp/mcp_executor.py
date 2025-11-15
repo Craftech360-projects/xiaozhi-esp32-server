@@ -14,6 +14,7 @@ from .mcp_handler import (
     handle_light_mode_set,
     handle_rainbow_speed_set,
     handle_robot_control,
+    handle_car_control,
 )
 
 logger = logging.getLogger("mcp_executor")
@@ -344,6 +345,38 @@ class LiveKitMCPExecutor:
         except Exception as e:
             logger.error(f"Error sending robot control command: {e}")
             return "Sorry, I couldn't control the robot right now."
+
+    # Car Control Method
+    async def car_control(self, action: str) -> str:
+        """Send car control command.
+
+        Args:
+            action: Car action (forward, backward, left, right, stop)
+
+        Returns:
+            Confirmation message
+        """
+        try:
+            logger.info(f"🚗 Sending car control command: {action}")
+
+            # Send car control message via MQTT
+            await handle_car_control(self.mcp_client, action)
+
+            # Return user-friendly message
+            action_messages = {
+                "forward": "Moving forward",
+                "backward": "Moving backward",
+                "left": "Turning left",
+                "right": "Turning right",
+                "stop": "Stopping"
+            }
+
+            message = action_messages.get(action, f"Executing {action}")
+            return f"{message}."
+
+        except Exception as e:
+            logger.error(f"Error sending car control command: {e}")
+            return "Sorry, I couldn't control the car right now."
     
     # Generic Tool Execution
     async def execute_tool(self, tool_name: str, arguments: Dict[str, Any] = None) -> str:
