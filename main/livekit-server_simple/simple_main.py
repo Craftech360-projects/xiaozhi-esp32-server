@@ -387,7 +387,7 @@ async def entrypoint(ctx: JobContext):
         stt=stt,
         tts=inworld.TTS(
             model="inworld-tts-1-max",
-            voice="Asuka",
+            voice="default-1ynela7pez7baf70bwa69q__cheekotest",
             api_key=os.getenv("INWORLD_API_KEY")
         ),
         turn_detection=turn_detection,
