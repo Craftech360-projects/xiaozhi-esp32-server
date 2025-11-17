@@ -30,6 +30,48 @@ const {
   AudioResampler,
   AudioResamplerQuality,
 } = require("@livekit/rtc-node");
+
+
+
+
+// ================================
+// Media API (Cerebrium) config
+// ================================
+const MEDIA_API_BASE =
+  process.env.MEDIA_API_BASE ||
+  "https://api.aws.us-east-1.cerebrium.ai/v4/p-89052e36/livekit-server-simple";
+
+// Cerebrium authentication token (required for API calls)
+const CEREBRIUM_TOKEN = process.env.CEREBRIUM_API_TOKEN;
+
+// Validate token on startup
+if (!CEREBRIUM_TOKEN) {
+  console.error("❌ [FATAL] CEREBRIUM_API_TOKEN not set in environment!");
+  console.error("💡 [HINT] Add CEREBRIUM_API_TOKEN to your .env file");
+  process.exit(1);
+}
+
+console.log("✅ [AUTH] Cerebrium authentication configured");
+
+function mediaAxiosConfig(extra = {}) {
+  const cfg = {
+    timeout: 20000, // 20s: Media API can be slow on cold start + model init
+    ...extra,
+  };
+
+  cfg.headers = {
+    ...(cfg.headers || {}),
+    "Content-Type": "application/json",
+  };
+
+  if (CEREBRIUM_TOKEN) {
+    cfg.headers.Authorization = `Bearer ${CEREBRIUM_TOKEN}`;
+  }
+
+  return cfg;
+}
+
+
 // ========================================
 // PHASE 1 OPTIMIZATION: Native Opus Only (@discordjs/opus)
 // ========================================
@@ -3051,13 +3093,11 @@ class MQTTConnection {
           `🛑 [CLEANUP] Stopping ${this.roomType} bot for room: ${roomName}`
         );
         await axios.post(
-          "http://localhost:8003/stop-bot",
+          `${MEDIA_API_BASE}/stop-bot`,
           {
             room_name: roomName,
           },
-          {
-            timeout: 3000,
-          }
+          mediaAxiosConfig({ timeout: 3000 })
         );
         console.log(`✅ [CLEANUP] ${this.roomType} bot stopped`);
       } catch (error) {
@@ -3645,16 +3685,14 @@ class MQTTConnection {
       }
 
       const response = await axios.post(
-        "http://localhost:8003/start-music-bot",
+        `${MEDIA_API_BASE}/start-music-bot`,
         {
           room_name: roomName,
           device_mac: this.macAddress,
           language: this.language,
-          playlist: playlist, // Pass playlist to bot
+          playlist: playlist,
         },
-        {
-          timeout: 5000, // 5 second timeout
-        }
+        mediaAxiosConfig({ timeout: 5000 })
       );
 
       if (response.data && response.data.status === "started") {
@@ -3704,16 +3742,14 @@ class MQTTConnection {
       }
 
       const response = await axios.post(
-        "http://localhost:8003/start-story-bot",
+        `${MEDIA_API_BASE}/start-story-bot`,
         {
           room_name: roomName,
           device_mac: this.macAddress,
           age_group: this.userData?.ageGroup || null,
-          playlist: playlist, // Pass playlist to bot
+          playlist: playlist,
         },
-        {
-          timeout: 5000, // 5 second timeout
-        }
+        mediaAxiosConfig({ timeout: 5000 })
       );
 
       if (response.data && response.data.status === "started") {
@@ -4433,87 +4469,173 @@ class VirtualMQTTConnection {
     }
   }
 
+  // async spawnMusicBot(roomName, playlist = null) {
+  //   try {
+  //     console.log(`🎵 [MUSIC-BOT] Calling Python API: ${roomName}`);
+
+  //     // If no playlist provided, fetch it
+  //     if (!playlist) {
+  //       playlist = await this.fetchPlaylist("music");
+  //     }
+
+  //     const response = await axios.post(
+  //       "http://10.0.215.150:8003/start-music-bot",
+  //       {
+  //         room_name: roomName,
+  //         device_mac: this.deviceId,
+  //         language: this.language,
+  //         playlist: playlist, // Pass playlist to bot
+  //       },
+  //       { timeout: 5000 }
+  //     );
+
+  //     if (response.data && response.data.status === "started") {
+  //       console.log(`✅ [MUSIC-BOT] Music bot spawned successfully`);
+  //       console.log(
+  //         `🎵 [MUSIC-BOT] Language: ${
+  //           response.data.language
+  //         }, Playlist items: ${playlist?.length || 0}`
+  //       );
+
+  //       // Store room info for control messages
+  //       const deviceInfo = this.gateway.deviceConnections.get(this.deviceId);
+  //       if (deviceInfo) {
+  //         deviceInfo.currentRoomName = roomName;
+  //         deviceInfo.currentMode = "music";
+  //         console.log(
+  //           `✅ [CONTROL] Stored room info - Room: ${roomName}, Mode: music`
+  //         );
+  //       }
+  //     }
+  //   } catch (error) {
+  //     console.error(`❌ [MUSIC-BOT] Failed: ${error.message}`);
+  //   }
+  // }
   async spawnMusicBot(roomName, playlist = null) {
-    try {
-      console.log(`🎵 [MUSIC-BOT] Calling Python API: ${roomName}`);
+  try {
+    console.log(
+      `🎵 [MUSIC-BOT] Calling Python API to spawn music bot for room: ${roomName}`
+    );
 
-      // If no playlist provided, fetch it
-      if (!playlist) {
-        playlist = await this.fetchPlaylist("music");
-      }
+    // If no playlist provided, fetch it
+    if (!playlist) {
+      playlist = await this.fetchPlaylist("music");
+    }
 
-      const response = await axios.post(
-        "http://localhost:8003/start-music-bot",
-        {
-          room_name: roomName,
-          device_mac: this.deviceId,
-          language: this.language,
-          playlist: playlist, // Pass playlist to bot
-        },
-        { timeout: 5000 }
+    const url = `${MEDIA_API_BASE}/start-music-bot`;
+
+    const response = await axios.post(
+      url,
+      {
+        room_name: roomName,
+        device_mac: this.macAddress,
+        language: this.language,
+        playlist: playlist, // Pass playlist to bot
+      },
+      mediaAxiosConfig()
+    );
+
+    if (response.data && response.data.status === "started") {
+      console.log(
+        `✅ [MUSIC-BOT] Music bot spawned successfully for room: ${roomName}`
+      );
+      console.log(
+        `🎵 [MUSIC-BOT] Language: ${
+          response.data.language
+        }, Playlist items: ${playlist?.length || 0}`
       );
 
-      if (response.data && response.data.status === "started") {
-        console.log(`✅ [MUSIC-BOT] Music bot spawned successfully`);
+      // Store room info for control messages
+      const deviceInfo = this.gateway.deviceConnections.get(this.macAddress);
+      if (deviceInfo) {
+        deviceInfo.currentRoomName = roomName;
+        deviceInfo.currentMode = "music";
         console.log(
-          `🎵 [MUSIC-BOT] Language: ${
-            response.data.language
-          }, Playlist items: ${playlist?.length || 0}`
+          `✅ [CONTROL] Stored room info - Room: ${roomName}, Mode: music`
         );
-
-        // Store room info for control messages
-        const deviceInfo = this.gateway.deviceConnections.get(this.deviceId);
-        if (deviceInfo) {
-          deviceInfo.currentRoomName = roomName;
-          deviceInfo.currentMode = "music";
-          console.log(
-            `✅ [CONTROL] Stored room info - Room: ${roomName}, Mode: music`
-          );
-        }
       }
-    } catch (error) {
-      console.error(`❌ [MUSIC-BOT] Failed: ${error.message}`);
+    } else if (response.data && response.data.status === "already_active") {
+      console.log(
+        `ℹ️ [MUSIC-BOT] Music bot already active for room: ${roomName}`
+      );
+    } else {
+      console.log(
+        `⚠️ [MUSIC-BOT] Unexpected response from Media API:`,
+        response.data
+      );
     }
+  } catch (error) {
+    console.error(
+      `❌ [MUSIC-BOT] Failed to spawn music bot: ${error.message}`
+    );
+    if (error.response) {
+      console.error(`❌ [MUSIC-BOT] API response:`, error.response.data);
+    }
+    // Don't throw - let the connection continue even if bot spawn fails
   }
+}
 
-  async spawnStoryBot(roomName, playlist = null) {
-    try {
-      console.log(`📖 [STORY-BOT] Calling Python API: ${roomName}`);
+async spawnStoryBot(roomName, playlist = null) {
+  try {
+    console.log(
+      `📖 [STORY-BOT] Calling Python API to spawn story bot for room: ${roomName}`
+    );
 
-      // If no playlist provided, fetch it
-      if (!playlist) {
-        playlist = await this.fetchPlaylist("story");
-      }
+    // If no playlist provided, fetch it
+    if (!playlist) {
+      playlist = await this.fetchPlaylist("story");
+    }
 
-      const response = await axios.post(
-        "http://localhost:8003/start-story-bot",
-        {
-          room_name: roomName,
-          device_mac: this.deviceId,
-          age_group: this.userData?.ageGroup || null,
-          playlist: playlist, // Pass playlist to bot
-        },
-        { timeout: 5000 }
+    const url = `${MEDIA_API_BASE}/start-story-bot`;
+
+    const response = await axios.post(
+      url,
+      {
+        room_name: roomName,
+        device_mac: this.macAddress,
+        age_group: this.userData?.ageGroup || null,
+        playlist: playlist,
+      },
+      mediaAxiosConfig()
+    );
+
+    if (response.data && response.data.status === "started") {
+      console.log(
+        `✅ [STORY-BOT] Story bot spawned successfully for room: ${roomName}`
+      );
+      console.log(
+        `📖 [STORY-BOT] Playlist items: ${playlist?.length || 0}`
       );
 
-      if (response.data && response.data.status === "started") {
-        console.log(`✅ [STORY-BOT] Story bot spawned successfully`);
-        console.log(`📖 [STORY-BOT] Playlist items: ${playlist?.length || 0}`);
-
-        // Store room info for control messages
-        const deviceInfo = this.gateway.deviceConnections.get(this.deviceId);
-        if (deviceInfo) {
-          deviceInfo.currentRoomName = roomName;
-          deviceInfo.currentMode = "story";
-          console.log(
-            `✅ [CONTROL] Stored room info - Room: ${roomName}, Mode: story`
-          );
-        }
+      const deviceInfo = this.gateway.deviceConnections.get(this.macAddress);
+      if (deviceInfo) {
+        deviceInfo.currentRoomName = roomName;
+        deviceInfo.currentMode = "story";
+        console.log(
+          `✅ [CONTROL] Stored room info - Room: ${roomName}, Mode: story`
+        );
       }
-    } catch (error) {
-      console.error(`❌ [STORY-BOT] Failed: ${error.message}`);
+    } else if (response.data && response.data.status === "already_active") {
+      console.log(
+        `ℹ️ [STORY-BOT] Story bot already active for room: ${roomName}`
+      );
+    } else {
+      console.log(
+        `⚠️ [STORY-BOT] Unexpected response from Media API:`,
+        response.data
+      );
     }
+  } catch (error) {
+    console.error(
+      `❌ [STORY-BOT] Failed to spawn story bot: ${error.message}`
+    );
+    if (error.response) {
+      console.error(`❌ [STORY-BOT] API response:`, error.response.data);
+    }
+    // Don't throw - let the connection continue even if bot spawn fails
   }
+}
+
 
   async parseOtherMessage(json) {
     if (!this.bridge) {
@@ -4926,11 +5048,11 @@ class VirtualMQTTConnection {
           `🛑 [CLEANUP] Stopping ${this.roomType} bot for room: ${roomName}`
         );
         await axios.post(
-          "http://localhost:8003/stop-bot",
+          `${MEDIA_API_BASE}/stop-bot`,
           {
             room_name: roomName,
           },
-          { timeout: 3000 }
+          mediaAxiosConfig({ timeout: 3000 })
         );
         console.log(`✅ [CLEANUP] ${this.roomType} bot stopped`);
       } catch (error) {
@@ -5614,9 +5736,9 @@ class MQTTGateway {
 
     try {
       if (mode === "music") {
-        apiUrl = `http://localhost:8003/music-bot/${roomName}/next`;
+        apiUrl = `${MEDIA_API_BASE}/music-bot/${roomName}/next`;
       } else if (mode === "story") {
-        apiUrl = `http://localhost:8003/story-bot/${roomName}/next`;
+        apiUrl = `${MEDIA_API_BASE}/story-bot/${roomName}/next`;
       } else {
         console.warn(
           `⚠️ [CONTROL] Next/Previous not supported for mode: ${mode}. Device is in '${mode}' mode, but controls only work for 'music' or 'story' modes.`
@@ -5652,7 +5774,7 @@ class MQTTGateway {
       }
 
       console.log(`⏭️ [CONTROL] Sending next skip request to: ${apiUrl}`);
-      const response = await axios.post(apiUrl, {}, { timeout: 5000 });
+      const response = await axios.post(apiUrl, {}, mediaAxiosConfig({ timeout: 5000 }));
 
       console.log(`✅ [CONTROL] Next skip successful:`, response.data);
       console.log(`✅ [CONTROL] Response status:`, response.status);
@@ -5789,9 +5911,9 @@ class MQTTGateway {
 
     try {
       if (mode === "music") {
-        apiUrl = `http://localhost:8003/music-bot/${roomName}/previous`;
+        apiUrl = `${MEDIA_API_BASE}/music-bot/${roomName}/previous`;
       } else if (mode === "story") {
-        apiUrl = `http://localhost:8003/story-bot/${roomName}/previous`;
+        apiUrl = `${MEDIA_API_BASE}/story-bot/${roomName}/previous`;
       } else {
         console.warn(
           `⚠️ [CONTROL] Next/Previous not supported for mode: ${mode}. Device is in '${mode}' mode, but controls only work for 'music' or 'story' modes.`
@@ -5827,7 +5949,7 @@ class MQTTGateway {
       }
 
       console.log(`⏮️ [CONTROL] Sending previous skip request to: ${apiUrl}`);
-      const response = await axios.post(apiUrl, {}, { timeout: 5000 });
+      const response = await axios.post(apiUrl, {},  mediaAxiosConfig());
 
       console.log(`✅ [CONTROL] Previous skip successful:`, response.data);
       console.log(`✅ [CONTROL] Response status:`, response.status);
@@ -5914,6 +6036,28 @@ class MQTTGateway {
 
   handleDeviceHello(deviceId, payload) {
     console.log(`📱 [HELLO] handleDeviceHello called for device: ${deviceId}`);
+
+    // Close and remove old connection if exists (prevents timer conflicts)
+    const existingDeviceInfo = this.deviceConnections.get(deviceId);
+    if (existingDeviceInfo) {
+      const oldConnection = existingDeviceInfo.connection;
+      const oldConnectionId = existingDeviceInfo.connectionId;
+
+      console.log(
+        `📱 [HELLO] Closing old connection for ${deviceId} (connectionId: ${oldConnectionId})`
+      );
+
+      // Remove from connections map first
+      this.connections.delete(oldConnectionId);
+      console.log(`🗑️ [HELLO] Removed old connectionId ${oldConnectionId} from connections map`);
+
+      // Close the old connection (this will clean up timers and bridge)
+      if (oldConnection && !oldConnection.closing) {
+        oldConnection.closing = true; // Prevent duplicate close
+        oldConnection.close();
+        console.log(`🗑️ [HELLO] Closed old connection for device: ${deviceId}`);
+      }
+    }
 
     // Create a virtual connection for this device
     const connectionId = this.generateNewConnectionId();
@@ -6314,12 +6458,13 @@ class MQTTGateway {
           try {
             const axios = require("axios");
             const stopResponse = await axios.post(
-              "http://localhost:8003/stop-bot",
-              {
-                room_name: oldRoomName,
-              },
-              { timeout: 5000 }
-            );
+  `${MEDIA_API_BASE}/stop-bot`,
+  {
+    room_name: oldRoomName,
+  },
+  mediaAxiosConfig()
+);
+
 
             if (stopResponse.data && stopResponse.data.status === "stopped") {
               console.log(
@@ -6374,11 +6519,20 @@ class MQTTGateway {
           }
         }
 
-        // Close old bridge
+        // Disconnect old bridge without closing the connection (we're reusing it)
         if (oldBridge) {
-          oldBridge.close();
+          // Disconnect from LiveKit room without triggering connection cleanup
+          if (oldBridge.room) {
+            try {
+              await oldBridge.room.disconnect();
+              console.log(`✅ [MODE-CHANGE] Disconnected old bridge from LiveKit room`);
+            } catch (error) {
+              console.warn(`⚠️ [MODE-CHANGE] Error disconnecting old bridge:`, error.message);
+            }
+          }
           existingConnection.bridge = null;
-          console.log(`✅ [MODE-CHANGE] Closed old bridge`);
+          console.log(`✅ [MODE-CHANGE] Old bridge reference cleared (connection preserved)`);
+          // NOTE: Don't call oldBridge.close() - it would delete the connection from deviceConnections!
         }
       } else {
         console.log(`ℹ️ [MODE-CHANGE] No existing room to delete`);
@@ -6459,6 +6613,15 @@ class MQTTGateway {
         // Update connection session
         connection.udp.session_id = newRoomName;
 
+        // Reset ending-related flags to prevent old timeouts from killing new session
+        connection.isEnding = false;
+        connection.endPromptSentTime = null;
+        connection.goodbyeSent = false;
+        connection.lastActivityTime = Date.now(); // Reset activity timer
+        console.log(
+          `🔄 [MODE-CHANGE] Reset ending flags and activity timer for fresh session`
+        );
+
         // Create new LiveKitBridge
         const newBridge = new LiveKitBridge(
           connection,
@@ -6495,9 +6658,23 @@ class MQTTGateway {
             mode: newMode,
             session_id: newRoomName,
             timestamp: Date.now(),
+            transport: "udp",
+            udp: {
+              server: this.publicIp,
+              port: this.udpPort,
+              encryption: connection.udp.encryption,
+              key: connection.udp.key.toString("hex"),
+              nonce: connection.udp.nonce.toString("hex"),
+            },
+            audio_params: {
+              sample_rate: 24000,
+              channels: 1,
+              frame_duration: 60,
+              format: "opus",
+            },
           })
         );
-        console.log(`✅ [MODE-CHANGE] Sent mode_update (${newMode}) to device`);
+        console.log(`✅ [MODE-CHANGE] Sent mode_update (${newMode}) to device with UDP details`);
 
         // STEP 4: Handle mode-specific startup
         console.log(`🎬 [MODE-CHANGE] Step 4: Starting ${newMode} flow...`);
@@ -6532,11 +6709,48 @@ class MQTTGateway {
           );
         } else if (newMode === "conversation") {
           console.log(
-            `🗣️ [MODE-CHANGE] Conversation mode - room created, waiting for user to start...`
+            `🗣️ [MODE-CHANGE] Conversation mode - auto-dispatching agent...`
           );
-          console.log(
-            `ℹ️ [MODE-CHANGE] Agent will be dispatched when user clicks start button (start_greeting)`
-          );
+
+          // Auto-dispatch agent immediately (device already connected during mode change)
+          if (this.agentDispatchClient) {
+            try {
+              const dispatch = await this.agentDispatchClient.createDispatch(
+                newRoomName,
+                "cheeko-agent",
+                {
+                  metadata: JSON.stringify({
+                    device_mac: connection.macAddress,
+                    device_uuid: deviceId,
+                    timestamp: Date.now(),
+                  }),
+                }
+              );
+
+              console.log(
+                `✅ [MODE-CHANGE] Agent dispatched successfully:`,
+                dispatch.id
+              );
+
+              // Mark bridge as having agent deployed
+              newBridge.agentDeployed = true;
+
+              // Wait for agent to join and send greeting
+              await newBridge.waitForAgentJoin(4000);
+              console.log(`✅ [MODE-CHANGE] Agent joined, sending initial greeting...`);
+              await newBridge.sendInitialGreeting();
+              console.log(`✅ [MODE-CHANGE] Initial greeting sent`);
+            } catch (error) {
+              console.error(
+                `❌ [MODE-CHANGE] Failed to dispatch agent or send greeting:`,
+                error.message
+              );
+            }
+          } else {
+            console.error(
+              `❌ [MODE-CHANGE] AgentDispatchClient not initialized, cannot dispatch agent`
+            );
+          }
         }
 
         console.log(

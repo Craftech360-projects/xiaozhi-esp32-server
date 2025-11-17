@@ -3,8 +3,7 @@
 ARG PYTHON_VERSION=3.11.6
 FROM python:${PYTHON_VERSION}-slim
 
-# Keeps Python from buffering stdout and stderr to avoid situations where
-# the application crashes without emitting any logs due to buffering.
+# Keeps Python from buffering stdout and stderr
 ENV PYTHONUNBUFFERED=1
 
 # Create a non-privileged user that the app will run under.
@@ -30,6 +29,7 @@ RUN apt-get update && \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
+# Switch to non-root user
 USER appuser
 
 RUN mkdir -p /home/appuser/.cache
@@ -60,16 +60,25 @@ RUN python -m pip install --user --no-cache-dir \
     'jinja2' \
     'pytz' \
     'qdrant-client>=1.7.0' \
-    'sentence-transformers>=2.2.0'
+    'sentence-transformers>=2.2.0' \
+    'uvicorn[standard]'
 
-# Copy the entire application
+# Copy the entire application (including start.sh, main.py, media_api, etc.)
 COPY . .
 
+# Temporarily become root to fix ownership and ensure start.sh is executable
+USER root
+RUN chown -R appuser:appuser /home/appuser && \
+    chmod +x /home/appuser/start.sh
+
+# Back to app user
+USER appuser
+
 # Ensure that any dependent models are downloaded at build-time
-RUN python main.py download-files || echo "No download-files command available"
+RUN python room.py download-files || echo "No download-files command available"
 
-# Expose healthcheck port
-EXPOSE 8081
+# Expose healthcheck / main service port and media_api port
+EXPOSE 8081 8003
 
-# Run the application
-CMD ["python", "main.py", "start"]
+# Run the start script which launches both main.py and media_api
+CMD ["./start.sh"]

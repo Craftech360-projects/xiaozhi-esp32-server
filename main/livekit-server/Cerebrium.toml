@@ -3,7 +3,7 @@ name = "livekit-server-simple"
 python_version = "3.11"
 docker_base_image_url = "debian:bookworm-slim"
 disable_auth = false
-include = ['./*', 'main.py', 'cerebrium.toml', 'src/**/*', 'config/**/*']
+include = ['./*', 'room.py', 'media_api.py','cerebrium.toml', 'src/**/*', 'config/**/*']
 exclude = ['.*', '__pycache__/**/*', 'transcripts/**/*', '*.pyc']
 
 [cerebrium.hardware]
@@ -21,19 +21,16 @@ scaling_metric = "cpu_utilization"
 scaling_target = 60
 
 [cerebrium.runtime.custom]
-port = 8081
+port = 8003
 dockerfile_path = "./Dockerfile"
 
 [cerebrium.env]
 # LiveKit Cloud Configuration (REQUIRED for Cerebrium deployment)
-LIVEKIT_URL = "wss://cheeko-ycahauzs.livekit.cloud"
-LIVEKIT_API_KEY = "APIFrjVQFMvUte3"
-LIVEKIT_API_SECRET = "GHGRD7WJmUVlfD9KoXTI3C5ZcD1dK9YGoBUbPSYmX5D"
+LIVEKIT_URL = "wss://cheeko-2l9cex5f.livekit.cloud"
+LIVEKIT_API_KEY = "APItFJZgGpRzeTg"
+LIVEKIT_API_SECRET = "EeDUlc7OneLExZWVLexrI9KecOQUcj0svqr7xq4K3UgC"
+
 
 # Model Configuration (CRITICAL - no comments in values!)
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 AUTO_PRELOAD_MODELS = "true"
-
-# Add other required environment variables here
-# Important: Add these via Cerebrium dashboard or CLI for security:
-# GROQ_API_KEY, DATADOG_API_KEY, AWS credentials, etc.
