@@ -16,17 +16,24 @@ module.exports = {
     },
     {
       name: "mqtt-gateway",
-      script: "app.js",
+      script: "approom.js",
       cwd: "/root/xiaozhi-esp32-server/main/mqtt-gateway",
       interpreter: "node",
-      watch: true
+      watch: false
     },
     {
       name: "livekit-server",
-      script: "main.py",
+      script: "room.py",
       args: "dev",
       cwd: "/root/xiaozhi-esp32-server/main/livekit-server",
       interpreter: "python3"
+    },
+    {
+      name: "livekit-media-api",
+      script: "media_api.py",
+      cwd: "/root/xiaozhi-esp32-server/main/livekit-server",
+      interpreter: "python3",
+      watch: false
     },
     {
       name: "livekit-react-cheeko",
@@ -40,4 +47,3 @@ module.exports = {
     }
   ]
 };
-

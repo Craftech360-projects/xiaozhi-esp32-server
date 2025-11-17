@@ -2925,7 +2925,7 @@ class MQTTConnection {
 
     // Add inactivity timeout tracking
     this.lastActivityTime = Date.now();
-    this.inactivityTimeoutMs = 60 * 1000; // 1 minute in milliseconds
+    this.inactivityTimeoutMs = null; // No timeout for regular connections
     this.isEnding = false; // Track if end prompt has been sent
     this.endPromptSentTime = null; // Track when end prompt was sent
 
@@ -3081,182 +3081,205 @@ class MQTTConnection {
     }
   }
 
-  updateActivityTime() {
+  updateActivityTime(messageType = null) {
     this.lastActivityTime = Date.now();
 
-    // Don't reset ending state during goodbye sequence
-    if (this.isEnding) {
+    // Allow timer reset for certain message types even during ending
+    const allowedDuringEnding = ['playback_control', 'playing', 'status'];
+    
+    if (this.isEnding && (!messageType || !allowedDuringEnding.includes(messageType))) {
       console.log(
         `📱 [ENDING-IGNORE] Activity during goodbye sequence ignored for device: ${this.clientId}`
       );
       return; // Don't log timer reset during ending
     }
 
+    // If we reach here, either not ending OR it's an allowed message type
+    if (this.isEnding && messageType) {
+      console.log(
+        `🔄 [ENDING-RESET] Timer reset allowed for message type '${messageType}' during ending: ${this.clientId}`
+      );
+      // Reset ending state since device is still active
+      this.isEnding = false;
+      this.endPromptSentTime = null;
+    }
+
     console.log(
-      `⏱️ [TIMER-RESET] Activity timer reset for device: ${
-        this.clientId
-      } at ${new Date().toISOString()}`
+      `⏰ [TIMER-RESET] Device ${this.clientId} activity timer reset`
     );
   }
 
-  async checkKeepAlive() {
-    // Don't check keepalive if connection is closing
-    if (this.closing) {
-      return;
-    }
+  // async checkKeepAlive() {
+  //   // Don't check keepalive if connection is closing
+  //   console.log("timer 1");
+  //   if (this.closing) {
+  //     return;
+  //   }
 
-    const now = Date.now();
+  //   const now = Date.now();
 
-    // If we're in ending phase, check for final timeout
-    if (this.isEnding && this.endPromptSentTime) {
-      const timeSinceEndPrompt = now - this.endPromptSentTime;
-      const maxEndWaitTime = 30 * 1000; // 30 seconds max wait for end prompt audio
+  //   // If we're in ending phase, check for final timeout
+  //   if (this.isEnding && this.endPromptSentTime) {
+  //     const timeSinceEndPrompt = now - this.endPromptSentTime;
+  //     const maxEndWaitTime = 30 * 1000; // 30 seconds max wait for end prompt audio
 
-      if (timeSinceEndPrompt > maxEndWaitTime) {
-        console.log(
-          `🕒 [END-TIMEOUT] End prompt timeout reached, force closing connection: ${
-            this.clientId
-          } (waited ${Math.round(timeSinceEndPrompt / 1000)}s)`
-        );
+  //     if (timeSinceEndPrompt > maxEndWaitTime) {
+  //       console.log(
+  //         `🕒 [END-TIMEOUT] End prompt timeout reached, force closing connection: ${
+  //           this.clientId
+  //         } (waited ${Math.round(timeSinceEndPrompt / 1000)}s)`
+  //       );
 
-        // Send goodbye MQTT message before force closing
-        try {
-          this.sendMqttMessage(
-            JSON.stringify({
-              type: "goodbye",
-              session_id: this.udp ? this.udp.session_id : null,
-              reason: "end_prompt_timeout",
-              timestamp: Date.now(),
-            })
-          );
-          console.log(
-            `👋 [GOODBYE-MQTT] Sent goodbye MQTT message to device on timeout: ${this.clientId}`
-          );
-        } catch (error) {
-          console.error(
-            `Failed to send goodbye MQTT message: ${error.message}`
-          );
-        }
+  //       // Send goodbye MQTT message before force closing
+  //       try {
+  //         this.sendMqttMessage(
+  //           JSON.stringify({
+  //             type: "goodbye",
+  //             session_id: this.udp ? this.udp.session_id : null,
+  //             reason: "end_prompt_timeout",
+  //             timestamp: Date.now(),
+  //           })
+  //         );
+  //         console.log(
+  //           `👋 [GOODBYE-MQTT] Sent goodbye MQTT message to device on timeout: ${this.clientId}`
+  //         );
+  //       } catch (error) {
+  //         console.error(
+  //           `Failed to send goodbye MQTT message: ${error.message}`
+  //         );
+  //       }
 
-        this.close();
-        return;
-      }
+  //       this.close();
+  //       return;
+  //     }
 
-      // Show countdown for end prompt completion
-      if (timeSinceEndPrompt % 5000 < 1000) {
-        const remainingSeconds = Math.round(
-          (maxEndWaitTime - timeSinceEndPrompt) / 1000
-        );
-        console.log(
-          `⏳ [END-WAIT] Device ${this.clientId}: ${remainingSeconds}s until force disconnect`
-        );
-      }
-      return; // Don't do normal timeout check while ending
-    }
+  //     // Show countdown for end prompt completion
+  //     if (timeSinceEndPrompt % 5000 < 1000) {
+  //       const remainingSeconds = Math.round(
+  //         (maxEndWaitTime - timeSinceEndPrompt) / 1000
+  //       );
+  //       console.log(
+  //         `⏳ [END-WAIT] Device ${this.clientId}: ${remainingSeconds}s until force disconnect`
+  //       );
+  //     }
+  //     return; // Don't do normal timeout check while ending
+  //   }
 
-    // Check for inactivity timeout (1 minute of no communication)
-    const timeSinceLastActivity = now - this.lastActivityTime;
+  //   // Check for inactivity timeout (disabled for regular connections)
+  //   if (this.inactivityTimeoutMs !== null) {
+  //     const timeSinceLastActivity = now - this.lastActivityTime;
 
-    // Skip timeout check if audio is actively playing (but don't reset timer)
-    if (this.bridge && this.bridge.isAudioPlaying) {
-      console.log(
-        `🎵 [AUDIO-ACTIVE] Audio is playing for device: ${this.clientId} - skipping timeout check but not resetting timer`
-      );
-      return;
-    }
+  //     // Skip timeout check if audio is actively playing (but don't reset timer)
+  //     if (this.bridge && this.bridge.isAudioPlaying) {
+  //       console.log(
+  //         `🎵 [AUDIO-ACTIVE] Audio is playing for device: ${this.clientId} - skipping timeout check but not resetting timer`
+  //       );
+  //       return;
+  //     }
 
-    if (timeSinceLastActivity > this.inactivityTimeoutMs) {
-      // Send end prompt instead of immediate close
-      if (!this.isEnding && this.bridge) {
-        this.isEnding = true;
-        this.endPromptSentTime = now;
-        console.log(
-          `👋 [END-PROMPT] Sending goodbye message before timeout: ${
-            this.clientId
-          } (inactive for ${Math.round(
-            timeSinceLastActivity / 1000
-          )}s) - Last activity: ${new Date(
-            this.lastActivityTime
-          ).toISOString()}, Now: ${new Date(now).toISOString()}`
-        );
+  //     if (timeSinceLastActivity > this.inactivityTimeoutMs) {
+  //     // Send end prompt instead of immediate close
+  //     if (!this.isEnding && this.bridge) {
+  //       this.isEnding = true;
+  //       this.endPromptSentTime = now;
+  //       console.log(
+  //         `👋 [END-PROMPT] Sending goodbye message before timeout: ${
+  //           this.clientId
+  //         } (inactive for ${Math.round(
+  //           timeSinceLastActivity / 1000
+  //         )}s) - Last activity: ${new Date(
+  //           this.lastActivityTime
+  //         ).toISOString()}, Now: ${new Date(now).toISOString()}`
+  //       );
 
-        try {
-          // Send end prompt to agent for voice goodbye (TTS "Time flies fast...")
-          // Note: Goodbye MQTT will be sent AFTER TTS finishes (in agent_state_changed handler)
-          this.goodbyeSent = false; // Flag to track if goodbye MQTT was sent
-          await this.bridge.sendEndPrompt(this.udp.session_id);
-          console.log(
-            `👋 [END-PROMPT-SENT] Waiting for TTS goodbye to complete before sending goodbye MQTT: ${this.clientId}`
-          );
-        } catch (error) {
-          console.error(`Failed to send end prompt: ${error.message}`);
-          // If end prompt fails, close immediately
-          this.close();
-        }
-        return;
-      } else {
-        // No bridge available, send goodbye message and close immediately
-        console.log(
-          `🕒 [TIMEOUT] Closing connection due to 1-minute inactivity: ${
-            this.clientId
-          } (inactive for ${Math.round(timeSinceLastActivity / 1000)}s)`
-        );
+  //       try {
+  //         // Send end prompt to agent for voice goodbye (TTS "Time flies fast...")
+  //         // Note: Goodbye MQTT will be sent AFTER TTS finishes (in agent_state_changed handler)
+  //         this.goodbyeSent = false; // Flag to track if goodbye MQTT was sent
+  //         await this.bridge.sendEndPrompt(this.udp.session_id);
+  //         console.log(
+  //           `👋 [END-PROMPT-SENT] Waiting for TTS goodbye to complete before sending goodbye MQTT: ${this.clientId}`
+  //         );
+  //       } catch (error) {
+  //         console.error(`Failed to send end prompt: ${error.message}`);
+  //         // If end prompt fails, close immediately
+  //         this.close();
+  //       }
+  //       return;
+  //     } else {
+  //       // No bridge available, send goodbye message and close immediately
+  //       console.log(
+  //         `🕒 [TIMEOUT] Closing connection due to 1-minute inactivity: ${
+  //           this.clientId
+  //         } (inactive for ${Math.round(timeSinceLastActivity / 1000)}s)`
+  //       );
 
-        // Send goodbye MQTT message before closing
-        try {
-          this.sendMqttMessage(
-            JSON.stringify({
-              type: "goodbye",
-              session_id: this.udp ? this.udp.session_id : null,
-              reason: "inactivity_timeout",
-              timestamp: Date.now(),
-            })
-          );
-          console.log(
-            `👋 [GOODBYE-MQTT] Sent goodbye MQTT message to device: ${this.clientId}`
-          );
-        } catch (error) {
-          console.error(
-            `Failed to send goodbye MQTT message: ${error.message}`
-          );
-        }
+  //       // Send goodbye MQTT message before closing
+  //       try {
+  //         this.sendMqttMessage(
+  //           JSON.stringify({
+  //             type: "goodbye",
+  //             session_id: this.udp ? this.udp.session_id : null,
+  //             reason: "inactivity_timeout",
+  //             timestamp: Date.now(),
+  //           })
+  //         );
+  //         console.log(
+  //           `👋 [GOODBYE-MQTT] Sent goodbye MQTT message to device: ${this.clientId}`
+  //         );
+  //       } catch (error) {
+  //         console.error(
+  //           `Failed to send goodbye MQTT message: ${error.message}`
+  //         );
+  //       }
 
-        this.close();
-        return;
-      }
-    }
+  //       this.close();
+  //       return;
+  //     }
+  //   }
 
-    // Log remaining time until timeout (only show every 30 seconds to avoid spam)
-    if (timeSinceLastActivity % 30000 < 1000) {
-      const remainingSeconds = Math.round(
-        (this.inactivityTimeoutMs - timeSinceLastActivity) / 1000
-      );
-      console.log(
-        `⏰ [TIMER-CHECK] Device ${this.clientId}: ${remainingSeconds}s until timeout`
-      );
-    }
+  //     // Log remaining time until timeout (only show every 30 seconds to avoid spam)
+  //     if (timeSinceLastActivity % 30000 < 1000) {
+  //       const remainingSeconds = Math.round(
+  //         (this.inactivityTimeoutMs - timeSinceLastActivity) / 1000
+  //       );
+  //       console.log(
+  //         `⏰ [TIMER-CHECK] Device ${this.clientId}: ${remainingSeconds}s until timeout`
+  //       );
+  //     }
+  //   } // End of inactivity timeout check
 
-    // Original keep-alive check
-    const keepAliveInterval = this.protocol.getKeepAliveInterval();
-    // If keepAliveInterval is 0, heartbeat check is not needed
-    if (keepAliveInterval === 0 || !this.protocol.isConnected) return;
+  //   // Original keep-alive check
+  //   const keepAliveInterval = this.protocol.getKeepAliveInterval();
+  //   // If keepAliveInterval is 0, heartbeat check is not needed
+  //   if (keepAliveInterval === 0 || !this.protocol.isConnected) return;
 
-    const protocolLastActivity = this.protocol.getLastActivity();
-    const timeSinceProtocolActivity = now - protocolLastActivity;
+  //   const protocolLastActivity = this.protocol.getLastActivity();
+  //   const timeSinceProtocolActivity = now - protocolLastActivity;
 
-    // If heartbeat interval is exceeded, close connection
-    if (timeSinceProtocolActivity > keepAliveInterval) {
-      debug("Heartbeat timeout, closing connection:", this.clientId);
-      this.close();
-    }
-  }
+  //   // If heartbeat interval is exceeded, close connection
+  //   if (timeSinceProtocolActivity > keepAliveInterval) {
+  //     debug("Heartbeat timeout, closing connection:", this.clientId);
+  //     this.close();
+  //   }
+  // }
 
   handlePublish(publishData) {
     // Update activity timestamp on any MQTT message receipt
     console.log(
       `📨 [ACTIVITY] MQTT message received from ${this.clientId}, resetting inactivity timer`
     );
-    this.updateActivityTime();
+    
+    // Parse message to get type before updating activity
+    let messageType = null;
+    try {
+      const json = JSON.parse(publishData.payload);
+      messageType = json.type || json.msg; // Handle both 'type' and 'msg' fields
+    } catch (error) {
+      console.log(`⚠️ [PARSE] Could not parse message type for timer reset: ${error.message}`);
+    }
+    
+    this.updateActivityTime(messageType);
 
     debug("Received publish message:", {
       clientId: this.clientId,
@@ -3897,7 +3920,7 @@ class VirtualMQTTConnection {
 
     // Add inactivity timeout tracking
     this.lastActivityTime = Date.now();
-    this.inactivityTimeoutMs = 60 * 1000; // 1 minute in milliseconds
+    this.inactivityTimeoutMs = 2 * 60 * 1000; // 2 minutes in milliseconds
     this.isEnding = false; // Track if end prompt has been sent
     this.endPromptSentTime = null; // Track when end prompt was sent
 
@@ -3959,21 +3982,31 @@ class VirtualMQTTConnection {
     debug(`Virtual connection created for device: ${this.deviceId}`);
   }
 
-  updateActivityTime() {
+  updateActivityTime(messageType = null) {
     this.lastActivityTime = Date.now();
 
-    // Don't reset ending state during goodbye sequence
-    if (this.isEnding) {
+    // Allow timer reset for certain message types even during ending
+    const allowedDuringEnding = ['playback_control', 'playing', 'status'];
+    
+    if (this.isEnding && (!messageType || !allowedDuringEnding.includes(messageType))) {
       console.log(
         `📱 [ENDING-IGNORE] Activity during goodbye sequence ignored for virtual device: ${this.deviceId}`
       );
       return; // Don't log timer reset during ending
     }
 
+    // If we reach here, either not ending OR it's an allowed message type
+    if (this.isEnding && messageType) {
+      console.log(
+        `🔄 [ENDING-RESET] Timer reset allowed for message type '${messageType}' during ending: ${this.deviceId}`
+      );
+      // Reset ending state since device is still active
+      this.isEnding = false;
+      this.endPromptSentTime = null;
+    }
+
     console.log(
-      `⏱️ [TIMER-RESET] Activity timer reset for virtual device: ${
-        this.deviceId
-      } at ${new Date().toISOString()}`
+      `⏰ [TIMER-RESET] Virtual device ${this.deviceId} activity timer reset`
     );
   }
 
@@ -3982,7 +4015,17 @@ class VirtualMQTTConnection {
     console.log(
       `📨 [ACTIVITY] MQTT message received from virtual device ${this.deviceId}, resetting inactivity timer`
     );
-    this.updateActivityTime();
+    
+    // Parse message to get type before updating activity
+    let messageType = null;
+    try {
+      const json = JSON.parse(publishData.payload);
+      messageType = json.type || json.msg; // Handle both 'type' and 'msg' fields
+    } catch (error) {
+      console.log(`⚠️ [PARSE] Could not parse message type for timer reset: ${error.message}`);
+    }
+    
+    this.updateActivityTime(messageType);
 
     try {
       const json = JSON.parse(publishData.payload);
@@ -4728,6 +4771,7 @@ class VirtualMQTTConnection {
 
   async checkKeepAlive() {
     // Don't check keepalive if connection is closing
+    console.log("timer 2");
     if (this.closing) {
       return;
     }
@@ -4781,7 +4825,7 @@ class VirtualMQTTConnection {
       return; // Don't do normal timeout check while ending
     }
 
-    // Check for inactivity timeout (1 minute of no communication)
+    // Check for inactivity timeout (2 minutes of no communication)
     const timeSinceLastActivity = now - this.lastActivityTime;
 
     // Skip timeout check if audio is actively playing (but don't reset timer)
@@ -4824,7 +4868,7 @@ class VirtualMQTTConnection {
       } else {
         // No bridge available, send goodbye message and close immediately
         console.log(
-          `🕒 [TIMEOUT] Closing virtual connection due to 1-minute inactivity: ${
+          `🕒 [TIMEOUT] Closing virtual connection due to 2-minute inactivity: ${
             this.deviceId
           } (inactive for ${Math.round(timeSinceLastActivity / 1000)}s)`
         );
@@ -4867,6 +4911,7 @@ class VirtualMQTTConnection {
   }
 
   async close() {
+    console.log(`🛑 [CLEANUP] Starting cleanup for virtual device: ${this.deviceId}`);
     this.closing = true;
 
     // ADD: Stop media bot if music/story room
@@ -4897,9 +4942,16 @@ class VirtualMQTTConnection {
       this.bridge.close();
       this.bridge = null;
     }
-    // Remove from gateway maps
+    
+    // Remove from connections map immediately
     this.gateway.connections.delete(this.connectionId);
-    this.gateway.deviceConnections.delete(this.deviceId);
+    
+    // Keep connection in deviceConnections map until fully cleaned up
+    // This allows incoming messages to still find the connection during cleanup
+    setTimeout(() => {
+      this.gateway.deviceConnections.delete(this.deviceId);
+      console.log(`🗑️ [CLEANUP] Removed ${this.deviceId} from deviceConnections map`);
+    }, 1000); // Small delay to ensure all pending messages are processed
   }
 
   isAlive() {
@@ -5558,8 +5610,9 @@ class MQTTGateway {
       return;
     }
 
+    let apiUrl = null; // Declare outside try block to ensure scope accessibility
+
     try {
-      let apiUrl;
       if (mode === "music") {
         apiUrl = `http://localhost:8003/music-bot/${roomName}/next`;
       } else if (mode === "story") {
@@ -5598,11 +5651,22 @@ class MQTTGateway {
         );
       }
 
-      console.log(`⏭️ [CONTROL] Sending skip request to: ${apiUrl}`);
+      console.log(`⏭️ [CONTROL] Sending next skip request to: ${apiUrl}`);
       const response = await axios.post(apiUrl, {}, { timeout: 5000 });
 
-      console.log(`✅ [CONTROL] Skip successful:`, response.data);
+      console.log(`✅ [CONTROL] Next skip successful:`, response.data);
       console.log(`✅ [CONTROL] Response status:`, response.status);
+      
+      // Log current status for debugging
+      if (response.data && response.data.current_status) {
+        const status = response.data.current_status;
+        console.log(`🎵 [CONTROL] Current playback status after next skip:`, {
+          mode: status.mode,
+          current_index: status.current_index,
+          playlist_length: status.playlist_length,
+          current_song: status.current_song || status.current_story
+        });
+      }
 
       // Send TTS start message after successful skip
       if (clientId) {
@@ -5639,7 +5703,37 @@ class MQTTGateway {
         );
       }
     } catch (error) {
-      console.error(`❌ [CONTROL] Failed to skip:`, error.message);
+      console.error(`❌ [CONTROL] Failed to skip to next:`, error.message);
+      
+      // Log additional error details for debugging
+      if (error.response) {
+        console.error(`❌ [CONTROL] API Response Error:`, {
+          status: error.response.status,
+          data: error.response.data,
+          url: apiUrl || 'URL not set'
+        });
+      } else if (error.request) {
+        console.error(`❌ [CONTROL] Network Error - No response received from:`, apiUrl || 'URL not set');
+      } else {
+        console.error(`❌ [CONTROL] Request Setup Error:`, error.message);
+      }
+      
+      // Send error notification to device if possible
+      if (clientId) {
+        const errorTopic = `devices/p2p/${clientId}`;
+        const errorMsg = {
+          type: "tts",
+          state: "start",
+          text: "Skip failed, please try again",
+          session_id: deviceInfo.connection?.udp?.session_id || null,
+        };
+        
+        this.mqttClient.publish(errorTopic, JSON.stringify(errorMsg), (err) => {
+          if (!err) {
+            console.log(`📤 [CONTROL] Error notification sent to ${macAddress}`);
+          }
+        });
+      }
     }
   }
 
@@ -5691,8 +5785,9 @@ class MQTTGateway {
       return;
     }
 
+    let apiUrl = null; // Declare outside try block to ensure scope accessibility
+
     try {
-      let apiUrl;
       if (mode === "music") {
         apiUrl = `http://localhost:8003/music-bot/${roomName}/previous`;
       } else if (mode === "story") {
@@ -5731,11 +5826,22 @@ class MQTTGateway {
         );
       }
 
-      console.log(`⏮️ [CONTROL] Sending skip request to: ${apiUrl}`);
+      console.log(`⏮️ [CONTROL] Sending previous skip request to: ${apiUrl}`);
       const response = await axios.post(apiUrl, {}, { timeout: 5000 });
 
-      console.log(`✅ [CONTROL] Skip successful:`, response.data);
+      console.log(`✅ [CONTROL] Previous skip successful:`, response.data);
       console.log(`✅ [CONTROL] Response status:`, response.status);
+      
+      // Log current status for debugging
+      if (response.data && response.data.current_status) {
+        const status = response.data.current_status;
+        console.log(`🎵 [CONTROL] Current playback status after previous skip:`, {
+          mode: status.mode,
+          current_index: status.current_index,
+          playlist_length: status.playlist_length,
+          current_song: status.current_song || status.current_story
+        });
+      }
 
       // Send TTS start message after successful skip
       if (clientId) {
@@ -5772,7 +5878,37 @@ class MQTTGateway {
         );
       }
     } catch (error) {
-      console.error(`❌ [CONTROL] Failed to skip:`, error.message);
+      console.error(`❌ [CONTROL] Failed to skip to previous:`, error.message);
+      
+      // Log additional error details for debugging
+      if (error.response) {
+        console.error(`❌ [CONTROL] API Response Error:`, {
+          status: error.response.status,
+          data: error.response.data,
+          url: apiUrl || 'URL not set'
+        });
+      } else if (error.request) {
+        console.error(`❌ [CONTROL] Network Error - No response received from:`, apiUrl || 'URL not set');
+      } else {
+        console.error(`❌ [CONTROL] Request Setup Error:`, error.message);
+      }
+      
+      // Send error notification to device if possible
+      if (clientId) {
+        const errorTopic = `devices/p2p/${clientId}`;
+        const errorMsg = {
+          type: "tts",
+          state: "start",
+          text: "Previous skip failed, please try again",
+          session_id: deviceInfo.connection?.udp?.session_id || null,
+        };
+        
+        this.mqttClient.publish(errorTopic, JSON.stringify(errorMsg), (err) => {
+          if (!err) {
+            console.log(`📤 [CONTROL] Error notification sent to ${macAddress}`);
+          }
+        });
+      }
     }
   }
 
@@ -5822,10 +5958,26 @@ class MQTTGateway {
   }
 
   handleDeviceData(deviceId, payload) {
+    console.log(`🔍 [DEBUG] Looking up connection for device: ${deviceId}`);
+    
     const deviceInfo = this.deviceConnections.get(deviceId);
+    
     if (deviceInfo && deviceInfo.connection) {
+      console.log(`✅ [DEBUG] Connection found for ${deviceId}, state: ending=${deviceInfo.connection.isEnding}, closing=${deviceInfo.connection.closing}`);
       deviceInfo.connection.handlePublish({ payload: JSON.stringify(payload) });
     } else {
+      console.log(`❌ [DEBUG] No connection found for device: ${deviceId}`);
+      console.log(`🔍 [DEBUG] Available devices in map: [${Array.from(this.deviceConnections.keys()).join(', ')}]`);
+      
+      // Try to find similar device IDs (in case of format mismatch)
+      const similarDevices = Array.from(this.deviceConnections.keys()).filter(key => 
+        key.replace(/[_:]/g, '') === deviceId.replace(/[_:]/g, '')
+      );
+      
+      if (similarDevices.length > 0) {
+        console.log(`🔍 [DEBUG] Found similar device IDs: [${similarDevices.join(', ')}] - possible format mismatch`);
+      }
+      
       console.warn(`📱 Received data from unknown device: ${deviceId}`);
     }
   }
@@ -6582,7 +6734,6 @@ class MQTTGateway {
     debug("Waiting for connections to close");
     this.connections.clear();
     this.deviceConnections.clear();
-
     if (this.udpServer) {
       this.udpServer.close();
       this.udpServer = null;

@@ -596,3 +596,19 @@ databaseChangeLog:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202511121400_create_playlist_tables.sql
+
+  - changeSet:
+      id: 202511071505
+      author: claude
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202511071505_cheeko_prompt_fixed.sql
+
+  - changeSet:
+      id: 202511071504
+      author: claude
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202511071504.sql

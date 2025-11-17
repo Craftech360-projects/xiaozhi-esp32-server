@@ -65,6 +65,8 @@ from src.utils.helpers import UsageManager
 from src.handlers.chat_logger import ChatEventHandler
 from src.agent.main_agent import Assistant
 from src.memory.mem0_provider import Mem0MemoryProvider
+from src.services.question_generator_service import QuestionGeneratorService
+from src.services.riddle_generator_service import RiddleGeneratorService
 
 logger = logging.getLogger("agent")
 
@@ -456,6 +458,24 @@ async def entrypoint(ctx: JobContext):
                     logger.info(f"👶 Child profile loaded: {child_profile.get('name')}, age {child_profile.get('age')} ({child_profile.get('ageGroup')})")
                 else:
                     logger.info(f"👶 No child profile assigned to device {device_mac}")
+                    
+                question_generator_service = QuestionGeneratorService()
+                await question_generator_service.initialize()
+                if question_generator_service.is_available():
+                    logger.info("🧮 Question Generator Service initialized and ready")
+                else:
+                    logger.warning("🧮 Question Generator Service not available (check .env: GROQ_API_KEY)")
+                    
+                    # Initialize Riddle Generator Service (for riddle game)
+                
+                riddle_generator_service = RiddleGeneratorService()
+                await riddle_generator_service.initialize()
+                if riddle_generator_service.is_available():
+                    logger.info("🧩 Riddle Generator Service initialized and ready")
+                else:
+                    logger.warning("🧩 Riddle Generator Service not available (check .env: GROQ_API_KEY)")
+
+
 
             # Process Mem0 result
             if isinstance(mem0_result, Exception):
@@ -608,7 +628,7 @@ async def entrypoint(ctx: JobContext):
     assistant = Assistant(instructions=agent_prompt, tts_provider=tts)
     assistant.set_services(music_service, story_service,
                            audio_player, unified_audio_player, device_control_service, mcp_executor,
-                           google_search_service)
+                           google_search_service,question_generator_service, riddle_generator_service)
     # Pass room name and device MAC to assistant
     assistant.set_room_info(room_name=room_name, device_mac=device_mac)
     # Log session info (responses will be captured via conversation_item_added event)
