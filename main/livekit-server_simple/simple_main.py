@@ -223,26 +223,26 @@ class SimpleAssistant(Agent):
 
             # Use very short, simple confirmations for robot actions
             if action == "wave":
-                message = "Okay, I will wave."
+                message = "Done."
             elif action == "nod":
-                message = "Okay, I will nod."
+                message = "Done."
             elif action == "dance":
-                message = "Okay, I will dance."
+                message = "Done."
         elif self._last_car_action:
             action = self._last_car_action
             self._last_car_action = None
 
             # Short confirmations for car actions
             if action == "forward":
-                message = "Okay, I will move forward."
+                message = "Done."
             elif action == "backward":
-                message = "Okay, I will move backward."
+                message = "Done."
             elif action == "left":
-                message = "Okay, I will turn left."
+                message = "Done."
             elif action == "right":
-                message = "Okay, I will turn right."
+                message = "Done."
             elif action == "stop":
-                message = "Okay, I will stop."
+                message = "Done."
 
         sanitized = self.sanitize_text_for_speech(message)
         logger.info(f"🧹 Sanitized text: '{message[:50]}...' -> '{sanitized[:50]}...'")
@@ -901,6 +901,13 @@ async def entrypoint(ctx: JobContext):
         - "turn left" → use car_left
         - "turn right" → use car_right
         - "stop", "stop the car" → use car_stop
+        
+        CRITICAL FOR ROBOT AND CAR CONTROLS:
+        When you use wave, nod, dance, car_forward, car_backward, car_left, car_right, or car_stop:
+        - DO NOT add ANY explanation or conversation
+        - The function will automatically say "Done"
+        - DO NOT repeat or explain the action
+        - Just call the function and let it handle the response
         
         DO NOT use these functions for:
         - Storytelling (just tell the story directly)
