@@ -1195,15 +1195,29 @@ class LiveKitBridge extends Emitter {
       (payload, participant, kind, topic) => {
         try {
           const str = Buffer.from(payload).toString("utf-8");
+
+          // COMPREHENSIVE LOGGING: Capture all details about incoming data
+          console.log(`
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📨 [INCOMING TEXT STREAM]
+  Topic: ${topic || '(undefined)'}
+  Kind: ${kind}
+  Participant: ${participant?.identity || '(unknown)'}
+  Payload Size: ${payload?.length || 0} bytes
+  Raw Content (first 500 chars): ${str.substring(0, 500)}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          `);
+
           let data;
           try {
             data = JSON5.parse(str);
             console.log(
-              `📨 [DATA RECEIVED] Topic: ${topic}, Type: ${data?.type}, Data:`,
-              data
+              `📨 [DATA RECEIVED - PARSED] Type: ${data?.type}, Full Data:`,
+              JSON.stringify(data, null, 2)
             );
           } catch (err) {
-            console.error("Invalid JSON5:", err.message);
+            console.error("❌ [PARSE ERROR] Invalid JSON5:", err.message);
+            console.error("Full raw payload:", str);
           }
           switch (data.type) {
             case "agent_state_changed":
@@ -1723,7 +1737,11 @@ class LiveKitBridge extends Emitter {
     try {
       // Validate frame before capture
       if (!frame || !frame.data || frame.data.length === 0) {
-        console.warn(`⚠️ [AUDIO] Invalid frame data, skipping`);
+        console.warn(`⚠️ [AUDIO] Invalid frame data, treating as keepalive/ping`);
+        // Reset activity timer - treat invalid frames as keepalive signals
+        if (this.connection && this.connection.updateActivityTime) {
+          this.connection.updateActivityTime();
+        }
         return;
       }
 
@@ -2975,6 +2993,14 @@ class VirtualMQTTConnection {
   }
 
   updateActivityTime(messageType = null) {
+    // CRITICAL FIX: Don't reset timer if connection is closing
+    if (this.closing) {
+      console.log(
+        `⚠️ [TIMER-IGNORE] Ignoring activity during cleanup for virtual device: ${this.deviceId}`
+      );
+      return;
+    }
+
     this.lastActivityTime = Date.now();
 
     // Allow timer reset for certain message types even during ending
@@ -2982,7 +3008,7 @@ class VirtualMQTTConnection {
     
     if (this.isEnding && (!messageType || !allowedDuringEnding.includes(messageType))) {
       console.log(
-        `📱 [ENDING-IGNORE] Activity during goodbye sequence ignored for virtual device: ${this.deviceId}`
+        `� [[ENDING-IGNORE] Activity during goodbye sequence ignored for virtual device: ${this.deviceId}`
       );
       return; // Don't log timer reset during ending
     }
@@ -3989,7 +4015,18 @@ async spawnStoryBot(roomName, playlist = null) {
   }
 
   async close() {
+    // Prevent duplicate close calls
+    if (this.closing) {
+      console.log(`⚠️ [CLEANUP] Already closing ${this.deviceId}, skipping duplicate close`);
+      return;
+    }
+
+    // Capture stack trace to identify who called close()
+    const stack = new Error().stack;
+    const callerLine = stack.split('\n')[2]?.trim() || 'Unknown caller';
+
     console.log(`🛑 [CLEANUP] Starting cleanup for virtual device: ${this.deviceId}`);
+    console.log(`📍 [CLEANUP-TRACE] close() called from: ${callerLine}`);
     this.closing = true;
 
     // ADD: Stop media bot if music/story room
@@ -4023,13 +4060,14 @@ async spawnStoryBot(roomName, playlist = null) {
     
     // Remove from connections map immediately
     this.gateway.connections.delete(this.connectionId);
+    console.log(`🗑️ [CLEANUP] Removed connectionId ${this.connectionId} from connections map`);
     
-    // Keep connection in deviceConnections map until fully cleaned up
-    // This allows incoming messages to still find the connection during cleanup
+    // CRITICAL FIX: Keep connection in deviceConnections map longer during cleanup
+    // This prevents "No connection found" errors when messages arrive during cleanup
     setTimeout(() => {
       this.gateway.deviceConnections.delete(this.deviceId);
       console.log(`🗑️ [CLEANUP] Removed ${this.deviceId} from deviceConnections map`);
-    }, 1000); // Small delay to ensure all pending messages are processed
+    }, 2000); // Increased from 1s to 2s to handle slower cleanup scenarios
   }
 
   isAlive() {
