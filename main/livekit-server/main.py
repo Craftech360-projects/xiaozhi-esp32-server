@@ -1,3 +1,54 @@
+#!/usr/bin/env python3
+"""
+Enhanced LiveKit Agent for Cheeko
+Full-featured implementation with all production capabilities
+Includes music, stories, memory, database integration, and advanced services
+"""
+
+import logging
+import asyncio
+import os
+import json
+import time
+import threading
+import aiohttp
+from datetime import datetime
+from dotenv import load_dotenv
+from jinja2 import Template
+
+# Resource monitoring imports
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    logging.warning("psutil not available - install with: pip install psutil")
+
+from livekit.agents import (
+    AgentSession,
+    JobContext,
+    JobProcess,
+    WorkerOptions,
+    cli,
+    function_tool,
+    Agent,
+    RunContext,
+    RoomInputOptions,
+)
+from livekit.agents.llm import ChatContext
+from livekit import rtc
+from livekit.plugins import silero, groq, noise_cancellation
+
+# Load environment variables first
+load_dotenv(".env")
+
+# Initialize Datadog logging (must be done before logger usage)
+from src.config.datadog_config import DatadogConfig
+DatadogConfig.setup_logging()
+
+# Import all components for full functionality
+from src.providers.provider_factory import ProviderFactory
+from src.config.config_loader import ConfigLoader
 from src.utils.model_preloader import model_preloader
 from src.utils.model_cache import model_cache
 from src.utils.database_helper import DatabaseHelper
@@ -8,50 +59,14 @@ from src.services.foreground_audio_player import ForegroundAudioPlayer
 from src.services.story_service import StoryService
 from src.services.music_service import MusicService
 from src.services.google_search_service import GoogleSearchService
-from src.services.question_generator_service import QuestionGeneratorService
-from src.services.riddle_generator_service import RiddleGeneratorService
 from src.mcp.device_control_service import DeviceControlService
 from src.mcp.mcp_executor import LiveKitMCPExecutor
 from src.utils.helpers import UsageManager
 from src.handlers.chat_logger import ChatEventHandler
 from src.agent.main_agent import Assistant
-from src.providers.provider_factory import ProviderFactory
-from src.config.config_loader import ConfigLoader
 from src.memory.mem0_provider import Mem0MemoryProvider
-import logging
-import asyncio
-import os
-import aiohttp
-import json
-from datetime import datetime
-from dotenv import load_dotenv
-from livekit.agents import (
-    AgentSession,
-    JobContext,
-    JobProcess,
-    WorkerOptions,
-    cli,
-    RoomInputOptions,
-)
-from livekit import rtc
-
-# Try to import noise_cancellation plugin (optional)
-try:
-    from livekit.plugins import noise_cancellation
-    NOISE_CANCELLATION_AVAILABLE = True
-except ImportError:
-    noise_cancellation = None
-    NOISE_CANCELLATION_AVAILABLE = False
-    print("⚠️  Warning: noise_cancellation plugin not available. Install with: uv sync")
-
-# Load environment variables first, before importing modules
-load_dotenv(".env")
-
-# Import our organized modules
-
-# Initialize Datadog logging (must be done before logger usage)
-from src.config.datadog_config import DatadogConfig
-DatadogConfig.setup_logging()
+from src.services.question_generator_service import QuestionGeneratorService
+from src.services.riddle_generator_service import RiddleGeneratorService
 
 logger = logging.getLogger("agent")
 
@@ -128,10 +143,118 @@ async def delete_livekit_room(room_name: str):
     except Exception as e:
         logger.error(f"Failed to delete room: {e}")
 
+class ResourceMonitor:
+    """Monitor system resources and log performance metrics"""
+    
+    def __init__(self, log_interval=10):
+        self.log_interval = log_interval
+        self.monitoring = False
+        self.monitor_thread = None
+        self.start_time = time.time()
+        self.client_count = 0
+        
+    def start_monitoring(self):
+        """Start resource monitoring in background thread"""
+        if not PSUTIL_AVAILABLE:
+            logger.warning("📊 Resource monitoring disabled - psutil not available")
+            return
+            
+        if self.monitoring:
+            return
+            
+        self.monitoring = True
+        self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
+        self.monitor_thread.start()
+        logger.info(f"📊 Resource monitoring started (interval: {self.log_interval}s)")
+    
+    def stop_monitoring(self):
+        """Stop resource monitoring"""
+        self.monitoring = False
+        if self.monitor_thread:
+            self.monitor_thread.join(timeout=1)
+        logger.info("📊 Resource monitoring stopped")
+    
+    def increment_clients(self):
+        """Increment active client count"""
+        self.client_count += 1
+        logger.info(f"📊 Active clients: {self.client_count}")
+    
+    def decrement_clients(self):
+        """Decrement active client count"""
+        self.client_count = max(0, self.client_count - 1)
+        logger.info(f"📊 Active clients: {self.client_count}")
+    
+    def _monitor_loop(self):
+        """Main monitoring loop"""
+        while self.monitoring:
+            try:
+                self._log_resources()
+                time.sleep(self.log_interval)
+            except Exception as e:
+                logger.error(f"📊 Resource monitoring error: {e}")
+                time.sleep(self.log_interval)
+    
+    def _log_resources(self):
+        """Log current resource usage"""
+        if not PSUTIL_AVAILABLE:
+            return
+            
+        try:
+            # System-wide metrics
+            cpu_percent = psutil.cpu_percent(interval=1)
+            memory = psutil.virtual_memory()
+            disk = psutil.disk_usage('/')
+            
+            # Process-specific metrics
+            process = psutil.Process()
+            process_cpu = process.cpu_percent()
+            process_memory = process.memory_info()
+            process_threads = process.num_threads()
+            
+            # Network I/O
+            net_io = psutil.net_io_counters()
+            
+            # Uptime
+            uptime = time.time() - self.start_time
+            
+            logger.info(
+                f"📊 RESOURCES | "
+                f"Clients: {self.client_count} | "
+                f"Uptime: {uptime:.1f}s | "
+                f"CPU: {cpu_percent:.1f}% (proc: {process_cpu:.1f}%) | "
+                f"RAM: {memory.percent:.1f}% (proc: {process_memory.rss/1024/1024:.1f}MB) | "
+                f"Threads: {process_threads} | "
+                f"Net: ↓{net_io.bytes_recv/1024/1024:.1f}MB ↑{net_io.bytes_sent/1024/1024:.1f}MB"
+            )
+            
+            # Enhanced alerting with performance recommendations
+            if cpu_percent > 80:
+                logger.warning(f"⚠️ HIGH CPU USAGE: {cpu_percent:.1f}% - Consider reducing client load")
+            if memory.percent > 85:
+                logger.warning(f"⚠️ HIGH MEMORY USAGE: {memory.percent:.1f}% - Memory cleanup recommended")
+            if self.client_count > 4 and cpu_percent > 60:
+                logger.warning(f"⚠️ PERFORMANCE RISK: {self.client_count} clients, CPU {cpu_percent:.1f}% - Audio jitter possible")
+            if self.client_count > 6:
+                logger.error(f"🚨 OVERLOAD: {self.client_count} clients exceeds recommended limit of 6")
+            
+            # Performance optimization suggestions
+            if cpu_percent > 70 and self.client_count > 2:
+                logger.info(f"💡 OPTIMIZATION TIP: High CPU with {self.client_count} clients - consider process scaling")
+            if process_memory.rss/1024/1024 > 500:  # 500MB
+                logger.info(f"💡 MEMORY TIP: Process using {process_memory.rss/1024/1024:.1f}MB - consider restart if growing")
+                
+        except Exception as e:
+            logger.error(f"📊 Failed to log resources: {e}")
+
+# Global resource monitor
+resource_monitor = ResourceMonitor(log_interval=10)  # Log every 10 seconds (reduced thread activity)
+
+# The Assistant class is now imported from src.agent.main_agent
+# No need to define it here - it includes all the enhanced functionality
 
 def prewarm(proc: JobProcess):
-    """Fast prewarm function using cached models"""
-    logger.info("[PREWARM] Fast prewarm: Using cached models")
+    """Enhanced prewarm function with full service preloading"""
+    logger.info("[PREWARM] Enhanced prewarm: Loading all models and services")
 
     # Start background model loading if not already started
     if not model_preloader.is_ready():
@@ -157,21 +280,24 @@ def prewarm(proc: JobProcess):
     # Log cache status
     stats = model_cache.get_cache_stats()
     logger.info(
-        f"[PREWARM] Fast prewarm complete: {stats['cache_size']} models cached")
+        f"[PREWARM] Enhanced prewarm complete: {stats['cache_size']} models cached")
 
     # Optional: Wait briefly for background loading (non-blocking)
     if not model_preloader.is_ready():
         logger.info("[PREWARM] Background model loading in progress...")
         # Don't wait - let the session start immediately
 
-
 async def entrypoint(ctx: JobContext):
-    """Main entrypoint for the organized agent"""
+    """Enhanced entrypoint with full production features"""
     ctx.log_context_fields = {"room": ctx.room.name}
-    print(f"Starting agent in room: {ctx.room.name}")
+    print(f"Starting enhanced agent in room: {ctx.room.name}")
 
     # PERFORMANCE: Track total initialization time
     init_start_time = asyncio.get_event_loop().time()
+
+    # Start resource monitoring for this session
+    resource_monitor.start_monitoring()
+    resource_monitor.increment_clients()
 
     # Load configuration (environment variables already loaded at module level)
     groq_config = ConfigLoader.get_groq_config()
@@ -186,17 +312,38 @@ async def entrypoint(ctx: JobContext):
 
     room_name = ctx.room.name
 
-    # Parse room name to extract MAC address (format: UUID_MAC)
+    # Parse room name to extract MAC address and room type
+    # Format: UUID_MAC_ROOMTYPE (e.g., "abc123_00163eacb538_conversation")
+    # or legacy: UUID_MAC (e.g., "abc123_00163eacb538")
     device_mac = None
+    room_type = None
+
     if '_' in room_name:
         parts = room_name.split('_')
-        if len(parts) >= 2:
-            # Last part is MAC without colons
-            mac_part = parts[-1]
+        if len(parts) >= 3:
+            # New format: UUID_MAC_ROOMTYPE
+            room_type = parts[-1]  # Last part is room type
+            mac_part = parts[-2]   # Second-to-last part is MAC without colons
+
             # Reconstruct MAC with colons: 00163eacb538 → 00:16:3e:ac:b5:38
             if len(mac_part) == 12 and mac_part.isalnum():  # Valid MAC length and hex
                 device_mac = ':'.join(mac_part[i:i+2] for i in range(0, 12, 2))
-                logger.info(f"📱 Extracted MAC from room name: {device_mac}")
+                logger.info(f"📱 Extracted from room '{room_name}': MAC={device_mac}, Room Type={room_type}")
+        elif len(parts) >= 2:
+            # Legacy format: UUID_MAC (backward compatibility)
+            mac_part = parts[-1]
+            if len(mac_part) == 12 and mac_part.isalnum():
+                device_mac = ':'.join(mac_part[i:i+2] for i in range(0, 12, 2))
+                room_type = "conversation"  # Default to conversation for legacy format
+                logger.info(f"📱 Extracted MAC from legacy room name: {device_mac} (defaulting to conversation)")
+
+    # CRITICAL: Only proceed if room_type is "conversation"
+    # Agents should NEVER join music or story rooms (those have media bots)
+    if room_type and room_type != "conversation":
+        logger.warning(f"⚠️ Agent dispatched to '{room_type}' room - this should NOT happen!")
+        logger.warning(f"⚠️ Agents should only join 'conversation' rooms, not '{room_type}' rooms")
+        logger.warning(f"⚠️ Exiting agent to prevent conflict with media bot in room: {room_name}")
+        return  # Exit early - don't start the agent
 
     # Helper function for Mem0 query to run in parallel
     async def query_mem0_memories(mac: str) -> tuple:
@@ -291,10 +438,10 @@ async def entrypoint(ctx: JobContext):
                 logger.info(f"📄 Fallback to default prompt (length: {len(agent_prompt)} chars)")
             else:
                 agent_prompt, tts_config_from_api = prompt_config_result
-                logger.info(f"✅ Using API prompt for MAC: {device_mac} (length: {len(agent_prompt)} chars)")
+                logger.info(f"🎯 Using device-specific prompt for MAC: {device_mac} (length: {len(agent_prompt)} chars)")
                 # Log first few lines of the fetched prompt for verification
                 prompt_lines = agent_prompt.split('\n')[:5]
-                logger.info(f"📝 Prompt preview: {' | '.join(line.strip()[:50] for line in prompt_lines if line.strip())}")
+                logger.info(f"📝 Fetched prompt preview: {' | '.join(line.strip()[:50] for line in prompt_lines if line.strip())}")
 
                 if tts_config_from_api:
                     logger.info(f"🎤 TTS Config from API: Provider={tts_config_from_api.get('provider')}, Type={tts_config_from_api.get('type')}")
@@ -311,8 +458,26 @@ async def entrypoint(ctx: JobContext):
                     logger.info(f"👶 Child profile loaded: {child_profile.get('name')}, age {child_profile.get('age')} ({child_profile.get('ageGroup')})")
                 else:
                     logger.info(f"👶 No child profile assigned to device {device_mac}")
+                    
+                question_generator_service = QuestionGeneratorService()
+                await question_generator_service.initialize()
+                if question_generator_service.is_available():
+                    logger.info("🧮 Question Generator Service initialized and ready")
+                else:
+                    logger.warning("🧮 Question Generator Service not available (check .env: GROQ_API_KEY)")
+                    
+                    # Initialize Riddle Generator Service (for riddle game)
+                
+                riddle_generator_service = RiddleGeneratorService()
+                await riddle_generator_service.initialize()
+                if riddle_generator_service.is_available():
+                    logger.info("🧩 Riddle Generator Service initialized and ready")
+                else:
+                    logger.warning("🧩 Riddle Generator Service not available (check .env: GROQ_API_KEY)")
 
-            # Process Mem0 result (both systems)
+
+
+            # Process Mem0 result
             if isinstance(mem0_result, Exception):
                 logger.error(f"💭❌ Mem0 query failed: {mem0_result}")
                 mem0_provider = None
@@ -347,18 +512,33 @@ async def entrypoint(ctx: JobContext):
 
     # Initialize conversation buffer for mem0
     conversation_messages = []  # Buffer to store conversation messages
+    EMOJI_List = ["😶", "🙂", "😆", "😂", "😔", "😠", "😭", "😍", "😳",
+                  "😲", "😱", "🤔", "😉", "😎", "😌", "🤤", "😘", "😏", "😴", "😜", "🙄"]
 
-    # Prompt comes pre-rendered from API/database - no template rendering needed
-    logger.info(f"📄 Using prompt from API (length: {len(agent_prompt)} chars)")
-    if child_profile:
-        logger.info(f"👶 Child profile available: {child_profile.get('name')}, age {child_profile.get('age')}")
+    # Prepare template variables (only for legacy system)
+    template_vars = {
+        'emojiList': EMOJI_List,
+        'child_name': child_profile.get('name', '') if child_profile else '',  # Empty string = hidden
+        'child_age': child_profile.get('age', '') if child_profile else '',
+        'age_group': child_profile.get('ageGroup', '') if child_profile else '',
+        'child_gender': child_profile.get('gender', '') if child_profile else '',
+        'child_interests': child_profile.get('interests', '') if child_profile else ''
+    }
+
+    # Render agent prompt with Jinja2 template variables (legacy system)
+    if any(placeholder in agent_prompt for placeholder in ['{{', '{%']):
+        template = Template(agent_prompt)
+        agent_prompt = template.render(**template_vars)
+        logger.info("🎨 Rendered agent prompt with template variables (legacy)")
+        if child_profile:
+            logger.info(f"👶 Personalized for: {template_vars['child_name']}, {template_vars['child_age']} years old")
+    else:
+        logger.info("📄 Using legacy prompt system")
 
     # Inject Mem0 memories into prompt (already fetched in parallel)
     if memories:
         agent_prompt = agent_prompt.replace("<memory>", f"<memory>\n{memories}")
         logger.info(f"💭 Injected memories into prompt ({len(memories)} chars)")
-
-    # logger.info(f"📋 Full Agent Prompt:\n{agent_prompt}")
 
     # Get VAD first as it's needed for STT
     vad = ctx.proc.userdata["vad"]
@@ -444,30 +624,13 @@ async def entrypoint(ctx: JobContext):
     else:
         logger.info("📚 Wikipedia search service disabled (check .env: GOOGLE_SEARCH_ENABLED, GOOGLE_API_KEY, GOOGLE_SEARCH_ENGINE_ID)")
 
-    # Initialize Question Generator Service (for math game)
-    question_generator_service = QuestionGeneratorService()
-    await question_generator_service.initialize()
-    if question_generator_service.is_available():
-        logger.info("🧮 Question Generator Service initialized and ready")
-    else:
-        logger.warning("🧮 Question Generator Service not available (check .env: GROQ_API_KEY)")
-
-    # Initialize Riddle Generator Service (for riddle game)
-    riddle_generator_service = RiddleGeneratorService()
-    await riddle_generator_service.initialize()
-    if riddle_generator_service.is_available():
-        logger.info("🧩 Riddle Generator Service initialized and ready")
-    else:
-        logger.warning("🧩 Riddle Generator Service not available (check .env: GROQ_API_KEY)")
-
-    # Create agent with dynamic prompt and inject services
+    # Create enhanced assistant with dynamic prompt and inject services
     assistant = Assistant(instructions=agent_prompt, tts_provider=tts)
     assistant.set_services(music_service, story_service,
                            audio_player, unified_audio_player, device_control_service, mcp_executor,
-                           google_search_service, question_generator_service, riddle_generator_service)
+                           google_search_service,question_generator_service, riddle_generator_service)
     # Pass room name and device MAC to assistant
     assistant.set_room_info(room_name=room_name, device_mac=device_mac)
-
     # Log session info (responses will be captured via conversation_item_added event)
     if chat_history_service:
         logger.debug(
@@ -620,7 +783,7 @@ async def entrypoint(ctx: JobContext):
 
     # Create room input options with optional noise cancellation
     room_options = None
-    if agent_config['noise_cancellation'] and NOISE_CANCELLATION_AVAILABLE:
+    if agent_config['noise_cancellation']:
         try:
             room_options = RoomInputOptions(
                 noise_cancellation=noise_cancellation.BVC()
@@ -628,8 +791,9 @@ async def entrypoint(ctx: JobContext):
             logger.info("Noise cancellation enabled (requires LiveKit Cloud)")
         except Exception as e:
             logger.warning(f"Could not enable noise cancellation: {e}")
-    elif agent_config['noise_cancellation'] and not NOISE_CANCELLATION_AVAILABLE:
-        logger.warning("Noise cancellation requested but plugin not available. Install with: uv sync")
+            logger.info(
+                "Continuing without noise cancellation (local server mode)")
+            room_options = None
     else:
         logger.info("Noise cancellation disabled by configuration")
 
@@ -759,6 +923,10 @@ async def entrypoint(ctx: JobContext):
             except Exception as e:
                 logger.warning(f"Room deletion error: {e}")
 
+            # 9. Stop resource monitoring
+            resource_monitor.decrement_clients()
+            resource_monitor.stop_monitoring()
+
             logger.info("✅ Room and session cleanup completed")
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")
@@ -792,7 +960,6 @@ async def entrypoint(ctx: JobContext):
 
     # Add cleanup to shutdown callback
     ctx.add_shutdown_callback(cleanup_room_and_session)
-
     # Start agent session
     await session.start(
         agent=assistant,
@@ -828,11 +995,46 @@ async def entrypoint(ctx: JobContext):
 
     await ctx.connect()
 
+    logger.info("✅ Enhanced agent started successfully")
+
+    # AUTO-GREET: Automatically trigger greeting when agent is ready
+    if room_type == "conversation":
+        logger.info("👋 Auto-greeting: Triggering agent to greet user")
+
+        # Schedule greeting to run after a short delay to ensure everything is ready
+        async def send_auto_greeting():
+            await asyncio.sleep(0.5)  # Small delay to ensure connection is stable
+            try:
+                # Use session.say() to generate a personalized greeting
+                # The agent will use its prompt and context to generate appropriate greeting
+                await session.say("Hello! How can I help you today?", allow_interruptions=True)
+                logger.info("✅ Auto-greeting sent successfully")
+            except Exception as e:
+                logger.error(f"❌ Failed to send auto-greeting: {e}")
+
+        # Run greeting in background task
+        asyncio.create_task(send_auto_greeting())
+
+    # Note: removed duplicate ctx.connect() call
+    
+
 if __name__ == "__main__":
+    # Set high priority for audio processing
+    import os
+    if os.name == 'nt':  # Windows
+        try:
+            import psutil
+            p = psutil.Process()
+            p.nice(psutil.HIGH_PRIORITY_CLASS)
+            logger.info("🚀 Set high priority for audio processing")
+        except:
+            pass
+    
     cli.run_app(WorkerOptions(
         entrypoint_fnc=entrypoint,
         prewarm_fnc=prewarm,
-        num_idle_processes=1,  # Disable process pooling to avoid initialization issues
-        initialize_process_timeout=120.0,  # Increase timeout to 120 seconds for heavy model loading
+        num_idle_processes=1,  # Optimized for enhanced functionality
+        initialize_process_timeout=120.0,  # Increased timeout for heavy model loading
         job_memory_warn_mb=2000,
+        agent_name="cheeko-agent",  # Named agent for explicit dispatch
     ))
