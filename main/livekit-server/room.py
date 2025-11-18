@@ -1016,6 +1016,7 @@ async def entrypoint(ctx: JobContext):
         asyncio.create_task(send_auto_greeting())
 
     # Note: removed duplicate ctx.connect() call
+    
 
 if __name__ == "__main__":
     # Set high priority for audio processing

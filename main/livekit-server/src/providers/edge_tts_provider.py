@@ -241,7 +241,7 @@ class EdgeTTSChunkedStream(tts.ChunkedStream if LIVEKIT_AVAILABLE else object):
                 output_emitter.flush()
                 return
 
-            logger.info(f"🎤 EdgeTTS synthesizing: {self._input_text[:50]}...")
+            logger.info(f"🎤 EdgeTTS synthesizing text (length={len(self._input_text)}): '{self._input_text[:100]}{'...' if len(self._input_text) > 100 else ''}'")
 
             # Monkey-patch ssl.create_default_context to disable SSL verification
             # This is necessary because edge_tts creates its own SSL context internally
@@ -294,7 +294,7 @@ class EdgeTTSChunkedStream(tts.ChunkedStream if LIVEKIT_AVAILABLE else object):
                 logger.warning(f"🎤 EdgeTTS: No audio chunks received for text: {self._input_text[:100]}")
 
         except NoAudioReceived as e:
-            logger.warning(f"🎤 EdgeTTS: No audio received from service (text may be empty or service unavailable): {e}")
+            logger.warning(f"🎤 EdgeTTS: No audio received from service for text (length={len(self._input_text)}): '{self._input_text}' | Error: {e}")
             # Initialize and flush to allow fallback
             request_id = str(uuid.uuid4())[:8]
             output_emitter.initialize(
