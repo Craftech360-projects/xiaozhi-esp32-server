@@ -2,7 +2,7 @@
 set -e
 
 echo "Starting LiveKit app (room.py dev)..."
-python room.py dev &
+python main.py dev &
 
 echo "Starting Media API server on port 8003..."
 python -m uvicorn media_api:app --host 0.0.0.0 --port 8003 &
