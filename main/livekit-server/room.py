@@ -994,9 +994,28 @@ async def entrypoint(ctx: JobContext):
             f"Failed to integrate audio players with session/context: {e}")
 
     await ctx.connect()
-    
+
     logger.info("✅ Enhanced agent started successfully")
-    await ctx.connect()
+
+    # AUTO-GREET: Automatically trigger greeting when agent is ready
+    if room_type == "conversation":
+        logger.info("👋 Auto-greeting: Triggering agent to greet user")
+
+        # Schedule greeting to run after a short delay to ensure everything is ready
+        async def send_auto_greeting():
+            await asyncio.sleep(0.5)  # Small delay to ensure connection is stable
+            try:
+                # Use session.say() to generate a personalized greeting
+                # The agent will use its prompt and context to generate appropriate greeting
+                await session.say("Hello! How can I help you today?", allow_interruptions=True)
+                logger.info("✅ Auto-greeting sent successfully")
+            except Exception as e:
+                logger.error(f"❌ Failed to send auto-greeting: {e}")
+
+        # Run greeting in background task
+        asyncio.create_task(send_auto_greeting())
+
+    # Note: removed duplicate ctx.connect() call
 
 if __name__ == "__main__":
     # Set high priority for audio processing
