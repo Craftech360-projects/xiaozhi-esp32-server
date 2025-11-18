@@ -53,7 +53,7 @@ RUN python -m pip install --user --no-cache-dir \
     'paho-mqtt' \
     'aiohttp' \
     'pydub' \
-    'edge-tts' \
+    'edge-tts==7.0.2' \
     'gtts' \
     'pyttsx3' \
     'mem0ai' \

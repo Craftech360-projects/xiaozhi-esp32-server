@@ -1838,7 +1838,7 @@ class Assistant(FilteredAgent):
             return "Sorry, I encountered an error while trying to play the story."
 
     @function_tool
-    async def stop_audio(self, context: RunContext):
+    async def stop_audio(self, context: RunContext, unused: str = ""):
         """Stop any currently playing audio (music or story) and return to listening state"""
         try:
             from ..utils.audio_state_manager import audio_state_manager
@@ -1961,7 +1961,7 @@ class Assistant(FilteredAgent):
         return await self.mcp_executor.adjust_volume(action, step)
 
     @function_tool
-    async def get_device_volume(self, context: RunContext):
+    async def get_device_volume(self, context: RunContext, unused: str = ""):
         """Get current device volume level"""
         if not self.mcp_executor:
             return "Volume control is not available right now."
@@ -2264,7 +2264,7 @@ class Assistant(FilteredAgent):
         return await self.mcp_executor.set_volume(volume)
 
     @function_tool
-    async def self_get_volume(self, context: RunContext):
+    async def self_get_volume(self, context: RunContext, unused: str = ""):
         """Get current device volume level"""
         if not self.mcp_executor:
             return "Volume control is not available right now."
@@ -2275,7 +2275,7 @@ class Assistant(FilteredAgent):
         return await self.mcp_executor.get_volume()
 
     @function_tool
-    async def self_volume_up(self, context: RunContext):
+    async def self_volume_up(self, context: RunContext, unused: str = ""):
         """Increase device volume"""
         if not self.mcp_executor:
             return "Volume control is not available right now."
@@ -2286,7 +2286,7 @@ class Assistant(FilteredAgent):
         return await self.mcp_executor.adjust_volume("up")
 
     @function_tool
-    async def self_volume_down(self, context: RunContext):
+    async def self_volume_down(self, context: RunContext, unused: str = ""):
         """Decrease device volume"""
         if not self.mcp_executor:
             return "Volume control is not available right now."
@@ -2297,7 +2297,7 @@ class Assistant(FilteredAgent):
         return await self.mcp_executor.adjust_volume("down")
 
     @function_tool
-    async def self_mute(self, context: RunContext):
+    async def self_mute(self, context: RunContext, unused: str = ""):
         """Mute the device"""
         if not self.mcp_executor:
             return "Volume control is not available right now."
@@ -2308,7 +2308,7 @@ class Assistant(FilteredAgent):
         return await self.mcp_executor.mute_device()
 
     @function_tool
-    async def self_unmute(self, context: RunContext):
+    async def self_unmute(self, context: RunContext, unused: str = ""):
         """Unmute the device"""
         if not self.mcp_executor:
             return "Volume control is not available right now."

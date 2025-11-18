@@ -4,7 +4,7 @@ from mem0 import MemoryClient
 logger = logging.getLogger("mem0_provider")
 
 class Mem0MemoryProvider:
-    def __init__(self, api_key: str, role_id: str):
+    def _init_(self, api_key: str, role_id: str):
         """Initialize mem0 client
 
         Args:
@@ -80,9 +80,10 @@ class Mem0MemoryProvider:
         """
         try:
             logger.info(f"💭 Querying mem0 - user_id: {self.role_id}, query: '{query[:50]}...'")
+            # mem0 API v2 requires filters parameter
             results = self.client.search(
                 query,
-                user_id=self.role_id,
+                filters={"user_id": self.role_id},
                 output_format="v1.1"
             )
 
