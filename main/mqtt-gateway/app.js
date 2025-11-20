@@ -4461,6 +4461,26 @@ class MQTTGateway {
           await this.handlePreviousControl(topic, clientId);
           return;
         }
+
+        // Handle specific content playback requests (play_music / play_story)
+        if (originalPayload.type === "function_call") {
+          const functionName = originalPayload.function_call?.name;
+
+          if (functionName === "play_music") {
+            console.log(
+              `🎵 [SPECIFIC-MUSIC] Music request from ${deviceId}`
+            );
+            await this.handleSpecificMusicRequest(deviceId, originalPayload, clientId);
+            return;
+          } else if (functionName === "play_story") {
+            console.log(
+              `📖 [SPECIFIC-STORY] Story request from ${deviceId}`
+            );
+            await this.handleSpecificStoryRequest(deviceId, originalPayload, clientId);
+            return;
+          }
+        }
+
         // Handle MCP responses - check for pending promises first, then forward to LiveKit agent
         if (
           originalPayload.type === "mcp" &&
@@ -5218,6 +5238,177 @@ class MQTTGateway {
         });
       }
     }
+  }
+
+  async handleSpecificMusicRequest(deviceId, payload, clientId = null) {
+    try {
+      const macAddress = payload.session_id;
+      const songName = payload.function_call.arguments.song_name;
+      const language = payload.function_call.arguments.language;
+      const loopEnabled = payload.function_call.arguments.loop_enabled || false;
+
+      console.log(`🎵 [SPECIFIC-MUSIC] Request for device: ${macAddress}`);
+      console.log(`🎵 [SPECIFIC-MUSIC] Song: "${songName}", Language: ${language || 'Any'}`);
+
+      // Find device connection using MAC address
+      const deviceInfo = this.deviceConnections.get(macAddress);
+      if (!deviceInfo || !deviceInfo.connection) {
+        console.warn(`⚠️ [SPECIFIC-MUSIC] Device not connected: ${macAddress}`);
+        await this.sendErrorResponse(clientId, "Device not connected", macAddress);
+        return;
+      }
+
+      // Validate device is in music mode
+      if (deviceInfo.currentMode !== "music") {
+        console.warn(`⚠️ [SPECIFIC-MUSIC] Device ${macAddress} not in music mode (current: ${deviceInfo.currentMode})`);
+        await this.sendErrorResponse(clientId, `Device is in ${deviceInfo.currentMode} mode, not music mode`, macAddress);
+        return;
+      }
+
+      // Forward to LiveKit room via data channel
+      const connection = deviceInfo.connection;
+      if (connection.bridge && connection.bridge.room && connection.bridge.room.localParticipant) {
+        await this.forwardSpecificContentRequest(connection.bridge.room, {
+          type: "specific_content_request",
+          content_type: "music",
+          content_name: songName,
+          language: language,
+          loop_enabled: loopEnabled,
+          source: payload.source || "mobile_app",
+          session_id: macAddress,
+          timestamp: Date.now()
+        });
+
+        console.log(`✅ [SPECIFIC-MUSIC] Request forwarded to LiveKit room for ${macAddress}`);
+
+        // Send acknowledgment to mobile app
+        await this.sendSuccessResponse(clientId, `Playing "${songName}"`, macAddress);
+
+      } else {
+        console.error(`❌ [SPECIFIC-MUSIC] No active LiveKit room for device: ${macAddress}`);
+        await this.sendErrorResponse(clientId, "No active audio session", macAddress);
+      }
+
+    } catch (error) {
+      console.error(`❌ [SPECIFIC-MUSIC] Error processing request: ${error.message}`);
+      await this.sendErrorResponse(clientId, "Failed to process music request", payload.session_id);
+    }
+  }
+
+  async handleSpecificStoryRequest(deviceId, payload, clientId = null) {
+    try {
+      const macAddress = payload.session_id;
+      const storyName = payload.function_call.arguments.story_name;
+      const category = payload.function_call.arguments.category;
+      const loopEnabled = payload.function_call.arguments.loop_enabled || false;
+
+      console.log(`📖 [SPECIFIC-STORY] Request for device: ${macAddress}`);
+      console.log(`📖 [SPECIFIC-STORY] Story: "${storyName}", Category: ${category || 'Any'}`);
+
+      // Find device connection using MAC address
+      const deviceInfo = this.deviceConnections.get(macAddress);
+      if (!deviceInfo || !deviceInfo.connection) {
+        console.warn(`⚠️ [SPECIFIC-STORY] Device not connected: ${macAddress}`);
+        await this.sendErrorResponse(clientId, "Device not connected", macAddress);
+        return;
+      }
+
+      // Validate device is in story mode
+      if (deviceInfo.currentMode !== "story") {
+        console.warn(`⚠️ [SPECIFIC-STORY] Device ${macAddress} not in story mode (current: ${deviceInfo.currentMode})`);
+        await this.sendErrorResponse(clientId, `Device is in ${deviceInfo.currentMode} mode, not story mode`, macAddress);
+        return;
+      }
+
+      // Forward to LiveKit room via data channel
+      const connection = deviceInfo.connection;
+      if (connection.bridge && connection.bridge.room && connection.bridge.room.localParticipant) {
+        await this.forwardSpecificContentRequest(connection.bridge.room, {
+          type: "specific_content_request",
+          content_type: "story",
+          content_name: storyName,
+          category: category,
+          loop_enabled: loopEnabled,
+          source: payload.source || "mobile_app",
+          session_id: macAddress,
+          timestamp: Date.now()
+        });
+
+        console.log(`✅ [SPECIFIC-STORY] Request forwarded to LiveKit room for ${macAddress}`);
+
+        // Send acknowledgment to mobile app
+        await this.sendSuccessResponse(clientId, `Playing "${storyName}"`, macAddress);
+
+      } else {
+        console.error(`❌ [SPECIFIC-STORY] No active LiveKit room for device: ${macAddress}`);
+        await this.sendErrorResponse(clientId, "No active audio session", macAddress);
+      }
+
+    } catch (error) {
+      console.error(`❌ [SPECIFIC-STORY] Error processing request: ${error.message}`);
+      await this.sendErrorResponse(clientId, "Failed to process story request", payload.session_id);
+    }
+  }
+
+  async forwardSpecificContentRequest(room, requestData) {
+    try {
+      const messageString = JSON.stringify(requestData);
+      const messageData = new TextEncoder().encode(messageString);
+
+      await room.localParticipant.publishData(messageData, {
+        reliable: true,
+        topic: "specific_content"
+      });
+
+      console.log(`📡 [DATA-CHANNEL] Forwarded specific content request to LiveKit room`);
+      console.log(`📡 [DATA-CHANNEL] Content: ${requestData.content_name} (${requestData.content_type})`);
+
+    } catch (error) {
+      console.error(`❌ [DATA-CHANNEL] Failed to forward request: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async sendSuccessResponse(clientId, message, macAddress) {
+    if (!clientId) return;
+
+    const successMessage = {
+      type: "specific_content_response",
+      status: "success",
+      message: message,
+      device_mac: macAddress,
+      timestamp: Date.now()
+    };
+
+    const responseTopic = `devices/p2p/${clientId}`;
+    this.mqttClient.publish(responseTopic, JSON.stringify(successMessage), (err) => {
+      if (err) {
+        console.error(`❌ [RESPONSE] Failed to send success response:`, err);
+      } else {
+        console.log(`✅ [RESPONSE] Success sent to ${macAddress}: ${message}`);
+      }
+    });
+  }
+
+  async sendErrorResponse(clientId, errorMessage, macAddress) {
+    if (!clientId) return;
+
+    const errorResponse = {
+      type: "specific_content_response",
+      status: "error",
+      message: errorMessage,
+      device_mac: macAddress,
+      timestamp: Date.now()
+    };
+
+    const responseTopic = `devices/p2p/${clientId}`;
+    this.mqttClient.publish(responseTopic, JSON.stringify(errorResponse), (err) => {
+      if (err) {
+        console.error(`❌ [RESPONSE] Failed to send error response:`, err);
+      } else {
+        console.log(`❌ [RESPONSE] Error sent to ${macAddress}: ${errorMessage}`);
+      }
+    });
   }
 
   handleDeviceHello(deviceId, payload) {

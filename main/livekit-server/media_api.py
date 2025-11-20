@@ -9,6 +9,7 @@ from typing import Optional, Dict, List
 import logging
 import asyncio
 import os
+import json
 from dotenv import load_dotenv
 from livekit import rtc, api
 from pydub import AudioSegment
@@ -120,6 +121,9 @@ class MediaBot:
         try:
             self.room = rtc.Room()
 
+            # Setup event handlers for data channel messages
+            self.room.on("data_received", self._on_data_received)
+
             await self.room.connect(LIVEKIT_URL, self.token)
             logger.info(f"✅ {self.bot_type} bot connected to room: {self.room_name}")
 
@@ -139,6 +143,58 @@ class MediaBot:
         except Exception as e:
             logger.error(f"❌ Failed to connect to room: {e}")
             return False
+
+    async def _on_data_received(self, data_packet):
+        """Handle data received from data channel"""
+        try:
+            # Decode the data packet
+            data_bytes = bytes(data_packet.data)
+            data_str = data_bytes.decode('utf-8')
+            data_json = json.loads(data_str)
+
+            logger.info(f"📡 [DATA-CHANNEL] Received data: {data_json.get('type', 'unknown')}")
+
+            # Check if this is a specific content request
+            if data_json.get('type') == 'specific_content_request':
+                await self._handle_specific_content_request(data_json)
+            else:
+                logger.debug(f"📡 [DATA-CHANNEL] Ignoring message type: {data_json.get('type')}")
+
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ [DATA-CHANNEL] Failed to decode JSON: {e}")
+        except Exception as e:
+            logger.error(f"❌ [DATA-CHANNEL] Error handling data: {e}")
+            import traceback
+            logger.error(f"❌ [DATA-CHANNEL] Traceback: {traceback.format_exc()}")
+
+    async def _handle_specific_content_request(self, request_data: Dict):
+        """Handle specific content request from mobile app via data channel"""
+        try:
+            content_type = request_data.get('content_type')
+            content_name = request_data.get('content_name')
+
+            logger.info(f"🎯 [SPECIFIC-CONTENT] Processing {content_type} request: {content_name}")
+
+            # Route to appropriate handler based on content type and bot type
+            if content_type == "music" and self.bot_type == "music":
+                await self._handle_specific_music_request(request_data)
+            elif content_type == "story" and self.bot_type == "story":
+                await self._handle_specific_story_request(request_data)
+            else:
+                logger.error(f"❌ [SPECIFIC-CONTENT] Bot type mismatch. Bot: {self.bot_type}, Request: {content_type}")
+
+        except Exception as e:
+            logger.error(f"❌ [SPECIFIC-CONTENT] Error handling request: {e}")
+            import traceback
+            logger.error(f"❌ [SPECIFIC-CONTENT] Traceback: {traceback.format_exc()}")
+
+    async def _handle_specific_music_request(self, request_data: Dict):
+        """Handle specific music request - implemented by MusicBot subclass"""
+        logger.warning(f"⚠️ [SPECIFIC-MUSIC] Base class method called - should be overridden by MusicBot")
+
+    async def _handle_specific_story_request(self, request_data: Dict):
+        """Handle specific story request - implemented by StoryBot subclass"""
+        logger.warning(f"⚠️ [SPECIFIC-STORY] Base class method called - should be overridden by StoryBot")
 
     async def download_from_cdn(self, url: str) -> bytes:
         """Download MP3 file from CDN"""
@@ -440,12 +496,15 @@ class MusicBot(MediaBot):
         self.skip_direction = None  # 'next', 'previous', or None
         self.skip_lock = asyncio.Lock()  # Thread safety for skip operations
         self.current_stream_iterator = None  # Track current streaming iterator
-        
+
         # Random mode support
         self.random_mode = False  # True when playlist is empty
         self.current_random_song = None  # Current random song info
         self.song_history = []  # Keep track of last 10 random songs for previous functionality
         self.max_history = 10  # Maximum songs to remember
+
+        # Specific content playback support (for mobile app requests)
+        self.specific_content_queue = None  # Queue for specific song requests
 
     async def run(self):
         """Main entry point - connect and stream music with progressive streaming and skip support"""
@@ -480,9 +539,58 @@ class MusicBot(MediaBot):
                 del active_bots[self.room_name]
 
     async def _run_playlist_mode(self):
-        """Run playlist mode with looping"""
+        """Run playlist mode with looping and specific content support"""
         # Loop through playlist starting from current_index with looping
         while not self.should_stop:
+            # Check if we need to play specific content first
+            if self.specific_content_queue is not None:
+                logger.info("🎯 [MUSIC-SPECIFIC] Playing specific content before continuing playlist")
+
+                content_info = self.specific_content_queue['content_info']
+                loop_enabled = self.specific_content_queue['loop_enabled']
+                self.specific_content_queue = None  # Clear after extracting
+
+                # Extract content details
+                title = content_info.get('title', 'Unknown Song')
+                filename = content_info.get('filename')
+                language = content_info.get('language')
+
+                if filename and language:
+                    song_url = music_service.get_song_url(filename, language)
+                    logger.info(f"🎯 [MUSIC-SPECIFIC] Playing: '{title}' ({language})")
+
+                    # Reset skip flag before streaming
+                    async with self.skip_lock:
+                        self.skip_requested = False
+                        self.skip_direction = None
+
+                    # Stream the specific content
+                    if loop_enabled:
+                        # Loop the specific content until interrupted
+                        logger.info(f"🎯 [MUSIC-SPECIFIC] Loop mode enabled for '{title}'")
+                        while not self.should_stop and not self.skip_requested:
+                            await self._stream_song(song_url, title)
+                            if not self.should_stop and not self.skip_requested:
+                                await asyncio.sleep(1)  # Small gap between loops
+                    else:
+                        # Play once
+                        await self._stream_song(song_url, title)
+
+                    logger.info(f"🎯 [MUSIC-SPECIFIC] Finished streaming: '{title}'")
+
+                    # After specific content, continue with normal playlist flow
+                    if self.should_stop:
+                        break
+
+                    # Small gap before continuing playlist
+                    await asyncio.sleep(1)
+                else:
+                    logger.error(f"🎯 [MUSIC-SPECIFIC] Invalid content info: {content_info}")
+
+                # Continue to next iteration to play normal playlist
+                # NOTE: current_index is NOT modified, so playlist resumes from same song
+                continue
+
             # Get current playlist item
             playlist_item = self.playlist[self.current_index]
 
@@ -693,6 +801,57 @@ class MusicBot(MediaBot):
             self.skip_requested = True
             self.skip_direction = 'previous'
 
+    async def play_specific_content(self, content_info: Dict, loop_enabled: bool = False):
+        """
+        Play specific content immediately, interrupting current playback.
+        After specific content finishes, resume normal playlist flow.
+
+        Args:
+            content_info: Dict containing song metadata (title, filename, language, url)
+            loop_enabled: If True, loop the specific content until skip is requested
+        """
+        async with self.skip_lock:
+            logger.info(f"🎯 [MUSIC-SPECIFIC] Queuing specific song: {content_info.get('title', 'Unknown')}")
+
+            # Store the specific content to play
+            self.specific_content_queue = {
+                'content_info': content_info,
+                'loop_enabled': loop_enabled,
+                'type': 'mobile_request'
+            }
+
+            # Trigger interruption of current playback
+            self.skip_requested = True
+            self.skip_direction = 'specific_content'
+
+            logger.info(f"🎯 [MUSIC-SPECIFIC] Current playback will be interrupted")
+
+    async def _handle_specific_music_request(self, request_data: Dict):
+        """Handle specific music request from data channel"""
+        try:
+            song_name = request_data.get('content_name')
+            language = request_data.get('language')
+            loop_enabled = request_data.get('loop_enabled', False)
+
+            logger.info(f"🔍 [MUSIC-SPECIFIC] Searching for song: '{song_name}', Language: {language or 'Any'}")
+
+            # Search for the song in the database
+            search_results = await music_service.search_songs_by_name(song_name, language, limit=1)
+
+            if search_results and len(search_results) > 0:
+                song_info = search_results[0]
+                logger.info(f"✅ [MUSIC-SPECIFIC] Found song: '{song_info['title']}' (score: {song_info['score']:.2f})")
+
+                # Request the bot to play this specific song
+                await self.play_specific_content(song_info, loop_enabled)
+            else:
+                logger.warning(f"⚠️ [MUSIC-SPECIFIC] Song not found: '{song_name}'")
+
+        except Exception as e:
+            logger.error(f"❌ [MUSIC-SPECIFIC] Error: {e}")
+            import traceback
+            logger.error(f"❌ [MUSIC-SPECIFIC] Traceback: {traceback.format_exc()}")
+
     def get_current_status(self):
         """Get current playback status"""
         if self.random_mode:
@@ -734,12 +893,15 @@ class StoryBot(MediaBot):
         self.skip_direction = None  # 'next', 'previous', or None
         self.skip_lock = asyncio.Lock()  # Thread safety for skip operations
         self.current_stream_iterator = None  # Track current streaming iterator
-        
+
         # Random mode support
         self.random_mode = False  # True when playlist is empty
         self.current_random_story = None  # Current random story info
         self.story_history = []  # Keep track of last 10 random stories for previous functionality
         self.max_history = 10  # Maximum stories to remember
+
+        # Specific content playback support (for mobile app requests)
+        self.specific_content_queue = None  # Queue for specific story requests
 
     async def run(self):
         """Main entry point - connect and stream story with progressive streaming and skip support"""
@@ -770,9 +932,58 @@ class StoryBot(MediaBot):
                 del active_bots[self.room_name]
 
     async def _run_playlist_mode(self):
-        """Run playlist mode with looping"""
+        """Run playlist mode with looping and specific content support"""
         # Loop through playlist starting from current_index with looping
         while not self.should_stop:
+            # Check if we need to play specific content first
+            if self.specific_content_queue is not None:
+                logger.info("🎯 [STORY-SPECIFIC] Playing specific content before continuing playlist")
+
+                content_info = self.specific_content_queue['content_info']
+                loop_enabled = self.specific_content_queue['loop_enabled']
+                self.specific_content_queue = None  # Clear after extracting
+
+                # Extract content details
+                title = content_info.get('title', 'Unknown Story')
+                filename = content_info.get('filename')
+                category = content_info.get('category')
+
+                if filename and category:
+                    story_url = story_service.get_story_url(filename, category)
+                    logger.info(f"🎯 [STORY-SPECIFIC] Playing: '{title}' ({category})")
+
+                    # Reset skip flag before streaming
+                    async with self.skip_lock:
+                        self.skip_requested = False
+                        self.skip_direction = None
+
+                    # Stream the specific content
+                    if loop_enabled:
+                        # Loop the specific content until interrupted
+                        logger.info(f"🎯 [STORY-SPECIFIC] Loop mode enabled for '{title}'")
+                        while not self.should_stop and not self.skip_requested:
+                            await self._stream_story(story_url, title)
+                            if not self.should_stop and not self.skip_requested:
+                                await asyncio.sleep(1)  # Small gap between loops
+                    else:
+                        # Play once
+                        await self._stream_story(story_url, title)
+
+                    logger.info(f"🎯 [STORY-SPECIFIC] Finished streaming: '{title}'")
+
+                    # After specific content, continue with normal playlist flow
+                    if self.should_stop:
+                        break
+
+                    # Small gap before continuing playlist
+                    await asyncio.sleep(1)
+                else:
+                    logger.error(f"🎯 [STORY-SPECIFIC] Invalid content info: {content_info}")
+
+                # Continue to next iteration to play normal playlist
+                # NOTE: current_index is NOT modified, so playlist resumes from same story
+                continue
+
             # Get current playlist item
             playlist_item = self.playlist[self.current_index]
 
@@ -982,6 +1193,57 @@ class StoryBot(MediaBot):
                 logger.info("⏮️ [CONTROL] Previous story requested")
             self.skip_requested = True
             self.skip_direction = 'previous'
+
+    async def play_specific_content(self, content_info: Dict, loop_enabled: bool = False):
+        """
+        Play specific content immediately, interrupting current playback.
+        After specific content finishes, resume normal playlist flow.
+
+        Args:
+            content_info: Dict containing story metadata (title, filename, category, url)
+            loop_enabled: If True, loop the specific content until skip is requested
+        """
+        async with self.skip_lock:
+            logger.info(f"🎯 [STORY-SPECIFIC] Queuing specific story: {content_info.get('title', 'Unknown')}")
+
+            # Store the specific content to play
+            self.specific_content_queue = {
+                'content_info': content_info,
+                'loop_enabled': loop_enabled,
+                'type': 'mobile_request'
+            }
+
+            # Trigger interruption of current playback
+            self.skip_requested = True
+            self.skip_direction = 'specific_content'
+
+            logger.info(f"🎯 [STORY-SPECIFIC] Current playback will be interrupted")
+
+    async def _handle_specific_story_request(self, request_data: Dict):
+        """Handle specific story request from data channel"""
+        try:
+            story_name = request_data.get('content_name')
+            category = request_data.get('category')
+            loop_enabled = request_data.get('loop_enabled', False)
+
+            logger.info(f"🔍 [STORY-SPECIFIC] Searching for story: '{story_name}', Category: {category or 'Any'}")
+
+            # Search for the story in the database
+            search_results = await story_service.search_stories_by_name(story_name, category, limit=1)
+
+            if search_results and len(search_results) > 0:
+                story_info = search_results[0]
+                logger.info(f"✅ [STORY-SPECIFIC] Found story: '{story_info['title']}' (score: {story_info['score']:.2f})")
+
+                # Request the bot to play this specific story
+                await self.play_specific_content(story_info, loop_enabled)
+            else:
+                logger.warning(f"⚠️ [STORY-SPECIFIC] Story not found: '{story_name}'")
+
+        except Exception as e:
+            logger.error(f"❌ [STORY-SPECIFIC] Error: {e}")
+            import traceback
+            logger.error(f"❌ [STORY-SPECIFIC] Traceback: {traceback.format_exc()}")
 
     def get_current_status(self):
         """Get current playback status"""
