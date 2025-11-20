@@ -1367,6 +1367,26 @@ class LiveKitBridge extends Emitter {
         console.log(`🔗 [CONNECTION] State: ${this.room.connectionState}`);
         console.log(`🟢 [STATUS] Is connected: ${this.room.isConnected}`);
 
+        // Store the current mode in deviceInfo for function_call validation
+        if (this.connection && this.connection.gateway) {
+          const deviceInfo = this.connection.gateway.deviceConnections.get(this.macAddress);
+          if (deviceInfo) {
+            deviceInfo.currentMode = this.roomType;
+            deviceInfo.currentRoomName = roomName;
+            console.log(
+              `✅ [MODE] Set currentMode to '${this.roomType}' for device ${this.macAddress}`
+            );
+          } else {
+            console.warn(
+              `⚠️ [MODE] Could not find deviceInfo for ${this.macAddress}`
+            );
+          }
+        } else {
+          console.warn(
+            `⚠️ [MODE] Gateway reference not available to set currentMode`
+          );
+        }
+
         // Log existing participants in the room
         console.log(
           `👥 [PARTICIPANTS] Remote participants in room: ${this.room.remoteParticipants.size}`
@@ -3804,9 +3824,13 @@ async spawnStoryBot(roomName, playlist = null) {
           `🛑 [ABORT] Received abort signal from device: ${this.deviceId}`
         );
         await this.bridge.sendAbortSignal(json.session_id);
-        debug("Successfully forwarded abort signal to LiveKit agent");
+        console.log(`✅ [ABORT] Successfully forwarded abort signal to LiveKit agent`);
+
+        // Send TTS stop to device to return it to listening mode (red light)
+        this.bridge.sendTtsStopMessage();
+        console.log(`🛑 [ABORT] Sent TTS stop message to device: ${this.deviceId}`);
       } catch (error) {
-        debug("Failed to forward abort signal to LiveKit:", error);
+        console.error(`❌ [ABORT] Failed to forward abort signal to LiveKit:`, error);
       }
       return;
     }
@@ -5258,25 +5282,29 @@ class MQTTGateway {
         return;
       }
 
-      // Validate device is in music mode
-      if (deviceInfo.currentMode !== "music") {
-        console.warn(`⚠️ [SPECIFIC-MUSIC] Device ${macAddress} not in music mode (current: ${deviceInfo.currentMode})`);
-        await this.sendErrorResponse(clientId, `Device is in ${deviceInfo.currentMode} mode, not music mode`, macAddress);
+      // Validate device is in music mode or conversation mode (conversation mode allows all content types)
+      if (deviceInfo.currentMode !== "music" && deviceInfo.currentMode !== "conversation") {
+        console.warn(`⚠️ [SPECIFIC-MUSIC] Device ${macAddress} not in music/conversation mode (current: ${deviceInfo.currentMode})`);
+        await this.sendErrorResponse(clientId, `Device is in ${deviceInfo.currentMode} mode, cannot play music`, macAddress);
         return;
       }
 
       // Forward to LiveKit room via data channel
       const connection = deviceInfo.connection;
       if (connection.bridge && connection.bridge.room && connection.bridge.room.localParticipant) {
-        await this.forwardSpecificContentRequest(connection.bridge.room, {
-          type: "specific_content_request",
-          content_type: "music",
-          content_name: songName,
-          language: language,
-          loop_enabled: loopEnabled,
+        // Forward the raw function_call payload to LiveKit
+        const functionCallMessage = {
+          type: "function_call",
+          function_call: payload.function_call,
           source: payload.source || "mobile_app",
           session_id: macAddress,
           timestamp: Date.now()
+        };
+        const messageString = JSON.stringify(functionCallMessage);
+        const messageData = new TextEncoder().encode(messageString);
+
+        await connection.bridge.room.localParticipant.publishData(messageData, {
+          reliable: true
         });
 
         console.log(`✅ [SPECIFIC-MUSIC] Request forwarded to LiveKit room for ${macAddress}`);
@@ -5313,25 +5341,29 @@ class MQTTGateway {
         return;
       }
 
-      // Validate device is in story mode
-      if (deviceInfo.currentMode !== "story") {
-        console.warn(`⚠️ [SPECIFIC-STORY] Device ${macAddress} not in story mode (current: ${deviceInfo.currentMode})`);
-        await this.sendErrorResponse(clientId, `Device is in ${deviceInfo.currentMode} mode, not story mode`, macAddress);
+      // Validate device is in story mode or conversation mode (conversation mode allows all content types)
+      if (deviceInfo.currentMode !== "story" && deviceInfo.currentMode !== "conversation") {
+        console.warn(`⚠️ [SPECIFIC-STORY] Device ${macAddress} not in story/conversation mode (current: ${deviceInfo.currentMode})`);
+        await this.sendErrorResponse(clientId, `Device is in ${deviceInfo.currentMode} mode, cannot play story`, macAddress);
         return;
       }
 
       // Forward to LiveKit room via data channel
       const connection = deviceInfo.connection;
       if (connection.bridge && connection.bridge.room && connection.bridge.room.localParticipant) {
-        await this.forwardSpecificContentRequest(connection.bridge.room, {
-          type: "specific_content_request",
-          content_type: "story",
-          content_name: storyName,
-          category: category,
-          loop_enabled: loopEnabled,
+        // Forward the raw function_call payload to LiveKit (same as music bot)
+        const functionCallMessage = {
+          type: "function_call",
+          function_call: payload.function_call,
           source: payload.source || "mobile_app",
           session_id: macAddress,
           timestamp: Date.now()
+        };
+        const messageString = JSON.stringify(functionCallMessage);
+        const messageData = new TextEncoder().encode(messageString);
+
+        await connection.bridge.room.localParticipant.publishData(messageData, {
+          reliable: true
         });
 
         console.log(`✅ [SPECIFIC-STORY] Request forwarded to LiveKit room for ${macAddress}`);

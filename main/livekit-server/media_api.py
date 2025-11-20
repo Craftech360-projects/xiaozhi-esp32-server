@@ -122,7 +122,16 @@ class MediaBot:
             self.room = rtc.Room()
 
             # Setup event handlers for data channel messages
-            self.room.on("data_received", self._on_data_received)
+            # Use synchronous wrapper with asyncio.create_task for async handlers
+            @self.room.on("data_received")
+            def on_data_received_sync(data_packet):
+                """Synchronous wrapper for async data received handler"""
+                try:
+                    asyncio.create_task(self._on_data_received(data_packet))
+                except RuntimeError as e:
+                    logger.error(f"❌ Failed to create task for data handler: {e}")
+                except Exception as e:
+                    logger.error(f"❌ Unexpected error in data received wrapper: {e}")
 
             await self.room.connect(LIVEKIT_URL, self.token)
             logger.info(f"✅ {self.bot_type} bot connected to room: {self.room_name}")
@@ -142,6 +151,8 @@ class MediaBot:
             return True
         except Exception as e:
             logger.error(f"❌ Failed to connect to room: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return False
 
     async def _on_data_received(self, data_packet):
@@ -154,18 +165,98 @@ class MediaBot:
 
             logger.info(f"📡 [DATA-CHANNEL] Received data: {data_json.get('type', 'unknown')}")
 
+            # Check if this is a function call from mobile app
+            if data_json.get('type') == 'function_call':
+                await self._handle_function_call(data_json)
             # Check if this is a specific content request
-            if data_json.get('type') == 'specific_content_request':
+            elif data_json.get('type') == 'specific_content_request':
                 await self._handle_specific_content_request(data_json)
             else:
                 logger.debug(f"📡 [DATA-CHANNEL] Ignoring message type: {data_json.get('type')}")
 
         except json.JSONDecodeError as e:
             logger.error(f"❌ [DATA-CHANNEL] Failed to decode JSON: {e}")
+        except UnicodeDecodeError as e:
+            logger.error(f"❌ [DATA-CHANNEL] Failed to decode UTF-8: {e}")
+        except AttributeError as e:
+            logger.error(f"❌ [DATA-CHANNEL] Invalid data packet structure: {e}")
         except Exception as e:
-            logger.error(f"❌ [DATA-CHANNEL] Error handling data: {e}")
+            logger.error(f"❌ [DATA-CHANNEL] Unexpected error handling data: {e}")
             import traceback
             logger.error(f"❌ [DATA-CHANNEL] Traceback: {traceback.format_exc()}")
+
+    async def _handle_function_call(self, function_data: Dict):
+        """Handle function call from mobile app via data channel"""
+        try:
+            # Log the full data structure for debugging
+            logger.info(f"📞 [FUNCTION-CALL] Raw data: {function_data}")
+
+            # Check if function_call is nested inside
+            if 'function_call' in function_data:
+                function_call_obj = function_data['function_call']
+                function_name = function_call_obj.get('name')
+                arguments = function_call_obj.get('arguments', {})
+            else:
+                # Try different possible key names for function (flat structure)
+                function_name = function_data.get('function') or function_data.get('function_name') or function_data.get('name')
+                arguments = function_data.get('arguments', {})
+
+            # Handle if arguments is a JSON string
+            if isinstance(arguments, str):
+                try:
+                    arguments = json.loads(arguments)
+                except:
+                    logger.error(f"❌ [FUNCTION-CALL] Failed to parse arguments string: {arguments}")
+                    arguments = {}
+
+            logger.info(f"📞 [FUNCTION-CALL] Function: {function_name}, Args: {arguments}")
+
+            # Convert function call to specific content request format
+            if function_name == 'play_music' and self.bot_type == 'music':
+                # Extract arguments
+                song_name = arguments.get('song_name')
+                language = arguments.get('language')
+                loop_enabled = arguments.get('loop_enabled', False)
+
+                if song_name:
+                    # Convert to specific_content_request format
+                    request_data = {
+                        'content_type': 'music',
+                        'content_name': song_name,
+                        'language': language,
+                        'loop_enabled': loop_enabled
+                    }
+                    logger.info(f"🔄 [FUNCTION-CALL] Converted to music request: {song_name}")
+                    await self._handle_specific_music_request(request_data)
+                else:
+                    logger.error(f"❌ [FUNCTION-CALL] Missing song_name in arguments")
+
+            elif function_name == 'play_story' and self.bot_type == 'story':
+                # Extract arguments
+                story_name = arguments.get('story_name')
+                category = arguments.get('category')
+                loop_enabled = arguments.get('loop_enabled', False)
+
+                if story_name:
+                    # Convert to specific_content_request format
+                    request_data = {
+                        'content_type': 'story',
+                        'content_name': story_name,
+                        'category': category,
+                        'loop_enabled': loop_enabled
+                    }
+                    logger.info(f"🔄 [FUNCTION-CALL] Converted to story request: {story_name}")
+                    await self._handle_specific_story_request(request_data)
+                else:
+                    logger.error(f"❌ [FUNCTION-CALL] Missing story_name in arguments")
+
+            else:
+                logger.warning(f"⚠️ [FUNCTION-CALL] Unhandled function or bot type mismatch. Function: {function_name}, Bot: {self.bot_type}")
+
+        except Exception as e:
+            logger.error(f"❌ [FUNCTION-CALL] Error handling function call: {e}")
+            import traceback
+            logger.error(f"❌ [FUNCTION-CALL] Traceback: {traceback.format_exc()}")
 
     async def _handle_specific_content_request(self, request_data: Dict):
         """Handle specific content request from mobile app via data channel"""
@@ -285,11 +376,31 @@ class MediaBot:
         """Disconnect from LiveKit room"""
         try:
             self.should_stop = True
+
+            # Close any active stream iterator first
+            if hasattr(self, 'current_stream_iterator') and self.current_stream_iterator:
+                try:
+                    await asyncio.wait_for(self.current_stream_iterator.close(), timeout=2.0)
+                    logger.info(f"✅ Stream iterator closed successfully")
+                except asyncio.TimeoutError:
+                    logger.warning(f"⚠️ Stream iterator close timed out")
+                except Exception as e:
+                    logger.error(f"❌ Error closing stream iterator: {e}")
+
+            # Disconnect from room
             if self.room:
-                await self.room.disconnect()
-                logger.info(f"👋 {self.bot_type} bot disconnected from room")
+                try:
+                    await asyncio.wait_for(self.room.disconnect(), timeout=5.0)
+                    logger.info(f"👋 {self.bot_type} bot disconnected from room")
+                except asyncio.TimeoutError:
+                    logger.warning(f"⚠️ Room disconnect timed out")
+                except Exception as e:
+                    logger.error(f"❌ Error disconnecting from room: {e}")
+
         except Exception as e:
-            logger.error(f"Error during disconnect: {e}")
+            logger.error(f"❌ Unexpected error during disconnect: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
 
 
 class StreamingAudioIterator:
@@ -508,10 +619,28 @@ class MusicBot(MediaBot):
 
     async def run(self):
         """Main entry point - connect and stream music with progressive streaming and skip support"""
+        connection_retries = 3
+        retry_delay = 2
+
         try:
-            # Connect to LiveKit
-            if not await self.connect_to_room():
-                logger.error("Failed to connect to room")
+            # Connect to LiveKit with retry mechanism
+            connected = False
+            for attempt in range(connection_retries):
+                try:
+                    if await self.connect_to_room():
+                        connected = True
+                        break
+                    else:
+                        logger.warning(f"⚠️ Connection attempt {attempt + 1}/{connection_retries} failed")
+                        if attempt < connection_retries - 1:
+                            await asyncio.sleep(retry_delay)
+                except Exception as e:
+                    logger.error(f"❌ Connection attempt {attempt + 1}/{connection_retries} error: {e}")
+                    if attempt < connection_retries - 1:
+                        await asyncio.sleep(retry_delay)
+
+            if not connected:
+                logger.error("❌ Failed to connect to room after all retries")
                 return
 
             # Check if playlist is provided
@@ -527,7 +656,8 @@ class MusicBot(MediaBot):
             # Keep bot alive for a moment to ensure audio finishes
             await asyncio.sleep(2)
 
-
+        except asyncio.CancelledError:
+            logger.info("🛑 Music bot task cancelled")
         except Exception as e:
             logger.error(f"❌ Music bot error: {e}")
             import traceback
@@ -648,11 +778,59 @@ class MusicBot(MediaBot):
         logger.info("✅ Playlist stopped")
 
     async def _run_random_mode(self):
-        """Run continuous random mode with skip support"""
+        """Run continuous random mode with skip support and specific content requests"""
         while not self.should_stop:
+            # Check if we need to play specific content first (from mobile app request)
+            if self.specific_content_queue is not None:
+                logger.info("🎯 [MUSIC-SPECIFIC] Playing specific content before continuing random mode")
+
+                content_info = self.specific_content_queue['content_info']
+                loop_enabled = self.specific_content_queue['loop_enabled']
+                self.specific_content_queue = None  # Clear after extracting
+
+                # Extract content details
+                title = content_info.get('title', 'Unknown Song')
+                filename = content_info.get('filename')
+                language = content_info.get('language')
+
+                if filename and language:
+                    song_url = music_service.get_song_url(filename, language)
+                    logger.info(f"🎯 [MUSIC-SPECIFIC] Playing: '{title}' ({language})")
+
+                    # Reset skip flag before streaming
+                    async with self.skip_lock:
+                        self.skip_requested = False
+                        self.skip_direction = None
+
+                    # Stream the specific content
+                    if loop_enabled:
+                        # Loop the specific content until interrupted
+                        logger.info(f"🎯 [MUSIC-SPECIFIC] Loop mode enabled for '{title}'")
+                        while not self.should_stop and not self.skip_requested:
+                            await self._stream_song(song_url, title)
+                            if not self.should_stop and not self.skip_requested:
+                                await asyncio.sleep(1)  # Small gap between loops
+                    else:
+                        # Play once
+                        await self._stream_song(song_url, title)
+
+                    logger.info(f"🎯 [MUSIC-SPECIFIC] Finished streaming: '{title}'")
+
+                    # After specific content, continue with normal random flow
+                    if self.should_stop:
+                        break
+
+                    # Small gap before continuing random mode
+                    await asyncio.sleep(1)
+                else:
+                    logger.error(f"🎯 [MUSIC-SPECIFIC] Invalid content info: {content_info}")
+
+                # Continue to next iteration to play normal random song
+                continue
+
             # Get random song
             song = await music_service.get_random_song(language=self.language)
-            
+
             if not song:
                 logger.error("❌ No music available in random mode")
                 break
@@ -905,9 +1083,28 @@ class StoryBot(MediaBot):
 
     async def run(self):
         """Main entry point - connect and stream story with progressive streaming and skip support"""
+        connection_retries = 3
+        retry_delay = 2
+
         try:
-            if not await self.connect_to_room():
-                logger.error("Failed to connect to room")
+            # Connect to LiveKit with retry mechanism
+            connected = False
+            for attempt in range(connection_retries):
+                try:
+                    if await self.connect_to_room():
+                        connected = True
+                        break
+                    else:
+                        logger.warning(f"⚠️ Connection attempt {attempt + 1}/{connection_retries} failed")
+                        if attempt < connection_retries - 1:
+                            await asyncio.sleep(retry_delay)
+                except Exception as e:
+                    logger.error(f"❌ Connection attempt {attempt + 1}/{connection_retries} error: {e}")
+                    if attempt < connection_retries - 1:
+                        await asyncio.sleep(retry_delay)
+
+            if not connected:
+                logger.error("❌ Failed to connect to room after all retries")
                 return
 
             # Check if playlist is provided
@@ -922,6 +1119,8 @@ class StoryBot(MediaBot):
 
             await asyncio.sleep(2)
 
+        except asyncio.CancelledError:
+            logger.info("🛑 Story bot task cancelled")
         except Exception as e:
             logger.error(f"❌ Story bot error: {e}")
             import traceback
@@ -1041,11 +1240,59 @@ class StoryBot(MediaBot):
         logger.info("✅ Playlist stopped")
 
     async def _run_random_mode(self):
-        """Run continuous random mode with skip support"""
+        """Run continuous random mode with skip support and specific content requests"""
         while not self.should_stop:
+            # Check if we need to play specific content first (from mobile app request)
+            if self.specific_content_queue is not None:
+                logger.info("🎯 [STORY-SPECIFIC] Playing specific content before continuing random mode")
+
+                content_info = self.specific_content_queue['content_info']
+                loop_enabled = self.specific_content_queue['loop_enabled']
+                self.specific_content_queue = None  # Clear after extracting
+
+                # Extract content details
+                title = content_info.get('title', 'Unknown Story')
+                filename = content_info.get('filename')
+                category = content_info.get('category')
+
+                if filename and category:
+                    story_url = story_service.get_story_url(filename, category)
+                    logger.info(f"🎯 [STORY-SPECIFIC] Playing: '{title}' ({category})")
+
+                    # Reset skip flag before streaming
+                    async with self.skip_lock:
+                        self.skip_requested = False
+                        self.skip_direction = None
+
+                    # Stream the specific content
+                    if loop_enabled:
+                        # Loop the specific content until interrupted
+                        logger.info(f"🎯 [STORY-SPECIFIC] Loop mode enabled for '{title}'")
+                        while not self.should_stop and not self.skip_requested:
+                            await self._stream_story(story_url, title)
+                            if not self.should_stop and not self.skip_requested:
+                                await asyncio.sleep(1)  # Small gap between loops
+                    else:
+                        # Play once
+                        await self._stream_story(story_url, title)
+
+                    logger.info(f"🎯 [STORY-SPECIFIC] Finished streaming: '{title}'")
+
+                    # After specific content, continue with normal random flow
+                    if self.should_stop:
+                        break
+
+                    # Small gap before continuing random mode
+                    await asyncio.sleep(1)
+                else:
+                    logger.error(f"🎯 [STORY-SPECIFIC] Invalid content info: {content_info}")
+
+                # Continue to next iteration to play normal random story
+                continue
+
             # Get random story
             story = await story_service.get_random_story(category=self.age_group)
-            
+
             if not story:
                 logger.error("❌ No stories available in random mode")
                 break
