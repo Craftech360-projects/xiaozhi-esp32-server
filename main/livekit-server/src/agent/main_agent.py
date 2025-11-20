@@ -801,46 +801,14 @@ class Assistant(FilteredAgent):
                         result = await response.json()
                         logger.info(f"✅ Agent mode updated in database to '{normalized_mode}' for agent: {agent_id}")
 
-                        # 5. Initialize PromptService and use template system
-                        prompt_service = PromptService()
-                        await prompt_service.initialize_template_system()
-
-                        # Check if template system is enabled
-                        if prompt_service.is_template_system_enabled():
-                            logger.info("🎨 Using template-based prompt system for mode switch")
-
-                            # 6. Get enhanced prompt using template system
-                            try:
-                                # Clear cache to force fresh fetch
-                                prompt_service.clear_enhanced_cache(self.device_mac)
-
-                                # Get new enhanced prompt with updated template_id
-                                new_prompt = await prompt_service.get_enhanced_prompt(
-                                    room_name=self.room_name,
-                                    device_mac=self.device_mac
-                                )
-
-                                logger.info(f"🎨✅ Retrieved enhanced prompt for mode '{normalized_mode}' (length: {len(new_prompt)} chars)")
-
-                            except Exception as e:
-                                logger.error(f"Failed to get enhanced prompt: {e}")
-                                # Fallback to legacy method
-                                if result.get('code') == 0 and result.get('data'):
-                                    new_prompt = result.get('data')
-                                    logger.info("📄 Fallback to prompt from API response")
-                                else:
-                                    logger.error("No prompt available, mode switch incomplete")
-                                    return f"Mode updated to '{normalized_mode}' in database. Please reconnect to apply changes."
-
+                        # 5. Get prompt from API response
+                        logger.info("📄 Using prompt from API response")
+                        if result.get('code') == 0 and result.get('data'):
+                            new_prompt = result.get('data')
+                            logger.info(f"📄 Retrieved prompt from API (length: {len(new_prompt)} chars)")
                         else:
-                            # Legacy system - get prompt from API response
-                            logger.info("📄 Using legacy prompt system for mode switch")
-                            if result.get('code') == 0 and result.get('data'):
-                                new_prompt = result.get('data')
-                                logger.info(f"📄 Retrieved prompt from API (length: {len(new_prompt)} chars)")
-                            else:
-                                logger.warning(f"⚠️ No prompt data in response")
-                                return f"Mode updated to '{normalized_mode}' in database. Please reconnect to apply changes."
+                            logger.warning(f"⚠️ No prompt data in response")
+                            return f"Mode updated to '{normalized_mode}' in database. Please reconnect to apply changes."
 
                         # 7. Inject memory into new prompt (if available)
                         try:
