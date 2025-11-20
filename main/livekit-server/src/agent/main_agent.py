@@ -1106,6 +1106,12 @@ class Assistant(FilteredAgent):
             language: Optional language preference (English, Hindi, Telugu, etc.)
         """
         try:
+            # Sanitize inputs - convert "null", "None", empty strings to actual None
+            if song_name in ["null", "None", "", "undefined"]:
+                song_name = None
+            if language in ["null", "None", "", "undefined"]:
+                language = None
+
             logger.info(f"Music request - song: '{song_name}', language: '{language}'")
 
             if not self.music_service:
@@ -1768,6 +1774,12 @@ class Assistant(FilteredAgent):
             category: Optional category preference (Adventure, Bedtime, Educational, etc.)
         """
         try:
+            # Sanitize inputs - convert "null", "None", empty strings to actual None
+            if story_name in ["null", "None", "", "undefined"]:
+                story_name = None
+            if category in ["null", "None", "", "undefined"]:
+                category = None
+
             logger.info(f"Story request - story: '{story_name}', category: '{category}'")
 
             if not self.story_service:
