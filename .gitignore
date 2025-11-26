@@ -179,3 +179,4 @@ main/xiaozhi-server/mysql
 uploadfile
 *.json
 .vscode
+main/manager-api/src/main/resources/application-dev.yml

@@ -25,8 +25,12 @@
                                 class="avatar" />
                             <div class="message-content">
                                 {{ message.content }}
-                                <i v-if="message.audioId" :class="getAudioIconClass(message)"
-                                    @click="playAudio(message)" class="audio-icon"></i>
+                                <span v-if="message.audioId" class="audio-controls">
+                                    <i :class="getAudioIconClass(message)"
+                                        @click="playAudio(message)" class="audio-icon" title="Play"></i>
+                                    <i class="el-icon-download audio-icon download-icon"
+                                        @click="downloadAudio(message)" title="Download"></i>
+                                </span>
                             </div>
                         </div>
                     </div>
@@ -253,6 +257,36 @@ export default {
                 }
             });
         },
+        downloadAudio(message) {
+            // Get audio download ID and trigger download
+            Api.agent.getAudioId(message.audioId, (res) => {
+                if (res.data && res.data.data) {
+                    const downloadUrl = Api.getServiceUrl() + `/agent/play/${res.data.data}`;
+                    const timestamp = this.formatTimeForFilename(message.createdAt);
+                    const type = message.chatType === 1 ? 'user' : 'assistant';
+                    const filename = `audio_${type}_${timestamp}.wav`;
+
+                    // Create a temporary link and trigger download
+                    const link = document.createElement('a');
+                    link.href = downloadUrl;
+                    link.download = filename;
+                    link.target = '_blank';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }
+            });
+        },
+        formatTimeForFilename(timestamp) {
+            const date = new Date(timestamp);
+            const year = date.getFullYear();
+            const month = (date.getMonth() + 1).toString().padStart(2, '0');
+            const day = date.getDate().toString().padStart(2, '0');
+            const hours = date.getHours().toString().padStart(2, '0');
+            const minutes = date.getMinutes().toString().padStart(2, '0');
+            const seconds = date.getSeconds().toString().padStart(2, '0');
+            return `${year}${month}${day}_${hours}${minutes}${seconds}`;
+        },
         getUserAvatar(sessionId) {
             // Extract all digits from sessionId
             const numbers = sessionId.match(/\d+/g);
@@ -366,11 +400,26 @@ export default {
     align-items: center;
 }
 
+.audio-controls {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 5px;
+}
+
 .audio-icon {
     font-size: 20px;
     cursor: pointer;
-    margin: 0 5px;
+    margin: 0 3px;
     color: #1890ff;
+    transition: transform 0.2s;
+}
+
+.audio-icon:hover {
+    transform: scale(1.2);
+}
+
+.download-icon {
+    font-size: 18px;
 }
 
 .user-message .message-content {

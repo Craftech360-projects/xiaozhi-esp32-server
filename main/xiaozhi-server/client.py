@@ -18,12 +18,9 @@ from queue import Queue, Empty
 import opuslib
 
 # --- Configuration ---
-
-SERVER_IP = "192.168.1.106" # !!! UPDATE with your server's local IP address !!!
-OTA_PORT = 8003
-MQTT_BROKER_HOST = "192.168.1.106"  # MQTT gateway IP
-
-
+SERVER_IP = "64.227.151.147" # !!! UPDATE with your server's local IP address !!!
+OTA_PORT = 8002
+MQTT_BROKER_HOST = "64.227.151.147"  # MQTT gateway IP
 MQTT_BROKER_PORT = 1883
 # DEVICE_MAC is now dynamically generated for uniqueness
 PLAYBACK_BUFFER_MIN_FRAMES = 3  # Minimum frames to have in buffer to continue playback
@@ -59,7 +56,7 @@ def generate_mqtt_credentials(device_mac: str) -> Dict[str, str]:
     client_id = f"GID_test@@@{device_mac}@@@{uuid.uuid4()}"
     
     # Create username (base64 encoded JSON)
-    username_data = {"ip": "192.168.1.10"}  # Placeholder IP
+    username_data = {"ip": "192.168.1.100"}  # Placeholder IP
     username = base64.b64encode(json.dumps(username_data).encode()).decode()
     
     # Create password (HMAC-SHA256) - must match gateway's logic
@@ -76,12 +73,8 @@ def generate_mqtt_credentials(device_mac: str) -> Dict[str, str]:
 
 def generate_unique_mac() -> str:
     """Generates a unique MAC address for the client."""
-    # Generate 6 random bytes for the MAC address
-    # Using a common OUI prefix (00:16:3E) for locally administered addresses
-    # and then random bytes to ensure uniqueness for each client instance.
-    mac_bytes = [0x00, 0x16, 0x3E, # OUI prefix
-                 uuid.uuid4().bytes[0], uuid.uuid4().bytes[1], uuid.uuid4().bytes[2]]
-    return '_'.join(f'{b:02x}' for b in mac_bytes)
+    # Use fixed MAC address for testing (must be registered in database)
+    return '00:15:3e:aa:bb:cc'
 
 class TestClient:
     def __init__(self):
@@ -324,16 +317,12 @@ class TestClient:
         """Requests OTA configuration from the server."""
         logger.info(f"▶️ STEP 1: Requesting OTA config from http://{SERVER_IP}:{OTA_PORT}/xiaozhi/ota/")
         try:
-            # Generate a client ID for this session
-            import uuid
-            session_client_id = str(uuid.uuid4())
-            
-            headers = {"device-id": self.device_mac_formatted}
+            headers = {"Device-Id": self.device_mac_formatted}
             data = {
+                "mac_address": self.device_mac_formatted,
                 "application": {
                     "version": "1.0.0"
-                },
-                "client_id": session_client_id
+                }
             }
             response = requests.post(f"http://{SERVER_IP}:{OTA_PORT}/xiaozhi/ota/", headers=headers, json=data, timeout=5)
             response.raise_for_status()
@@ -349,20 +338,18 @@ class TestClient:
                 logger.warning("⚠️ No websocket URL in OTA response, using fallback")
                 self.websocket_url = f"ws://{SERVER_IP}:8000/xiaozhi/v1/"
             
-            # Extract MQTT credentials from OTA response
+            # Extract MQTT info from OTA response for subscribe topic
             mqtt_info = self.ota_config.get("mqtt", {})
             if mqtt_info:
-                self.mqtt_credentials = {
-                    "client_id": mqtt_info.get("client_id"),
-                    "username": mqtt_info.get("username"),
-                    "password": mqtt_info.get("password")
-                }
-                logger.info(f"✅ Got MQTT credentials from OTA: {self.mqtt_credentials['client_id']}")
-            else:
-                logger.warning("⚠️ No MQTT credentials in OTA response, generating locally as fallback")
-                # Generate MQTT credentials locally as fallback
-                self.mqtt_credentials = generate_mqtt_credentials(self.device_mac_formatted)
-                logger.info(f"✅ Generated MQTT credentials locally: {self.mqtt_credentials['client_id']}")
+                # Update P2P topic from OTA response
+                subscribe_topic = mqtt_info.get("subscribe_topic")
+                if subscribe_topic and subscribe_topic != "null":
+                    self.p2p_topic = subscribe_topic
+                    logger.info(f"✅ Got subscribe topic from OTA: {self.p2p_topic}")
+
+            # Always generate MQTT credentials with HMAC signature (required by mqtt-gateway)
+            self.mqtt_credentials = generate_mqtt_credentials(self.device_mac_formatted)
+            logger.info(f"✅ Generated MQTT credentials with signature: {self.mqtt_credentials['client_id']}")
             
             logger.info("✅ OTA config received successfully.")
 
@@ -440,7 +427,7 @@ class TestClient:
             "audio_params": {
                 "sample_rate": 16000,
                 "channels": 1,
-                "frame_duration": 20,
+                "frame_duration": 60,  # Match server's frame duration (was 20ms)
                 "format": "opus"
             },
             "features": ["tts", "asr", "vad"]
@@ -534,9 +521,9 @@ class TestClient:
         
         # Initialize the decoder with the sample rate provided by the server
         decoder = opuslib.Decoder(audio_params["sample_rate"], audio_params["channels"])
-        frame_size_samples = int(audio_params["sample_rate"] * audio_params["frame_duration"] / 1000)
-        # Maximum frame size for Opus (120ms at 48kHz = 5760 samples, but we'll use a larger buffer)
-        max_frame_size = int(audio_params["sample_rate"] * 0.12)  # 120ms worth of samples
+        # Use maximum Opus frame size (120ms) to handle any valid Opus packet
+        # This prevents "buffer too small" errors when server sends larger frames
+        frame_size_samples = int(audio_params["sample_rate"] * 120 / 1000)  # 120ms max = 1920 samples at 16kHz
         
         while not stop_threads.is_set() and self.session_active:
             try:
@@ -564,8 +551,7 @@ class TestClient:
                     opus_payload = decryptor.update(encrypted) + decryptor.finalize()
                     
                     # Decode the Opus payload to PCM and put it in the playback queue
-                    # Use max_frame_size to provide enough buffer space for variable frame sizes
-                    pcm_payload = decoder.decode(opus_payload, max_frame_size)
+                    pcm_payload = decoder.decode(opus_payload, frame_size_samples)
                     self.audio_playback_queue.put(pcm_payload)
                     
             except socket.timeout:

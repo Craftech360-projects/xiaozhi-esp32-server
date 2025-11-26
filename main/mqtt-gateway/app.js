@@ -218,7 +218,7 @@ class MQTTConnection {
     this.username = connectData.username;
     this.password = connectData.password;
 
-    debug("Client connected:", {
+    console.log("📥 MQTT CONNECT:", {
       clientId: this.clientId,
       username: this.username,
       password: this.password,
@@ -251,6 +251,23 @@ class MQTTConnection {
       this.macAddress = parts[1].replace(/_/g, ":");
       if (!MacAddressRegex.test(this.macAddress)) {
         debug("Invalid macAddress:", this.macAddress);
+        this.close();
+        return;
+      }
+    } else if (parts.length === 1 && this.username) {
+      // ESP32 device mode: clientId is UUID, username is MAC address (like 68_25_dd_bb_f3_a0)
+      // Convert underscore format to colon format
+      const macFromUsername = this.username.replace(/_/g, ":");
+      if (MacAddressRegex.test(macFromUsername)) {
+        console.log("✅ ESP32 device mode: Using username as MAC address:", macFromUsername);
+        this.groupId = "ESP32";
+        this.macAddress = macFromUsername;
+        this.uuid = this.clientId;
+        this.replyTo = `devices/p2p/${this.username}`;
+        this.server.addConnection(this);
+        return;
+      } else {
+        debug("Invalid clientId (not @@@ format) and invalid username as MAC:", this.clientId, this.username);
         this.close();
         return;
       }
@@ -307,11 +324,10 @@ class MQTTConnection {
   }
 
   handlePublish(publishData) {
-    debug("Received publish message:", {
+    console.log("📥 MQTT IN:", {
       clientId: this.clientId,
       topic: publishData.topic,
       payload: publishData.payload,
-      qos: publishData.qos,
     });
 
     if (publishData.qos !== 0) {
@@ -345,7 +361,11 @@ class MQTTConnection {
   }
 
   sendMqttMessage(payload) {
-    debug(`Sending message to ${this.replyTo}: ${payload}`);
+    console.log("📤 MQTT OUT:", {
+      clientId: this.clientId,
+      topic: this.replyTo,
+      payload: payload,
+    });
     this.protocol.sendPublish(this.replyTo, payload, 0, false, false);
   }
 
