@@ -18,6 +18,7 @@ import aiohttp
 
 from src.services.music_service import MusicService
 from src.services.story_service import StoryService
+from src.services.analytics_service import AnalyticsService
 from src.utils.model_cache import model_cache
 
 # Configure logging
@@ -33,6 +34,10 @@ load_dotenv(".env")
 LIVEKIT_URL = os.getenv("LIVEKIT_URL")
 LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY")
 LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET")
+
+# Manager API configuration (for analytics)
+MANAGER_API_URL = os.getenv("MANAGER_API_URL", "http://localhost:8002")
+MANAGER_API_SECRET = os.getenv("MANAGER_API_SECRET", "")
 
 app = FastAPI(title="Cheeko Media API")
 
@@ -438,6 +443,17 @@ class StreamingAudioIterator:
             except:
                 pass
 
+        # IMPORTANT: Clear the frame queue immediately to prevent buffered audio from playing
+        frames_cleared = 0
+        while not self.frame_queue.empty():
+            try:
+                self.frame_queue.get_nowait()
+                frames_cleared += 1
+            except asyncio.QueueEmpty:
+                break
+        if frames_cleared > 0:
+            logger.info(f"🗑️ Cleared {frames_cleared} buffered frames from queue")
+
         # Signal end of stream (with timeout to avoid hanging)
         try:
             await asyncio.wait_for(self.frame_queue.put(None), timeout=0.1)
@@ -598,7 +614,7 @@ class StreamingAudioIterator:
 class MusicBot(MediaBot):
     """Music streaming bot with skip control"""
 
-    def __init__(self, room_name: str, token: str, language: Optional[str] = None, playlist: Optional[List[dict]] = None):
+    def __init__(self, room_name: str, token: str, language: Optional[str] = None, playlist: Optional[List[dict]] = None, analytics_service: Optional[AnalyticsService] = None):
         super().__init__(room_name, token, "music")
         self.language = language
         self.playlist = playlist  # List of {filename, category/language, title, etc.}
@@ -613,9 +629,13 @@ class MusicBot(MediaBot):
         self.current_random_song = None  # Current random song info
         self.song_history = []  # Keep track of last 10 random songs for previous functionality
         self.max_history = 10  # Maximum songs to remember
+        self.pending_previous_song = None  # Song to play on next iteration (for "previous" in random mode)
 
         # Specific content playback support (for mobile app requests)
         self.specific_content_queue = None  # Queue for specific song requests
+
+        # Analytics service
+        self.analytics_service = analytics_service
 
     async def run(self):
         """Main entry point - connect and stream music with progressive streaming and skip support"""
@@ -643,6 +663,10 @@ class MusicBot(MediaBot):
                 logger.error("❌ Failed to connect to room after all retries")
                 return
 
+            # Start analytics session
+            if self.analytics_service:
+                await self.analytics_service.start_session(mode_type="Music")
+
             # Check if playlist is provided
             if self.playlist and len(self.playlist) > 0:
                 logger.info(f"🎵 Using playlist with {len(self.playlist)} songs (looping enabled)")
@@ -663,6 +687,10 @@ class MusicBot(MediaBot):
             import traceback
             traceback.print_exc()
         finally:
+            # End analytics session
+            if self.analytics_service:
+                await self.analytics_service.end_session(completion_status="completed")
+
             await self.disconnect()
             # Remove from active bots
             if self.room_name in active_bots:
@@ -699,12 +727,12 @@ class MusicBot(MediaBot):
                         # Loop the specific content until interrupted
                         logger.info(f"🎯 [MUSIC-SPECIFIC] Loop mode enabled for '{title}'")
                         while not self.should_stop and not self.skip_requested:
-                            await self._stream_song(song_url, title)
+                            await self._stream_song(song_url, title, media_id=filename, language=language)
                             if not self.should_stop and not self.skip_requested:
                                 await asyncio.sleep(1)  # Small gap between loops
                     else:
                         # Play once
-                        await self._stream_song(song_url, title)
+                        await self._stream_song(song_url, title, media_id=filename, language=language)
 
                     logger.info(f"🎯 [MUSIC-SPECIFIC] Finished streaming: '{title}'")
 
@@ -746,7 +774,7 @@ class MusicBot(MediaBot):
 
             # Stream this song (can be interrupted by skip)
             logger.info(f"🎵 About to start streaming: '{title}'")
-            await self._stream_song(song_url, title)
+            await self._stream_song(song_url, title, media_id=filename, language=category)
             logger.info(f"🎵 Finished streaming call for: '{title}'")
 
             if self.should_stop:
@@ -754,8 +782,10 @@ class MusicBot(MediaBot):
                 break
 
             # Check if skip was requested during streaming
+            was_skipped = False
             async with self.skip_lock:
                 if self.skip_requested:
+                    was_skipped = True
                     if self.skip_direction == 'next':
                         logger.info("⏭️ Skipping to next song")
                         self.current_index = (self.current_index + 1) % len(self.playlist)
@@ -771,8 +801,8 @@ class MusicBot(MediaBot):
                     self.current_index = (self.current_index + 1) % len(self.playlist)
                     logger.info(f"🔄 Auto-advancing to next song (index: {self.current_index})")
 
-            # Small gap between songs
-            if not self.should_stop:
+            # Small gap between songs - only when song ended naturally, not on skip
+            if not self.should_stop and not was_skipped:
                 await asyncio.sleep(1)
 
         logger.info("✅ Playlist stopped")
@@ -807,12 +837,12 @@ class MusicBot(MediaBot):
                         # Loop the specific content until interrupted
                         logger.info(f"🎯 [MUSIC-SPECIFIC] Loop mode enabled for '{title}'")
                         while not self.should_stop and not self.skip_requested:
-                            await self._stream_song(song_url, title)
+                            await self._stream_song(song_url, title, media_id=filename, language=language)
                             if not self.should_stop and not self.skip_requested:
                                 await asyncio.sleep(1)  # Small gap between loops
                     else:
                         # Play once
-                        await self._stream_song(song_url, title)
+                        await self._stream_song(song_url, title, media_id=filename, language=language)
 
                     logger.info(f"🎯 [MUSIC-SPECIFIC] Finished streaming: '{title}'")
 
@@ -828,22 +858,31 @@ class MusicBot(MediaBot):
                 # Continue to next iteration to play normal random song
                 continue
 
-            # Get random song
-            song = await music_service.get_random_song(language=self.language)
+            # Check if we have a pending previous song to play (from "previous" skip request)
+            if self.pending_previous_song is not None:
+                song = self.pending_previous_song
+                self.pending_previous_song = None  # Clear after using
+                logger.info(f"🎵 [RANDOM] Playing previous song from history: '{song['title']}'")
+                is_from_history = True
+            else:
+                # Get random song
+                song = await music_service.get_random_song(language=self.language)
+                is_from_history = False
 
-            if not song:
-                logger.error("❌ No music available in random mode")
-                break
+                if not song:
+                    logger.error("❌ No music available in random mode")
+                    break
 
             # Store current song info
             self.current_random_song = {
-                'title': song['title'],
-                'language': song['language'],
-                'url': song['url'],
-                'filename': song.get('filename', song['title'])
+                'title': song.get('title'),
+                'language': song.get('language', self.language),
+                'url': song.get('url'),
+                'filename': song.get('filename', song.get('title', 'unknown'))
             }
 
-            logger.info(f"🎵 [RANDOM] Playing: '{song['title']}' ({song['language']})")
+            if not is_from_history:
+                logger.info(f"🎵 [RANDOM] Playing: '{self.current_random_song['title']}' ({self.current_random_song['language']})")
 
             # Reset skip flag before streaming
             async with self.skip_lock:
@@ -859,12 +898,15 @@ class MusicBot(MediaBot):
                 logger.info(f"🎵 should_stop is True, breaking random loop")
                 break
 
-            # Add to history for previous functionality
-            self._add_to_history(self.current_random_song)
+            # Add to history for previous functionality (only if not already from history)
+            if not is_from_history:
+                self._add_to_history(self.current_random_song)
 
             # Check if skip was requested during streaming
+            was_skipped = False
             async with self.skip_lock:
                 if self.skip_requested:
+                    was_skipped = True
                     if self.skip_direction == 'next':
                         logger.info("⏭️ [RANDOM] Skipping to next random song")
                     elif self.skip_direction == 'previous':
@@ -872,9 +914,9 @@ class MusicBot(MediaBot):
                         # Try to get previous song from history
                         previous_song = self._get_previous_from_history()
                         if previous_song:
-                            self.current_random_song = previous_song
-                            logger.info(f"🎵 [RANDOM] Playing previous: '{previous_song['title']}'")
-                            # Continue to next iteration to play the previous song
+                            # Set pending_previous_song so the next loop iteration plays it
+                            self.pending_previous_song = previous_song
+                            logger.info(f"🎵 [RANDOM] Queued previous song: '{previous_song['title']}'")
                         else:
                             logger.info("🎵 [RANDOM] No previous song in history, getting new random")
                     self.skip_requested = False
@@ -883,8 +925,8 @@ class MusicBot(MediaBot):
                     # Normal progression - song finished naturally, get next random
                     logger.info(f"🔄 [RANDOM] Song finished naturally, getting next random")
 
-            # Small gap between songs
-            if not self.should_stop:
+            # Small gap between songs - only when song ended naturally, not on skip
+            if not self.should_stop and not was_skipped:
                 await asyncio.sleep(1)
 
         logger.info("✅ Random mode stopped")
@@ -911,8 +953,21 @@ class MusicBot(MediaBot):
             # No history
             return None
 
-    async def _stream_song(self, song_url: str, title: str):
+    async def _stream_song(self, song_url: str, title: str, media_id: str = None, language: str = None):
         """Stream a single song using progressive streaming - can be interrupted by skip"""
+        from datetime import datetime
+
+        # Track analytics - song started
+        started_at = datetime.now()
+        if self.analytics_service and media_id:
+            await self.analytics_service.record_media_playback(
+                media_type="music",
+                media_id=media_id,
+                media_title=title,
+                started_at=started_at,
+                metadata={'language': language} if language else None
+            )
+
         # Create streaming iterator for progressive download & conversion
         stream_iterator = StreamingAudioIterator(
             cdn_url=song_url,
@@ -933,14 +988,17 @@ class MusicBot(MediaBot):
                         logger.info(f"⏭️ Skip requested, interrupting stream...")
                     else:
                         logger.info(f"⏹️ Stop requested, interrupting stream...")
-                    
+
                     logger.info(f"🎵 About to close stream iterator...")
                     try:
                         await stream_iterator.close()  # Stop download
                         logger.info(f"🎵 Stream iterator closed successfully")
                     except Exception as close_error:
                         logger.error(f"❌ Error closing stream iterator: {close_error}")
-                    
+
+                    # Send silence frames to flush LiveKit's buffer and stop audio immediately
+                    await self._send_silence_frames(num_frames=10)  # ~200ms of silence
+
                     logger.info(f"🎵 Breaking from streaming loop")
                     break
 
@@ -958,6 +1016,28 @@ class MusicBot(MediaBot):
         finally:
             logger.info(f"🎵 _stream_song finally block for '{title}'")
             self.current_stream_iterator = None
+
+    async def _send_silence_frames(self, num_frames: int = 10):
+        """Send silence frames to flush LiveKit's audio buffer and stop audio immediately"""
+        try:
+            sample_rate = 48000
+            samples_per_frame = 960  # 20ms at 48kHz
+            silence_data = b'\x00' * (samples_per_frame * 2)  # 16-bit = 2 bytes per sample
+
+            logger.info(f"🔇 Sending {num_frames} silence frames to flush buffer...")
+
+            for _ in range(num_frames):
+                silence_frame = rtc.AudioFrame(
+                    data=silence_data,
+                    sample_rate=sample_rate,
+                    num_channels=1,
+                    samples_per_channel=samples_per_frame
+                )
+                await self.audio_source.capture_frame(silence_frame)
+
+            logger.info(f"🔇 Silence frames sent successfully")
+        except Exception as e:
+            logger.error(f"❌ Error sending silence frames: {e}")
 
     async def skip_to_next(self):
         """Request skip to next song (works in both playlist and random mode)"""
@@ -1062,7 +1142,7 @@ class MusicBot(MediaBot):
 class StoryBot(MediaBot):
     """Story streaming bot with skip control"""
 
-    def __init__(self, room_name: str, token: str, age_group: Optional[str] = None, playlist: Optional[List[dict]] = None):
+    def __init__(self, room_name: str, token: str, age_group: Optional[str] = None, playlist: Optional[List[dict]] = None, analytics_service: Optional[AnalyticsService] = None):
         super().__init__(room_name, token, "story")
         self.age_group = age_group
         self.playlist = playlist  # List of {filename, category, title, etc.}
@@ -1077,9 +1157,13 @@ class StoryBot(MediaBot):
         self.current_random_story = None  # Current random story info
         self.story_history = []  # Keep track of last 10 random stories for previous functionality
         self.max_history = 10  # Maximum stories to remember
+        self.pending_previous_story = None  # Story to play on next iteration (for "previous" in random mode)
 
         # Specific content playback support (for mobile app requests)
         self.specific_content_queue = None  # Queue for specific story requests
+
+        # Analytics service
+        self.analytics_service = analytics_service
 
     async def run(self):
         """Main entry point - connect and stream story with progressive streaming and skip support"""
@@ -1107,6 +1191,10 @@ class StoryBot(MediaBot):
                 logger.error("❌ Failed to connect to room after all retries")
                 return
 
+            # Start analytics session
+            if self.analytics_service:
+                await self.analytics_service.start_session(mode_type="Story")
+
             # Check if playlist is provided
             if self.playlist and len(self.playlist) > 0:
                 logger.info(f"📖 Using playlist with {len(self.playlist)} stories (looping enabled)")
@@ -1126,6 +1214,10 @@ class StoryBot(MediaBot):
             import traceback
             traceback.print_exc()
         finally:
+            # End analytics session
+            if self.analytics_service:
+                await self.analytics_service.end_session(completion_status="completed")
+
             await self.disconnect()
             if self.room_name in active_bots:
                 del active_bots[self.room_name]
@@ -1161,12 +1253,12 @@ class StoryBot(MediaBot):
                         # Loop the specific content until interrupted
                         logger.info(f"🎯 [STORY-SPECIFIC] Loop mode enabled for '{title}'")
                         while not self.should_stop and not self.skip_requested:
-                            await self._stream_story(story_url, title)
+                            await self._stream_story(story_url, title, media_id=filename, category=category)
                             if not self.should_stop and not self.skip_requested:
                                 await asyncio.sleep(1)  # Small gap between loops
                     else:
                         # Play once
-                        await self._stream_story(story_url, title)
+                        await self._stream_story(story_url, title, media_id=filename, category=category)
 
                     logger.info(f"🎯 [STORY-SPECIFIC] Finished streaming: '{title}'")
 
@@ -1208,7 +1300,7 @@ class StoryBot(MediaBot):
 
             # Stream this story (can be interrupted by skip)
             logger.info(f"📖 About to start streaming: '{title}'")
-            await self._stream_story(story_url, title)
+            await self._stream_story(story_url, title, media_id=filename, category=category)
             logger.info(f"📖 Finished streaming call for: '{title}'")
 
             if self.should_stop:
@@ -1216,8 +1308,10 @@ class StoryBot(MediaBot):
                 break
 
             # Check if skip was requested during streaming
+            was_skipped = False
             async with self.skip_lock:
                 if self.skip_requested:
+                    was_skipped = True
                     if self.skip_direction == 'next':
                         logger.info("⏭️ Skipping to next story")
                         self.current_index = (self.current_index + 1) % len(self.playlist)
@@ -1233,8 +1327,8 @@ class StoryBot(MediaBot):
                     self.current_index = (self.current_index + 1) % len(self.playlist)
                     logger.info(f"🔄 Auto-advancing to next story (index: {self.current_index})")
 
-            # Small gap between stories
-            if not self.should_stop:
+            # Small gap between stories - only when story ended naturally, not on skip
+            if not self.should_stop and not was_skipped:
                 await asyncio.sleep(1)
 
         logger.info("✅ Playlist stopped")
@@ -1269,12 +1363,12 @@ class StoryBot(MediaBot):
                         # Loop the specific content until interrupted
                         logger.info(f"🎯 [STORY-SPECIFIC] Loop mode enabled for '{title}'")
                         while not self.should_stop and not self.skip_requested:
-                            await self._stream_story(story_url, title)
+                            await self._stream_story(story_url, title, media_id=filename, category=category)
                             if not self.should_stop and not self.skip_requested:
                                 await asyncio.sleep(1)  # Small gap between loops
                     else:
                         # Play once
-                        await self._stream_story(story_url, title)
+                        await self._stream_story(story_url, title, media_id=filename, category=category)
 
                     logger.info(f"🎯 [STORY-SPECIFIC] Finished streaming: '{title}'")
 
@@ -1290,22 +1384,31 @@ class StoryBot(MediaBot):
                 # Continue to next iteration to play normal random story
                 continue
 
-            # Get random story
-            story = await story_service.get_random_story(category=self.age_group)
+            # Check if we have a pending previous story to play (from "previous" skip request)
+            if self.pending_previous_story is not None:
+                story = self.pending_previous_story
+                self.pending_previous_story = None  # Clear after using
+                logger.info(f"📖 [RANDOM] Playing previous story from history: '{story['title']}'")
+                is_from_history = True
+            else:
+                # Get random story
+                story = await story_service.get_random_story(category=self.age_group)
+                is_from_history = False
 
-            if not story:
-                logger.error("❌ No stories available in random mode")
-                break
+                if not story:
+                    logger.error("❌ No stories available in random mode")
+                    break
 
             # Store current story info
             self.current_random_story = {
-                'title': story['title'],
+                'title': story.get('title'),
                 'category': story.get('category', self.age_group),
-                'url': story['url'],
-                'filename': story.get('filename', story['title'])
+                'url': story.get('url'),
+                'filename': story.get('filename', story.get('title', 'unknown'))
             }
 
-            logger.info(f"📖 [RANDOM] Playing: '{story['title']}' ({story.get('category', 'Unknown')})")
+            if not is_from_history:
+                logger.info(f"📖 [RANDOM] Playing: '{self.current_random_story['title']}' ({self.current_random_story['category']})")
 
             # Reset skip flag before streaming
             async with self.skip_lock:
@@ -1314,19 +1417,22 @@ class StoryBot(MediaBot):
 
             # Stream this random story (can be interrupted by skip)
             logger.info(f"📖 About to start streaming random: '{story['title']}'")
-            await self._stream_story(story['url'], story['title'])
+            await self._stream_story(story['url'], story['title'], media_id=story.get('filename', story['title']), category=story.get('category'))
             logger.info(f"📖 Finished streaming random call for: '{story['title']}'")
 
             if self.should_stop:
                 logger.info(f"📖 should_stop is True, breaking random loop")
                 break
 
-            # Add to history for previous functionality
-            self._add_to_history(self.current_random_story)
+            # Add to history for previous functionality (only if not already from history)
+            if not is_from_history:
+                self._add_to_history(self.current_random_story)
 
             # Check if skip was requested during streaming
+            was_skipped = False
             async with self.skip_lock:
                 if self.skip_requested:
+                    was_skipped = True
                     if self.skip_direction == 'next':
                         logger.info("⏭️ [RANDOM] Skipping to next random story")
                     elif self.skip_direction == 'previous':
@@ -1334,9 +1440,9 @@ class StoryBot(MediaBot):
                         # Try to get previous story from history
                         previous_story = self._get_previous_from_history()
                         if previous_story:
-                            self.current_random_story = previous_story
-                            logger.info(f"📖 [RANDOM] Playing previous: '{previous_story['title']}'")
-                            # Continue to next iteration to play the previous story
+                            # Set pending_previous_story so the next loop iteration plays it
+                            self.pending_previous_story = previous_story
+                            logger.info(f"📖 [RANDOM] Queued previous story: '{previous_story['title']}'")
                         else:
                             logger.info("📖 [RANDOM] No previous story in history, getting new random")
                     self.skip_requested = False
@@ -1345,8 +1451,8 @@ class StoryBot(MediaBot):
                     # Normal progression - story finished naturally, get next random
                     logger.info(f"🔄 [RANDOM] Story finished naturally, getting next random")
 
-            # Small gap between stories
-            if not self.should_stop:
+            # Small gap between stories - only when story ended naturally, not on skip
+            if not self.should_stop and not was_skipped:
                 await asyncio.sleep(1)
 
         logger.info("✅ Random mode stopped")
@@ -1373,8 +1479,21 @@ class StoryBot(MediaBot):
             # No history
             return None
 
-    async def _stream_story(self, story_url: str, title: str):
+    async def _stream_story(self, story_url: str, title: str, media_id: str = None, category: str = None):
         """Stream a single story using progressive streaming - can be interrupted by skip"""
+        from datetime import datetime
+
+        # Track analytics - story started
+        started_at = datetime.now()
+        if self.analytics_service and media_id:
+            await self.analytics_service.record_media_playback(
+                media_type="story",
+                media_id=media_id,
+                media_title=title,
+                started_at=started_at,
+                metadata={'category': category} if category else None
+            )
+
         # Create streaming iterator for progressive download & conversion
         stream_iterator = StreamingAudioIterator(
             cdn_url=story_url,
@@ -1395,14 +1514,17 @@ class StoryBot(MediaBot):
                         logger.info(f"⏭️ Skip requested, interrupting stream...")
                     else:
                         logger.info(f"⏹️ Stop requested, interrupting stream...")
-                    
+
                     logger.info(f"📖 About to close stream iterator...")
                     try:
                         await stream_iterator.close()  # Stop download
                         logger.info(f"📖 Stream iterator closed successfully")
                     except Exception as close_error:
                         logger.error(f"❌ Error closing stream iterator: {close_error}")
-                    
+
+                    # Send silence frames to flush LiveKit's buffer and stop audio immediately
+                    await self._send_silence_frames(num_frames=10)  # ~200ms of silence
+
                     logger.info(f"📖 Breaking from streaming loop")
                     break
 
@@ -1420,6 +1542,28 @@ class StoryBot(MediaBot):
         finally:
             logger.info(f"📖 _stream_story finally block for '{title}'")
             self.current_stream_iterator = None
+
+    async def _send_silence_frames(self, num_frames: int = 10):
+        """Send silence frames to flush LiveKit's audio buffer and stop audio immediately"""
+        try:
+            sample_rate = 48000
+            samples_per_frame = 960  # 20ms at 48kHz
+            silence_data = b'\x00' * (samples_per_frame * 2)  # 16-bit = 2 bytes per sample
+
+            logger.info(f"🔇 Sending {num_frames} silence frames to flush buffer...")
+
+            for _ in range(num_frames):
+                silence_frame = rtc.AudioFrame(
+                    data=silence_data,
+                    sample_rate=sample_rate,
+                    num_channels=1,
+                    samples_per_channel=samples_per_frame
+                )
+                await self.audio_source.capture_frame(silence_frame)
+
+            logger.info(f"🔇 Silence frames sent successfully")
+        except Exception as e:
+            logger.error(f"❌ Error sending silence frames: {e}")
 
     async def skip_to_next(self):
         """Request skip to next story (works in both playlist and random mode)"""
@@ -1536,8 +1680,33 @@ async def start_music_bot(req: StartMusicBotRequest):
         # Create token for bot
         token = create_bot_token(req.room_name, "music-bot")
 
+        # Extract MAC address from room_name (format: uuid_mac_mode)
+        # Example: "75ba3756-3693-4486-adff-daac0d13ef1d_6825ddbbf3a0_music"
+        mac_address = None
+        try:
+            parts = req.room_name.split('_')
+            if len(parts) >= 2:
+                mac_address = parts[1]  # Get MAC part
+        except Exception as e:
+            logger.warning(f"Could not extract MAC from room_name: {req.room_name}, error: {e}")
+
+        # Create analytics service for this bot
+        analytics_service = None
+        if mac_address and MANAGER_API_SECRET:
+            try:
+                analytics_service = AnalyticsService(
+                    manager_api_url=MANAGER_API_URL,
+                    secret=MANAGER_API_SECRET,
+                    device_mac=mac_address,
+                    session_id=req.room_name,
+                    agent_id="music-bot"
+                )
+                logger.info(f"📊 Analytics service created for Music bot - MAC: {mac_address}")
+            except Exception as e:
+                logger.error(f"❌ Failed to create analytics service: {e}")
+
         # Create and start music bot with playlist
-        bot = MusicBot(req.room_name, token, req.language, req.playlist)
+        bot = MusicBot(req.room_name, token, req.language, req.playlist, analytics_service)
 
         # Store bot reference
         active_bots[req.room_name] = bot
@@ -1573,8 +1742,33 @@ async def start_story_bot(req: StartStoryBotRequest):
 
         token = create_bot_token(req.room_name, "story-bot")
 
+        # Extract MAC address from room_name (format: uuid_mac_mode)
+        # Example: "75ba3756-3693-4486-adff-daac0d13ef1d_6825ddbbf3a0_story"
+        mac_address = None
+        try:
+            parts = req.room_name.split('_')
+            if len(parts) >= 2:
+                mac_address = parts[1]  # Get MAC part
+        except Exception as e:
+            logger.warning(f"Could not extract MAC from room_name: {req.room_name}, error: {e}")
+
+        # Create analytics service for this bot
+        analytics_service = None
+        if mac_address and MANAGER_API_SECRET:
+            try:
+                analytics_service = AnalyticsService(
+                    manager_api_url=MANAGER_API_URL,
+                    secret=MANAGER_API_SECRET,
+                    device_mac=mac_address,
+                    session_id=req.room_name,
+                    agent_id="story-bot"
+                )
+                logger.info(f"📊 Analytics service created for Story bot - MAC: {mac_address}")
+            except Exception as e:
+                logger.error(f"❌ Failed to create analytics service: {e}")
+
         # Create and start story bot with playlist
-        bot = StoryBot(req.room_name, token, req.age_group, req.playlist)
+        bot = StoryBot(req.room_name, token, req.age_group, req.playlist, analytics_service)
         active_bots[req.room_name] = bot
 
         asyncio.create_task(bot.run())
