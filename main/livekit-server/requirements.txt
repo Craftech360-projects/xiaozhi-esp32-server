@@ -1,26 +1,19 @@
+livekit-agents
 livekit-plugins-groq
+livekit-plugins-google
+livekit-plugins-deepgram
+livekit-plugins-elevenlabs
+livekit-plugins-silero
+livekit-plugins-noise-cancellation
 python-dotenv
 pydub
 aiohttp
-
-# # Local AI Models (for offline operation)
-# faster-whisper  # Local STT using Whisper
-# TTS  # Coqui TTS for local text-to-speech
-
-# Optional dependencies for enhanced semantic search
 qdrant-client
 sentence-transformers
-
-# EdgeTTS support (uses Microsoft servers but can work offline)
 edge-tts
-
-# Room management and JWT for API calls
 livekit-api
 PyJWT
-
-# Memory provider (optional - comment out if using local memory)
 mem0ai
-
 jinja2
 gtts
 pyttsx3

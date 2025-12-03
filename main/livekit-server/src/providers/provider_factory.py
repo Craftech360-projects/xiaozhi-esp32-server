@@ -1,7 +1,7 @@
 import livekit.plugins.groq as groq
 import livekit.plugins.elevenlabs as elevenlabs
 import livekit.plugins.deepgram as deepgram
-from livekit.plugins import openai, silero
+from livekit.plugins import openai, silero, google
 from livekit.agents import stt, llm, tts
 
 # Import our custom providers
@@ -201,3 +201,29 @@ class ProviderFactory:
        # return MultilingualModel()
        # return EnglishModel()
         return None  # Disabled to avoid HuggingFace download errors
+
+    @staticmethod
+    def create_gemini_realtime(instructions: str, voice: str = "Puck", temperature: float = 0.6):
+        """Create Gemini Realtime model for end-to-end voice interaction
+        
+        Args:
+            instructions: System instructions for the model
+            voice: Voice to use (Puck, Charon, Kore, Fenrir, Aoede)
+            temperature: Temperature for response generation
+            
+        Returns:
+            google.realtime.RealtimeModel configured for audio-only interaction
+        """
+        import os
+        
+        api_key = os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            raise ValueError("GOOGLE_API_KEY environment variable is required for Gemini Realtime")
+        
+        return google.realtime.RealtimeModel(
+            model="gemini-2.0-flash-exp",
+            voice=voice,
+            temperature=temperature,
+            instructions=instructions,
+            modalities=["AUDIO"]  # Audio-only mode for voice agent
+        )

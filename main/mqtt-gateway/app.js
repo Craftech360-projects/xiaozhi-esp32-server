@@ -585,12 +585,75 @@ class LiveKitBridge extends Emitter {
                 `🔊 [AUDIO TRACK] Starting audio stream processing for ${participant.identity}`
               );
 
+              // Proactively send TTS start when agent audio track appears
+              try {
+                console.log(
+                  `🔊 [TRACK] Agent audio track ready, sending TTS start to device: ${this.macAddress}`
+                );
+                this.sendTtsStartMessage();
+                this.isAudioPlaying = true;
+              } catch (error) {
+                console.error(`❌ [TTS START] Error in track handler: ${error.message}`);
+              }
+
               const stream = new AudioStream(track);
               const reader = stream.getReader();
 
               let frameCount = 0;
               let totalBytes = 0;
               let lastLogTime = Date.now();
+
+              // Silence detection for TTS stop
+              const SILENCE_TIMEOUT = 1500; // 1.5 seconds of silence = agent done speaking
+              const AUDIO_THRESHOLD = 0.01; // RMS amplitude threshold for detecting actual audio
+              let silenceTimer = null;
+
+              // Detect if audio buffer contains actual audio vs silence
+              const hasAudioContent = (audioBuffer) => {
+                try {
+                  if (!audioBuffer || audioBuffer.length === 0) return false;
+
+                  const samples = new Int16Array(
+                    audioBuffer.buffer,
+                    audioBuffer.byteOffset,
+                    audioBuffer.byteLength / 2
+                  );
+
+                  let sumSquares = 0;
+                  for (let i = 0; i < samples.length; i++) {
+                    const normalized = samples[i] / 32768.0;
+                    sumSquares += normalized * normalized;
+                  }
+
+                  const rms = Math.sqrt(sumSquares / samples.length);
+                  return rms > AUDIO_THRESHOLD;
+                } catch (error) {
+                  console.error(`❌ [AUDIO DETECT] Error: ${error.message}`);
+                  return false;
+                }
+              };
+
+              const sendTtsStopAfterSilence = () => {
+                try {
+                  if (silenceTimer) clearTimeout(silenceTimer);
+
+                  silenceTimer = setTimeout(() => {
+                    try {
+                      if (this.isAudioPlaying) {
+                        console.log(
+                          `🔇 [SILENCE] No audio for ${SILENCE_TIMEOUT}ms, sending TTS stop to device: ${this.macAddress}`
+                        );
+                        this.sendTtsStopMessage();
+                        this.isAudioPlaying = false;
+                      }
+                    } catch (error) {
+                      console.error(`❌ [SILENCE] Error in timeout: ${error.message}`);
+                    }
+                  }, SILENCE_TIMEOUT);
+                } catch (error) {
+                  console.error(`❌ [SILENCE] Error setting timeout: ${error.message}`);
+                }
+              };
 
               const readStream = async () => {
                 try {
@@ -601,7 +664,12 @@ class LiveKitBridge extends Emitter {
                   while (true) {
                     const { done, value } = await reader.read();
                     if (done) {
-                      this.sendTtsStopMessage();
+                      try {
+                        if (silenceTimer) clearTimeout(silenceTimer);
+                        this.sendTtsStopMessage();
+                      } catch (error) {
+                        console.error(`❌ [STREAM END] Error: ${error.message}`);
+                      }
                       console.log(
                         `🏁 [AUDIO STREAM] Stream ended for ${participant.identity}. Total frames: ${frameCount}, Total bytes: ${totalBytes}`
                       );
@@ -680,6 +748,35 @@ class LiveKitBridge extends Emitter {
                         resampledBuffer,
                       ]);
                       totalBytes += resampledBuffer.length;
+                    }
+
+                    // Reset silence timer - but only for actual audio, not silence frames
+                    try {
+                      if (resampledFrames.length > 0) {
+                        // Check if ANY of the resampled frames contain actual audio
+                        let hasRealAudio = false;
+                        for (const frame of resampledFrames) {
+                          if (hasAudioContent(frame.data)) {
+                            hasRealAudio = true;
+                            break;
+                          }
+                        }
+
+                        if (hasRealAudio) {
+                          // If agent just started speaking (after silence), send TTS start
+                          if (!this.isAudioPlaying) {
+                            console.log(`🔊 [AUDIO] Agent started speaking, sending TTS start`);
+                            this.sendTtsStartMessage();
+                            this.isAudioPlaying = true;
+                          }
+
+                          console.log(`🔊 [AUDIO] Real audio detected, resetting silence timer`);
+                          sendTtsStopAfterSilence();
+                        }
+                        // If no real audio, timer continues and will fire after timeout
+                      }
+                    } catch (error) {
+                      console.error(`❌ [SILENCE CHECK] Error: ${error.message}`);
                     }
 
                     const timestamp =
@@ -1216,17 +1313,45 @@ class LiveKitBridge extends Emitter {
   }
 
   // Send TTS stop message to device
+  sendTtsStartMessage() {
+    try {
+      if (!this.connection) {
+        console.warn(`⚠️ [TTS START] No connection for device: ${this.macAddress}`);
+        return;
+      }
+
+      const message = {
+        type: "tts",
+        state: "start",
+        session_id: this.connection.udp.session_id,
+        timestamp: Date.now()
+      };
+
+      console.log(`📢 [TTS START] Transition device to SPEAKING state: ${this.macAddress}`);
+      this.connection.sendMqttMessage(JSON.stringify(message));
+    } catch (error) {
+      console.error(`❌ [TTS START] Error sending message: ${error.message}`);
+    }
+  }
+
   sendTtsStopMessage() {
-    if (!this.connection) return;
+    try {
+      if (!this.connection) {
+        console.warn(`⚠️ [TTS STOP] No connection for device: ${this.macAddress}`);
+        return;
+      }
 
-    const message = {
-      type: "tts",
-      state: "stop",
-      session_id: this.connection.udp.session_id,
-    };
+      const message = {
+        type: "tts",
+        state: "stop",
+        session_id: this.connection.udp.session_id,
+      };
 
-    console.log(`📤 [MQTT OUT] Sending TTS stop to device: ${this.macAddress}`);
-    this.connection.sendMqttMessage(JSON.stringify(message));
+      console.log(`📤 [MQTT OUT] Sending TTS stop to device: ${this.macAddress}`);
+      this.connection.sendMqttMessage(JSON.stringify(message));
+    } catch (error) {
+      console.error(`❌ [TTS STOP] Error sending message: ${error.message}`);
+    }
   }
 
   sendLLMThinkMessage() {

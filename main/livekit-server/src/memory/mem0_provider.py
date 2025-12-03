@@ -83,6 +83,7 @@ class Mem0MemoryProvider:
             results = self.client.search(
                 query,
                 user_id=self.role_id,
+                filters={"user_id": self.role_id},
                 output_format="v1.1"
             )
 

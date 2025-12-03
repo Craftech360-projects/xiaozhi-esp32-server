@@ -1,7 +1,7 @@
 {
   "debug": false,
   "mqtt_broker": {
-    "host": "192.168.1.235",
+    "host": "10.155.13.125",
     "port": 1883,
     "protocol": "mqtt",
     "keepalive": 60,
@@ -10,8 +10,8 @@
     "connectTimeout": 30000
   },
   "livekit": {
-    "url": "ws://localhost:7880",
-    "api_key": "devkey",
-    "api_secret": "secret"
+    "url": "wss://gemini-voice-agent-esksjwtq.livekit.cloud",
+    "api_key": "APIMa4zHysSjfXR",
+    "api_secret": "JfbdsoOvqaV4fWp54o5dmVCRiHs3mmzEuHsinN3Kne7A"
   }
 }
